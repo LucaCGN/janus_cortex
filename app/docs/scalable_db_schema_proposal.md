@@ -1,0 +1,583 @@
+# Janus Cortex DB Schema Proposal (Phase-Driven to v1)
+
+## Why this revision
+The previous proposal is structurally good but too broad for early validation.
+This version keeps the full target model while forcing phased adoption:
+- validate nodes and methods first (`v0.1.*`),
+- then validate schema slices,
+- then expose only endpoints backed by validated tables.
+
+## Versioning model
+- Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
+- Current active phase: `v0.2.1`.
+- v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
+
+## Schema implementation policy
+1. Do not create all tables at once.
+2. Each table has an activation phase.
+3. A table can only be consumed by API routes after its phase is completed.
+4. History tables are append-only unless explicitly marked as snapshot.
+5. Every ingestion-critical table has `raw_json` and/or provider refs.
+6. Every node method refactor/new method must include dedicated `pytest` module updates in the same phase.
+7. Temporal coverage (past/current/future) for source methods must be documented in `app/docs/source_temporal_coverage.md` before promoting related schema usage.
+8. For query-window-sensitive sources (e.g., Gamma events), persist window/filter metadata in `core.sync_runs.meta_json` to keep ingest behavior auditable.
+9. Historical odds collectors should preserve provenance in `market_data.outcome_price_ticks.source` (`clob_prices_history`, `snapshot_fallback`, `fallback_stream`) to keep direct and fallback samples distinguishable.
+
+## Phase summary
+- `v0.1.*`: Node and method validation before schema rollout.
+- `v0.2.*`: Canonical contracts and mapping logic.
+- `v0.3.*`: DB MVP schema and migration baseline.
+- `v0.4.*`: Pipeline ingestion to new schema.
+- `v0.5.*`: Core API serving validated schema.
+- `v0.6.*`: Portfolio + market data API blocks.
+- `v0.7.*`: NBA module serving layer.
+- `v0.8.*`: Chroma event-doc blocks.
+- `v0.9.*`: Production hardening and v1 release gates.
+
+## Table inventory with full columns and activation phase
+
+### CORE
+
+#### `core.providers` (activate: `v0.3.1`)
+- `provider_id` UUID PK
+- `code` TEXT UNIQUE NOT NULL
+- `name` TEXT NOT NULL
+- `category` TEXT NOT NULL
+- `base_url` TEXT
+- `auth_type` TEXT
+- `is_active` BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `core.modules` (activate: `v0.3.1`)
+- `module_id` UUID PK
+- `code` TEXT UNIQUE NOT NULL
+- `name` TEXT NOT NULL
+- `description` TEXT
+- `owner` TEXT
+- `is_active` BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `core.sync_runs` (activate: `v0.3.2`)
+- `sync_run_id` UUID PK
+- `provider_id` UUID FK -> `core.providers.provider_id`
+- `module_id` UUID FK -> `core.modules.module_id`
+- `pipeline_name` TEXT NOT NULL
+- `run_type` TEXT NOT NULL
+- `status` TEXT NOT NULL
+- `started_at` TIMESTAMPTZ NOT NULL
+- `ended_at` TIMESTAMPTZ
+- `rows_read` BIGINT
+- `rows_written` BIGINT
+- `error_text` TEXT
+- `meta_json` JSONB
+
+#### `core.raw_payloads` (activate: `v0.3.2`)
+- `raw_payload_id` UUID PK
+- `sync_run_id` UUID FK -> `core.sync_runs.sync_run_id`
+- `provider_id` UUID FK -> `core.providers.provider_id`
+- `endpoint` TEXT NOT NULL
+- `external_id` TEXT
+- `fetched_at` TIMESTAMPTZ NOT NULL
+- `payload_json` JSONB NOT NULL
+
+### CATALOG
+
+#### `catalog.event_types` (activate: `v0.3.1`)
+- `event_type_id` UUID PK
+- `code` TEXT UNIQUE NOT NULL
+- `name` TEXT NOT NULL
+- `domain` TEXT NOT NULL
+- `description` TEXT
+- `default_horizon` TEXT
+- `resolution_policy` TEXT
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.information_profiles` (activate: `v0.3.1`)
+- `information_profile_id` UUID PK
+- `code` TEXT UNIQUE NOT NULL
+- `name` TEXT NOT NULL
+- `description` TEXT
+- `min_sources` INTEGER NOT NULL DEFAULT 1
+- `required_fields_json` JSONB
+- `refresh_interval_sec` INTEGER
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.events` (activate: `v0.3.1`)
+- `event_id` UUID PK
+- `event_type_id` UUID FK -> `catalog.event_types.event_type_id`
+- `information_profile_id` UUID FK -> `catalog.information_profiles.information_profile_id`
+- `title` TEXT NOT NULL
+- `canonical_slug` TEXT
+- `status` TEXT NOT NULL
+- `start_time` TIMESTAMPTZ
+- `end_time` TIMESTAMPTZ
+- `resolution_time` TIMESTAMPTZ
+- `metadata_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.event_external_refs` (activate: `v0.3.1`)
+- `event_ref_id` UUID PK
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `provider_id` UUID FK -> `core.providers.provider_id`
+- `external_id` TEXT NOT NULL
+- `external_slug` TEXT
+- `external_url` TEXT
+- `is_primary` BOOLEAN NOT NULL DEFAULT FALSE
+- `raw_summary_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.markets` (activate: `v0.3.1`)
+- `market_id` UUID PK
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `question` TEXT NOT NULL
+- `market_type` TEXT
+- `condition_id` TEXT
+- `market_slug` TEXT
+- `open_time` TIMESTAMPTZ
+- `close_time` TIMESTAMPTZ
+- `settled_time` TIMESTAMPTZ
+- `settlement_status` TEXT
+- `metadata_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.market_external_refs` (activate: `v0.3.1`)
+- `market_ref_id` UUID PK
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `provider_id` UUID FK -> `core.providers.provider_id`
+- `external_market_id` TEXT NOT NULL
+- `external_condition_id` TEXT
+- `external_slug` TEXT
+- `raw_summary_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.outcomes` (activate: `v0.3.1`)
+- `outcome_id` UUID PK
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `outcome_index` INTEGER NOT NULL
+- `outcome_label` TEXT NOT NULL
+- `token_id` TEXT
+- `is_winner` BOOLEAN
+- `metadata_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.event_module_bindings` (activate: `v0.3.2`)
+- `event_module_binding_id` UUID PK
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `module_id` UUID FK -> `core.modules.module_id`
+- `priority` INTEGER NOT NULL DEFAULT 100
+- `enabled_for_trading` BOOLEAN NOT NULL DEFAULT TRUE
+- `notes` TEXT
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `catalog.event_information_scores` (activate: `v0.4.5`)
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `scored_at` TIMESTAMPTZ NOT NULL
+- `information_profile_id` UUID FK -> `catalog.information_profiles.information_profile_id`
+- `coverage_score` NUMERIC(5,2)
+- `quality_score` NUMERIC(5,2)
+- `latency_score` NUMERIC(5,2)
+- `is_trade_eligible` BOOLEAN NOT NULL DEFAULT FALSE
+- `missing_fields_json` JSONB
+- PK (`event_id`, `scored_at`)
+
+#### `catalog.market_state_snapshots` (activate: `v0.4.2`)
+- `market_state_snapshot_id` UUID PK
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `sync_run_id` UUID FK -> `core.sync_runs.sync_run_id`
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `last_price` NUMERIC(10,6)
+- `volume` NUMERIC(18,6)
+- `liquidity` NUMERIC(18,6)
+- `best_bid` NUMERIC(10,6)
+- `best_ask` NUMERIC(10,6)
+- `mid_price` NUMERIC(10,6)
+- `market_status` TEXT
+- `raw_json` JSONB
+
+### MARKET DATA
+
+#### `market_data.outcome_price_ticks` (activate: `v0.3.4`)
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `ts` TIMESTAMPTZ NOT NULL
+- `source` TEXT NOT NULL
+- `price` NUMERIC(10,6)
+- `bid` NUMERIC(10,6)
+- `ask` NUMERIC(10,6)
+- `volume` NUMERIC(18,6)
+- `liquidity` NUMERIC(18,6)
+- `raw_json` JSONB
+- PK (`outcome_id`, `ts`, `source`)
+
+#### `market_data.outcome_price_candles` (activate: `v0.4.6`)
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `timeframe` TEXT NOT NULL
+- `open_time` TIMESTAMPTZ NOT NULL
+- `source` TEXT NOT NULL
+- `open` NUMERIC(10,6)
+- `high` NUMERIC(10,6)
+- `low` NUMERIC(10,6)
+- `close` NUMERIC(10,6)
+- `volume` NUMERIC(18,6)
+- `raw_json` JSONB
+- PK (`outcome_id`, `timeframe`, `open_time`, `source`)
+
+#### `market_data.orderbook_snapshots` (activate: `v0.3.4`)
+- `orderbook_snapshot_id` UUID PK
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `best_bid` NUMERIC(10,6)
+- `best_ask` NUMERIC(10,6)
+- `spread` NUMERIC(10,6)
+- `mid_price` NUMERIC(10,6)
+- `bid_depth` NUMERIC(18,6)
+- `ask_depth` NUMERIC(18,6)
+- `raw_json` JSONB
+
+#### `market_data.orderbook_levels` (activate: `v0.3.4`)
+- `orderbook_snapshot_id` UUID FK -> `market_data.orderbook_snapshots.orderbook_snapshot_id`
+- `side` TEXT NOT NULL
+- `level_no` INTEGER NOT NULL
+- `price` NUMERIC(10,6)
+- `size` NUMERIC(18,6)
+- `order_count` INTEGER
+- PK (`orderbook_snapshot_id`, `side`, `level_no`)
+
+### PORTFOLIO
+
+#### `portfolio.trading_accounts` (activate: `v0.3.3`)
+- `account_id` UUID PK
+- `provider_id` UUID FK -> `core.providers.provider_id`
+- `account_label` TEXT NOT NULL
+- `wallet_address` TEXT
+- `proxy_wallet_address` TEXT
+- `chain_id` INTEGER
+- `is_active` BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `portfolio.position_snapshots` (activate: `v0.3.3`)
+- `account_id` UUID FK -> `portfolio.trading_accounts.account_id`
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `source` TEXT NOT NULL
+- `size` NUMERIC(18,6)
+- `avg_price` NUMERIC(10,6)
+- `current_price` NUMERIC(10,6)
+- `current_value` NUMERIC(18,6)
+- `unrealized_pnl` NUMERIC(18,6)
+- `realized_pnl` NUMERIC(18,6)
+- `raw_json` JSONB
+- PK (`account_id`, `outcome_id`, `captured_at`, `source`)
+
+#### `portfolio.orders` (activate: `v0.3.3`)
+- `order_id` UUID PK
+- `account_id` UUID FK -> `portfolio.trading_accounts.account_id`
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `external_order_id` TEXT
+- `client_order_id` TEXT
+- `side` TEXT NOT NULL
+- `order_type` TEXT NOT NULL
+- `time_in_force` TEXT
+- `limit_price` NUMERIC(10,6)
+- `size` NUMERIC(18,6)
+- `status` TEXT NOT NULL
+- `placed_at` TIMESTAMPTZ NOT NULL
+- `updated_at` TIMESTAMPTZ NOT NULL
+- `metadata_json` JSONB
+
+#### `portfolio.order_events` (activate: `v0.4.3`)
+- `order_event_id` UUID PK
+- `order_id` UUID FK -> `portfolio.orders.order_id`
+- `event_time` TIMESTAMPTZ NOT NULL
+- `event_type` TEXT NOT NULL
+- `filled_size_delta` NUMERIC(18,6)
+- `filled_notional_delta` NUMERIC(18,6)
+- `raw_json` JSONB
+
+#### `portfolio.trades` (activate: `v0.3.3`)
+- `trade_id` UUID PK
+- `account_id` UUID FK -> `portfolio.trading_accounts.account_id`
+- `order_id` UUID FK -> `portfolio.orders.order_id`
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `external_trade_id` TEXT
+- `tx_hash` TEXT
+- `side` TEXT NOT NULL
+- `price` NUMERIC(10,6)
+- `size` NUMERIC(18,6)
+- `fee` NUMERIC(18,6)
+- `fee_asset` TEXT
+- `liquidity_role` TEXT
+- `trade_time` TIMESTAMPTZ NOT NULL
+- `raw_json` JSONB
+
+#### `portfolio.valuation_snapshots` (activate: `v0.6.2`)
+- `account_id` UUID FK -> `portfolio.trading_accounts.account_id`
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `equity_usd` NUMERIC(18,6)
+- `cash_usd` NUMERIC(18,6)
+- `positions_value_usd` NUMERIC(18,6)
+- `realized_pnl_usd` NUMERIC(18,6)
+- `unrealized_pnl_usd` NUMERIC(18,6)
+- PK (`account_id`, `captured_at`)
+
+### STRATEGY CONTROL PLANE
+
+#### `strategy.strategy_types` (activate: `v0.3.5`)
+- `strategy_type_id` UUID PK
+- `module_id` UUID FK -> `core.modules.module_id`
+- `code` TEXT UNIQUE NOT NULL
+- `name` TEXT NOT NULL
+- `description` TEXT
+- `execution_mode` TEXT
+- `parameter_schema_json` JSONB
+- `risk_schema_json` JSONB
+- `is_active` BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `strategy.strategy_definitions` (activate: `v0.3.5`)
+- `strategy_definition_id` UUID PK
+- `strategy_type_id` UUID FK -> `strategy.strategy_types.strategy_type_id`
+- `name` TEXT NOT NULL
+- `version` TEXT NOT NULL
+- `config_json` JSONB NOT NULL
+- `default_risk_json` JSONB
+- `is_active` BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `strategy.strategy_instances` (activate: `v0.3.5`)
+- `strategy_instance_id` UUID PK
+- `strategy_definition_id` UUID FK -> `strategy.strategy_definitions.strategy_definition_id`
+- `account_id` UUID FK -> `portfolio.trading_accounts.account_id`
+- `state` TEXT NOT NULL
+- `capital_allocated_usd` NUMERIC(18,6)
+- `started_at` TIMESTAMPTZ
+- `ended_at` TIMESTAMPTZ
+- `notes` TEXT
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `strategy.strategy_targets` (activate: `v0.3.5`)
+- `strategy_target_id` UUID PK
+- `strategy_instance_id` UUID FK -> `strategy.strategy_instances.strategy_instance_id`
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `target_role` TEXT
+- `entry_window_start` TIMESTAMPTZ
+- `entry_window_end` TIMESTAMPTZ
+- `priority` INTEGER NOT NULL DEFAULT 100
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `strategy.strategy_signals` (activate: `v0.4.5`)
+- `signal_id` UUID PK
+- `strategy_instance_id` UUID FK -> `strategy.strategy_instances.strategy_instance_id`
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `fired_at` TIMESTAMPTZ NOT NULL
+- `signal_type` TEXT
+- `confidence` NUMERIC(5,4)
+- `score` NUMERIC(10,6)
+- `decision` TEXT
+- `reasoning` TEXT
+- `features_json` JSONB
+
+### NBA MODULE (EXTENSION)
+
+#### `nba.nba_teams` (activate: `v0.3.6`)
+- `team_id` INTEGER PK
+- `team_slug` TEXT NOT NULL
+- `team_name` TEXT NOT NULL
+- `team_city` TEXT
+- `conference` TEXT
+- `division` TEXT
+- `metadata_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `nba.nba_games` (activate: `v0.3.6`)
+- `game_id` TEXT PK
+- `season` TEXT
+- `game_date` DATE
+- `game_start_time` TIMESTAMPTZ
+- `game_status` INTEGER
+- `game_status_text` TEXT
+- `period` INTEGER
+- `game_clock` TEXT
+- `home_team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `away_team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `home_team_slug` TEXT
+- `away_team_slug` TEXT
+- `home_score` INTEGER
+- `away_score` INTEGER
+- `updated_at` TIMESTAMPTZ
+
+#### `nba.nba_game_event_links` (activate: `v0.4.4`)
+- `nba_game_event_link_id` UUID PK
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `confidence` NUMERIC(5,4)
+- `linked_by` TEXT
+- `linked_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `nba.nba_team_stats_snapshots` (activate: `v0.3.6`)
+- `team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `season` TEXT NOT NULL
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `metric_set` TEXT NOT NULL
+- `stats_json` JSONB NOT NULL
+- `source` TEXT
+- PK (`team_id`, `season`, `captured_at`, `metric_set`)
+
+#### `nba.nba_player_stats_snapshots` (activate: `v0.3.6`)
+- `player_id` INTEGER NOT NULL
+- `player_name` TEXT
+- `team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `season` TEXT NOT NULL
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `metric_set` TEXT NOT NULL
+- `stats_json` JSONB NOT NULL
+- `source` TEXT
+- PK (`player_id`, `season`, `captured_at`, `metric_set`)
+
+#### `nba.nba_team_insights` (activate: `v0.3.6`)
+- `insight_id` UUID PK
+- `team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `insight_type` TEXT
+- `category` TEXT
+- `text` TEXT
+- `condition` TEXT
+- `value` TEXT
+- `source` TEXT
+- `captured_at` TIMESTAMPTZ NOT NULL
+
+#### `nba.nba_live_game_snapshots` (activate: `v0.1.5`, persisted to new schema in `v0.4.4`)
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `captured_at` TIMESTAMPTZ NOT NULL
+- `period` INTEGER
+- `clock` TEXT
+- `home_score` INTEGER
+- `away_score` INTEGER
+- `payload_json` JSONB
+- PK (`game_id`, `captured_at`)
+
+#### `nba.nba_play_by_play` (activate: `v0.1.5`, persisted to new schema in `v0.4.4`)
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `event_index` BIGINT NOT NULL
+- `action_id` TEXT
+- `period` INTEGER
+- `clock` TEXT
+- `description` TEXT
+- `home_score` INTEGER
+- `away_score` INTEGER
+- `is_score_change` BOOLEAN
+- `payload_json` JSONB
+- PK (`game_id`, `event_index`)
+
+#### `nba.nba_context_cache` (activate: `v0.7.4`)
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `context_type` TEXT NOT NULL
+- `generated_at` TIMESTAMPTZ NOT NULL
+- `payload_json` JSONB NOT NULL
+- PK (`game_id`, `context_type`, `generated_at`)
+
+### RESEARCH / CHROMA LINK
+
+#### `research.event_collections` (activate: `v0.8.2`)
+- `event_collection_id` UUID PK
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `collection_name` TEXT NOT NULL
+- `collection_type` TEXT NOT NULL
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `research.event_documents` (activate: `v0.8.3`)
+- `event_document_id` UUID PK
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `source` TEXT
+- `title` TEXT
+- `url` TEXT
+- `published_at` TIMESTAMPTZ
+- `ingested_at` TIMESTAMPTZ NOT NULL
+- `document_json` JSONB NOT NULL
+- `chroma_doc_id` TEXT
+- `metadata_json` JSONB
+
+### OPS
+
+#### `ops.job_definitions` (activate: `v0.5.1`)
+- `job_id` UUID PK
+- `module_id` UUID FK -> `core.modules.module_id`
+- `job_code` TEXT UNIQUE NOT NULL
+- `description` TEXT
+- `schedule_cron` TEXT
+- `is_enabled` BOOLEAN NOT NULL DEFAULT TRUE
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `ops.job_runs` (activate: `v0.5.1`)
+- `job_run_id` UUID PK
+- `job_id` UUID FK -> `ops.job_definitions.job_id`
+- `sync_run_id` UUID FK -> `core.sync_runs.sync_run_id`
+- `started_at` TIMESTAMPTZ NOT NULL
+- `ended_at` TIMESTAMPTZ
+- `status` TEXT NOT NULL
+- `error_text` TEXT
+- `metrics_json` JSONB
+
+#### `ops.system_heartbeats` (activate: `v0.5.1`)
+- `service_name` TEXT PK
+- `status` TEXT NOT NULL
+- `last_heartbeat` TIMESTAMPTZ NOT NULL
+- `message` TEXT
+
+## Minimal table set to start (reduced load)
+Create these first only:
+1. `core.providers`
+2. `core.modules`
+3. `core.sync_runs`
+4. `catalog.event_types`
+5. `catalog.information_profiles`
+6. `catalog.events`
+7. `catalog.event_external_refs`
+8. `catalog.markets`
+9. `catalog.market_external_refs`
+10. `catalog.outcomes`
+11. `market_data.outcome_price_ticks`
+12. `portfolio.trading_accounts`
+13. `portfolio.position_snapshots`
+14. `portfolio.orders`
+15. `portfolio.trades`
+16. `nba.nba_games`
+17. `nba.nba_game_event_links`
+
+All other tables remain deferred until their checkpoint phase is completed.
+
+## Required indices and uniqueness (apply by phase)
+- `catalog.events(canonical_slug)` unique where not null (`v0.3.1`)
+- `catalog.event_external_refs(provider_id, external_id)` unique (`v0.3.1`)
+- `catalog.market_external_refs(provider_id, external_market_id)` unique (`v0.3.1`)
+- `catalog.outcomes(market_id, outcome_index)` unique (`v0.3.1`)
+- `catalog.outcomes(token_id)` index (`v0.3.1`)
+- `market_data.outcome_price_ticks(outcome_id, ts DESC)` index (`v0.3.4`)
+- `portfolio.orders(account_id, status, placed_at DESC)` index (`v0.3.3`)
+- `portfolio.trades(account_id, trade_time DESC)` index (`v0.3.3`)
+- `nba.nba_games(game_date, game_status)` index (`v0.3.6`)
+- `nba.nba_game_event_links(game_id)` index (`v0.4.4`)
+- `nba.nba_game_event_links(event_id)` index (`v0.4.4`)
+
+## Table-phase-columns relation checklist
+This document is authoritative for:
+- full table inventory,
+- full column inventory,
+- phase activation rules.
+
+On every schema change you must update:
+1. this file,
+2. `app/docs/development_guide.md` current phase section,
+3. corresponding file under `dev-checkpoint/`.
+

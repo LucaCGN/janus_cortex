@@ -1,0 +1,14 @@
+.env
+.venv
+logs
+__pycache__*
+tests*
+/routes
+/dev
+=========== /DEV SCRIPTS===========
+consolidate_codebase.py
+codebase_summary.md
+run_all_tests.py
+test_nba.py
+reference
+dev-checkpoint

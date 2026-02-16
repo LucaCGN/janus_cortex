@@ -1,0 +1,26 @@
+# Mantém PyYAML em wheel compatível com Py 3.14
+PyYAML==6.0.2
+
+# AnyIO + httpcore/httpx estáveis
+anyio>=4.6
+httpcore==1.0.9
+
+# LangChain ecosistema coerente (quando usar requirements-agents)
+langchain-core==1.1.1
+langgraph==1.0.4
+langgraph-checkpoint==3.0.1
+langgraph-prebuilt==1.0.5
+langsmith==0.1.147
+tenacity>=8.1,<10
+packaging>=23.2,<26
+xxhash>=3.5.0
+ormsgpack>=1.12.0
+orjson>=3.10.1
+requests-toolbelt>=1.0.0
+zstandard>=0.23.0
+
+# CrewAI deps
+opentelemetry-api>=1.22,<2
+opentelemetry-sdk>=1.22,<2
+opentelemetry-exporter-otlp-proto-http>=1.22,<2
+regex>=2024.5.15  # evita versão 2023.* (sdist)
