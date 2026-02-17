@@ -10,7 +10,7 @@ This version keeps the full target model while forcing phased adoption:
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.3.1`.
+- Current active phase: `v0.3.4`.
 - v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
 
 ## Schema implementation policy
@@ -35,6 +35,18 @@ This version keeps the full target model while forcing phased adoption:
 - `v0.7.*`: NBA module serving layer.
 - `v0.8.*`: Chroma event-doc blocks.
 - `v0.9.*`: Production hardening and v1 release gates.
+
+## v0.3 migration inventory (implemented to date)
+- `0001_v0_3_1__catalog_core_mvp.sql`
+  - activates: `core.providers`, `core.modules`, `catalog.event_types`, `catalog.information_profiles`, `catalog.events`, `catalog.event_external_refs`, `catalog.markets`, `catalog.market_external_refs`, `catalog.outcomes`
+  - includes phase indexes/uniqueness for `v0.3.1`
+- `0002_v0_3_2__sync_and_raw_payloads.sql`
+  - activates: `core.sync_runs`, `core.raw_payloads`, `catalog.event_module_bindings`
+  - includes uniqueness on `(event_id, module_id)` bindings
+- `0003_v0_3_3__portfolio_core_tables.sql`
+  - activates: `portfolio.trading_accounts`, `portfolio.position_snapshots`, `portfolio.orders`, `portfolio.trades`
+  - includes phase indexes/uniqueness for `v0.3.3`
+- migration registry table: `core.schema_migrations` (managed by `app/data/databases/migrate.py`)
 
 ## v0.2 Canonical mapping outputs (implemented, pre-table activation)
 
@@ -578,25 +590,28 @@ This version keeps the full target model while forcing phased adoption:
 - `last_heartbeat` TIMESTAMPTZ NOT NULL
 - `message` TEXT
 
-## Minimal table set to start (reduced load)
-Create these first only:
+## Minimal table rollout (phase-aligned)
+### `v0.3.1` (`0001_v0_3_1__catalog_core_mvp.sql`)
 1. `core.providers`
 2. `core.modules`
-3. `core.sync_runs`
-4. `catalog.event_types`
-5. `catalog.information_profiles`
-6. `catalog.events`
-7. `catalog.event_external_refs`
-8. `catalog.markets`
-9. `catalog.market_external_refs`
-10. `catalog.outcomes`
-11. `market_data.outcome_price_ticks`
-12. `portfolio.trading_accounts`
-13. `portfolio.position_snapshots`
-14. `portfolio.orders`
-15. `portfolio.trades`
-16. `nba.nba_games`
-17. `nba.nba_game_event_links`
+3. `catalog.event_types`
+4. `catalog.information_profiles`
+5. `catalog.events`
+6. `catalog.event_external_refs`
+7. `catalog.markets`
+8. `catalog.market_external_refs`
+9. `catalog.outcomes`
+
+### `v0.3.2` (`0002_v0_3_2__sync_and_raw_payloads.sql`)
+1. `core.sync_runs`
+2. `core.raw_payloads`
+3. `catalog.event_module_bindings`
+
+### `v0.3.3` (`0003_v0_3_3__portfolio_core_tables.sql`)
+1. `portfolio.trading_accounts`
+2. `portfolio.position_snapshots`
+3. `portfolio.orders`
+4. `portfolio.trades`
 
 All other tables remain deferred until their checkpoint phase is completed.
 
@@ -606,7 +621,10 @@ All other tables remain deferred until their checkpoint phase is completed.
 - `catalog.market_external_refs(provider_id, external_market_id)` unique (`v0.3.1`)
 - `catalog.outcomes(market_id, outcome_index)` unique (`v0.3.1`)
 - `catalog.outcomes(token_id)` index (`v0.3.1`)
+- `catalog.event_module_bindings(event_id, module_id)` unique (`v0.3.2`)
+- `core.sync_runs(provider_id, started_at DESC)` index (`v0.3.2`)
 - `market_data.outcome_price_ticks(outcome_id, ts DESC)` index (`v0.3.4`)
+- `portfolio.orders(account_id, client_order_id)` unique where `client_order_id` is not null (`v0.3.3`)
 - `portfolio.orders(account_id, status, placed_at DESC)` index (`v0.3.3`)
 - `portfolio.trades(account_id, trade_time DESC)` index (`v0.3.3`)
 - `nba.nba_games(game_date, game_status)` index (`v0.3.6`)

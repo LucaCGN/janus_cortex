@@ -25,8 +25,8 @@ v1 scope:
 - no production auto-trader logic inside core app.
 
 ## Current phase
-- Active phase: `v0.3.1`
-- Reference source of truth: `dev-checkpoint/v0.3.1.md`
+- Active phase: `v0.3.4`
+- Reference source of truth: `dev-checkpoint/v0.3.4.md`
 
 ## Canonical planning files
 1. `app/docs/scalable_db_schema_proposal.md`
@@ -110,6 +110,8 @@ Execution conventions:
 - Default (offline-safe) run: `python -m pytest -q`
 - Live source validation run: `$env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q <module_or_pattern>`
 - `live_api` tests are skipped unless `JANUS_RUN_LIVE_TESTS=1`.
+- Postgres integration validation run: `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/databases/test_postgres_migrations_pytest.py`
+- `postgres_live` tests are skipped unless `JANUS_RUN_DB_TESTS=1`.
 
 ## Temporal Coverage Validation Rule (Non-Negotiable)
 For data-source methods with time dimension (events, schedules, odds, live feeds):
@@ -173,10 +175,11 @@ Before closing any session:
 
 ## Fast reference commands (to keep workflow repeatable)
 - list checkpoints: `Get-ChildItem dev-checkpoint`
-- open active phase: `Get-Content -Raw dev-checkpoint/v0.3.1.md`
+- open active phase: `Get-Content -Raw dev-checkpoint/v0.3.4.md`
 - list node files: `rg --files app/data/nodes`
 - track schema mentions: `rg -n "activate:|table|column|phase" app/docs/scalable_db_schema_proposal.md`
 - track routes mentions: `rg -n "v0\.|/v1/|Required tables" app/docs/scalable_api_routes_proposal.md`
+- apply migrations: `python -m app.data.databases.migrate`
 
 ## Governance note
 If work requested by user conflicts with phase ordering, document the exception in checkpoint and explicitly record dependency risks.

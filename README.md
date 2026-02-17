@@ -3,7 +3,7 @@
 Personal prediction-market data framework focused on production-grade data structures and service layers before strategy automation.
 
 ## Current Status
-- Active checkpoint: `v0.3.1` (Database MVP and Migrations)
+- Active checkpoint: `v0.3.4` (Append-only history storage rules)
 - Checkpoint ledger source of truth: `dev-checkpoint/README.md`
 - Current scope: schema + ingestion + API readiness, not autonomous strategy execution.
 
@@ -29,7 +29,7 @@ The project now uses a provider/category/module split:
 - `v0.2.7` - `v0.2.9`: app structure refactor gate, pytest topology hardening, docs synchronization
 
 ### In progress
-- `v0.3.1`: MVP DDL baseline
+- `v0.3.4`: Append-only history storage rules
 
 ### Planned lanes
 1. `v0.3.*` Database MVP and migration discipline
@@ -57,6 +57,8 @@ Pytest naming/discovery:
 Common commands:
 - `python -m pytest -q`
 - `$env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/data/nodes/test_temporal_coverage_live_pytest.py`
+- `python -m app.data.databases.migrate`
+- `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/databases/test_postgres_migrations_pytest.py`
 
 ## Notes
 - `dev-checkpoint/*` is a session execution ledger and may be gitignored depending on local policy.
