@@ -3,7 +3,7 @@
 Personal prediction-market data framework focused on production-grade data structures and service layers before strategy automation.
 
 ## Current Status
-- Active checkpoint: `v0.3.4` (Append-only history storage rules)
+- Active checkpoint: `v0.4.1` (Polymarket events ingestion pipeline)
 - Checkpoint ledger source of truth: `dev-checkpoint/README.md`
 - Current scope: schema + ingestion + API readiness, not autonomous strategy execution.
 
@@ -29,16 +29,15 @@ The project now uses a provider/category/module split:
 - `v0.2.7` - `v0.2.9`: app structure refactor gate, pytest topology hardening, docs synchronization
 
 ### In progress
-- `v0.3.4`: Append-only history storage rules
+- `v0.4.1`: Polymarket events ingestion pipeline
 
 ### Planned lanes
-1. `v0.3.*` Database MVP and migration discipline
-2. `v0.4.*` Ingestion pipelines to new schema
-3. `v0.5.*` FastAPI core layer
-4. `v0.6.*` Portfolio and market-data service layer
-5. `v0.7.*` NBA module serving layer
-6. `v0.8.*` Chroma event-document layer
-7. `v0.9.*` Production hardening and v1 cut
+1. `v0.4.*` Ingestion pipelines to new schema
+2. `v0.5.*` FastAPI core layer
+3. `v0.6.*` Portfolio and market-data service layer
+4. `v0.7.*` NBA module serving layer
+5. `v0.8.*` Chroma event-document layer
+6. `v0.9.*` Production hardening and v1 cut
 
 ## Key Planning Docs
 - `app/docs/development_guide.md`
@@ -59,6 +58,9 @@ Common commands:
 - `$env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/data/nodes/test_temporal_coverage_live_pytest.py`
 - `python -m app.data.databases.migrate`
 - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/databases/test_postgres_migrations_pytest.py`
+- `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/databases/test_upsert_primitives_pytest.py`
+- `$env:JANUS_RUN_DB_TESTS='1'; $env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/data/databases/test_polymarket_event_seed_pack_live_pytest.py`
+- `python -m app.data.databases.seed_packs.polymarket_event_seed_pack`
 
 ## Notes
 - `dev-checkpoint/*` is a session execution ledger and may be gitignored depending on local policy.

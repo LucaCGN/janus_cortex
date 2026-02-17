@@ -119,7 +119,35 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 - Limitations:
   - Collector depends on live snapshot availability for selected window/tags.
   - A single short sample run may return empty; repeated sampling windows are required for robust coverage.
-  - This collector captures snapshots (not true historical reconstruction) and should be treated as fallback provenance.
+- This collector captures snapshots (not true historical reconstruction) and should be treated as fallback provenance.
+
+### Polymarket targeted event probes (`v0.3.6` extras 3.7-3.9)
+
+#### Past NBA game (`nba-mem-den-2026-02-11`)
+- URL: `https://polymarket.com/sports/nba/nba-mem-den-2026-02-11`
+- Coverage observed:
+  - Event/markets/outcomes payload available from Gamma slug endpoint.
+  - Moneyline token history available from CLOB in a game-period-focused window.
+  - Sampled history window persisted in DB: `2026-02-11T20:00:17+00:00` to `2026-02-12T05:50:17+00:00` (`120` rows).
+- Practical note:
+  - Game-period windows can be captured reliably when `gameStartTime` is available on market payload.
+
+#### Upcoming NBA game (`nba-ind-was-2026-02-19`)
+- URL: `https://polymarket.com/sports/nba/nba-ind-was-2026-02-19`
+- Coverage observed:
+  - Event/markets/outcomes are available before tip-off.
+  - Recent pre-game odds history is available via CLOB token history (`1024` rows persisted in probe run).
+- Practical note:
+  - Upcoming-game validation can use rolling recent windows (e.g., last 7 days) to verify market activity availability.
+
+#### Long-horizon non-sports event (`will-the-us-confirm-that-aliens-exist-before-2027`)
+- URL: `https://polymarket.com/event/will-the-us-confirm-that-aliens-exist-before-2027`
+- Coverage observed:
+  - Event payload and binary outcomes available via Gamma slug endpoint.
+  - CLOB token history available with interval-based retrieval (`1m`) and suitable for grid-style price-level analysis.
+  - Probe run persisted `8912` rows with observed price range `0.085` to `0.915` and `12` distinct 1c price levels.
+- Practical note:
+  - Interval-based queries are preferable for long-horizon events to avoid window-limit errors and still obtain rich recent granularity.
 
 ### Canonical Mapping Layer (v0.2)
 
@@ -151,7 +179,7 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 5. For Gamma events, use multiple narrower windows (past + future) instead of one broad range when validating temporal coverage.
 
 ## Required updates when this file changes
-- active checkpoint file (currently `dev-checkpoint/v0.3.1.md`)
+- active checkpoint file (currently `dev-checkpoint/v0.4.1.md`)
 - `app/docs/development_guide.md`
 - `app/docs/scalable_db_schema_proposal.md` (if schema implications change)
 - `app/docs/scalable_api_routes_proposal.md` (if route readiness changes)

@@ -168,7 +168,9 @@ v1 is reached when all route groups below are active and tested:
 - No route may be marked active if its dependencies are not complete in corresponding checkpoint file.
 
 ## Current source constraints (2026-02-17)
-- DB migration baseline is now live through `v0.3.3` using `app/data/databases/migrate.py`; active schemas/tables currently cover `core` + `catalog` + `portfolio` MVP blocks required by upcoming `v0.5.x` route implementations.
+- DB migration baseline is now live through `v0.3.4` using `app/data/databases/migrate.py`; active schemas/tables currently cover `core` + `catalog` + `portfolio` + `market_data` MVP blocks required by upcoming `v0.5.x` and `v0.6.1` route implementations.
+- Repository/upsert primitives are now available in `app/data/databases/repositories/upsert_primitives.py` (`JanusUpsertRepository`) and should be reused by future FastAPI handlers to keep write semantics idempotent and append-only-safe.
+- Live seed-pack integration for URL-driven event ingestion is validated in `app/data/databases/seed_packs/polymarket_event_seed_pack.py` using three concrete Polymarket URLs (past NBA, upcoming NBA, long-horizon non-sports), providing a direct implementation reference for future `/v1/events/import-url` behavior.
 - Structure gate (`v0.2.7`-`v0.2.9`) is complete: provider-centric wrappers now exist under `app/providers/*`, canonical domain wrappers under `app/domain/events/canonical/*`, and ingestion wrappers under `app/ingestion/*`; upcoming route/service work in `v0.3+` should target these paths first.
 - Canonical mapping pre-route layer is now validated in `app/data/pipelines/canonical/*` with fixture-backed integration tests (`tests/app/data/pipelines/canonical/*_pytest.py`); route groups stay phase-gated, but future `/v1/events/import-url` and `/v1/sync/*` routes should consume this canonical contract directly.
 - Gamma events sync routes must use timezone-aware filters and split-window validation (past/future windows separately) due query-window sensitivity.

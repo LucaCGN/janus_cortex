@@ -10,7 +10,7 @@ This version keeps the full target model while forcing phased adoption:
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.3.4`.
+- Current active phase: `v0.4.1`.
 - v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
 
 ## Schema implementation policy
@@ -46,7 +46,35 @@ This version keeps the full target model while forcing phased adoption:
 - `0003_v0_3_3__portfolio_core_tables.sql`
   - activates: `portfolio.trading_accounts`, `portfolio.position_snapshots`, `portfolio.orders`, `portfolio.trades`
   - includes phase indexes/uniqueness for `v0.3.3`
+- `0004_v0_3_4__market_data_append_only.sql`
+  - activates: `market_data.outcome_price_ticks`, `market_data.orderbook_snapshots`, `market_data.orderbook_levels`
+  - enforces append-only behavior with update/delete-block triggers on all three history tables
+  - includes `ix_market_data_outcome_price_ticks_outcome_ts_desc` and `ix_market_data_orderbook_snapshots_outcome_captured_desc`
 - migration registry table: `core.schema_migrations` (managed by `app/data/databases/migrate.py`)
+
+## v0.3.5 repository/upsert primitives (implemented)
+- Module: `app/data/databases/repositories/upsert_primitives.py`
+- Exposed entrypoint: `JanusUpsertRepository`
+- Scope:
+  - idempotent upserts for active `core`, `catalog`, and `portfolio` tables
+  - append-only insert helpers for `market_data` history tables with duplicate-safe (`ON CONFLICT DO NOTHING`) option
+- Validation:
+  - `tests/app/data/databases/test_upsert_primitives_pytest.py` (live Postgres, gated by `JANUS_RUN_DB_TESTS=1`)
+
+## v0.3.6 DB integration seed packs (implemented)
+- Module:
+  - `app/data/databases/seed_packs/polymarket_event_seed_pack.py`
+- Live probe pack:
+  - `extra_3_7_past_nba_game_period`
+  - `extra_3_8_upcoming_nba_availability`
+  - `extra_3_9_aliens_grid_history`
+- Persisted tables used:
+  - `core.sync_runs`, `core.raw_payloads`
+  - `catalog.events`, `catalog.event_external_refs`, `catalog.markets`, `catalog.market_external_refs`, `catalog.outcomes`
+  - `market_data.outcome_price_ticks`
+- Validation:
+  - `tests/app/data/databases/test_polymarket_event_seed_pack_live_pytest.py` (requires both `JANUS_RUN_DB_TESTS=1` and `JANUS_RUN_LIVE_TESTS=1`)
+  - detailed evidence: `app/docs/polymarket_seed_pack_v0_3_6.md`
 
 ## v0.2 Canonical mapping outputs (implemented, pre-table activation)
 
@@ -267,6 +295,7 @@ This version keeps the full target model while forcing phased adoption:
 - `liquidity` NUMERIC(18,6)
 - `raw_json` JSONB
 - PK (`outcome_id`, `ts`, `source`)
+- append-only enforcement via `market_data.enforce_append_only()` trigger (migration `0004_v0_3_4__market_data_append_only.sql`)
 
 #### `market_data.outcome_price_candles` (activate: `v0.4.6`)
 - `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
@@ -292,6 +321,7 @@ This version keeps the full target model while forcing phased adoption:
 - `bid_depth` NUMERIC(18,6)
 - `ask_depth` NUMERIC(18,6)
 - `raw_json` JSONB
+- append-only enforcement via `market_data.enforce_append_only()` trigger (migration `0004_v0_3_4__market_data_append_only.sql`)
 
 #### `market_data.orderbook_levels` (activate: `v0.3.4`)
 - `orderbook_snapshot_id` UUID FK -> `market_data.orderbook_snapshots.orderbook_snapshot_id`
@@ -301,6 +331,7 @@ This version keeps the full target model while forcing phased adoption:
 - `size` NUMERIC(18,6)
 - `order_count` INTEGER
 - PK (`orderbook_snapshot_id`, `side`, `level_no`)
+- append-only enforcement via `market_data.enforce_append_only()` trigger (migration `0004_v0_3_4__market_data_append_only.sql`)
 
 ### PORTFOLIO
 
@@ -613,6 +644,11 @@ This version keeps the full target model while forcing phased adoption:
 3. `portfolio.orders`
 4. `portfolio.trades`
 
+### `v0.3.4` (`0004_v0_3_4__market_data_append_only.sql`)
+1. `market_data.outcome_price_ticks`
+2. `market_data.orderbook_snapshots`
+3. `market_data.orderbook_levels`
+
 All other tables remain deferred until their checkpoint phase is completed.
 
 ## Required indices and uniqueness (apply by phase)
@@ -624,6 +660,7 @@ All other tables remain deferred until their checkpoint phase is completed.
 - `catalog.event_module_bindings(event_id, module_id)` unique (`v0.3.2`)
 - `core.sync_runs(provider_id, started_at DESC)` index (`v0.3.2`)
 - `market_data.outcome_price_ticks(outcome_id, ts DESC)` index (`v0.3.4`)
+- `market_data.orderbook_snapshots(outcome_id, captured_at DESC)` index (`v0.3.4`)
 - `portfolio.orders(account_id, client_order_id)` unique where `client_order_id` is not null (`v0.3.3`)
 - `portfolio.orders(account_id, status, placed_at DESC)` index (`v0.3.3`)
 - `portfolio.trades(account_id, trade_time DESC)` index (`v0.3.3`)
