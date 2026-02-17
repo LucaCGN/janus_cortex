@@ -167,7 +167,9 @@ v1 is reached when all route groups below are active and tested:
 - For time-based sync/read routes, tests must explicitly validate past/current/future behavior (or document source-imposed limits).
 - No route may be marked active if its dependencies are not complete in corresponding checkpoint file.
 
-## Current source constraints (2026-02-16)
+## Current source constraints (2026-02-17)
+- Structure gate (`v0.2.7`-`v0.2.9`) is complete: provider-centric wrappers now exist under `app/providers/*`, canonical domain wrappers under `app/domain/events/canonical/*`, and ingestion wrappers under `app/ingestion/*`; upcoming route/service work in `v0.3+` should target these paths first.
+- Canonical mapping pre-route layer is now validated in `app/data/pipelines/canonical/*` with fixture-backed integration tests (`tests/app/data/pipelines/canonical/*_pytest.py`); route groups stay phase-gated, but future `/v1/events/import-url` and `/v1/sync/*` routes should consume this canonical contract directly.
 - Gamma events sync routes must use timezone-aware filters and split-window validation (past/future windows separately) due query-window sensitivity.
 - Gamma events route logic should prefer `tag_slug=nba` and snake_case date params; broad windows still need client-side validation.
 - Gamma moneyline route no longer hard-blocked at zero rows after query hardening, but must keep fallback path (`/events` nested markets) and client-side game-date filtering.

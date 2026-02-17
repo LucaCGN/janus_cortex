@@ -9,7 +9,7 @@ Track what each current endpoint/method can return for:
 This artifact is mandatory for `v0.1.*` node validation and must be updated when methods change.
 
 ## Validation date
-- 2026-02-16
+- 2026-02-17
 
 ## Coverage matrix
 
@@ -121,6 +121,26 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
   - A single short sample run may return empty; repeated sampling windows are required for robust coverage.
   - This collector captures snapshots (not true historical reconstruction) and should be treated as fallback provenance.
 
+### Canonical Mapping Layer (v0.2)
+
+#### `app/data/pipelines/canonical/mapping_service.py::build_canonical_mapping_result`
+- Sources:
+  - Gamma event/moneyline normalized node outputs
+  - NBA schedule normalized node output
+  - deterministic fixture pack under `app/data/pipelines/canonical/fixtures/*.json`
+  - compatibility wrappers under `app/domain/events/canonical/*` and `app/ingestion/mappings/canonical/*`
+- Observed behavior:
+  - Canonical mapping preserves mixed temporal windows when source rows contain them.
+  - Fixture-backed integration pack contains past events (`2025-12-20`), near-current/past events (`2026-02-02`), and future events (`2026-03-15`).
+  - Mapping output retains timezone-aware timestamps and deterministic ids for all windows.
+- Coverage status:
+  - Past events in canonical bundle: `AVAILABLE`.
+  - Current/near-current events in canonical bundle: `AVAILABLE` when source rows include them.
+  - Future/scheduled events in canonical bundle: `AVAILABLE`.
+- Limitations:
+  - Canonical layer is a transform/enrichment stage and cannot create missing temporal coverage not present in upstream node sources.
+  - Live temporal completeness remains constrained by upstream provider endpoints listed above.
+
 ## Practical implications for v0.1 planning
 1. NBA past season goal is not met with current schedule method; an alternate historical endpoint/source is required.
 2. Current season past and upcoming games are available from schedule feed.
@@ -131,7 +151,7 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 5. For Gamma events, use multiple narrower windows (past + future) instead of one broad range when validating temporal coverage.
 
 ## Required updates when this file changes
-- active checkpoint file (currently `dev-checkpoint/v0.2.1.md`)
+- active checkpoint file (currently `dev-checkpoint/v0.3.1.md`)
 - `app/docs/development_guide.md`
 - `app/docs/scalable_db_schema_proposal.md` (if schema implications change)
 - `app/docs/scalable_api_routes_proposal.md` (if route readiness changes)

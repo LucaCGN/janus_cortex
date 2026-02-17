@@ -25,8 +25,8 @@ v1 scope:
 - no production auto-trader logic inside core app.
 
 ## Current phase
-- Active phase: `v0.2.1`
-- Reference source of truth: `dev-checkpoint/v0.2.1.md`
+- Active phase: `v0.3.1`
+- Reference source of truth: `dev-checkpoint/v0.3.1.md`
 
 ## Canonical planning files
 1. `app/docs/scalable_db_schema_proposal.md`
@@ -35,6 +35,20 @@ v1 scope:
 4. `dev-checkpoint/v0.X.Y.md` (phase checkpoints)
 5. `app/docs/source_temporal_coverage.md`
 6. `app/docs/development_guide.md` (this file)
+7. `app/docs/app_structure_modularization_plan.md`
+
+## Pre-v0.3 structure gate
+The pre-`v0.3` structure gate is completed and documented in:
+- `app/docs/app_structure_modularization_plan.md`
+
+Core principle:
+- providers (`app/providers/*`) and event categories (`app/domain/events/categories/*`) must be independent axes.
+- NBA is a category/module implementation, not the app root structure.
+
+Gate status:
+- `v0.2.7` completed (structure boundaries + compatibility wrappers)
+- `v0.2.8` completed (pytest topology + regression validation)
+- `v0.2.9` completed (doc/checkpoint synchronization)
 
 ## Execution model
 1. Read active checkpoint file first.
@@ -159,7 +173,7 @@ Before closing any session:
 
 ## Fast reference commands (to keep workflow repeatable)
 - list checkpoints: `Get-ChildItem dev-checkpoint`
-- open active phase: `Get-Content -Raw dev-checkpoint/v0.2.1.md`
+- open active phase: `Get-Content -Raw dev-checkpoint/v0.3.1.md`
 - list node files: `rg --files app/data/nodes`
 - track schema mentions: `rg -n "activate:|table|column|phase" app/docs/scalable_db_schema_proposal.md`
 - track routes mentions: `rg -n "v0\.|/v1/|Required tables" app/docs/scalable_api_routes_proposal.md`

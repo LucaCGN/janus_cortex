@@ -6,10 +6,11 @@ This version keeps the full target model while forcing phased adoption:
 - validate nodes and methods first (`v0.1.*`),
 - then validate schema slices,
 - then expose only endpoints backed by validated tables.
+- before heavy `v0.3` migration coding, align app folder responsibilities per `app/docs/app_structure_modularization_plan.md` so schemas map cleanly to provider/category/module boundaries.
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.2.1`.
+- Current active phase: `v0.3.1`.
 - v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
 
 ## Schema implementation policy
@@ -22,10 +23,11 @@ This version keeps the full target model while forcing phased adoption:
 7. Temporal coverage (past/current/future) for source methods must be documented in `app/docs/source_temporal_coverage.md` before promoting related schema usage.
 8. For query-window-sensitive sources (e.g., Gamma events), persist window/filter metadata in `core.sync_runs.meta_json` to keep ingest behavior auditable.
 9. Historical odds collectors should preserve provenance in `market_data.outcome_price_ticks.source` (`clob_prices_history`, `snapshot_fallback`, `fallback_stream`) to keep direct and fallback samples distinguishable.
+10. Canonical mapping outputs from `app/domain/events/canonical/*` and `app/ingestion/mappings/canonical/*` (with compatibility wrappers to `app/data/pipelines/canonical/*`) are the mandatory pre-DB contract; table writes in `v0.3.*` must consume canonical ids (`canonical_event_id`, `canonical_market_id`, `canonical_outcome_id`) and provider refs without re-shaping source payloads.
 
 ## Phase summary
 - `v0.1.*`: Node and method validation before schema rollout.
-- `v0.2.*`: Canonical contracts and mapping logic.
+- `v0.2.*`: Canonical contracts, mapping logic, and pre-DB structure/testing/docs hardening gates (`v0.2.7`-`v0.2.9`) (completed).
 - `v0.3.*`: DB MVP schema and migration baseline.
 - `v0.4.*`: Pipeline ingestion to new schema.
 - `v0.5.*`: Core API serving validated schema.
@@ -33,6 +35,47 @@ This version keeps the full target model while forcing phased adoption:
 - `v0.7.*`: NBA module serving layer.
 - `v0.8.*`: Chroma event-doc blocks.
 - `v0.9.*`: Production hardening and v1 release gates.
+
+## v0.2 Canonical mapping outputs (implemented, pre-table activation)
+
+### Canonical object contracts
+- `CanonicalEvent`
+  - keys: `canonical_event_id`, `canonical_slug`, `title`, `event_kind`, `status`, `start_time`, `end_time`
+  - linkage: `source_refs[]`, `markets[]`
+  - metadata: `home_entity`, `away_entity`, `tags[]`, `information_profile_code`, `metadata_json`
+- `CanonicalMarket`
+  - keys: `canonical_market_id`, `canonical_event_id`, `question`, `market_kind`, `status`
+  - linkage: `source_refs[]`, `outcomes[]`
+- `CanonicalOutcome`
+  - keys: `canonical_outcome_id`, `label`, `token_id`
+  - prices: `implied_prob`, `last_price`
+  - linkage: `source_refs[]`
+- `CanonicalProviderRef`
+  - provenance: `provider_code`, `external_id`, `external_slug`, `external_url`, `fetched_at`, `raw_summary_json`
+
+### Mapping services and fixtures
+- Domain + ingestion wrappers (active structure):
+  - `app/domain/events/canonical/*`
+  - `app/ingestion/mappings/canonical/*`
+- Adapter layer:
+  - `app/data/pipelines/canonical/adapters/gamma_nba.py`
+  - `app/data/pipelines/canonical/adapters/nba_schedule.py`
+- Scoring and quality gates:
+  - `app/data/pipelines/canonical/information_profiles.py`
+  - `app/data/pipelines/canonical/quality_gates.py`
+- Orchestration:
+  - `app/data/pipelines/canonical/mapping_service.py`
+  - `app/data/pipelines/canonical/dev_run_mapping.py`
+- Fixture packs for deterministic integration tests:
+  - `app/data/pipelines/canonical/fixtures/gamma_nba_events_fixture.json`
+  - `app/data/pipelines/canonical/fixtures/gamma_nba_moneyline_fixture.json`
+  - `app/data/pipelines/canonical/fixtures/nba_schedule_fixture.json`
+
+### Canonical-to-table field intent (for `v0.3.*` migrations)
+- `CanonicalEvent` -> `catalog.events`, `catalog.event_external_refs`
+- `CanonicalMarket` -> `catalog.markets`, `catalog.market_external_refs`
+- `CanonicalOutcome` -> `catalog.outcomes`
+- outcome prices/provenance -> `market_data.outcome_price_ticks` (`source` from canonical metadata/provenance)
 
 ## Table inventory with full columns and activation phase
 
