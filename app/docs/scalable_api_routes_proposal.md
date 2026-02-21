@@ -167,10 +167,16 @@ v1 is reached when all route groups below are active and tested:
 - For time-based sync/read routes, tests must explicitly validate past/current/future behavior (or document source-imposed limits).
 - No route may be marked active if its dependencies are not complete in corresponding checkpoint file.
 
-## Current source constraints (2026-02-17)
-- DB migration baseline is now live through `v0.3.4` using `app/data/databases/migrate.py`; active schemas/tables currently cover `core` + `catalog` + `portfolio` + `market_data` MVP blocks required by upcoming `v0.5.x` and `v0.6.1` route implementations.
+## Current source constraints (2026-02-20)
+- DB migration baseline is now live through `v0.4.6` using `app/data/databases/migrate.py`; active schemas/tables cover `core`, `catalog`, `portfolio`, `market_data`, and `nba` tables required by the `v0.5.x` API foundation.
 - Repository/upsert primitives are now available in `app/data/databases/repositories/upsert_primitives.py` (`JanusUpsertRepository`) and should be reused by future FastAPI handlers to keep write semantics idempotent and append-only-safe.
 - Live seed-pack integration for URL-driven event ingestion is validated in `app/data/databases/seed_packs/polymarket_event_seed_pack.py` using three concrete Polymarket URLs (past NBA, upcoming NBA, long-horizon non-sports), providing a direct implementation reference for future `/v1/events/import-url` behavior.
+- `v0.4.1` event ingestion pipeline is active via `app/data/pipelines/daily/polymarket/sync_events.py` and `app/ingestion/pipelines/prediction_market_polymarket/sync_events.py`; this is the baseline for `/v1/sync/polymarket/events`.
+- `v0.4.2` market/outcome snapshot sync is active via `app/data/pipelines/daily/polymarket/sync_markets.py`; this is the baseline for `/v1/sync/polymarket/markets` and `/v1/markets/{market_id}/state/latest`.
+- `v0.4.3` portfolio mirror sync is active via `app/data/pipelines/daily/polymarket/sync_portfolio.py`; this is the baseline for `/v1/sync/polymarket/positions`, `/v1/sync/polymarket/orders`, and `/v1/sync/polymarket/trades`.
+- `v0.4.4` NBA metadata/live sync is active via `app/data/pipelines/daily/nba/sync_postgres.py`; this is the baseline for `/v1/sync/nba/*` and `/v1/nba/*` routes.
+- `v0.4.5` cross-domain mapping sync is active via `app/data/pipelines/daily/cross_domain/sync_mappings.py`; this is the baseline for `/v1/sync/nba/mappings` and event-quality eligibility views.
+- `v0.4.6` backfill/retry orchestration is active via `app/data/pipelines/daily/polymarket/backfill_retry.py`; this is the baseline for reprocessing and candle-building sync triggers.
 - Structure gate (`v0.2.7`-`v0.2.9`) is complete: provider-centric wrappers now exist under `app/providers/*`, canonical domain wrappers under `app/domain/events/canonical/*`, and ingestion wrappers under `app/ingestion/*`; upcoming route/service work in `v0.3+` should target these paths first.
 - Canonical mapping pre-route layer is now validated in `app/data/pipelines/canonical/*` with fixture-backed integration tests (`tests/app/data/pipelines/canonical/*_pytest.py`); route groups stay phase-gated, but future `/v1/events/import-url` and `/v1/sync/*` routes should consume this canonical contract directly.
 - Gamma events sync routes must use timezone-aware filters and split-window validation (past/future windows separately) due query-window sensitivity.

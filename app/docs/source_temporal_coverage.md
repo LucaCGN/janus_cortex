@@ -9,7 +9,7 @@ Track what each current endpoint/method can return for:
 This artifact is mandatory for `v0.1.*` node validation and must be updated when methods change.
 
 ## Validation date
-- 2026-02-17
+- 2026-02-20
 
 ## Coverage matrix
 
@@ -149,6 +149,76 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 - Practical note:
   - Interval-based queries are preferable for long-horizon events to avoid window-limit errors and still obtain rich recent granularity.
 
+### Polymarket live scoreboard-driven probes (`v0.4.1`)
+
+#### `app/data/databases/seed_packs/polymarket_event_seed_pack.py::build_today_nba_event_probes_from_scoreboard`
+- Source:
+  - NBA live scoreboard endpoint (`nba_api.live.nba.endpoints.scoreboard.ScoreBoard`)
+  - Gamma slug endpoint (`/events/slug/{slug}`) using deterministic slug derived from scoreboard tricode/date (`nba-<away>-<home>-<YYYY-MM-DD>`).
+- Observed behavior:
+  - Finished and live games from the current NBA slate resolved to valid Polymarket slugs (`HTTP 200` observed for all sampled games on `2026-02-20` UTC window).
+  - Event ingestion remained idempotent on `catalog.events` while allowing append-only tick growth.
+- Coverage status:
+  - Past (finished today): `AVAILABLE` via `history_mode=game_period`.
+  - Current live: `AVAILABLE` via `history_mode=rolling_recent` plus `fallback_stream` sampling.
+  - Future (scheduled today): `OPTIONAL/PARTIAL` when `include_upcoming=True`.
+- Limitations:
+  - Live NBA scoreboard does not natively provide historical-day listings; this probe set targets current scoreboard scope only.
+  - Live status transitions quickly (`2 -> 3`), so test selection can race during long runs.
+
+#### `app/data/databases/seed_packs/polymarket_event_seed_pack.py::_seed_single_event` (live stream fallback branch)
+- Sources:
+  - primary stream path: `collect_nba_fallback_stream_df` (`/markets` with `/events` fallback, `source=fallback_stream`)
+  - secondary fallback: repeated event-slug snapshots when primary stream polling returns zero rows.
+- Observed behavior (`2026-02-20` run evidence):
+  - Finished sample (`nba-hou-cha-2026-02-19`) produced direct history ticks (`clob_prices_history`).
+  - Live sample (`nba-phx-sas-2026-02-19`) persisted both direct history and stream ticks (`fallback_stream`), with stream rows inserted in DB during runtime sampling.
+- Coverage status:
+  - Past game retrieval: `AVAILABLE`.
+  - Live stream persistence: `AVAILABLE` (primary path or slug-snapshot fallback).
+  - Future scheduled association: `PARTIAL` (depends on pre-game market quote availability).
+- Limitations:
+  - Primary stream collector can still under-return in some windows; slug-snapshot fallback is used to maintain ingestion continuity.
+
+### NBA same-day validation (`v0.4.4`)
+
+#### `app/data/pipelines/daily/nba/sync_postgres.py::run_nba_metadata_sync`
+- Source:
+  - schedule feed (`fetch_season_schedule_df`)
+  - live scoreboard feed (`nba_api.live.nba.endpoints.scoreboard.ScoreBoard`)
+  - live boxscore + play-by-play methods for ongoing games
+- Observed behavior (`2026-02-20` run evidence):
+  - command run: `python -m app.data.pipelines.daily.nba.sync_postgres --season 2025-26 --schedule-window-days 2`
+  - summary: `ongoing_games=3`, `missing_today_detected=0`, `missing_today_inserted=0`.
+  - verification query for scoreboard IDs returned `db_games_for_scoreboard=10` with `missing_games_today=0`.
+- Coverage status:
+  - Past (finished today): `AVAILABLE`.
+  - Current live (ongoing): `AVAILABLE` (live snapshots and play-by-play rows persisted).
+  - Future (scheduled same season): `PARTIAL/AVAILABLE` through schedule feed, still subject to source limits noted above for true past-season retrieval.
+- Limitations:
+  - Same as base schedule limitation: endpoint is still current-season-scoped and not a full historical archive.
+
+### Polymarket same-day gap closure (`v0.4.2` + `v0.4.6`)
+
+#### `app/data/pipelines/daily/polymarket/sync_markets.py` and `app/data/pipelines/daily/polymarket/backfill_retry.py`
+- Source:
+  - today NBA slug builder from live scoreboard
+  - Gamma slug event payloads and CLOB history endpoints
+- Observed behavior (`2026-02-20` run evidence):
+  - initial verification after partial ingestion showed `scoreboard_games=10`, `db_catalog_events_for_scoreboard_slugs=6`, `missing_event_slugs_today=4`.
+  - running missing-only sync across full same-day caps:
+    - `python -m app.data.pipelines.daily.polymarket.sync_markets --probe-set today_nba --max-finished 20 --max-live 20 --max-upcoming 20 --include-upcoming --missing-only`
+  - follow-up verification: `db_catalog_events_for_scoreboard_slugs=10`, `missing_event_slugs_today=0`.
+  - backfill orchestration run:
+    - `python -m app.data.pipelines.daily.polymarket.backfill_retry --max-finished 2 --max-live 2 --max-upcoming 2 --include-upcoming --candle-timeframe 1m --candle-lookback-hours 48`
+    - summary: `missing_today_before=0`, `missing_today_after=0`, `candles_upserted=2384`.
+- Coverage status:
+  - Past (finished today): `AVAILABLE`.
+  - Current live: `AVAILABLE` with direct history + fallback stream rows.
+  - Future (upcoming today): `PARTIAL/AVAILABLE` when scoreboard provides scheduled games and Gamma slug exists.
+- Limitations:
+  - Temporal completeness depends on running with sufficiently high `max-finished/max-live/max-upcoming` caps when full same-day closure is required.
+
 ### Canonical Mapping Layer (v0.2)
 
 #### `app/data/pipelines/canonical/mapping_service.py::build_canonical_mapping_result`
@@ -179,7 +249,7 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 5. For Gamma events, use multiple narrower windows (past + future) instead of one broad range when validating temporal coverage.
 
 ## Required updates when this file changes
-- active checkpoint file (currently `dev-checkpoint/v0.4.1.md`)
+- active checkpoint file (currently `dev-checkpoint/v0.5.1.md`)
 - `app/docs/development_guide.md`
 - `app/docs/scalable_db_schema_proposal.md` (if schema implications change)
 - `app/docs/scalable_api_routes_proposal.md` (if route readiness changes)

@@ -10,7 +10,7 @@ This version keeps the full target model while forcing phased adoption:
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.4.1`.
+- Current active phase: `v0.5.1`.
 - v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
 
 ## Schema implementation policy
@@ -52,6 +52,23 @@ This version keeps the full target model while forcing phased adoption:
   - includes `ix_market_data_outcome_price_ticks_outcome_ts_desc` and `ix_market_data_orderbook_snapshots_outcome_captured_desc`
 - migration registry table: `core.schema_migrations` (managed by `app/data/databases/migrate.py`)
 
+## v0.4 migration inventory (implemented to date)
+- `0005_v0_4_2__catalog_market_state_snapshots.sql`
+  - activates: `catalog.market_state_snapshots`
+  - includes uniqueness on `(market_id, captured_at, sync_run_id)` and query indexes
+- `0006_v0_4_3__portfolio_order_events.sql`
+  - activates: `portfolio.order_events`
+  - includes uniqueness on `(order_id, event_time, event_type)` and timeline index
+- `0007_v0_4_4__nba_ingestion_tables.sql`
+  - activates: `nba.nba_teams`, `nba.nba_games`, `nba.nba_game_event_links`, `nba.nba_team_stats_snapshots`, `nba.nba_player_stats_snapshots`, `nba.nba_team_insights`, `nba.nba_live_game_snapshots`, `nba.nba_play_by_play`
+  - includes core game/date and link indexes
+- `0008_v0_4_5__catalog_event_information_scores.sql`
+  - activates: `catalog.event_information_scores`
+  - includes scored-at and trade-eligible indexes
+- `0009_v0_4_6__market_data_outcome_price_candles.sql`
+  - activates: `market_data.outcome_price_candles`
+  - includes `(outcome_id, timeframe, open_time DESC)` index
+
 ## v0.3.5 repository/upsert primitives (implemented)
 - Module: `app/data/databases/repositories/upsert_primitives.py`
 - Exposed entrypoint: `JanusUpsertRepository`
@@ -75,6 +92,90 @@ This version keeps the full target model while forcing phased adoption:
 - Validation:
   - `tests/app/data/databases/test_polymarket_event_seed_pack_live_pytest.py` (requires both `JANUS_RUN_DB_TESTS=1` and `JANUS_RUN_LIVE_TESTS=1`)
   - detailed evidence: `app/docs/polymarket_seed_pack_v0_3_6.md`
+
+## v0.4.1 Polymarket events ingestion pipeline (implemented)
+- Modules:
+  - `app/data/databases/seed_packs/polymarket_event_seed_pack.py`
+  - `app/data/pipelines/daily/polymarket/sync_events.py`
+  - `app/ingestion/pipelines/prediction_market_polymarket/sync_events.py`
+- Main capabilities:
+  - Dynamic today-NBA probe discovery from live scoreboard (`finished`, `live`, optional `upcoming`) with deterministic slug mapping.
+  - Idempotent event/market/outcome ingestion to active `catalog` graph tables.
+  - Append-only history ingestion using:
+    - direct CLOB history (`source=clob_prices_history`)
+    - snapshot fallback (`source=snapshot_fallback`)
+    - live stream fallback (`source=fallback_stream`) from sampled moneyline snapshots.
+  - Secondary stream fallback path for live games: repeated event-slug sampling persists `fallback_stream` ticks when primary stream poll returns zero rows.
+- Persisted tables used:
+  - `core.sync_runs`, `core.raw_payloads`
+  - `catalog.events`, `catalog.event_external_refs`, `catalog.markets`, `catalog.market_external_refs`, `catalog.outcomes`
+  - `market_data.outcome_price_ticks`
+- Validation:
+  - `tests/app/data/databases/test_polymarket_event_probe_builder_pytest.py`
+  - `tests/app/data/databases/test_polymarket_event_seed_pack_v0_4_live_pytest.py`
+  - `tests/app/ingestion/pipelines/prediction_market_polymarket/test_sync_events_wrapper_pytest.py`
+  - detailed evidence: `app/docs/polymarket_pipeline_v0_4_1.md`
+  - live run command evidence:
+    - `python -m app.data.pipelines.daily.polymarket.sync_events --probe-set today_nba --max-finished 1 --max-live 1`
+
+## v0.4.2 Polymarket markets/outcomes snapshot sync (implemented)
+- Modules:
+  - `app/data/pipelines/daily/polymarket/sync_markets.py`
+  - `app/ingestion/pipelines/prediction_market_polymarket/sync_markets.py`
+- Main capabilities:
+  - Reuses event seed logic for idempotent market/outcome refresh.
+  - Persists per-market capture points into `catalog.market_state_snapshots`.
+  - Supports `--missing-only` to target same-day slug gaps.
+- Validation:
+  - `tests/app/ingestion/pipelines/prediction_market_polymarket/test_sync_markets_wrapper_pytest.py`
+  - `tests/app/data/databases/test_polymarket_event_seed_pack_v0_4_live_pytest.py`
+
+## v0.4.3 Portfolio mirror sync (implemented)
+- Modules:
+  - `app/data/pipelines/daily/polymarket/sync_portfolio.py`
+  - `app/ingestion/pipelines/prediction_market_polymarket/sync_portfolio.py`
+- Main capabilities:
+  - Mirrors open/closed positions, orders, order events, and trades from Data API payloads.
+  - Uses deterministic resolution maps from `catalog` refs to bind portfolio rows to canonical market/outcome ids.
+- Validation:
+  - `tests/app/data/pipelines/daily/polymarket/test_sync_portfolio_pytest.py`
+  - `tests/app/ingestion/pipelines/prediction_market_polymarket/test_sync_portfolio_wrapper_pytest.py`
+
+## v0.4.4 NBA metadata/live ingestion (implemented)
+- Modules:
+  - `app/data/pipelines/daily/nba/sync_postgres.py`
+  - `app/ingestion/pipelines/sports_nba/sync_postgres.py`
+- Main capabilities:
+  - Upserts teams/games from schedule + live scoreboard.
+  - Detects same-day missing schedule games and inserts scoreboard-only games.
+  - Streams live snapshots and normalized play-by-play for ongoing games.
+- Validation:
+  - `tests/app/data/pipelines/daily/nba/test_sync_postgres_pytest.py`
+  - `tests/app/data/pipelines/daily/nba/test_sync_postgres_live_pytest.py`
+  - `tests/app/ingestion/pipelines/sports_nba/test_sync_postgres_wrapper_pytest.py`
+
+## v0.4.5 Cross-domain mappings and scoring (implemented)
+- Modules:
+  - `app/data/pipelines/daily/cross_domain/sync_mappings.py`
+  - `app/ingestion/pipelines/cross_domain/sync_mappings.py`
+- Main capabilities:
+  - Links NBA games to `catalog.events` via deterministic slug mapping.
+  - Writes `catalog.event_information_scores` for coverage/quality/latency eligibility audits.
+- Validation:
+  - `tests/app/data/pipelines/daily/cross_domain/test_sync_mappings_pytest.py`
+  - `tests/app/ingestion/pipelines/cross_domain/test_sync_mappings_wrapper_pytest.py`
+
+## v0.4.6 Backfill/retry + candle aggregation (implemented)
+- Modules:
+  - `app/data/pipelines/daily/polymarket/backfill_retry.py`
+  - `app/ingestion/pipelines/prediction_market_polymarket/backfill_retry.py`
+- Main capabilities:
+  - Re-runs missing/ongoing today probes and optional retry probes from recent failed sync runs.
+  - Aggregates `market_data.outcome_price_ticks` into `market_data.outcome_price_candles`.
+- Validation:
+  - `tests/app/data/pipelines/daily/polymarket/test_backfill_retry_pytest.py`
+  - `tests/app/data/pipelines/daily/polymarket/test_backfill_retry_live_pytest.py`
+  - `tests/app/ingestion/pipelines/prediction_market_polymarket/test_backfill_retry_wrapper_pytest.py`
 
 ## v0.2 Canonical mapping outputs (implemented, pre-table activation)
 
@@ -476,7 +577,7 @@ This version keeps the full target model while forcing phased adoption:
 
 ### NBA MODULE (EXTENSION)
 
-#### `nba.nba_teams` (activate: `v0.3.6`)
+#### `nba.nba_teams` (activate: `v0.4.4`)
 - `team_id` INTEGER PK
 - `team_slug` TEXT NOT NULL
 - `team_name` TEXT NOT NULL
@@ -487,7 +588,7 @@ This version keeps the full target model while forcing phased adoption:
 - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
 - `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
 
-#### `nba.nba_games` (activate: `v0.3.6`)
+#### `nba.nba_games` (activate: `v0.4.4`)
 - `game_id` TEXT PK
 - `season` TEXT
 - `game_date` DATE
@@ -512,7 +613,7 @@ This version keeps the full target model while forcing phased adoption:
 - `linked_by` TEXT
 - `linked_at` TIMESTAMPTZ NOT NULL DEFAULT now()
 
-#### `nba.nba_team_stats_snapshots` (activate: `v0.3.6`)
+#### `nba.nba_team_stats_snapshots` (activate: `v0.4.4`)
 - `team_id` INTEGER FK -> `nba.nba_teams.team_id`
 - `season` TEXT NOT NULL
 - `captured_at` TIMESTAMPTZ NOT NULL
@@ -521,7 +622,7 @@ This version keeps the full target model while forcing phased adoption:
 - `source` TEXT
 - PK (`team_id`, `season`, `captured_at`, `metric_set`)
 
-#### `nba.nba_player_stats_snapshots` (activate: `v0.3.6`)
+#### `nba.nba_player_stats_snapshots` (activate: `v0.4.4`)
 - `player_id` INTEGER NOT NULL
 - `player_name` TEXT
 - `team_id` INTEGER FK -> `nba.nba_teams.team_id`
@@ -532,7 +633,7 @@ This version keeps the full target model while forcing phased adoption:
 - `source` TEXT
 - PK (`player_id`, `season`, `captured_at`, `metric_set`)
 
-#### `nba.nba_team_insights` (activate: `v0.3.6`)
+#### `nba.nba_team_insights` (activate: `v0.4.4`)
 - `insight_id` UUID PK
 - `team_id` INTEGER FK -> `nba.nba_teams.team_id`
 - `insight_type` TEXT
@@ -649,6 +750,28 @@ This version keeps the full target model while forcing phased adoption:
 2. `market_data.orderbook_snapshots`
 3. `market_data.orderbook_levels`
 
+### `v0.4.2` (`0005_v0_4_2__catalog_market_state_snapshots.sql`)
+1. `catalog.market_state_snapshots`
+
+### `v0.4.3` (`0006_v0_4_3__portfolio_order_events.sql`)
+1. `portfolio.order_events`
+
+### `v0.4.4` (`0007_v0_4_4__nba_ingestion_tables.sql`)
+1. `nba.nba_teams`
+2. `nba.nba_games`
+3. `nba.nba_game_event_links`
+4. `nba.nba_team_stats_snapshots`
+5. `nba.nba_player_stats_snapshots`
+6. `nba.nba_team_insights`
+7. `nba.nba_live_game_snapshots`
+8. `nba.nba_play_by_play`
+
+### `v0.4.5` (`0008_v0_4_5__catalog_event_information_scores.sql`)
+1. `catalog.event_information_scores`
+
+### `v0.4.6` (`0009_v0_4_6__market_data_outcome_price_candles.sql`)
+1. `market_data.outcome_price_candles`
+
 All other tables remain deferred until their checkpoint phase is completed.
 
 ## Required indices and uniqueness (apply by phase)
@@ -664,9 +787,18 @@ All other tables remain deferred until their checkpoint phase is completed.
 - `portfolio.orders(account_id, client_order_id)` unique where `client_order_id` is not null (`v0.3.3`)
 - `portfolio.orders(account_id, status, placed_at DESC)` index (`v0.3.3`)
 - `portfolio.trades(account_id, trade_time DESC)` index (`v0.3.3`)
-- `nba.nba_games(game_date, game_status)` index (`v0.3.6`)
+- `catalog.market_state_snapshots(market_id, captured_at, sync_run_id)` unique (`v0.4.2`)
+- `catalog.market_state_snapshots(market_id, captured_at DESC)` index (`v0.4.2`)
+- `portfolio.order_events(order_id, event_time, event_type)` unique (`v0.4.3`)
+- `portfolio.order_events(order_id, event_time DESC)` index (`v0.4.3`)
+- `nba.nba_games(game_date, game_status)` index (`v0.4.4`)
 - `nba.nba_game_event_links(game_id)` index (`v0.4.4`)
 - `nba.nba_game_event_links(event_id)` index (`v0.4.4`)
+- `nba.nba_live_game_snapshots(game_id, captured_at DESC)` index (`v0.4.4`)
+- `nba.nba_play_by_play(game_id, period, event_index)` index (`v0.4.4`)
+- `catalog.event_information_scores(scored_at DESC)` index (`v0.4.5`)
+- `catalog.event_information_scores(is_trade_eligible, scored_at DESC)` index (`v0.4.5`)
+- `market_data.outcome_price_candles(outcome_id, timeframe, open_time DESC)` index (`v0.4.6`)
 
 ## Table-phase-columns relation checklist
 This document is authoritative for:
