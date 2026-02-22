@@ -239,6 +239,34 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
   - Canonical layer is a transform/enrichment stage and cannot create missing temporal coverage not present in upstream node sources.
   - Live temporal completeness remains constrained by upstream provider endpoints listed above.
 
+### FastAPI endpoint validation coverage (`v0.5.6`)
+
+#### `POST /v1/sync/nba/schedule` + `GET /v1/nba/games`
+- Validation date: `2026-02-21` (UTC timestamp from run: `2026-02-21T03:49:37Z`).
+- Observed behavior:
+  - scoreboard sample size: `9` games.
+  - status distribution: `{2: 2, 3: 7}`.
+  - date-level endpoint check:
+    - `/v1/nba/games?game_date=2026-02-20` returned `9` rows, matching scoreboard count.
+  - live endpoint check:
+    - scoreboard live games (`status=2`): `2`
+    - `/v1/nba/games?status=2` returned `3` rows (includes additional in-progress record from ingestion window).
+- Coverage status:
+  - Past/today completed games via endpoint: `AVAILABLE`.
+  - Current live games via endpoint: `AVAILABLE`.
+  - Future scheduled games via endpoint: `AVAILABLE` when already synced into `nba.nba_games`.
+
+#### `POST /v1/sync/polymarket/markets` + `GET /v1/events`
+- Validation date: `2026-02-21`.
+- Observed behavior:
+  - scoreboard-derived slug set size: `9`.
+  - after sync call with high caps (`max_finished/max_live/max_upcoming=20`), `/v1/events?canonical_slug=<slug>` resolved all `9` slugs.
+  - missing scoreboard slugs in events endpoint after sync: `0`.
+- Coverage status:
+  - Past/today event slugs via endpoint: `AVAILABLE`.
+  - Current live event slugs via endpoint: `AVAILABLE`.
+  - Future upcoming same-day slugs: `PARTIAL/AVAILABLE`, provider exposure dependent.
+
 ## Practical implications for v0.1 planning
 1. NBA past season goal is not met with current schedule method; an alternate historical endpoint/source is required.
 2. Current season past and upcoming games are available from schedule feed.
@@ -249,7 +277,7 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 5. For Gamma events, use multiple narrower windows (past + future) instead of one broad range when validating temporal coverage.
 
 ## Required updates when this file changes
-- active checkpoint file (currently `dev-checkpoint/v0.5.1.md`)
+- active checkpoint file (currently `dev-checkpoint/v0.6.1.md`)
 - `app/docs/development_guide.md`
 - `app/docs/scalable_db_schema_proposal.md` (if schema implications change)
 - `app/docs/scalable_api_routes_proposal.md` (if route readiness changes)

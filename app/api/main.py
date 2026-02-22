@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastapi import FastAPI
+
+from app.api.errors import RequestContextMiddleware, install_exception_handlers
+from app.api.routers import catalog_router, nba_read_router, sync_router, system_registry_router
+
+
+logger = logging.getLogger(__name__)
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(
+        title="Janus Cortex API",
+        version="0.5.6",
+        summary="FastAPI service layer for Janus Cortex data platform",
+    )
+
+    app.add_middleware(RequestContextMiddleware)
+    install_exception_handlers(app)
+
+    app.include_router(system_registry_router)
+    app.include_router(catalog_router)
+    app.include_router(sync_router)
+    app.include_router(nba_read_router)
+
+    @app.get("/")
+    def root() -> dict[str, Any]:
+        return {
+            "service": "janus-cortex-api",
+            "version": "0.5.6",
+            "docs": "/docs",
+        }
+
+    logger.info("Janus Cortex API initialized")
+    return app
+
+
+app = create_app()

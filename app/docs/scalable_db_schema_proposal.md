@@ -10,7 +10,7 @@ This version keeps the full target model while forcing phased adoption:
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.5.1`.
+- Current active phase: `v0.6.1`.
 - v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
 
 ## Schema implementation policy
@@ -68,6 +68,11 @@ This version keeps the full target model while forcing phased adoption:
 - `0009_v0_4_6__market_data_outcome_price_candles.sql`
   - activates: `market_data.outcome_price_candles`
   - includes `(outcome_id, timeframe, open_time DESC)` index
+
+## v0.5 migration inventory (implemented to date)
+- `0010_v0_5_1__ops_core_tables.sql`
+  - activates: `ops.job_definitions`, `ops.job_runs`, `ops.system_heartbeats`
+  - includes indexes for job-run timeline and status query paths
 
 ## v0.3.5 repository/upsert primitives (implemented)
 - Module: `app/data/databases/repositories/upsert_primitives.py`
@@ -176,6 +181,24 @@ This version keeps the full target model while forcing phased adoption:
   - `tests/app/data/pipelines/daily/polymarket/test_backfill_retry_pytest.py`
   - `tests/app/data/pipelines/daily/polymarket/test_backfill_retry_live_pytest.py`
   - `tests/app/ingestion/pipelines/prediction_market_polymarket/test_backfill_retry_wrapper_pytest.py`
+
+## v0.5 FastAPI core layer (implemented)
+- Modules:
+  - `app/api/main.py`, `app/api/models.py`, `app/api/errors.py`, `app/api/jobs.py`
+  - routers under `app/api/routers/*`
+- Main capabilities:
+  - system/registry endpoints over `core` + `ops` tables
+  - catalog graph read/write endpoints over `catalog` tables
+  - sync trigger endpoints mapped to validated v0.4 pipelines
+  - standardized request-id and error envelope behavior
+  - OpenAPI snapshot lock at `app/docs/openapi_v0_5_snapshot.json`
+- Validation:
+  - `tests/app/api/test_system_registry_routes_pytest.py`
+  - `tests/app/api/test_catalog_routes_pytest.py`
+  - `tests/app/api/test_sync_routes_pytest.py`
+  - `tests/app/api/test_error_model_pytest.py`
+  - `tests/app/api/test_openapi_lock_pytest.py`
+  - `tests/app/api/test_live_today_games_endpoints_pytest.py`
 
 ## v0.2 Canonical mapping outputs (implemented, pre-table activation)
 
@@ -772,6 +795,11 @@ This version keeps the full target model while forcing phased adoption:
 ### `v0.4.6` (`0009_v0_4_6__market_data_outcome_price_candles.sql`)
 1. `market_data.outcome_price_candles`
 
+### `v0.5.1` (`0010_v0_5_1__ops_core_tables.sql`)
+1. `ops.job_definitions`
+2. `ops.job_runs`
+3. `ops.system_heartbeats`
+
 All other tables remain deferred until their checkpoint phase is completed.
 
 ## Required indices and uniqueness (apply by phase)
@@ -799,6 +827,9 @@ All other tables remain deferred until their checkpoint phase is completed.
 - `catalog.event_information_scores(scored_at DESC)` index (`v0.4.5`)
 - `catalog.event_information_scores(is_trade_eligible, scored_at DESC)` index (`v0.4.5`)
 - `market_data.outcome_price_candles(outcome_id, timeframe, open_time DESC)` index (`v0.4.6`)
+- `ops.job_definitions(job_code)` unique (`v0.5.1`)
+- `ops.job_runs(job_id, started_at DESC)` index (`v0.5.1`)
+- `ops.job_runs(status, started_at DESC)` index (`v0.5.1`)
 
 ## Table-phase-columns relation checklist
 This document is authoritative for:

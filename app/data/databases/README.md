@@ -38,6 +38,7 @@ Current implemented migrations:
 - `0007_v0_4_4__nba_ingestion_tables.sql`
 - `0008_v0_4_5__catalog_event_information_scores.sql`
 - `0009_v0_4_6__market_data_outcome_price_candles.sql`
+- `0010_v0_5_1__ops_core_tables.sql`
 
 ## Tests
 - run migration integration tests against real Postgres:
@@ -72,6 +73,12 @@ Current implemented migrations:
   - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/pipelines/daily/polymarket/test_sync_portfolio_pytest.py tests/app/data/pipelines/daily/nba/test_sync_postgres_pytest.py tests/app/data/pipelines/daily/cross_domain/test_sync_mappings_pytest.py tests/app/data/pipelines/daily/polymarket/test_backfill_retry_pytest.py`
 - run `v0.4` live pipeline integration tests:
   - `$env:JANUS_RUN_DB_TESTS='1'; $env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/data/pipelines/daily/nba/test_sync_postgres_live_pytest.py tests/app/data/pipelines/daily/polymarket/test_backfill_retry_live_pytest.py`
+- run API + DB validations (`v0.5`):
+  - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/databases/test_postgres_migrations_pytest.py tests/app/data/databases/test_upsert_primitives_pytest.py tests/app/api`
+- run live endpoint validations (`v0.5`):
+  - `$env:JANUS_RUN_DB_TESTS='1'; $env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/api/test_live_today_games_endpoints_pytest.py`
+- run FastAPI service for manual checks:
+  - `uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload`
 
 Notes:
 - Tests marked `postgres_live` are skipped by default unless `JANUS_RUN_DB_TESTS=1`.

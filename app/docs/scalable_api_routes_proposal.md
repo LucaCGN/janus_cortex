@@ -57,6 +57,12 @@ A route can only be implemented when all required tables are active in its phase
 | POST | `/v1/sync/nba/players` | `core.sync_runs`, `nba.nba_player_stats_snapshots` |
 | POST | `/v1/sync/nba/insights` | `core.sync_runs`, `nba.nba_team_insights` |
 | POST | `/v1/sync/nba/mappings` | `core.sync_runs`, `nba.nba_game_event_links` |
+| GET | `/v1/sync/jobs/runs` | `ops.job_runs`, `ops.job_definitions`, `core.sync_runs` |
+
+### `v0.5.6` - Validation bridge routes (early activation)
+| Method | Route | Required tables |
+|---|---|---|
+| GET | `/v1/nba/games` | `nba.nba_games` |
 
 ### `v0.6.1` - Market data retrieval routes
 | Method | Route | Required tables |
@@ -167,7 +173,7 @@ v1 is reached when all route groups below are active and tested:
 - For time-based sync/read routes, tests must explicitly validate past/current/future behavior (or document source-imposed limits).
 - No route may be marked active if its dependencies are not complete in corresponding checkpoint file.
 
-## Current source constraints (2026-02-20)
+## Current source constraints (2026-02-21)
 - DB migration baseline is now live through `v0.4.6` using `app/data/databases/migrate.py`; active schemas/tables cover `core`, `catalog`, `portfolio`, `market_data`, and `nba` tables required by the `v0.5.x` API foundation.
 - Repository/upsert primitives are now available in `app/data/databases/repositories/upsert_primitives.py` (`JanusUpsertRepository`) and should be reused by future FastAPI handlers to keep write semantics idempotent and append-only-safe.
 - Live seed-pack integration for URL-driven event ingestion is validated in `app/data/databases/seed_packs/polymarket_event_seed_pack.py` using three concrete Polymarket URLs (past NBA, upcoming NBA, long-horizon non-sports), providing a direct implementation reference for future `/v1/events/import-url` behavior.
@@ -186,3 +192,12 @@ v1 is reached when all route groups below are active and tested:
 - Fallback stream-to-history collection is validated via `app/data/nodes/polymarket/gamma/nba/fallback_stream_history_collector.py`, emitting append-only samples (`source=fallback_stream`) for windows where direct history under-returns.
 - NBA play-by-play ingestion contract is validated in `app/data/nodes/nba/live/play_by_play.py` with deterministic normalization (`event_index`, score deltas) and idempotent sqlite upsert helper for pre-schema persistence checks.
 - Polymarket orderbook polling contract is validated in `app/data/nodes/polymarket/blockchain/stream_orderbook.py` (`OrderbookStreamConfig` + `stream_orderbook`) and is ready for future sync route wiring.
+- `v0.5.*` FastAPI core routes are now implemented in `app/api/*` and validated with:
+  - DB tests: `tests/app/api/test_system_registry_routes_pytest.py`, `tests/app/api/test_catalog_routes_pytest.py`, `tests/app/api/test_sync_routes_pytest.py`, `tests/app/api/test_error_model_pytest.py`
+  - OpenAPI lock test: `tests/app/api/test_openapi_lock_pytest.py`
+  - live endpoint validation: `tests/app/api/test_live_today_games_endpoints_pytest.py`
+- Endpoint-level validation for current NBA slate is now possible via `GET /v1/nba/games` (early activation for validation, ahead of full `v0.7.1` NBA serving block).
+- latest live API validation run (`2026-02-21` UTC) confirmed:
+  - `scoreboard_games_total=9`, `scoreboard_status_counts={2:2,3:7}`
+  - `/v1/nba/games` covered same-day slate and live status queries
+  - `/v1/sync/polymarket/markets` + `/v1/events` yielded `scoreboard_slug_missing_in_events=0`.

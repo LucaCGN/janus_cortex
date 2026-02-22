@@ -3,7 +3,7 @@
 Personal prediction-market data framework focused on production-grade data structures and service layers before strategy automation.
 
 ## Current Status
-- Active checkpoint: `v0.5.1` (FastAPI skeleton and dependency wiring)
+- Active checkpoint: `v0.6.1` (Market data query endpoints)
 - Checkpoint ledger source of truth: `dev-checkpoint/README.md`
 - Current scope: schema + ingestion + API readiness, not autonomous strategy execution.
 
@@ -29,9 +29,10 @@ The project now uses a provider/category/module split:
 - `v0.2.7` - `v0.2.9`: app structure refactor gate, pytest topology hardening, docs synchronization
 - `v0.3.1` - `v0.3.6`: database MVP, migrations, upsert primitives, seed-pack integration
 - `v0.4.1` - `v0.4.6`: ingestion pipelines to schema (`sync_events`, `sync_markets`, `sync_portfolio`, `sync_postgres`, `sync_mappings`, `backfill_retry`)
+- `v0.5.1` - `v0.5.6`: FastAPI core layer (`/v1` health/registry, catalog graph routes, sync triggers, standardized error model, OpenAPI lock)
 
 ### In progress
-- `v0.5.1`: FastAPI skeleton and dependency wiring
+- `v0.6.1`: Market data query endpoints
 
 ### Planned lanes
 1. `v0.5.*` FastAPI core layer
@@ -69,6 +70,9 @@ Common commands:
 - `python -m app.data.pipelines.daily.nba.sync_postgres --season 2025-26 --schedule-window-days 2`
 - `python -m app.data.pipelines.daily.cross_domain.sync_mappings --lookback-days 3 --lookahead-days 2`
 - `python -m app.data.pipelines.daily.polymarket.backfill_retry --max-finished 2 --max-live 2 --include-upcoming --candle-timeframe 1m --candle-lookback-hours 48`
+- `uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload`
+- `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/api`
+- `$env:JANUS_RUN_DB_TESTS='1'; $env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/api/test_live_today_games_endpoints_pytest.py`
 
 ## Notes
 - `dev-checkpoint/*` is a session execution ledger and may be gitignored depending on local policy.
