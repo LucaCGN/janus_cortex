@@ -384,6 +384,16 @@ def run_portfolio_mirror_sync(
                 payload=payload.get("trades", []),
             )
             maps = _load_resolution_maps(connection)
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT order_id
+                    FROM portfolio.orders
+                    WHERE account_id = %s;
+                    """,
+                    (account_id,),
+                )
+                known_order_ids = {str(row[0]) for row in cursor.fetchall()}
 
             for raw in payload.get("open_positions", []):
                 rows_read += 1
@@ -470,6 +480,7 @@ def run_portfolio_mirror_sync(
                     size=_safe_float(raw.get("size")),
                     metadata_json=raw,
                 )
+                known_order_ids.add(order_id)
                 orders_written += 1
                 rows_written += 1
 
@@ -496,10 +507,16 @@ def run_portfolio_mirror_sync(
                 external_trade_id = _first_present(raw, ["id", "tradeID", "trade_id"])
                 trade_id = _uuid_for("trade", external_trade_id or str(uuid.uuid4()))
                 trade_time = _safe_dt(raw.get("timestamp") or raw.get("createdAt"), default=now)
+                order_external_id = _first_present(raw, ["orderID", "orderId", "order_id"])
+                resolved_order_id = None
+                if order_external_id:
+                    candidate_order_id = _uuid_for("order", order_external_id)
+                    if candidate_order_id in known_order_ids:
+                        resolved_order_id = candidate_order_id
                 repo.upsert_trade(
                     trade_id=trade_id,
                     account_id=account_id,
-                    order_id=_uuid_for("order", _first_present(raw, ["orderID", "orderId", "order_id"]) or "none"),
+                    order_id=resolved_order_id,
                     market_id=market_id,
                     outcome_id=outcome_id,
                     external_trade_id=external_trade_id,

@@ -10,7 +10,7 @@ This version keeps the full target model while forcing phased adoption:
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.6.1`.
+- Current active phase: `v0.8.1`.
 - v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
 
 ## Schema implementation policy
@@ -73,6 +73,58 @@ This version keeps the full target model while forcing phased adoption:
 - `0010_v0_5_1__ops_core_tables.sql`
   - activates: `ops.job_definitions`, `ops.job_runs`, `ops.system_heartbeats`
   - includes indexes for job-run timeline and status query paths
+
+## v0.6 migration inventory (implemented to date)
+- `0011_v0_6_2__portfolio_valuation_snapshots.sql`
+  - activates: `portfolio.valuation_snapshots`
+  - includes index `ix_portfolio_valuation_snapshots_account_captured_desc`
+
+## v0.7 migration inventory (implemented to date)
+- `0012_v0_7_4__nba_context_cache.sql`
+  - activates: `nba.nba_context_cache`
+  - includes index `ix_nba_context_cache_game_type_generated_desc`
+- `0013_v0_7_6__nba_query_perf_indexes.sql`
+  - adds:
+    - `ix_nba_games_status_date_start_desc`
+    - `ix_nba_play_by_play_game_event_desc`
+    - `ix_nba_team_stats_team_season_metric_captured_desc`
+    - `ix_nba_team_insights_team_captured_desc`
+    - `ix_nba_player_stats_team_season_captured_desc`
+
+## v0.7 service-layer status (implemented to date)
+- `v0.7.1` introduced no new tables/migrations.
+- `v0.7.2` introduced no new tables/migrations.
+- `v0.7.3` introduced no new tables/migrations.
+- `v0.7.4` activated `nba.nba_context_cache` via `0012_v0_7_4__nba_context_cache.sql`.
+- `v0.7.5` introduced no new tables/migrations.
+- `v0.7.6` added read-path indexes via `0013_v0_7_6__nba_query_perf_indexes.sql`.
+- Activation scope was route/service validation on top of existing NBA schema:
+  - `nba.nba_games`
+  - `nba.nba_game_event_links`
+  - `nba.nba_teams`
+  - `nba.nba_team_stats_snapshots`
+  - `nba.nba_team_insights`
+  - `nba.nba_player_stats_snapshots`
+  - `nba.nba_live_game_snapshots`
+  - `nba.nba_play_by_play`
+- Additional `v0.7.2` closure-validation scope on existing portfolio/catalog tables:
+  - `portfolio.trading_accounts`
+  - `portfolio.position_snapshots`
+  - `portfolio.valuation_snapshots`
+  - `portfolio.orders`
+  - `portfolio.trades`
+  - `catalog.events`
+  - `catalog.markets`
+  - `catalog.outcomes`
+- Endpoint validation coverage added in:
+  - `tests/app/api/test_nba_read_routes_pytest.py`
+  - `tests/app/api/test_sync_wallet_resolution_pytest.py`
+  - `tests/app/data/pipelines/daily/nba/test_sync_live_game_pytest.py`
+  - `tests/app/api/test_nba_live_context_routes_pytest.py`
+  - `tests/app/api/test_nba_selected_game_validation_live_pytest.py`
+  - `tests/app/data/databases/test_nba_query_perf_indexes_pytest.py`
+  - `tests/app/data/pipelines/daily/polymarket/test_consolidate_closed_positions_pytest.py`
+  - `tests/app/data/pipelines/daily/polymarket/test_sync_portfolio_pytest.py`
 
 ## v0.3.5 repository/upsert primitives (implemented)
 - Module: `app/data/databases/repositories/upsert_primitives.py`
@@ -191,7 +243,7 @@ This version keeps the full target model while forcing phased adoption:
   - catalog graph read/write endpoints over `catalog` tables
   - sync trigger endpoints mapped to validated v0.4 pipelines
   - standardized request-id and error envelope behavior
-  - OpenAPI snapshot lock at `app/docs/openapi_v0_5_snapshot.json`
+  - OpenAPI snapshot lock at `app/docs/openapi_v0_6_snapshot.json`
 - Validation:
   - `tests/app/api/test_system_registry_routes_pytest.py`
   - `tests/app/api/test_catalog_routes_pytest.py`
@@ -535,6 +587,7 @@ This version keeps the full target model while forcing phased adoption:
 - `positions_value_usd` NUMERIC(18,6)
 - `realized_pnl_usd` NUMERIC(18,6)
 - `unrealized_pnl_usd` NUMERIC(18,6)
+- `raw_json` JSONB
 - PK (`account_id`, `captured_at`)
 
 ### STRATEGY CONTROL PLANE
@@ -690,7 +743,7 @@ This version keeps the full target model while forcing phased adoption:
 - `payload_json` JSONB
 - PK (`game_id`, `event_index`)
 
-#### `nba.nba_context_cache` (activate: `v0.7.4`)
+#### `nba.nba_context_cache` (activate: `v0.7.4`, migration: `0012_v0_7_4__nba_context_cache.sql`)
 - `game_id` TEXT FK -> `nba.nba_games.game_id`
 - `context_type` TEXT NOT NULL
 - `generated_at` TIMESTAMPTZ NOT NULL
@@ -800,6 +853,9 @@ This version keeps the full target model while forcing phased adoption:
 2. `ops.job_runs`
 3. `ops.system_heartbeats`
 
+### `v0.6.2` (`0011_v0_6_2__portfolio_valuation_snapshots.sql`)
+1. `portfolio.valuation_snapshots`
+
 All other tables remain deferred until their checkpoint phase is completed.
 
 ## Required indices and uniqueness (apply by phase)
@@ -830,6 +886,7 @@ All other tables remain deferred until their checkpoint phase is completed.
 - `ops.job_definitions(job_code)` unique (`v0.5.1`)
 - `ops.job_runs(job_id, started_at DESC)` index (`v0.5.1`)
 - `ops.job_runs(status, started_at DESC)` index (`v0.5.1`)
+- `portfolio.valuation_snapshots(account_id, captured_at DESC)` index (`v0.6.2`)
 
 ## Table-phase-columns relation checklist
 This document is authoritative for:

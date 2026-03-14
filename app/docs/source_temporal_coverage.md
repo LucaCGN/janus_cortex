@@ -9,7 +9,7 @@ Track what each current endpoint/method can return for:
 This artifact is mandatory for `v0.1.*` node validation and must be updated when methods change.
 
 ## Validation date
-- 2026-02-20
+- 2026-03-14 (latest refresh)
 
 ## Coverage matrix
 
@@ -267,6 +267,231 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
   - Current live event slugs via endpoint: `AVAILABLE`.
   - Future upcoming same-day slugs: `PARTIAL/AVAILABLE`, provider exposure dependent.
 
+### FastAPI portfolio and market-data service validation (`v0.6.1` - `v0.6.6`)
+
+#### Date-aware live validation run
+- Validation date: `2026-02-22` (UTC timestamp from run: `2026-02-22T03:01:31Z`).
+- Observed scoreboard behavior from live API:
+  - `scoreboard_games_total=6`
+  - `scoreboard_status_counts={2:4,3:2}`
+  - dominant slate date: `2026-02-21`
+  - `/v1/nba/games?game_date=2026-02-21` returned `6`
+  - `/v1/nba/games?status=2` returned `4`
+  - `scoreboard_slug_missing_in_events=0` after `/v1/sync/polymarket/markets`
+
+#### Market-data route coverage
+- `/v1/events/{event_id}/odds/latest` returned deep outcome coverage for same-day NBA events (`event_odds_count=90` in probe run).
+- `/v1/outcomes/{outcome_id}/prices/ticks` returned historical points for live outcomes (`outcome_ticks_count=150` in probe run).
+- `/v1/sync/polymarket/orderbook` validated with persisted write path:
+  - status `success`
+  - `rows_read=30`, `rows_written=6` (sample run)
+  - `/v1/outcomes/{outcome_id}/orderbook/history` then returned `count=1`.
+- `/v1/sync/polymarket/prices` validated with persisted write path:
+  - status `success`
+  - `rows_read=128`, `rows_written=128` (sample run).
+
+#### Portfolio route coverage
+- `/v1/portfolio/accounts` and `/v1/portfolio/summary` operational with `portfolio.valuation_snapshots` active (`v0.6.2` migration).
+- `/v1/portfolio/orders` `POST`/`DELETE` validated in dry-run mode:
+  - manual place response `201`
+  - manual cancel response `200`
+  - lifecycle events persisted in `portfolio.order_events`.
+- Risk/rate guards (`v0.6.5`) validated via endpoint tests:
+  - oversize order request rejected (`422`)
+  - repeated actions for same account over configured limit rejected (`429`).
+
+#### DB state snapshot after v0.6 live validation
+- `core.sync_runs=5`, `core.raw_payloads=17`
+- `catalog.events=6`, `catalog.markets=271`, `catalog.outcomes=542`, `catalog.market_state_snapshots=542`
+- `market_data.outcome_price_ticks=1566`, `market_data.orderbook_snapshots=1`, `market_data.orderbook_levels=6`
+- `portfolio.trading_accounts=1`, `portfolio.orders=1`, `portfolio.order_events=2`
+- `nba.nba_games=40`, `nba.nba_live_game_snapshots=8`, `nba.nba_play_by_play=1555`
+
+#### Limitations (current)
+- `portfolio.valuation_snapshots` is active but not yet fed by dedicated ingestion; summaries fall back to latest position snapshots when valuation rows are absent.
+- `sync/polymarket/positions|orders|trades` use wallet-dependent Data API sync and require wallet availability in payload or environment.
+
+### NBA module serving validation (`v0.7.1`)
+
+#### `GET /v1/nba/*` read-route coverage (past/live/upcoming + context joins)
+- Validation date: `2026-02-23` (UTC run window).
+- Observed behavior from live validation flow:
+  - scoreboard sample:
+    - `scoreboard_games_total=11`
+    - `scoreboard_status_counts={2:3,3:4,1:4}`
+    - dominant slate date: `2026-02-22`
+  - endpoint coverage:
+    - `/v1/nba/games?finished_only=true` -> `29`
+    - `/v1/nba/games?live_only=true` -> `3`
+    - `/v1/nba/games?upcoming_only=true` -> `34`
+    - `/v1/nba/games?game_date=2026-02-22` -> `11`
+  - BOS/LAL event route linkage:
+    - canonical slug `nba-bos-lal-2026-02-22` resolved in `/v1/events`
+    - `/v1/events/{event_id}/odds/latest` returned `94` rows
+    - selected moneyline market: `Celtics vs. Lakers: 1H Moneyline`
+- Coverage status:
+  - Past same-day games: `AVAILABLE`.
+  - Current live games: `AVAILABLE`.
+  - Upcoming same-day games: `AVAILABLE`.
+  - Game-event link joins (`/v1/nba/games/{game_id}/event-links`): `AVAILABLE`.
+  - Team/player/stat read routes seeded+validated in `tests/app/api/test_nba_read_routes_pytest.py`: `AVAILABLE`.
+- Limitations:
+  - context-pre/context-live endpoints remain phase-gated to `v0.7.4` and are not part of `v0.7.1`.
+
+#### Live place/cancel and leave-open validation (`/v1/portfolio/orders`) on BOS/LAL request
+- Validation date: `2026-02-23`.
+- Event: `https://polymarket.com/sports/nba/nba-bos-lal-2026-02-22`.
+- Observed behavior:
+  - first attempt with `size=2` failed at CLOB with minimum-size constraint (`minimum: 5`).
+  - adjusted notional plan to `$1` with `price=0.2`, `size=5`.
+  - cancel probe succeeded:
+    - submitted order -> canceled (`manual_cancel_submitted`).
+  - two submitted orders left open as requested:
+    - Celtics outcome: submitted (`limit_price=0.2`, `size=5`)
+    - Lakers outcome: submitted (`limit_price=0.2`, `size=5`)
+- Limitation:
+  - per-market minimum size constraints can invalidate notional plans if `size < min_size`; route-level validation should surface this earlier in later phases.
+
+#### Closed-position consolidation and event-conclusion validation (`v0.7.2` extension)
+- Validation date: `2026-02-23` (post-refresh run).
+- Validation path:
+  - `POST /v1/events/import-url` for `nba-bos-lal-2026-02-22`
+  - `POST /v1/sync/polymarket/positions|orders|trades` with proxy wallet
+  - `POST /v1/sync/polymarket/closed-positions/consolidate` with primary wallet payload
+- Observed behavior:
+  - wallet resolution now maps primary payload to configured/account proxy for Data-API mirror (`consolidate_wallet=0x7d2F...` in response).
+  - mirror sync succeeds in current run (`rows_read=406`, `rows_written=8`).
+  - BOS/LAL moneyline trades are present for both outcomes after mirror:
+    - Celtics buy trades: present.
+    - Lakers buy trades: present.
+  - event conclusion markers remain unresolved upstream:
+    - event `status=open` while `end_time=2026-02-22T23:30:00Z` is in the past.
+    - moneyline outcomes still `is_winner=null`.
+  - consolidation route now flags stale conclusion candidates from account exposure graph:
+    - `stale_conclusion_candidates=2`
+    - stale samples include `event_slug=nba-bos-lal-2026-02-22`.
+- Coverage status:
+  - closed-position normalization route behavior: `AVAILABLE`.
+  - stale-finished-event detection over mirrored exposure data: `AVAILABLE`.
+  - final winner resolution state from upstream market payload: `PARTIAL / PROVIDER-LAG SENSITIVE`.
+
+### NBA module serving validation (`v0.7.3` to `v0.7.6`)
+
+#### Game-scoped live sync, play-by-play, and context routes
+- Validation date: `2026-03-14`.
+- Refresh evidence:
+  - final audited DB state:
+    - `nba.nba_games=1322` (`updated_at=2026-03-14T03:39:56Z`)
+    - `nba.nba_live_game_snapshots=23` (`captured_at=2026-03-14T03:39:56Z`)
+    - `nba.nba_play_by_play=1571`
+    - `nba.nba_context_cache=12` (`generated_at=2026-03-14T03:39:58Z`)
+    - `market_data.outcome_price_ticks=1513` (`ts=2026-03-14T03:32:12Z`)
+    - `core.sync_runs=26` (`started_at=2026-03-14T03:39:56Z`)
+  - current-season status distribution after refresh:
+    - upcoming: `246`
+    - live: `3`
+    - finished: `1073`
+- Route validation pack:
+  - `POST /v1/sync/nba/live/{game_id}`
+  - `GET /v1/nba/games/{game_id}/live`
+  - `GET /v1/nba/games/{game_id}/play-by-play`
+  - `GET /v1/nba/games/{game_id}/context/pre`
+  - `GET /v1/nba/games/{game_id}/context/live`
+- Observed behavior from selected-game live validation:
+  - finished game sample (`0022500964`):
+    - live snapshots persisted and retrievable.
+    - play-by-play returned populated rows (`200` in validation window).
+    - pre/live contexts returned coherent payloads.
+  - live game sample (`0022500968`):
+    - repeated sync appends live snapshots.
+    - play-by-play returned populated rows (`200` in validation window).
+    - live context includes latest score-state and linked event preview.
+  - upcoming game sample (`0042500407`):
+    - schedule record exists and pre-context is available.
+    - live snapshots and play-by-play return safe empty results before tip-off.
+    - live context returns a limited payload with no live-state section populated.
+- Coverage status:
+  - Current season past games: `AVAILABLE`.
+  - Current season live games: `AVAILABLE`.
+  - Current season upcoming games: `AVAILABLE` for schedule/pre-context, `LIMITED` for live payloads before game start.
+  - Current-season DB rehydrate via validated routes/pipelines: `AVAILABLE`.
+- Limitations:
+  - NBA schedule source is still effectively current-season scoped; past-season archive retrieval remains unavailable through current method.
+  - Future scheduled games do not expose live boxscore or play-by-play before tip-off.
+
+#### Final historical feasibility report (`v0.7.6`)
+- Validation date: `2026-03-14`.
+- Tests executed:
+  - `$env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/data/nodes/test_temporal_coverage_live_pytest.py`
+- Result:
+  - `5 passed, 2 skipped`.
+- Confirmed feasible today:
+  - NBA current-season past games.
+  - NBA current-season live games.
+  - NBA current-season upcoming games in schedule tables.
+  - recent or current Polymarket odds history windows with interval-based or snapshot-fallback retrieval.
+  - runtime-accumulated fallback stream history.
+- Confirmed not fully feasible today:
+  - NBA past-season schedule or game archive through current source endpoint.
+  - pre-tip live boxscore or play-by-play for future scheduled NBA games.
+  - one-shot Gamma validation that reliably returns both past and future windows in every sampled run.
+  - arbitrary deep Polymarket historical price recovery for every token or window pair.
+- Provider-sensitive evidence:
+  - skipped: Gamma split-window coverage because provider did not expose one of the sampled windows.
+  - skipped: mixed-window odds-history coverage because provider did not expose both past and future games in the sampled history window.
+
+### 2025-26 season strategy audit gate (pre-`v0.8.1`)
+
+#### Full-season play-by-play feasibility for lead-change analytics
+- Validation date: `2026-03-14`.
+- Execution path:
+  - `python -m app.data.pipelines.daily.nba.season_strategy_audit --season 2025-26 --pbp-max-workers 8 --moneyline-window-days 14 --moneyline-max-pages 30 --history-sample-events-per-month 3`
+- Observed behavior:
+  - finished NBA games checked: `1076`
+  - finished games with non-empty play-by-play: `1076`
+  - play-by-play coverage: `100.0%`
+  - average play-by-play rows per finished game: `577.41`
+  - lead-change summary transform is now available in `app/data/nodes/nba/live/play_by_play.py::compute_lead_change_summary`
+- Strategy-relevant evidence:
+  - Lakers (`LAL`) from full finished-game audit:
+    - `games_with_pbp=72`
+    - `wins=42`, `losses=30`
+    - `avg_lead_changes=6.75`
+    - `avg_losing_segments=3.79`
+    - `avg_largest_lead_in_losses=6.03`
+    - `losses_after_leading=25`
+  - Hornets (`CHA`) from full finished-game audit:
+    - `games_with_pbp=72`
+    - `wins=36`, `losses=36`
+    - `avg_lead_changes=7.61`
+    - `avg_losing_segments=4.32`
+    - `avg_largest_lead_in_losses=6.19`
+    - `losses_after_leading=29`
+- Coverage status:
+  - full-season finished-game play-by-play fetch: `AVAILABLE`
+  - lead-change derivation from play-by-play: `AVAILABLE`
+
+#### Full-season Polymarket moneyline and in-game odds feasibility
+- Validation date: `2026-03-14`.
+- Observed behavior:
+  - unique season event slugs discovered from October 2025 to March 14, 2026: `655`
+  - finished NBA schedule games covered by season moneyline fetch path: `583 / 1076`
+  - finished-game moneyline coverage: `54.18%`
+  - month-stratified history sample:
+    - sampled events: `18`
+    - sampled outcomes: `36`
+    - outcomes with any direct history points: `36 / 36`
+    - outcomes with both pre-game and in-game points: `36 / 36`
+- Important implementation constraint:
+  - Gamma/Polymarket `game_start_time` is not reliable enough to define the game-period history window.
+  - Robust pre-game/in-game odds validation requires anchoring the history request to NBA schedule start time via slug mapping.
+- Coverage status:
+  - full-season moneyline event discovery: `PARTIAL`
+  - direct odds-history on covered games when schedule-anchored: `AVAILABLE` in sampled validation
+  - full-league full-season odds-history backfill from current provider path: `NOT FULLY AVAILABLE`
+- Limitation:
+  - the current provider path does not expose a complete season of NBA moneyline events for all finished games, so league-wide season odds analytics remain coverage-limited even though covered games have usable in-game history.
+
 ## Practical implications for v0.1 planning
 1. NBA past season goal is not met with current schedule method; an alternate historical endpoint/source is required.
 2. Current season past and upcoming games are available from schedule feed.
@@ -277,7 +502,7 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 5. For Gamma events, use multiple narrower windows (past + future) instead of one broad range when validating temporal coverage.
 
 ## Required updates when this file changes
-- active checkpoint file (currently `dev-checkpoint/v0.6.1.md`)
+- active checkpoint file (currently `dev-checkpoint/v0.8.1.md`)
 - `app/docs/development_guide.md`
 - `app/docs/scalable_db_schema_proposal.md` (if schema implications change)
 - `app/docs/scalable_api_routes_proposal.md` (if route readiness changes)

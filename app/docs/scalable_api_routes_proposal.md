@@ -97,19 +97,28 @@ A route can only be implemented when all required tables are active in its phase
 | POST | `/v1/sync/polymarket/orderbook` | `market_data.orderbook_snapshots`, `market_data.orderbook_levels`, `core.sync_runs` |
 | POST | `/v1/sync/polymarket/prices` | `market_data.outcome_price_ticks`, `market_data.outcome_price_candles`, `core.sync_runs` |
 
-### `v0.6.4` - Strategy metadata/control routes
+### `v0.6.4` - Order lifecycle capture and reconciliation routes
 | Method | Route | Required tables |
 |---|---|---|
-| GET | `/v1/strategy/types` | `strategy.strategy_types` |
-| POST | `/v1/strategy/types` | `strategy.strategy_types` |
-| GET | `/v1/strategy/definitions` | `strategy.strategy_definitions` |
-| POST | `/v1/strategy/definitions` | `strategy.strategy_definitions` |
-| GET | `/v1/strategy/instances` | `strategy.strategy_instances` |
-| POST | `/v1/strategy/instances` | `strategy.strategy_instances` |
-| PATCH | `/v1/strategy/instances/{strategy_instance_id}` | `strategy.strategy_instances` |
-| POST | `/v1/strategy/instances/{strategy_instance_id}/targets` | `strategy.strategy_targets` |
-| GET | `/v1/strategy/instances/{strategy_instance_id}/signals` | `strategy.strategy_signals` |
-| POST | `/v1/strategy/instances/{strategy_instance_id}/signals` | `strategy.strategy_signals` |
+| POST | `/v1/portfolio/orders` | `portfolio.orders`, `portfolio.order_events` |
+| DELETE | `/v1/portfolio/orders/{order_id}` | `portfolio.orders`, `portfolio.order_events` |
+| GET | `/v1/portfolio/orders/{order_id}` | `portfolio.orders`, `portfolio.order_events`, `portfolio.trades` |
+
+### `v0.6.5` - Risk guards and rate controls
+| Method | Route | Required tables |
+|---|---|---|
+| POST | `/v1/portfolio/orders` | `portfolio.orders`, `portfolio.order_events` |
+| DELETE | `/v1/portfolio/orders/{order_id}` | `portfolio.orders`, `portfolio.order_events` |
+
+### `v0.6.6` - End-to-end validation routes in scope
+| Method | Route | Required tables |
+|---|---|---|
+| GET | `/v1/nba/games` | `nba.nba_games` |
+| POST | `/v1/sync/nba/schedule` | `core.sync_runs`, `nba.nba_games`, `nba.nba_live_game_snapshots`, `nba.nba_play_by_play` |
+| POST | `/v1/sync/polymarket/markets` | `core.sync_runs`, `catalog.events`, `catalog.markets`, `catalog.outcomes`, `catalog.market_state_snapshots` |
+| GET | `/v1/events/{event_id}/odds/latest` | `catalog.markets`, `catalog.outcomes`, `market_data.outcome_price_ticks` |
+| GET | `/v1/outcomes/{outcome_id}/prices/ticks` | `market_data.outcome_price_ticks` |
+| GET | `/v1/portfolio/orders` | `portfolio.orders` |
 
 ### `v0.7.1` - NBA read routes
 | Method | Route | Required tables |
@@ -123,11 +132,21 @@ A route can only be implemented when all required tables are active in its phase
 | GET | `/v1/nba/teams/{team_id}/insights` | `nba.nba_team_insights` |
 | GET | `/v1/nba/players` | `nba.nba_player_stats_snapshots` |
 
-### `v0.7.3` - NBA live and context routes
+### `v0.7.2` - Closure validation support route
+| Method | Route | Required tables |
+|---|---|---|
+| POST | `/v1/sync/polymarket/closed-positions/consolidate` | `portfolio.trading_accounts`, `portfolio.position_snapshots`, `portfolio.valuation_snapshots`, `portfolio.orders`, `portfolio.trades`, `catalog.events`, `catalog.markets`, `catalog.outcomes`, `core.sync_runs` |
+
+### `v0.7.3` - NBA live snapshot and play-by-play routes
 | Method | Route | Required tables |
 |---|---|---|
 | POST | `/v1/sync/nba/live/{game_id}` | `nba.nba_live_game_snapshots`, `nba.nba_play_by_play`, `core.sync_runs` |
 | GET | `/v1/nba/games/{game_id}/live` | `nba.nba_live_game_snapshots`, `nba.nba_play_by_play` |
+| GET | `/v1/nba/games/{game_id}/play-by-play` | `nba.nba_play_by_play` |
+
+### `v0.7.4` - NBA context routes
+| Method | Route | Required tables |
+|---|---|---|
 | GET | `/v1/nba/games/{game_id}/context/pre` | `nba.nba_context_cache` or on-demand pipelines |
 | GET | `/v1/nba/games/{game_id}/context/live` | `nba.nba_context_cache` or on-demand pipelines |
 
@@ -159,7 +178,7 @@ A route can only be implemented when all required tables are active in its phase
 ## v1 endpoint completion checklist
 v1 is reached when all route groups below are active and tested:
 1. `v0.5.*` system + catalog + sync triggers
-2. `v0.6.*` market data + portfolio + strategy metadata
+2. `v0.6.*` market data + portfolio + lifecycle/risk controls
 3. `v0.7.*` NBA module + context delivery
 4. `v0.8.*` Chroma/event-doc linkage
 5. `v0.9.*` ops and production service controls
@@ -173,7 +192,7 @@ v1 is reached when all route groups below are active and tested:
 - For time-based sync/read routes, tests must explicitly validate past/current/future behavior (or document source-imposed limits).
 - No route may be marked active if its dependencies are not complete in corresponding checkpoint file.
 
-## Current source constraints (2026-02-21)
+## Current source constraints (2026-03-14)
 - DB migration baseline is now live through `v0.4.6` using `app/data/databases/migrate.py`; active schemas/tables cover `core`, `catalog`, `portfolio`, `market_data`, and `nba` tables required by the `v0.5.x` API foundation.
 - Repository/upsert primitives are now available in `app/data/databases/repositories/upsert_primitives.py` (`JanusUpsertRepository`) and should be reused by future FastAPI handlers to keep write semantics idempotent and append-only-safe.
 - Live seed-pack integration for URL-driven event ingestion is validated in `app/data/databases/seed_packs/polymarket_event_seed_pack.py` using three concrete Polymarket URLs (past NBA, upcoming NBA, long-horizon non-sports), providing a direct implementation reference for future `/v1/events/import-url` behavior.
@@ -192,12 +211,54 @@ v1 is reached when all route groups below are active and tested:
 - Fallback stream-to-history collection is validated via `app/data/nodes/polymarket/gamma/nba/fallback_stream_history_collector.py`, emitting append-only samples (`source=fallback_stream`) for windows where direct history under-returns.
 - NBA play-by-play ingestion contract is validated in `app/data/nodes/nba/live/play_by_play.py` with deterministic normalization (`event_index`, score deltas) and idempotent sqlite upsert helper for pre-schema persistence checks.
 - Polymarket orderbook polling contract is validated in `app/data/nodes/polymarket/blockchain/stream_orderbook.py` (`OrderbookStreamConfig` + `stream_orderbook`) and is ready for future sync route wiring.
-- `v0.5.*` FastAPI core routes are now implemented in `app/api/*` and validated with:
+- `v0.5.*` and `v0.6.*` FastAPI routes are now implemented in `app/api/*` and validated with:
   - DB tests: `tests/app/api/test_system_registry_routes_pytest.py`, `tests/app/api/test_catalog_routes_pytest.py`, `tests/app/api/test_sync_routes_pytest.py`, `tests/app/api/test_error_model_pytest.py`
-  - OpenAPI lock test: `tests/app/api/test_openapi_lock_pytest.py`
+  - OpenAPI lock test: `tests/app/api/test_openapi_lock_pytest.py` (snapshot: `app/docs/openapi_v0_6_snapshot.json`)
   - live endpoint validation: `tests/app/api/test_live_today_games_endpoints_pytest.py`
-- Endpoint-level validation for current NBA slate is now possible via `GET /v1/nba/games` (early activation for validation, ahead of full `v0.7.1` NBA serving block).
-- latest live API validation run (`2026-02-21` UTC) confirmed:
-  - `scoreboard_games_total=9`, `scoreboard_status_counts={2:2,3:7}`
-  - `/v1/nba/games` covered same-day slate and live status queries
+- `v0.6.2` added migration `0011_v0_6_2__portfolio_valuation_snapshots.sql`; `/v1/portfolio/summary` now reads latest valuation rows with fallback aggregation from latest position snapshots.
+- `v0.6.3` activated additional sync endpoints:
+  - `POST /v1/sync/polymarket/positions`
+  - `POST /v1/sync/polymarket/orders`
+  - `POST /v1/sync/polymarket/trades`
+  - `POST /v1/sync/polymarket/orderbook`
+  - `POST /v1/sync/polymarket/prices`
+- `v0.6.4` lifecycle capture is active on manual order routes with `portfolio.order_events` entries on place/cancel transitions.
+- `v0.6.5` risk controls are active on manual order routes (size/notional bounds + per-account action rate limiting).
+- Endpoint-level validation for current NBA slate is active via `GET /v1/nba/games` and expanded `v0.7.1` NBA read routes.
+- latest live API validation run (`2026-02-23` UTC) confirmed:
+  - `scoreboard_games_total=11`, `scoreboard_status_counts={2:3,3:4,1:4}`
+  - `/v1/nba/games` covered same-day slate, live, and upcoming status queries
   - `/v1/sync/polymarket/markets` + `/v1/events` yielded `scoreboard_slug_missing_in_events=0`.
+- `v0.7.1` NBA read routes are now validated and active with dedicated pytest coverage:
+  - `tests/app/api/test_nba_read_routes_pytest.py`
+- manual order path revalidated against requested BOS/LAL event (`nba-bos-lal-2026-02-22`) with real CLOB responses:
+  - place+cancel probe succeeded (`manual_place_submitted` -> `manual_cancel_submitted`)
+  - two `$1` notional submitted orders left open (one per team outcome).
+- `v0.7.2` added closure-validation support route:
+  - `POST /v1/sync/polymarket/closed-positions/consolidate`
+  - consolidates `data_api_closed_position` snapshots into normalized zero-size closure rows.
+  - writes account-level `portfolio.valuation_snapshots`.
+  - detects stale event/market conclusion candidates from account exposures.
+- `v0.7.3` NBA live/pbp routes are now active and covered by:
+  - `tests/app/data/pipelines/daily/nba/test_sync_live_game_pytest.py`
+  - `tests/app/api/test_nba_live_context_routes_pytest.py`
+  - `tests/app/api/test_nba_selected_game_validation_live_pytest.py`
+  - active routes:
+    - `POST /v1/sync/nba/live/{game_id}`
+    - `GET /v1/nba/games/{game_id}/live`
+    - `GET /v1/nba/games/{game_id}/play-by-play`
+- `v0.7.4` context routes are now active:
+  - `GET /v1/nba/games/{game_id}/context/pre`
+  - `GET /v1/nba/games/{game_id}/context/live`
+  - backed by `nba.nba_context_cache` plus on-demand rebuild logic in `app/modules/nba/context/service.py`.
+- `v0.7.5` selected-game validation packs now rehydrate the current season and verify finished, live, and upcoming game behavior through the API.
+- `v0.7.6` added read-path indexes and refreshed the API snapshot to version `0.7.6`.
+- refreshed DB snapshot after `v0.7.6` validation:
+  - `nba.nba_games=1322`
+  - `nba.nba_live_game_snapshots=23`
+  - `nba.nba_play_by_play=1571`
+  - `nba.nba_context_cache=12`
+  - `market_data.outcome_price_ticks=1513`
+  - `catalog.events=8`
+  - `core.sync_runs=26`
+- OpenAPI lock snapshot refreshed after `v0.7.6` activation (`app/docs/openapi_v0_6_snapshot.json`).

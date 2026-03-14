@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
@@ -8,13 +8,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg2.extras import Json
 from psycopg2.extensions import connection as PsycopgConnection
 
-from app.api.db import cursor_dict, fetchall_dicts, to_jsonable
+from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.api.dependencies import get_db_connection
 from app.api.jobs import ensure_api_sync_job_definition, insert_job_run
 from app.api.models import (
     MappingSyncRequest,
+    PolymarketClosedPositionConsolidationRequest,
+    NbaGameLiveSyncRequest,
     NbaScheduleSyncRequest,
     NbaSeasonSyncRequest,
+    PolymarketOrderbookSyncRequest,
+    PolymarketPortfolioSyncRequest,
+    PolymarketPricesSyncRequest,
     PolymarketSyncRequest,
     SyncTriggerResponse,
 )
@@ -25,12 +30,24 @@ from app.data.databases.seed_packs.polymarket_event_seed_pack import (
     build_today_nba_event_probes_from_scoreboard,
     run_polymarket_event_seed_pack,
 )
+from app.data.nodes.polymarket.blockchain.stream_orderbook import (
+    OrderbookStreamConfig,
+    stream_orderbook,
+)
+from app.data.nodes.polymarket.gamma.nba.odds_history_node import (
+    NBAOddsHistoryRequest,
+    fetch_clob_prices_history,
+)
 from app.data.nodes.nba.players.leaguedash_player_base_season import fetch_player_base_df
 from app.data.nodes.nba.teams.leaguedash_team_advanced_season import fetch_team_advanced_df
 from app.data.nodes.nba.teams.leaguedash_team_base_season import fetch_team_base_df
 from app.data.nodes.nba.teams.team_recent_form_last5 import compute_last5_metrics_df
 from app.data.pipelines.daily.cross_domain.sync_mappings import run_cross_domain_mapping_sync
-from app.data.pipelines.daily.nba.sync_postgres import run_nba_metadata_sync
+from app.data.pipelines.daily.nba.sync_postgres import run_nba_live_game_sync, run_nba_metadata_sync
+from app.data.pipelines.daily.polymarket.consolidate_closed_positions import (
+    consolidate_closed_positions_for_wallet,
+)
+from app.data.pipelines.daily.polymarket.sync_portfolio import run_portfolio_mirror_sync
 
 
 router = APIRouter(prefix="/v1/sync", tags=["sync"])
@@ -366,6 +383,479 @@ def _run_nba_team_insights_sync(
     }
 
 
+def _run_nba_live_game_sync(
+    connection: PsycopgConnection,
+    *,
+    game_id: str,
+    payload: NbaGameLiveSyncRequest,
+) -> dict[str, Any]:
+    _ = connection
+    summary = run_nba_live_game_sync(
+        game_id=game_id,
+        include_live_snapshots=payload.include_live_snapshots,
+        include_play_by_play=payload.include_play_by_play,
+    )
+    return to_jsonable(summary.__dict__)
+
+
+def _parse_wallet_address(raw_value: str | None) -> str | None:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    if text.startswith("0x") and len(text) >= 42:
+        return text[:42]
+    return None
+
+
+def _resolve_portfolio_wallet(
+    connection: PsycopgConnection,
+    payload: PolymarketPortfolioSyncRequest | PolymarketClosedPositionConsolidationRequest,
+) -> str | None:
+    from app.data.nodes.polymarket.blockchain.manage_portfolio import PolymarketCredentials
+
+    requested_wallet = _parse_wallet_address(payload.wallet_address)
+    if requested_wallet:
+        # If an account exists and has a dedicated proxy wallet, prefer proxy for Data-API mirror calls.
+        with cursor_dict(connection) as cursor:
+            cursor.execute(
+                """
+                SELECT wallet_address, proxy_wallet_address
+                FROM portfolio.trading_accounts
+                WHERE lower(COALESCE(wallet_address, '')) = lower(%s)
+                   OR lower(COALESCE(proxy_wallet_address, '')) = lower(%s)
+                ORDER BY created_at DESC;
+                """,
+                (requested_wallet, requested_wallet),
+            )
+            rows = fetchall_dicts(cursor)
+        if rows:
+            # Prefer a dedicated proxy wallet different from the requested wallet.
+            for item in rows:
+                proxy_wallet = _parse_wallet_address(item.get("proxy_wallet_address"))
+                if proxy_wallet and proxy_wallet.lower() != requested_wallet.lower():
+                    return proxy_wallet
+            # Fallback to any proxy if present.
+            for item in rows:
+                proxy_wallet = _parse_wallet_address(item.get("proxy_wallet_address"))
+                if proxy_wallet:
+                    return proxy_wallet
+        # No account mapping found yet: if requested wallet matches configured primary,
+        # prefer configured proxy for Data-API calls.
+        creds = PolymarketCredentials.from_env()
+        configured_primary = _parse_wallet_address(creds.primary_wallet_raw) or _parse_wallet_address(
+            creds.wallet_address
+        )
+        configured_proxy = _parse_wallet_address(creds.proxy_wallet_raw)
+        if (
+            configured_proxy
+            and configured_primary
+            and requested_wallet.lower() == configured_primary.lower()
+        ):
+            return configured_proxy
+        return requested_wallet
+
+    if payload.wallet_address:
+        wallet = _parse_wallet_address(payload.wallet_address)
+        if wallet:
+            return wallet
+    creds = PolymarketCredentials.from_env()
+    candidates = (
+        creds.proxy_wallet_raw,
+        creds.wallet_address,
+        creds.primary_wallet_raw,
+        creds.funder_address,
+    )
+    for item in candidates:
+        wallet = _parse_wallet_address(item)
+        if wallet:
+            return wallet
+    return None
+
+
+def _resolve_outcome_token(
+    connection: PsycopgConnection,
+    *,
+    outcome_id: UUID | None,
+    token_id: str | None,
+) -> tuple[str, str]:
+    with cursor_dict(connection) as cursor:
+        if outcome_id is not None:
+            cursor.execute(
+                """
+                SELECT outcome_id, token_id
+                FROM catalog.outcomes
+                WHERE outcome_id = %s
+                LIMIT 1;
+                """,
+                (str(outcome_id),),
+            )
+            row = fetchall_dicts(cursor)
+            if not row:
+                raise HTTPException(status_code=404, detail="outcome_id not found")
+            resolved_token_id = str(row[0].get("token_id") or "").strip()
+            if not resolved_token_id:
+                raise HTTPException(status_code=422, detail="outcome token_id is missing")
+            return str(outcome_id), resolved_token_id
+
+        token = str(token_id or "").strip()
+        if not token:
+            raise HTTPException(status_code=422, detail="outcome_id or token_id is required")
+        cursor.execute(
+            """
+            SELECT outcome_id, token_id
+            FROM catalog.outcomes
+            WHERE token_id = %s
+            LIMIT 1;
+            """,
+            (token,),
+        )
+        row = fetchall_dicts(cursor)
+        if not row:
+            raise HTTPException(status_code=404, detail="token_id not found in catalog.outcomes")
+        return str(row[0]["outcome_id"]), str(row[0]["token_id"])
+
+
+def _run_polymarket_portfolio_sync(
+    connection: PsycopgConnection,
+    payload: PolymarketPortfolioSyncRequest,
+) -> dict[str, Any]:
+    wallet_address = _resolve_portfolio_wallet(connection, payload)
+    if wallet_address is None:
+        raise HTTPException(
+            status_code=422,
+            detail="wallet_address is required (payload or env POLYMARKET_PROXY_WALLET/POLYMARKET_PRIMARY_WALLET)",
+        )
+
+    summary = run_portfolio_mirror_sync(
+        wallet_address=wallet_address,
+        limit=payload.limit,
+        payload_override=payload.payload_override,
+    )
+    return to_jsonable(summary.__dict__)
+
+
+def _run_polymarket_closed_positions_consolidation(
+    connection: PsycopgConnection,
+    payload: PolymarketClosedPositionConsolidationRequest,
+) -> dict[str, Any]:
+    wallet_address = _resolve_portfolio_wallet(connection, payload)
+    if wallet_address is None:
+        raise HTTPException(
+            status_code=422,
+            detail="wallet_address is required (payload or env POLYMARKET_PROXY_WALLET/POLYMARKET_PRIMARY_WALLET)",
+        )
+
+    mirror_summary: dict[str, Any] | None = None
+    mirror_rows_read = 0
+    mirror_rows_written = 0
+    mirror_error: str | None = None
+    if payload.run_portfolio_sync:
+        mirror = run_portfolio_mirror_sync(
+            wallet_address=wallet_address,
+            limit=payload.limit,
+            payload_override=None,
+        )
+        mirror_summary = to_jsonable(mirror.__dict__)
+        mirror_rows_read = int(mirror.rows_read)
+        mirror_rows_written = int(mirror.rows_written)
+        mirror_error = mirror.error_text
+
+    consolidation = consolidate_closed_positions_for_wallet(
+        wallet_address=wallet_address,
+        stale_sample_limit=payload.stale_sample_limit,
+    )
+    consolidation_summary = to_jsonable(consolidation.__dict__)
+    status_value = "success"
+    errors: list[str] = []
+    if mirror_error:
+        status_value = "partial_success" if consolidation.status == "success" else "error"
+        errors.append(f"mirror={mirror_error}")
+    if consolidation.status != "success":
+        status_value = "error"
+        if consolidation.error_text:
+            errors.append(f"consolidation={consolidation.error_text}")
+
+    return {
+        "sync_run_id": None,
+        "status": status_value,
+        "rows_read": mirror_rows_read + int(consolidation.rows_read),
+        "rows_written": mirror_rows_written + int(consolidation.rows_written),
+        "wallet_address": wallet_address,
+        "mirror_summary": mirror_summary,
+        "consolidation_summary": consolidation_summary,
+        "error_text": "; ".join(errors) if errors else None,
+    }
+
+
+def _run_polymarket_orderbook_sync(
+    connection: PsycopgConnection,
+    payload: PolymarketOrderbookSyncRequest,
+) -> dict[str, Any]:
+    outcome_id, resolved_token_id = _resolve_outcome_token(
+        connection,
+        outcome_id=payload.outcome_id,
+        token_id=payload.token_id,
+    )
+
+    config = OrderbookStreamConfig(
+        token_id=resolved_token_id,
+        market_id=None,
+        poll_interval_seconds=payload.sample_interval_sec,
+        max_iterations=payload.sample_count,
+        continue_on_error=True,
+    )
+    snapshots = stream_orderbook(config=config)
+    rows_read = len(snapshots)
+    levels_read = sum(len(item.bids) + len(item.asks) for item in snapshots)
+    if payload.dry_run:
+        return {
+            "sync_run_id": None,
+            "status": "success",
+            "rows_read": rows_read,
+            "rows_written": 0,
+            "outcome_id": outcome_id,
+            "token_id": resolved_token_id,
+            "snapshots_read": rows_read,
+            "levels_read": levels_read,
+            "dry_run": True,
+        }
+
+    sync_run_id = _create_manual_sync_run(
+        connection,
+        provider_code="polymarket_clob_api",
+        provider_name="Polymarket CLOB API",
+        module_code="polymarket_orderbook_sync",
+        module_name="Polymarket Orderbook Sync",
+        pipeline_name="api.sync.polymarket.orderbook",
+        meta_json={
+            "outcome_id": outcome_id,
+            "token_id": resolved_token_id,
+            "sample_count": payload.sample_count,
+            "sample_interval_sec": payload.sample_interval_sec,
+            "max_levels_per_side": payload.max_levels_per_side,
+        },
+    )
+
+    repo = JanusUpsertRepository(connection)
+    rows_written = 0
+    levels_written = 0
+    run_status = "success"
+    error_text: str | None = None
+    try:
+        for snapshot in snapshots:
+            snapshot_id = str(uuid4())
+            best_bid = max((float(level.price) for level in snapshot.bids), default=None)
+            best_ask = min((float(level.price) for level in snapshot.asks), default=None)
+            spread = (
+                float(best_ask - best_bid)
+                if best_bid is not None and best_ask is not None
+                else None
+            )
+            mid_price = (
+                float((best_bid + best_ask) / 2)
+                if best_bid is not None and best_ask is not None
+                else None
+            )
+            inserted_snapshot = repo.insert_orderbook_snapshot(
+                orderbook_snapshot_id=snapshot_id,
+                outcome_id=outcome_id,
+                captured_at=snapshot.timestamp,
+                best_bid=best_bid,
+                best_ask=best_ask,
+                spread=spread,
+                mid_price=mid_price,
+                bid_depth=float(sum(level.size for level in snapshot.bids)),
+                ask_depth=float(sum(level.size for level in snapshot.asks)),
+                raw_json={
+                    "token_id": resolved_token_id,
+                    "bids": [level.__dict__ for level in snapshot.bids],
+                    "asks": [level.__dict__ for level in snapshot.asks],
+                },
+                ignore_duplicates=True,
+            )
+            if inserted_snapshot:
+                rows_written += 1
+
+            bids = sorted(snapshot.bids, key=lambda item: item.price, reverse=True)
+            asks = sorted(snapshot.asks, key=lambda item: item.price)
+
+            for idx, level in enumerate(bids[: payload.max_levels_per_side], start=1):
+                inserted_level = repo.insert_orderbook_level(
+                    orderbook_snapshot_id=snapshot_id,
+                    side="bid",
+                    level_no=idx,
+                    price=float(level.price),
+                    size=float(level.size),
+                    order_count=None,
+                    ignore_duplicates=True,
+                )
+                if inserted_level:
+                    levels_written += 1
+
+            for idx, level in enumerate(asks[: payload.max_levels_per_side], start=1):
+                inserted_level = repo.insert_orderbook_level(
+                    orderbook_snapshot_id=snapshot_id,
+                    side="ask",
+                    level_no=idx,
+                    price=float(level.price),
+                    size=float(level.size),
+                    order_count=None,
+                    ignore_duplicates=True,
+                )
+                if inserted_level:
+                    levels_written += 1
+    except Exception as exc:  # noqa: BLE001
+        run_status = "error"
+        error_text = repr(exc)
+
+    _finalize_manual_sync_run(
+        connection,
+        sync_run_id=sync_run_id,
+        status=run_status,
+        rows_read=rows_read + levels_read,
+        rows_written=rows_written + levels_written,
+        error_text=error_text,
+    )
+    return {
+        "sync_run_id": sync_run_id,
+        "status": run_status,
+        "rows_read": rows_read + levels_read,
+        "rows_written": rows_written + levels_written,
+        "outcome_id": outcome_id,
+        "token_id": resolved_token_id,
+        "snapshots_read": rows_read,
+        "levels_read": levels_read,
+        "snapshots_written": rows_written,
+        "levels_written": levels_written,
+        "dry_run": False,
+        "error_text": error_text,
+    }
+
+
+def _run_polymarket_prices_sync(
+    connection: PsycopgConnection,
+    payload: PolymarketPricesSyncRequest,
+) -> dict[str, Any]:
+    outcome_id, resolved_token_id = _resolve_outcome_token(
+        connection,
+        outcome_id=payload.outcome_id,
+        token_id=None,
+    )
+    now = datetime.now(timezone.utc)
+    req = NBAOddsHistoryRequest(
+        interval=payload.interval,
+        fidelity=payload.fidelity,
+        start_date_min=now - timedelta(hours=payload.lookback_hours),
+        start_date_max=now,
+        allow_snapshot_fallback=payload.allow_snapshot_fallback,
+        max_outcomes=1,
+    )
+    points = fetch_clob_prices_history(token_id=resolved_token_id, req=req)
+    rows_read = len(points)
+
+    if payload.dry_run:
+        return {
+            "sync_run_id": None,
+            "status": "success",
+            "rows_read": rows_read,
+            "rows_written": 0,
+            "outcome_id": outcome_id,
+            "token_id": resolved_token_id,
+            "dry_run": True,
+        }
+
+    sync_run_id = _create_manual_sync_run(
+        connection,
+        provider_code="polymarket_clob_api",
+        provider_name="Polymarket CLOB API",
+        module_code="polymarket_prices_sync",
+        module_name="Polymarket Prices Sync",
+        pipeline_name="api.sync.polymarket.prices",
+        meta_json={
+            "outcome_id": outcome_id,
+            "token_id": resolved_token_id,
+            "lookback_hours": payload.lookback_hours,
+            "interval": payload.interval,
+            "fidelity": payload.fidelity,
+            "allow_snapshot_fallback": payload.allow_snapshot_fallback,
+        },
+    )
+    repo = JanusUpsertRepository(connection)
+    rows_written = 0
+    run_status = "success"
+    error_text: str | None = None
+
+    try:
+        for item in points:
+            inserted = repo.insert_outcome_price_tick(
+                outcome_id=outcome_id,
+                ts=item["ts"],
+                source="clob_prices_history",
+                price=float(item["price"]),
+                bid=None,
+                ask=None,
+                volume=None,
+                liquidity=None,
+                raw_json=item.get("raw"),
+                ignore_duplicates=True,
+            )
+            if inserted:
+                rows_written += 1
+
+        if rows_written == 0 and payload.allow_snapshot_fallback:
+            with cursor_dict(connection) as cursor:
+                cursor.execute(
+                    """
+                    SELECT mss.last_price
+                    FROM catalog.outcomes o
+                    JOIN catalog.market_state_snapshots mss ON mss.market_id = o.market_id
+                    WHERE o.outcome_id = %s AND mss.last_price IS NOT NULL
+                    ORDER BY mss.captured_at DESC
+                    LIMIT 1;
+                    """,
+                    (outcome_id,),
+                )
+                row = fetchone_dict(cursor)
+            fallback_price = float(row["last_price"]) if row is not None else None
+            if fallback_price is not None:
+                inserted = repo.insert_outcome_price_tick(
+                    outcome_id=outcome_id,
+                    ts=now,
+                    source="snapshot_fallback",
+                    price=fallback_price,
+                    bid=None,
+                    ask=None,
+                    volume=None,
+                    liquidity=None,
+                    raw_json={"route": "sync_polymarket_prices"},
+                    ignore_duplicates=True,
+                )
+                if inserted:
+                    rows_written += 1
+    except Exception as exc:  # noqa: BLE001
+        run_status = "error"
+        error_text = repr(exc)
+
+    _finalize_manual_sync_run(
+        connection,
+        sync_run_id=sync_run_id,
+        status=run_status,
+        rows_read=rows_read,
+        rows_written=rows_written,
+        error_text=error_text,
+    )
+    return {
+        "sync_run_id": sync_run_id,
+        "status": run_status,
+        "rows_read": rows_read,
+        "rows_written": rows_written,
+        "outcome_id": outcome_id,
+        "token_id": resolved_token_id,
+        "dry_run": False,
+        "error_text": error_text,
+    }
+
+
 def _with_job_run(
     connection: PsycopgConnection,
     *,
@@ -500,6 +990,27 @@ def sync_nba_schedule(
 
 
 @router.post(
+    "/nba/live/{game_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_nba_live_game(
+    game_id: str,
+    payload: NbaGameLiveSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        return _run_nba_live_game_sync(connection, game_id=game_id, payload=payload)
+
+    return _with_job_run(
+        connection,
+        job_code="sync_nba_live_game",
+        description="Sync nba live snapshot and play-by-play for a single game",
+        runner=_runner,
+    )
+
+
+@router.post(
     "/nba/teams",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=SyncTriggerResponse,
@@ -579,6 +1090,134 @@ def sync_nba_mappings(
         connection,
         job_code="sync_nba_mappings",
         description="Sync nba<->catalog mappings and information scores",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/polymarket/positions",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_polymarket_positions(
+    payload: PolymarketPortfolioSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        summary = _run_polymarket_portfolio_sync(connection, payload)
+        summary["route_scope"] = "positions"
+        return summary
+
+    return _with_job_run(
+        connection,
+        job_code="sync_polymarket_positions",
+        description="Sync polymarket portfolio positions snapshots",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/polymarket/orders",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_polymarket_orders(
+    payload: PolymarketPortfolioSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        summary = _run_polymarket_portfolio_sync(connection, payload)
+        summary["route_scope"] = "orders"
+        return summary
+
+    return _with_job_run(
+        connection,
+        job_code="sync_polymarket_orders",
+        description="Sync polymarket orders mirror",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/polymarket/trades",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_polymarket_trades(
+    payload: PolymarketPortfolioSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        summary = _run_polymarket_portfolio_sync(connection, payload)
+        summary["route_scope"] = "trades"
+        return summary
+
+    return _with_job_run(
+        connection,
+        job_code="sync_polymarket_trades",
+        description="Sync polymarket trades mirror",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/polymarket/closed-positions/consolidate",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_polymarket_closed_positions_consolidation(
+    payload: PolymarketClosedPositionConsolidationRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        summary = _run_polymarket_closed_positions_consolidation(connection, payload)
+        summary["route_scope"] = "closed_positions_consolidation"
+        return summary
+
+    return _with_job_run(
+        connection,
+        job_code="sync_polymarket_closed_positions_consolidation",
+        description="Validate event conclusion candidates and consolidate closed positions",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/polymarket/orderbook",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_polymarket_orderbook(
+    payload: PolymarketOrderbookSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        return _run_polymarket_orderbook_sync(connection, payload)
+
+    return _with_job_run(
+        connection,
+        job_code="sync_polymarket_orderbook",
+        description="Sync polymarket orderbook snapshots and levels",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/polymarket/prices",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_polymarket_prices(
+    payload: PolymarketPricesSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        return _run_polymarket_prices_sync(connection, payload)
+
+    return _with_job_run(
+        connection,
+        job_code="sync_polymarket_prices",
+        description="Sync polymarket outcome price ticks",
         runner=_runner,
     )
 

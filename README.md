@@ -3,7 +3,7 @@
 Personal prediction-market data framework focused on production-grade data structures and service layers before strategy automation.
 
 ## Current Status
-- Active checkpoint: `v0.6.1` (Market data query endpoints)
+- Active checkpoint: `v0.8.1` (Chroma service bootstrap)
 - Checkpoint ledger source of truth: `dev-checkpoint/README.md`
 - Current scope: schema + ingestion + API readiness, not autonomous strategy execution.
 
@@ -30,9 +30,11 @@ The project now uses a provider/category/module split:
 - `v0.3.1` - `v0.3.6`: database MVP, migrations, upsert primitives, seed-pack integration
 - `v0.4.1` - `v0.4.6`: ingestion pipelines to schema (`sync_events`, `sync_markets`, `sync_portfolio`, `sync_postgres`, `sync_mappings`, `backfill_retry`)
 - `v0.5.1` - `v0.5.6`: FastAPI core layer (`/v1` health/registry, catalog graph routes, sync triggers, standardized error model, OpenAPI lock)
+- `v0.6.1` - `v0.6.6`: portfolio and market-data service layer (`market-data reads`, `portfolio reads`, `manual order actions`, `lifecycle/risk controls`, `end-to-end live validation`)
+- `v0.7.1` - `v0.7.6`: NBA module serving layer (`nba read routes`, `game-scoped live sync`, `play-by-play`, `context cache/routes`, `selected-game validations`, `query tuning`)
 
 ### In progress
-- `v0.6.1`: Market data query endpoints
+- `v0.8.1`: Chroma service bootstrap
 
 ### Planned lanes
 1. `v0.5.*` FastAPI core layer

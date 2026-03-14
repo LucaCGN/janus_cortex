@@ -36,6 +36,18 @@ class NbaSyncSummary:
     error_text: str | None = None
 
 
+@dataclass
+class NbaLiveGameSyncSummary:
+    sync_run_id: str | None
+    status: str
+    game_id: str
+    rows_read: int
+    rows_written: int
+    live_snapshots_written: int
+    play_by_play_rows_written: int
+    error_text: str | None = None
+
+
 def _uuid_for(*parts: str) -> str:
     return str(uuid.uuid5(_NAMESPACE, "|".join(parts)))
 
@@ -47,6 +59,13 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _safe_positive_int(value: Any) -> int | None:
+    parsed = _safe_int(value)
+    if parsed is None or parsed <= 0:
+        return None
+    return parsed
 
 
 def _safe_dt(value: Any) -> datetime | None:
@@ -167,6 +186,38 @@ def _insert_raw_payload(
         )
 
 
+def _update_game_from_live_payload(
+    connection: Any,
+    *,
+    game_id: str,
+    payload: dict[str, Any],
+) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE nba.nba_games
+            SET game_status = COALESCE(%s, game_status),
+                game_status_text = COALESCE(%s, game_status_text),
+                period = COALESCE(%s, period),
+                game_clock = COALESCE(%s, game_clock),
+                home_score = COALESCE(%s, home_score),
+                away_score = COALESCE(%s, away_score),
+                updated_at = %s
+            WHERE game_id = %s;
+            """,
+            (
+                _safe_int(payload.get("game_status")),
+                str(payload.get("game_status_text") or "") or None,
+                _safe_int(payload.get("period")),
+                str(payload.get("game_clock") or "") or None,
+                _safe_int(payload.get("home_score")),
+                _safe_int(payload.get("visitor_score")),
+                datetime.now(timezone.utc),
+                game_id,
+            ),
+        )
+
+
 def _upsert_schedule_games(
     *,
     repo: JanusUpsertRepository,
@@ -187,8 +238,8 @@ def _upsert_schedule_games(
         return teams_upserted, games_upserted
 
     for _, row in work.iterrows():
-        home_team_id = _safe_int(row.get("home_team_id"))
-        away_team_id = _safe_int(row.get("away_team_id"))
+        home_team_id = _safe_positive_int(row.get("home_team_id"))
+        away_team_id = _safe_positive_int(row.get("away_team_id"))
         home_slug = str(row.get("home_team_slug") or "").upper()
         away_slug = str(row.get("away_team_slug") or "").upper()
         if home_team_id:
@@ -252,8 +303,8 @@ def _upsert_scoreboard_games(
 
         home = game.get("homeTeam") or {}
         away = game.get("awayTeam") or {}
-        home_team_id = _safe_int(home.get("teamId"))
-        away_team_id = _safe_int(away.get("teamId"))
+        home_team_id = _safe_positive_int(home.get("teamId"))
+        away_team_id = _safe_positive_int(away.get("teamId"))
         home_slug = str(home.get("teamTricode") or "").upper()
         away_slug = str(away.get("teamTricode") or "").upper()
 
@@ -492,6 +543,139 @@ def run_nba_metadata_sync(
                 missing_today_detected=len(missing_today),
                 missing_today_inserted=0,
                 ongoing_games=0,
+                live_snapshots_written=live_snapshots_written,
+                play_by_play_rows_written=play_by_play_rows_written,
+                error_text=repr(exc),
+            )
+
+
+def run_nba_live_game_sync(
+    *,
+    game_id: str,
+    include_live_snapshots: bool = True,
+    include_play_by_play: bool = True,
+) -> NbaLiveGameSyncSummary:
+    rows_read = 0
+    rows_written = 0
+    live_snapshots_written = 0
+    play_by_play_rows_written = 0
+
+    with managed_connection() as connection:
+        repo = JanusUpsertRepository(connection)
+        provider_id = repo.upsert_provider(
+            provider_id=_uuid_for("provider", "nba_live_api"),
+            code="nba_live_api",
+            name="NBA Live API",
+            category="sports_data",
+            base_url="https://cdn.nba.com",
+            auth_type="none",
+        )
+        module_id = repo.upsert_module(
+            module_id=_uuid_for("module", "nba_live_game_sync"),
+            code="nba_live_game_sync",
+            name="NBA Live Game Sync",
+            description="Game-scoped NBA live snapshot and play-by-play ingestion",
+            owner="janus",
+        )
+        sync_run_id = _insert_sync_run(connection, provider_id=provider_id, module_id=module_id)
+        connection.commit()
+
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1 FROM nba.nba_games WHERE game_id = %s;", (game_id,))
+                if cursor.fetchone() is None:
+                    raise ValueError(f"game_id not found in nba.nba_games: {game_id}")
+
+            if include_live_snapshots:
+                live_payload = fetch_live_scoreboard(game_id)
+                rows_read += 1
+                _insert_raw_payload(
+                    connection,
+                    sync_run_id=sync_run_id,
+                    provider_id=provider_id,
+                    endpoint=f"/nba/live/{game_id}/boxscore",
+                    payload=live_payload,
+                )
+                if live_payload:
+                    inserted = repo.insert_nba_live_game_snapshot(
+                        game_id=game_id,
+                        captured_at=datetime.now(timezone.utc),
+                        period=_safe_int(live_payload.get("period")),
+                        clock=str(live_payload.get("game_clock") or ""),
+                        home_score=_safe_int(live_payload.get("home_score")),
+                        away_score=_safe_int(live_payload.get("visitor_score")),
+                        payload_json=live_payload,
+                        ignore_duplicates=True,
+                    )
+                    if inserted:
+                        live_snapshots_written += 1
+                        rows_written += 1
+                    _update_game_from_live_payload(connection, game_id=game_id, payload=live_payload)
+
+            if include_play_by_play:
+                pbp_df = fetch_play_by_play_df(PlayByPlayRequest(game_id=game_id))
+                rows_read += len(pbp_df)
+                _insert_raw_payload(
+                    connection,
+                    sync_run_id=sync_run_id,
+                    provider_id=provider_id,
+                    endpoint=f"/nba/live/{game_id}/play-by-play",
+                    payload=pbp_df.to_dict(orient="records"),
+                )
+                if not pbp_df.empty:
+                    for _, row in pbp_df.iterrows():
+                        inserted = repo.upsert_nba_play_by_play_event(
+                            game_id=game_id,
+                            event_index=int(row.get("event_index")),
+                            action_id=str(row.get("action_id")) if row.get("action_id") is not None else None,
+                            period=_safe_int(row.get("period")),
+                            clock=str(row.get("clock") or ""),
+                            description=str(row.get("description") or ""),
+                            home_score=_safe_int(row.get("score_home")),
+                            away_score=_safe_int(row.get("score_away")),
+                            is_score_change=bool(row.get("is_score_change")),
+                            payload_json=row.get("raw") if isinstance(row.get("raw"), dict) else None,
+                        )
+                        if inserted:
+                            play_by_play_rows_written += 1
+                            rows_written += 1
+
+            _update_sync_run(
+                connection,
+                sync_run_id=sync_run_id,
+                status="success",
+                rows_read=rows_read,
+                rows_written=rows_written,
+                error_text=None,
+            )
+            connection.commit()
+            return NbaLiveGameSyncSummary(
+                sync_run_id=sync_run_id,
+                status="success",
+                game_id=game_id,
+                rows_read=rows_read,
+                rows_written=rows_written,
+                live_snapshots_written=live_snapshots_written,
+                play_by_play_rows_written=play_by_play_rows_written,
+                error_text=None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            connection.rollback()
+            _update_sync_run(
+                connection,
+                sync_run_id=sync_run_id,
+                status="error",
+                rows_read=rows_read,
+                rows_written=rows_written,
+                error_text=repr(exc),
+            )
+            connection.commit()
+            return NbaLiveGameSyncSummary(
+                sync_run_id=sync_run_id,
+                status="error",
+                game_id=game_id,
+                rows_read=rows_read,
+                rows_written=rows_written,
                 live_snapshots_written=live_snapshots_written,
                 play_by_play_rows_written=play_by_play_rows_written,
                 error_text=repr(exc),

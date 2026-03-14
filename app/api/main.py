@@ -6,16 +6,24 @@ from typing import Any
 from fastapi import FastAPI
 
 from app.api.errors import RequestContextMiddleware, install_exception_handlers
-from app.api.routers import catalog_router, nba_read_router, sync_router, system_registry_router
+from app.api.routers import (
+    catalog_router,
+    market_data_router,
+    nba_read_router,
+    portfolio_router,
+    sync_router,
+    system_registry_router,
+)
 
 
 logger = logging.getLogger(__name__)
+API_VERSION = "0.7.6"
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Janus Cortex API",
-        version="0.5.6",
+        version=API_VERSION,
         summary="FastAPI service layer for Janus Cortex data platform",
     )
 
@@ -24,6 +32,8 @@ def create_app() -> FastAPI:
 
     app.include_router(system_registry_router)
     app.include_router(catalog_router)
+    app.include_router(market_data_router)
+    app.include_router(portfolio_router)
     app.include_router(sync_router)
     app.include_router(nba_read_router)
 
@@ -31,7 +41,7 @@ def create_app() -> FastAPI:
     def root() -> dict[str, Any]:
         return {
             "service": "janus-cortex-api",
-            "version": "0.5.6",
+            "version": API_VERSION,
             "docs": "/docs",
         }
 

@@ -39,6 +39,7 @@ Current implemented migrations:
 - `0008_v0_4_5__catalog_event_information_scores.sql`
 - `0009_v0_4_6__market_data_outcome_price_candles.sql`
 - `0010_v0_5_1__ops_core_tables.sql`
+- `0011_v0_6_2__portfolio_valuation_snapshots.sql`
 
 ## Tests
 - run migration integration tests against real Postgres:
@@ -75,6 +76,8 @@ Current implemented migrations:
   - `$env:JANUS_RUN_DB_TESTS='1'; $env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/data/pipelines/daily/nba/test_sync_postgres_live_pytest.py tests/app/data/pipelines/daily/polymarket/test_backfill_retry_live_pytest.py`
 - run API + DB validations (`v0.5`):
   - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/databases/test_postgres_migrations_pytest.py tests/app/data/databases/test_upsert_primitives_pytest.py tests/app/api`
+- run API + DB validations (`v0.6`):
+  - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/api`
 - run live endpoint validations (`v0.5`):
   - `$env:JANUS_RUN_DB_TESTS='1'; $env:JANUS_RUN_LIVE_TESTS='1'; python -m pytest -q tests/app/api/test_live_today_games_endpoints_pytest.py`
 - run FastAPI service for manual checks:

@@ -133,6 +133,13 @@ class NbaScheduleSyncRequest(BaseModel):
     include_play_by_play: bool = True
 
 
+class NbaGameLiveSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    include_live_snapshots: bool = True
+    include_play_by_play: bool = True
+
+
 class NbaSeasonSyncRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -164,3 +171,180 @@ class HealthResponse(BaseModel):
     database: str
     timestamp: datetime
     services: list[dict[str, Any]]
+
+
+class OutcomeTicksQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    source: str | None = None
+    limit: int = Field(default=500, ge=1, le=5000)
+
+
+class OutcomeCandlesQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timeframe: str = Field(default="1m", min_length=1)
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    source: str | None = None
+    limit: int = Field(default=500, ge=1, le=5000)
+
+
+class OrderbookHistoryQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    limit: int = Field(default=100, ge=1, le=1000)
+    include_levels: bool = True
+    levels_per_side: int = Field(default=10, ge=1, le=100)
+
+
+class TradingAccountCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    provider_id: UUID | None = None
+    provider_code: str = Field(default="polymarket_data_api", min_length=1)
+    account_label: str = Field(min_length=1)
+    wallet_address: str | None = None
+    proxy_wallet_address: str | None = None
+    chain_id: int | None = Field(default=None, ge=1)
+    is_active: bool = True
+
+
+class PortfolioSummaryQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    limit: int = Field(default=200, ge=1, le=1000)
+
+
+class PortfolioPositionsQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    outcome_id: UUID | None = None
+    latest_only: bool = True
+    source: str | None = None
+    limit: int = Field(default=500, ge=1, le=5000)
+    offset: int = Field(default=0, ge=0)
+
+
+class PortfolioPositionHistoryQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    outcome_id: UUID | None = None
+    source: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    limit: int = Field(default=1000, ge=1, le=10000)
+    offset: int = Field(default=0, ge=0)
+
+
+class PortfolioOrdersQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    market_id: UUID | None = None
+    outcome_id: UUID | None = None
+    status: str | None = None
+    side: str | None = None
+    limit: int = Field(default=500, ge=1, le=5000)
+    offset: int = Field(default=0, ge=0)
+
+
+class PortfolioTradesQuery(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    market_id: UUID | None = None
+    outcome_id: UUID | None = None
+    order_id: UUID | None = None
+    side: str | None = None
+    limit: int = Field(default=500, ge=1, le=5000)
+    offset: int = Field(default=0, ge=0)
+
+
+class ManualOrderCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID
+    market_id: UUID
+    outcome_id: UUID | None = None
+    side: Literal["buy", "sell"]
+    order_type: Literal["limit", "market"] = "limit"
+    time_in_force: str | None = None
+    limit_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    size: float | None = Field(default=None, gt=0.0)
+    metadata_json: dict[str, Any] | list[Any] | None = None
+    dry_run: bool = True
+
+
+class ManualOrderCancelRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    reason: str | None = None
+    dry_run: bool = True
+
+
+class ManualOrderResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    order_id: UUID
+    status: str
+    event_type: str
+    external_order_id: str | None = None
+    dry_run: bool
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class PolymarketPortfolioSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    wallet_address: str | None = None
+    limit: int = Field(default=250, ge=1, le=2000)
+    payload_override: dict[str, list[dict[str, Any]]] | None = None
+
+
+class PolymarketClosedPositionConsolidationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    wallet_address: str | None = None
+    limit: int = Field(default=250, ge=1, le=2000)
+    run_portfolio_sync: bool = True
+    stale_sample_limit: int = Field(default=20, ge=0, le=200)
+
+
+class PolymarketOrderbookSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome_id: UUID | None = None
+    token_id: str | None = None
+    sample_count: int = Field(default=2, ge=1, le=100)
+    sample_interval_sec: float = Field(default=0.5, ge=0.0, le=30.0)
+    max_levels_per_side: int = Field(default=10, ge=1, le=100)
+    dry_run: bool = False
+
+
+class PolymarketPricesSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    outcome_id: UUID
+    lookback_hours: int = Field(default=24, ge=1, le=24 * 30)
+    interval: str = Field(default="1m", min_length=1)
+    fidelity: int = Field(default=10, ge=1, le=60)
+    allow_snapshot_fallback: bool = True
+    dry_run: bool = False
+
+
+class NbaGameEventLinkCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: UUID
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    linked_by: str | None = None

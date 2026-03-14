@@ -25,8 +25,10 @@ v1 scope:
 - no production auto-trader logic inside core app.
 
 ## Current phase
-- Active phase: `v0.6.1`
-- Reference source of truth: `dev-checkpoint/v0.6.1.md`
+- Active phase: `v0.8.1`
+- Reference source of truth: `dev-checkpoint/v0.8.1.md`
+- Latest completed block: `v0.7.1` to `v0.7.6` closed on `2026-03-14` with refreshed NBA live, play-by-play, context, and DB-audit coverage.
+- Pre-`v0.8.1` gate completed on `2026-03-14`: full-season `2025-26` strategy-data audit confirmed full finished-game PBP coverage and partial season-wide Polymarket odds coverage.
 
 ## Canonical planning files
 1. `app/docs/scalable_db_schema_proposal.md`
@@ -36,7 +38,7 @@ v1 scope:
 5. `app/docs/source_temporal_coverage.md`
 6. `app/docs/development_guide.md` (this file)
 7. `app/docs/app_structure_modularization_plan.md`
-8. `app/docs/openapi_v0_5_snapshot.json`
+8. `app/docs/openapi_v0_6_snapshot.json`
 
 ## Pre-v0.3 structure gate
 The pre-`v0.3` structure gate is completed and documented in:
@@ -176,7 +178,7 @@ Before closing any session:
 
 ## Fast reference commands (to keep workflow repeatable)
 - list checkpoints: `Get-ChildItem dev-checkpoint`
-- open active phase: `Get-Content -Raw dev-checkpoint/v0.6.1.md`
+- open active phase: `Get-Content -Raw dev-checkpoint/v0.8.1.md`
 - list node files: `rg --files app/data/nodes`
 - track schema mentions: `rg -n "activate:|table|column|phase" app/docs/scalable_db_schema_proposal.md`
 - track routes mentions: `rg -n "v0\.|/v1/|Required tables" app/docs/scalable_api_routes_proposal.md`
@@ -188,7 +190,9 @@ Before closing any session:
 - run `v0.4.1` dynamic today-NBA ingestion probes: `python -m app.data.pipelines.daily.polymarket.sync_events --probe-set today_nba --max-finished 1 --max-live 1`
 - run `v0.4.2` market snapshot sync: `python -m app.data.pipelines.daily.polymarket.sync_markets --probe-set today_nba --max-finished 2 --max-live 2 --include-upcoming`
 - run `v0.4.3` portfolio mirror sync: `python -m app.data.pipelines.daily.polymarket.sync_portfolio --wallet <0x_wallet>`
+- run closed-position consolidation pipeline: `python -m app.data.pipelines.daily.polymarket.consolidate_closed_positions --wallet <0x_wallet>`
 - run `v0.4.4` NBA postgres sync: `python -m app.data.pipelines.daily.nba.sync_postgres --season 2025-26 --schedule-window-days 2`
+- run season-wide strategy data audit: `python -m app.data.pipelines.daily.nba.season_strategy_audit --season 2025-26 --pbp-max-workers 8 --moneyline-window-days 14 --moneyline-max-pages 30 --history-sample-events-per-month 3`
 - run `v0.4.5` cross-domain mapping sync: `python -m app.data.pipelines.daily.cross_domain.sync_mappings --lookback-days 3 --lookahead-days 2`
 - run `v0.4.6` backfill/retry + candle aggregation: `python -m app.data.pipelines.daily.polymarket.backfill_retry --max-finished 2 --max-live 2 --include-upcoming --candle-timeframe 1m --candle-lookback-hours 48`
 

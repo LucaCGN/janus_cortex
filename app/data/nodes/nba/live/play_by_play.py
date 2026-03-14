@@ -265,6 +265,82 @@ def fetch_lead_tracker_df(request: PlayByPlayRequest) -> pd.DataFrame:
     return out.reset_index(drop=True)
 
 
+def compute_lead_change_summary(df: pd.DataFrame) -> dict[str, Any]:
+    """
+    Summarize lead progression for one game.
+
+    Lead changes count transitions between non-tied leaders. Tied rows do not
+    count as independent lead changes, but they are tracked separately.
+    """
+    if df.empty:
+        return {
+            "lead_changes": 0,
+            "times_tied": 0,
+            "home_largest_lead": 0,
+            "away_largest_lead": 0,
+            "home_lead_events": 0,
+            "away_lead_events": 0,
+            "tied_events": 0,
+            "home_lead_segments": 0,
+            "away_lead_segments": 0,
+            "last_leader_side": "tied",
+        }
+
+    work = df.copy()
+    if "home_lead" not in work.columns:
+        if {"score_home", "score_away"}.issubset(work.columns):
+            work["home_lead"] = (
+                pd.to_numeric(work["score_home"], errors="coerce").fillna(0).astype(int)
+                - pd.to_numeric(work["score_away"], errors="coerce").fillna(0).astype(int)
+            )
+        else:
+            raise ValueError("compute_lead_change_summary requires home_lead or score_home/score_away columns")
+
+    if "leader_side" not in work.columns:
+        work["leader_side"] = work["home_lead"].apply(
+            lambda x: "home" if int(x) > 0 else ("away" if int(x) < 0 else "tied")
+        )
+
+    leaders = work["leader_side"].astype(str).tolist()
+    lead_changes = 0
+    home_segments = 0
+    away_segments = 0
+    last_non_tied: str | None = None
+
+    for side in leaders:
+        if side == "tied":
+            continue
+        if last_non_tied is None:
+            if side == "home":
+                home_segments += 1
+            elif side == "away":
+                away_segments += 1
+            last_non_tied = side
+            continue
+        if side != last_non_tied:
+            lead_changes += 1
+            if side == "home":
+                home_segments += 1
+            elif side == "away":
+                away_segments += 1
+            last_non_tied = side
+
+    home_lead = pd.to_numeric(work["home_lead"], errors="coerce").fillna(0).astype(int)
+    last_leader_side = str(work["leader_side"].iloc[-1]) if not work.empty else "tied"
+    return {
+        "lead_changes": int(lead_changes),
+        "times_tied": int((home_lead == 0).sum()),
+        "home_largest_lead": int(max(home_lead.max(), 0)),
+        "away_largest_lead": int(abs(min(home_lead.min(), 0))),
+        "home_lead_events": int((home_lead > 0).sum()),
+        "away_lead_events": int((home_lead < 0).sum()),
+        "tied_events": int((home_lead == 0).sum()),
+        "home_lead_segments": int(home_segments),
+        "away_lead_segments": int(away_segments),
+        "last_leader_side": last_leader_side,
+    }
+
+
 def upsert_nba_play_by_play_to_sqlite(
     df: pd.DataFrame,
     sqlite_path: str | Path,
