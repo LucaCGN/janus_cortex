@@ -1271,6 +1271,295 @@ class JanusUpsertRepository:
             row = cursor.fetchone()
             return row is not None
 
+    def upsert_nba_game_feature_snapshot(
+        self,
+        *,
+        game_id: str,
+        computed_at: datetime,
+        feature_version: str,
+        season: str,
+        team_context_mode: str = "full_game",
+        event_id: str | None = None,
+        pbp_event_count: int | None = None,
+        lead_changes: int | None = None,
+        home_largest_lead: int | None = None,
+        away_largest_lead: int | None = None,
+        home_losing_segments: int | None = None,
+        away_losing_segments: int | None = None,
+        home_led_and_lost: bool | None = None,
+        away_led_and_lost: bool | None = None,
+        covered_polymarket_game_flag: bool = False,
+        home_pre_game_price_min: float | None = None,
+        home_pre_game_price_max: float | None = None,
+        away_pre_game_price_min: float | None = None,
+        away_pre_game_price_max: float | None = None,
+        home_in_game_price_min: float | None = None,
+        home_in_game_price_max: float | None = None,
+        away_in_game_price_min: float | None = None,
+        away_in_game_price_max: float | None = None,
+        price_window_start: datetime | None = None,
+        price_window_end: datetime | None = None,
+        coverage_status: str | None = None,
+        source_summary_json: dict[str, Any] | list[Any] | None = None,
+    ) -> bool:
+        _require_non_empty("game_id", game_id)
+        _require_non_empty("feature_version", feature_version)
+        _require_non_empty("season", season)
+        _require_non_empty("team_context_mode", team_context_mode)
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO nba.nba_game_feature_snapshots (
+                    game_id, event_id, computed_at, feature_version, season, team_context_mode,
+                    pbp_event_count, lead_changes, home_largest_lead, away_largest_lead,
+                    home_losing_segments, away_losing_segments, home_led_and_lost, away_led_and_lost,
+                    covered_polymarket_game_flag,
+                    home_pre_game_price_min, home_pre_game_price_max,
+                    away_pre_game_price_min, away_pre_game_price_max,
+                    home_in_game_price_min, home_in_game_price_max,
+                    away_in_game_price_min, away_in_game_price_max,
+                    price_window_start, price_window_end, coverage_status, source_summary_json
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON CONFLICT (game_id, season, team_context_mode, feature_version)
+                DO UPDATE SET
+                    event_id = EXCLUDED.event_id,
+                    computed_at = EXCLUDED.computed_at,
+                    pbp_event_count = EXCLUDED.pbp_event_count,
+                    lead_changes = EXCLUDED.lead_changes,
+                    home_largest_lead = EXCLUDED.home_largest_lead,
+                    away_largest_lead = EXCLUDED.away_largest_lead,
+                    home_losing_segments = EXCLUDED.home_losing_segments,
+                    away_losing_segments = EXCLUDED.away_losing_segments,
+                    home_led_and_lost = EXCLUDED.home_led_and_lost,
+                    away_led_and_lost = EXCLUDED.away_led_and_lost,
+                    covered_polymarket_game_flag = EXCLUDED.covered_polymarket_game_flag,
+                    home_pre_game_price_min = EXCLUDED.home_pre_game_price_min,
+                    home_pre_game_price_max = EXCLUDED.home_pre_game_price_max,
+                    away_pre_game_price_min = EXCLUDED.away_pre_game_price_min,
+                    away_pre_game_price_max = EXCLUDED.away_pre_game_price_max,
+                    home_in_game_price_min = EXCLUDED.home_in_game_price_min,
+                    home_in_game_price_max = EXCLUDED.home_in_game_price_max,
+                    away_in_game_price_min = EXCLUDED.away_in_game_price_min,
+                    away_in_game_price_max = EXCLUDED.away_in_game_price_max,
+                    price_window_start = EXCLUDED.price_window_start,
+                    price_window_end = EXCLUDED.price_window_end,
+                    coverage_status = EXCLUDED.coverage_status,
+                    source_summary_json = EXCLUDED.source_summary_json
+                RETURNING game_id;
+                """,
+                (
+                    game_id,
+                    event_id,
+                    computed_at,
+                    feature_version,
+                    season,
+                    team_context_mode,
+                    pbp_event_count,
+                    lead_changes,
+                    home_largest_lead,
+                    away_largest_lead,
+                    home_losing_segments,
+                    away_losing_segments,
+                    home_led_and_lost,
+                    away_led_and_lost,
+                    covered_polymarket_game_flag,
+                    home_pre_game_price_min,
+                    home_pre_game_price_max,
+                    away_pre_game_price_min,
+                    away_pre_game_price_max,
+                    home_in_game_price_min,
+                    home_in_game_price_max,
+                    away_in_game_price_min,
+                    away_in_game_price_max,
+                    price_window_start,
+                    price_window_end,
+                    coverage_status,
+                    _json_or_none(source_summary_json),
+                ),
+            )
+            row = cursor.fetchone()
+            return row is not None
+
+    def delete_nba_odds_coverage_audits_for_game(
+        self,
+        *,
+        season: str,
+        game_id: str,
+    ) -> int:
+        _require_non_empty("season", season)
+        _require_non_empty("game_id", game_id)
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                DELETE FROM nba.nba_odds_coverage_audits
+                WHERE season = %s AND game_id = %s;
+                """,
+                (season, game_id),
+            )
+            return int(cursor.rowcount)
+
+    def insert_nba_odds_coverage_audit(
+        self,
+        *,
+        odds_coverage_audit_id: str,
+        season: str,
+        game_id: str,
+        audited_at: datetime,
+        coverage_scope: str,
+        coverage_status: str,
+        event_id: str | None = None,
+        market_id: str | None = None,
+        outcome_id: str | None = None,
+        history_points: int | None = None,
+        fallback_points: int | None = None,
+        window_start: datetime | None = None,
+        window_end: datetime | None = None,
+        issue_code: str | None = None,
+        details_json: dict[str, Any] | list[Any] | None = None,
+    ) -> bool:
+        _require_non_empty("odds_coverage_audit_id", odds_coverage_audit_id)
+        _require_non_empty("season", season)
+        _require_non_empty("game_id", game_id)
+        _require_non_empty("coverage_scope", coverage_scope)
+        _require_non_empty("coverage_status", coverage_status)
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO nba.nba_odds_coverage_audits (
+                    odds_coverage_audit_id, season, game_id, event_id, market_id, outcome_id,
+                    audited_at, coverage_scope, coverage_status, history_points, fallback_points,
+                    window_start, window_end, issue_code, details_json
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON CONFLICT (odds_coverage_audit_id)
+                DO NOTHING
+                RETURNING odds_coverage_audit_id;
+                """,
+                (
+                    odds_coverage_audit_id,
+                    season,
+                    game_id,
+                    event_id,
+                    market_id,
+                    outcome_id,
+                    audited_at,
+                    coverage_scope,
+                    coverage_status,
+                    history_points,
+                    fallback_points,
+                    window_start,
+                    window_end,
+                    issue_code,
+                    _json_or_none(details_json),
+                ),
+            )
+            row = cursor.fetchone()
+            return row is not None
+
+    def upsert_nba_team_feature_rollup(
+        self,
+        *,
+        team_id: int,
+        season: str,
+        computed_at: datetime,
+        feature_version: str,
+        sample_games: int | None = None,
+        covered_games: int | None = None,
+        wins: int | None = None,
+        losses: int | None = None,
+        avg_lead_changes: float | None = None,
+        avg_losing_segments: float | None = None,
+        avg_largest_lead_in_losses: float | None = None,
+        losses_after_leading: int | None = None,
+        underdog_games_with_coverage: int | None = None,
+        favorite_games_with_coverage: int | None = None,
+        avg_underdog_in_game_range: float | None = None,
+        avg_favorite_in_game_range: float | None = None,
+        classification_tags_json: dict[str, Any] | list[Any] | None = None,
+        notes_json: dict[str, Any] | list[Any] | None = None,
+    ) -> bool:
+        if team_id <= 0:
+            raise ValueError("team_id must be a positive integer")
+        _require_non_empty("season", season)
+        _require_non_empty("feature_version", feature_version)
+
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO nba.nba_team_feature_rollups (
+                    team_id, season, computed_at, feature_version,
+                    sample_games, covered_games, wins, losses,
+                    avg_lead_changes, avg_losing_segments, avg_largest_lead_in_losses,
+                    losses_after_leading, underdog_games_with_coverage, favorite_games_with_coverage,
+                    avg_underdog_in_game_range, avg_favorite_in_game_range,
+                    classification_tags_json, notes_json
+                ) VALUES (
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s, %s,
+                    %s, %s,
+                    %s, %s
+                )
+                ON CONFLICT (team_id, season, feature_version)
+                DO UPDATE SET
+                    computed_at = EXCLUDED.computed_at,
+                    sample_games = EXCLUDED.sample_games,
+                    covered_games = EXCLUDED.covered_games,
+                    wins = EXCLUDED.wins,
+                    losses = EXCLUDED.losses,
+                    avg_lead_changes = EXCLUDED.avg_lead_changes,
+                    avg_losing_segments = EXCLUDED.avg_losing_segments,
+                    avg_largest_lead_in_losses = EXCLUDED.avg_largest_lead_in_losses,
+                    losses_after_leading = EXCLUDED.losses_after_leading,
+                    underdog_games_with_coverage = EXCLUDED.underdog_games_with_coverage,
+                    favorite_games_with_coverage = EXCLUDED.favorite_games_with_coverage,
+                    avg_underdog_in_game_range = EXCLUDED.avg_underdog_in_game_range,
+                    avg_favorite_in_game_range = EXCLUDED.avg_favorite_in_game_range,
+                    classification_tags_json = EXCLUDED.classification_tags_json,
+                    notes_json = EXCLUDED.notes_json
+                RETURNING team_id;
+                """,
+                (
+                    team_id,
+                    season,
+                    computed_at,
+                    feature_version,
+                    sample_games,
+                    covered_games,
+                    wins,
+                    losses,
+                    avg_lead_changes,
+                    avg_losing_segments,
+                    avg_largest_lead_in_losses,
+                    losses_after_leading,
+                    underdog_games_with_coverage,
+                    favorite_games_with_coverage,
+                    avg_underdog_in_game_range,
+                    avg_favorite_in_game_range,
+                    _json_or_none(classification_tags_json),
+                    _json_or_none(notes_json),
+                ),
+            )
+            row = cursor.fetchone()
+            return row is not None
+
     def insert_event_information_score(
         self,
         *,

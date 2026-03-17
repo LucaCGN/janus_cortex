@@ -13,6 +13,7 @@ from app.api.dependencies import get_db_connection
 from app.api.jobs import ensure_api_sync_job_definition, insert_job_run
 from app.api.models import (
     MappingSyncRequest,
+    NbaSeasonRefreshRequest,
     PolymarketClosedPositionConsolidationRequest,
     NbaGameLiveSyncRequest,
     NbaScheduleSyncRequest,
@@ -43,6 +44,7 @@ from app.data.nodes.nba.teams.leaguedash_team_advanced_season import fetch_team_
 from app.data.nodes.nba.teams.leaguedash_team_base_season import fetch_team_base_df
 from app.data.nodes.nba.teams.team_recent_form_last5 import compute_last5_metrics_df
 from app.data.pipelines.daily.cross_domain.sync_mappings import run_cross_domain_mapping_sync
+from app.data.pipelines.daily.nba.regular_season_features import run_nba_regular_season_refresh
 from app.data.pipelines.daily.nba.sync_postgres import run_nba_live_game_sync, run_nba_metadata_sync
 from app.data.pipelines.daily.polymarket.consolidate_closed_positions import (
     consolidate_closed_positions_for_wallet,
@@ -1066,6 +1068,38 @@ def sync_nba_insights(
         connection,
         job_code="sync_nba_insights",
         description="Sync nba insight rows",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/nba/season-refresh",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_nba_season_refresh(
+    payload: NbaSeasonRefreshRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        summary = run_nba_regular_season_refresh(
+            season=payload.season,
+            refresh_metadata=payload.refresh_metadata,
+            game_ids=payload.game_ids or None,
+            max_games=payload.max_games,
+            only_finished=payload.only_finished,
+            include_odds_fetch=payload.include_odds_fetch,
+            build_rollups=payload.build_rollups,
+            moneyline_window_days=payload.moneyline_window_days,
+            moneyline_page_size=payload.moneyline_page_size,
+            moneyline_max_pages=payload.moneyline_max_pages,
+        )
+        return to_jsonable(summary.__dict__)
+
+    return _with_job_run(
+        connection,
+        job_code="sync_nba_season_refresh",
+        description="Refresh regular-season NBA feature snapshots, odds coverage audits, and team rollups",
         runner=_runner,
     )
 

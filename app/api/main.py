@@ -17,7 +17,7 @@ from app.api.routers import (
 
 
 logger = logging.getLogger(__name__)
-API_VERSION = "0.7.6"
+API_VERSION = "0.8.1"
 
 
 def create_app() -> FastAPI:

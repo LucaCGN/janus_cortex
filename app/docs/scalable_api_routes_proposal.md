@@ -150,7 +150,41 @@ A route can only be implemented when all required tables are active in its phase
 | GET | `/v1/nba/games/{game_id}/context/pre` | `nba.nba_context_cache` or on-demand pipelines |
 | GET | `/v1/nba/games/{game_id}/context/live` | `nba.nba_context_cache` or on-demand pipelines |
 
-### `v0.8.3` - Chroma and documents routes
+### `v0.8.5` - NBA regular-season feature routes
+| Method | Route | Required tables |
+|---|---|---|
+| GET | `/v1/nba/games/{game_id}/features/latest` | `nba.nba_game_feature_snapshots`, `nba.nba_games` |
+| GET | `/v1/nba/seasons/{season}/games/features` | `nba.nba_game_feature_snapshots`, `nba.nba_games` |
+| GET | `/v1/nba/seasons/{season}/odds-coverage` | `nba.nba_odds_coverage_audits`, `nba.nba_games`, `catalog.events` |
+
+### `v0.8.6` - NBA regular-season refresh routes
+| Method | Route | Required tables |
+|---|---|---|
+| POST | `/v1/sync/nba/season-refresh` | `ops.job_runs`, `ops.job_definitions`, `nba.nba_game_feature_snapshots`, `nba.nba_odds_coverage_audits`, `nba.nba_team_feature_rollups` |
+
+### `v0.8.7` - NBA team rollup routes
+| Method | Route | Required tables |
+|---|---|---|
+| GET | `/v1/nba/seasons/{season}/teams/feature-rollups` | `nba.nba_team_feature_rollups`, `nba.nba_teams` |
+| GET | `/v1/nba/teams/{team_id}/feature-rollups` | `nba.nba_team_feature_rollups`, `nba.nba_teams` |
+
+### `v0.9.4` - NBA playoff routes
+| Method | Route | Required tables |
+|---|---|---|
+| GET | `/v1/nba/playoffs/{season}/series` | `nba.nba_playoff_series` |
+| GET | `/v1/nba/playoffs/series/{series_id}` | `nba.nba_playoff_series`, `nba.nba_playoff_series_game_links`, `nba.nba_games` |
+| GET | `/v1/nba/playoffs/series/{series_id}/features` | `nba.nba_playoff_feature_snapshots` |
+| GET | `/v1/nba/playoffs/games/{game_id}/features/latest` | `nba.nba_playoff_feature_snapshots` |
+
+### `v1.5.1` - Sports orchestration routes
+| Method | Route | Required tables |
+|---|---|---|
+| GET | `/v1/jobs` | `ops.job_definitions` |
+| POST | `/v1/jobs` | `ops.job_definitions` |
+| POST | `/v1/jobs/{job_code}/run` | `ops.job_runs`, `core.sync_runs` |
+| GET | `/v1/jobs/runs` | `ops.job_runs` |
+
+### `v1.7.1` - Sports research routes
 | Method | Route | Required tables |
 |---|---|---|
 | POST | `/v1/research/collections` | `research.event_collections` |
@@ -158,15 +192,7 @@ A route can only be implemented when all required tables are active in its phase
 | POST | `/v1/research/documents` | `research.event_documents` |
 | POST | `/v1/research/documents/batch` | `research.event_documents` |
 | GET | `/v1/events/{event_id}/documents` | `research.event_documents` |
-| POST | `/v1/events/{event_id}/documents/query` | `research.event_documents` + Chroma backend |
-
-### `v0.9.1` - Job orchestration and ops routes
-| Method | Route | Required tables |
-|---|---|---|
-| GET | `/v1/jobs` | `ops.job_definitions` |
-| POST | `/v1/jobs` | `ops.job_definitions` |
-| POST | `/v1/jobs/{job_code}/run` | `ops.job_runs`, `core.sync_runs` |
-| GET | `/v1/jobs/runs` | `ops.job_runs` |
+| POST | `/v1/events/{event_id}/documents/query` | `research.event_documents` plus optional research backend |
 
 ## Compatibility aliases (temporary)
 - `POST /place_order` -> `POST /v1/portfolio/orders`
@@ -175,13 +201,15 @@ A route can only be implemented when all required tables are active in its phase
 - `POST /cancel_order` -> `DELETE /v1/portfolio/orders/{order_id}`
 - `POST /add_event` -> `POST /v1/events/import-url`
 
-## v1 endpoint completion checklist
-v1 is reached when all route groups below are active and tested:
-1. `v0.5.*` system + catalog + sync triggers
-2. `v0.6.*` market data + portfolio + lifecycle/risk controls
-3. `v0.7.*` NBA module + context delivery
-4. `v0.8.*` Chroma/event-doc linkage
-5. `v0.9.*` ops and production service controls
+## NBA-first v1 endpoint completion checklist
+NBA-first v1 readiness is reached when all route groups below are active and tested:
+1. `v0.5.*` system, catalog, and sync triggers
+2. `v0.6.*` market data, portfolio, and lifecycle or risk controls
+3. `v0.7.*` NBA live module and context delivery
+4. `v0.8.*` regular-season feature dataset and coverage-audit delivery
+5. `v0.9.*` playoff series and playoff feature delivery
+
+Later `v1.*` route work adds sports orchestration and sports-only research memory, but it does not block the NBA-first cut.
 
 ## Route governance rules
 - Every new route must reference:
@@ -194,6 +222,7 @@ v1 is reached when all route groups below are active and tested:
 
 ## Current source constraints (2026-03-14)
 - DB migration baseline is now live through `v0.4.6` using `app/data/databases/migrate.py`; active schemas/tables cover `core`, `catalog`, `portfolio`, `market_data`, and `nba` tables required by the `v0.5.x` API foundation.
+- Pre-`v0.8.1` season audit confirmed full finished-game play-by-play coverage and only partial league-wide Polymarket moneyline coverage for `2025/26`; route priorities therefore shift first to feature delivery and coverage auditing, not research-memory endpoints.
 - Repository/upsert primitives are now available in `app/data/databases/repositories/upsert_primitives.py` (`JanusUpsertRepository`) and should be reused by future FastAPI handlers to keep write semantics idempotent and append-only-safe.
 - Live seed-pack integration for URL-driven event ingestion is validated in `app/data/databases/seed_packs/polymarket_event_seed_pack.py` using three concrete Polymarket URLs (past NBA, upcoming NBA, long-horizon non-sports), providing a direct implementation reference for future `/v1/events/import-url` behavior.
 - `v0.4.1` event ingestion pipeline is active via `app/data/pipelines/daily/polymarket/sync_events.py` and `app/ingestion/pipelines/prediction_market_polymarket/sync_events.py`; this is the baseline for `/v1/sync/polymarket/events`.
@@ -213,7 +242,7 @@ v1 is reached when all route groups below are active and tested:
 - Polymarket orderbook polling contract is validated in `app/data/nodes/polymarket/blockchain/stream_orderbook.py` (`OrderbookStreamConfig` + `stream_orderbook`) and is ready for future sync route wiring.
 - `v0.5.*` and `v0.6.*` FastAPI routes are now implemented in `app/api/*` and validated with:
   - DB tests: `tests/app/api/test_system_registry_routes_pytest.py`, `tests/app/api/test_catalog_routes_pytest.py`, `tests/app/api/test_sync_routes_pytest.py`, `tests/app/api/test_error_model_pytest.py`
-  - OpenAPI lock test: `tests/app/api/test_openapi_lock_pytest.py` (snapshot: `app/docs/openapi_v0_6_snapshot.json`)
+- OpenAPI lock test: `tests/app/api/test_openapi_lock_pytest.py` (snapshot: `app/docs/openapi_v0_8_snapshot.json`)
   - live endpoint validation: `tests/app/api/test_live_today_games_endpoints_pytest.py`
 - `v0.6.2` added migration `0011_v0_6_2__portfolio_valuation_snapshots.sql`; `/v1/portfolio/summary` now reads latest valuation rows with fallback aggregation from latest position snapshots.
 - `v0.6.3` activated additional sync endpoints:
@@ -253,6 +282,15 @@ v1 is reached when all route groups below are active and tested:
   - backed by `nba.nba_context_cache` plus on-demand rebuild logic in `app/modules/nba/context/service.py`.
 - `v0.7.5` selected-game validation packs now rehydrate the current season and verify finished, live, and upcoming game behavior through the API.
 - `v0.7.6` added read-path indexes and refreshed the API snapshot to version `0.7.6`.
+- `v0.8.1` to `v0.8.8` now have live partial implementation on top of the current DB:
+  - new read routes for game features, odds coverage, and team rollups
+  - new sync route `POST /v1/sync/nba/season-refresh`
+  - FastAPI version now `0.8.1`
+  - bounded live validation on `2026-03-14`:
+    - `POST /v1/sync/nba/season-refresh` -> `202 success`
+    - `GET /v1/nba/seasons/2025-26/games/features` -> populated rows
+    - `GET /v1/nba/seasons/2025-26/odds-coverage` -> populated audit rows
+    - `GET /v1/nba/seasons/2025-26/teams/feature-rollups` -> populated rollup rows
 - refreshed DB snapshot after `v0.7.6` validation:
   - `nba.nba_games=1322`
   - `nba.nba_live_game_snapshots=23`
@@ -261,4 +299,4 @@ v1 is reached when all route groups below are active and tested:
   - `market_data.outcome_price_ticks=1513`
   - `catalog.events=8`
   - `core.sync_runs=26`
-- OpenAPI lock snapshot refreshed after `v0.7.6` activation (`app/docs/openapi_v0_6_snapshot.json`).
+- OpenAPI lock snapshot refreshed after `v0.8.1` activation (`app/docs/openapi_v0_8_snapshot.json`).

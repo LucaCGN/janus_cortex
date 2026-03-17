@@ -25,6 +25,13 @@ def _ensure_game_exists(connection: PsycopgConnection, game_id: str) -> None:
             raise HTTPException(status_code=404, detail="game_id not found")
 
 
+def _ensure_team_exists(connection: PsycopgConnection, team_id: int) -> None:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT 1 FROM nba.nba_teams WHERE team_id = %s;", (team_id,))
+        if cursor.fetchone() is None:
+            raise HTTPException(status_code=404, detail="team_id not found")
+
+
 @router.get("/games")
 def list_nba_games(
     game_date: date | None = Query(default=None),
@@ -323,6 +330,300 @@ def get_nba_game_play_by_play(
         "count": len(rows),
         "sync_summary": sync_summary,
     }
+
+
+@router.get("/games/{game_id}/features/latest")
+def get_nba_game_latest_features(
+    game_id: str,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    _ensure_game_exists(connection, game_id)
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                f.game_id,
+                f.event_id,
+                f.computed_at,
+                f.feature_version,
+                f.season,
+                f.team_context_mode,
+                f.pbp_event_count,
+                f.lead_changes,
+                f.home_largest_lead,
+                f.away_largest_lead,
+                f.home_losing_segments,
+                f.away_losing_segments,
+                f.home_led_and_lost,
+                f.away_led_and_lost,
+                f.covered_polymarket_game_flag,
+                f.home_pre_game_price_min,
+                f.home_pre_game_price_max,
+                f.away_pre_game_price_min,
+                f.away_pre_game_price_max,
+                f.home_in_game_price_min,
+                f.home_in_game_price_max,
+                f.away_in_game_price_min,
+                f.away_in_game_price_max,
+                f.price_window_start,
+                f.price_window_end,
+                f.coverage_status,
+                f.source_summary_json
+            FROM nba.nba_game_feature_snapshots f
+            WHERE f.game_id = %s
+            ORDER BY f.computed_at DESC
+            LIMIT 1;
+            """,
+            (game_id,),
+        )
+        row = fetchone_dict(cursor)
+    if row is None:
+        raise HTTPException(status_code=404, detail="game features not found")
+    return to_jsonable(row)
+
+
+@router.get("/seasons/{season}/games/features")
+def list_nba_season_game_features(
+    season: str,
+    coverage_status: str | None = Query(default=None),
+    team_slug: str | None = Query(default=None),
+    game_status: int | None = Query(default=None),
+    covered_only: bool = Query(default=False),
+    limit: int = Query(default=200, ge=1, le=2000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions = ["x.season = %s"]
+    params: list[Any] = [season]
+    if coverage_status:
+        conditions.append("x.coverage_status = %s")
+        params.append(coverage_status)
+    if team_slug:
+        team_slug_norm = team_slug.upper().strip()
+        conditions.append("(g.home_team_slug = %s OR g.away_team_slug = %s)")
+        params.extend([team_slug_norm, team_slug_norm])
+    if game_status is not None:
+        conditions.append("g.game_status = %s")
+        params.append(game_status)
+    if covered_only:
+        conditions.append("x.covered_polymarket_game_flag = TRUE")
+    params.extend([limit, offset])
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                x.game_id,
+                x.event_id,
+                x.computed_at,
+                x.feature_version,
+                x.season,
+                x.team_context_mode,
+                x.pbp_event_count,
+                x.lead_changes,
+                x.home_largest_lead,
+                x.away_largest_lead,
+                x.home_losing_segments,
+                x.away_losing_segments,
+                x.home_led_and_lost,
+                x.away_led_and_lost,
+                x.covered_polymarket_game_flag,
+                x.home_pre_game_price_min,
+                x.home_pre_game_price_max,
+                x.away_pre_game_price_min,
+                x.away_pre_game_price_max,
+                x.home_in_game_price_min,
+                x.home_in_game_price_max,
+                x.away_in_game_price_min,
+                x.away_in_game_price_max,
+                x.price_window_start,
+                x.price_window_end,
+                x.coverage_status,
+                x.source_summary_json,
+                g.game_date,
+                g.game_start_time,
+                g.game_status,
+                g.home_team_slug,
+                g.away_team_slug,
+                g.home_score,
+                g.away_score
+            FROM (
+                SELECT DISTINCT ON (f.game_id)
+                    f.*
+                FROM nba.nba_game_feature_snapshots f
+                WHERE f.season = %s
+                ORDER BY f.game_id, f.computed_at DESC
+            ) x
+            JOIN nba.nba_games g ON g.game_id = x.game_id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY g.game_date DESC NULLS LAST, g.game_start_time DESC NULLS LAST
+            LIMIT %s OFFSET %s;
+            """,
+            tuple([season, *params]),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"items": to_jsonable(rows), "count": len(rows)}
+
+
+@router.get("/seasons/{season}/odds-coverage")
+def list_nba_season_odds_coverage(
+    season: str,
+    game_id: str | None = Query(default=None),
+    coverage_status: str | None = Query(default=None),
+    issue_code: str | None = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=5000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions = ["a.season = %s"]
+    params: list[Any] = [season]
+    if game_id:
+        conditions.append("a.game_id = %s")
+        params.append(game_id)
+    if coverage_status:
+        conditions.append("a.coverage_status = %s")
+        params.append(coverage_status)
+    if issue_code:
+        conditions.append("a.issue_code = %s")
+        params.append(issue_code)
+    params.extend([limit, offset])
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                a.odds_coverage_audit_id,
+                a.season,
+                a.game_id,
+                a.event_id,
+                a.market_id,
+                a.outcome_id,
+                a.audited_at,
+                a.coverage_scope,
+                a.coverage_status,
+                a.history_points,
+                a.fallback_points,
+                a.window_start,
+                a.window_end,
+                a.issue_code,
+                a.details_json
+            FROM nba.nba_odds_coverage_audits a
+            WHERE {' AND '.join(conditions)}
+            ORDER BY a.audited_at DESC, a.game_id ASC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"items": to_jsonable(rows), "count": len(rows)}
+
+
+@router.get("/seasons/{season}/teams/feature-rollups")
+def list_nba_season_team_feature_rollups(
+    season: str,
+    classification_tag: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions = ["x.season = %s"]
+    params: list[Any] = [season]
+    if classification_tag:
+        conditions.append("(x.classification_tags_json -> 'tags') ? %s")
+        params.append(classification_tag)
+    params.extend([limit, offset])
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                x.team_id,
+                t.team_slug,
+                t.team_name,
+                x.season,
+                x.computed_at,
+                x.feature_version,
+                x.sample_games,
+                x.covered_games,
+                x.wins,
+                x.losses,
+                x.avg_lead_changes,
+                x.avg_losing_segments,
+                x.avg_largest_lead_in_losses,
+                x.losses_after_leading,
+                x.underdog_games_with_coverage,
+                x.favorite_games_with_coverage,
+                x.avg_underdog_in_game_range,
+                x.avg_favorite_in_game_range,
+                x.classification_tags_json,
+                x.notes_json
+            FROM (
+                SELECT DISTINCT ON (r.team_id)
+                    r.*
+                FROM nba.nba_team_feature_rollups r
+                WHERE r.season = %s
+                ORDER BY r.team_id, r.computed_at DESC
+            ) x
+            JOIN nba.nba_teams t ON t.team_id = x.team_id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY x.sample_games DESC, t.team_slug ASC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple([season, *params]),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"items": to_jsonable(rows), "count": len(rows)}
+
+
+@router.get("/teams/{team_id}/feature-rollups")
+def get_nba_team_feature_rollups(
+    team_id: int,
+    season: str | None = Query(default=None),
+    limit: int = Query(default=20, ge=1, le=200),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    _ensure_team_exists(connection, team_id)
+    conditions = ["r.team_id = %s"]
+    params: list[Any] = [team_id]
+    if season:
+        conditions.append("r.season = %s")
+        params.append(season)
+    params.append(limit)
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                r.team_id,
+                t.team_slug,
+                t.team_name,
+                r.season,
+                r.computed_at,
+                r.feature_version,
+                r.sample_games,
+                r.covered_games,
+                r.wins,
+                r.losses,
+                r.avg_lead_changes,
+                r.avg_losing_segments,
+                r.avg_largest_lead_in_losses,
+                r.losses_after_leading,
+                r.underdog_games_with_coverage,
+                r.favorite_games_with_coverage,
+                r.avg_underdog_in_game_range,
+                r.avg_favorite_in_game_range,
+                r.classification_tags_json,
+                r.notes_json
+            FROM nba.nba_team_feature_rollups r
+            JOIN nba.nba_teams t ON t.team_id = r.team_id
+            WHERE {' AND '.join(conditions)}
+            ORDER BY r.computed_at DESC
+            LIMIT %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"items": to_jsonable(rows), "count": len(rows)}
 
 
 @router.get("/games/{game_id}/context/pre")

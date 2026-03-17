@@ -146,6 +146,21 @@ class NbaSeasonSyncRequest(BaseModel):
     season: str = "2025-26"
 
 
+class NbaSeasonRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    season: str = "2025-26"
+    refresh_metadata: bool = True
+    game_ids: list[str] = Field(default_factory=list)
+    max_games: int | None = Field(default=None, ge=1, le=2000)
+    only_finished: bool = False
+    include_odds_fetch: bool = True
+    build_rollups: bool = True
+    moneyline_window_days: int = Field(default=14, ge=1, le=30)
+    moneyline_page_size: int = Field(default=100, ge=1, le=500)
+    moneyline_max_pages: int = Field(default=30, ge=1, le=200)
+
+
 class MappingSyncRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

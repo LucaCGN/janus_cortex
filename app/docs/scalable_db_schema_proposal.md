@@ -1,4 +1,4 @@
-# Janus Cortex DB Schema Proposal (Phase-Driven to v1)
+# Janus Cortex DB Schema Proposal (Phase-Driven Roadmap)
 
 ## Why this revision
 The previous proposal is structurally good but too broad for early validation.
@@ -10,8 +10,9 @@ This version keeps the full target model while forcing phased adoption:
 
 ## Versioning model
 - Main lane: `v0.X.Y` where `X` is milestone area and `Y` is expansion slot.
-- Current active phase: `v0.8.1`.
-- v1 definition: Postgres + FastAPI + Chroma in docker, production-grade data serving only (no autonomous strategy generation).
+- Current active phase: `v0.8.1` with parallel implementation work across `v0.8.2` to `v0.8.8`.
+- v1 definition: sports-first release built around the NBA module, covering regular season plus playoffs with production-grade data serving and operator-run workflows, not autonomous strategy generation.
+- v2 definition: additive multi-module expansion into feature-complete WNBA, crypto, geopolitical, and general-event support.
 
 ## Schema implementation policy
 1. Do not create all tables at once.
@@ -31,10 +32,12 @@ This version keeps the full target model while forcing phased adoption:
 - `v0.3.*`: DB MVP schema and migration baseline.
 - `v0.4.*`: Pipeline ingestion to new schema.
 - `v0.5.*`: Core API serving validated schema.
-- `v0.6.*`: Portfolio + market data API blocks.
+- `v0.6.*`: Portfolio plus market-data API blocks.
 - `v0.7.*`: NBA module serving layer.
-- `v0.8.*`: Chroma event-doc blocks.
-- `v0.9.*`: Production hardening and v1 release gates.
+- `v0.8.*`: NBA regular-season data completion, feature persistence, and coverage audits.
+- `v0.9.*`: NBA playoff module and 2025/26 season handoff.
+- `v1.*`: sports-first stabilization, shared-sports bootstrap, late-stage sports research memory, and next-season operations.
+- `v2.0.0`: multi-module expansion beyond the sports-first baseline.
 
 ## v0.3 migration inventory (implemented to date)
 - `0001_v0_3_1__catalog_core_mvp.sql`
@@ -125,6 +128,23 @@ This version keeps the full target model while forcing phased adoption:
   - `tests/app/data/databases/test_nba_query_perf_indexes_pytest.py`
   - `tests/app/data/pipelines/daily/polymarket/test_consolidate_closed_positions_pytest.py`
   - `tests/app/data/pipelines/daily/polymarket/test_sync_portfolio_pytest.py`
+
+## Post-v0.7 schema slices
+- `v0.8.1` implemented migration target: `0014_v0_8_1__nba_game_feature_snapshots.sql`
+  - activates: `nba.nba_game_feature_snapshots`
+- `v0.8.4` implemented migration target: `0015_v0_8_4__nba_odds_coverage_audits.sql`
+  - activates: `nba.nba_odds_coverage_audits`
+- `v0.8.7` implemented migration target: `0016_v0_8_7__nba_team_feature_rollups.sql`
+  - activates: `nba.nba_team_feature_rollups`
+- `v0.9.1` planned migration target: `0017_v0_9_1__nba_playoff_series.sql`
+  - activates: `nba.nba_playoff_series`
+- `v0.9.2` planned migration target: `0018_v0_9_2__nba_playoff_series_game_links.sql`
+  - activates: `nba.nba_playoff_series_game_links`
+- `v0.9.3` planned migration target: `0019_v0_9_3__nba_playoff_feature_snapshots.sql`
+  - activates: `nba.nba_playoff_feature_snapshots`
+- `v1.7.1` planned migration targets:
+  - `0020_v1_7_1__research_event_collections.sql`
+  - `0021_v1_7_1__research_event_documents.sql`
 
 ## v0.3.5 repository/upsert primitives (implemented)
 - Module: `app/data/databases/repositories/upsert_primitives.py`
@@ -243,7 +263,7 @@ This version keeps the full target model while forcing phased adoption:
   - catalog graph read/write endpoints over `catalog` tables
   - sync trigger endpoints mapped to validated v0.4 pipelines
   - standardized request-id and error envelope behavior
-  - OpenAPI snapshot lock at `app/docs/openapi_v0_6_snapshot.json`
+  - OpenAPI snapshot lock at `app/docs/openapi_v0_8_snapshot.json`
 - Validation:
   - `tests/app/api/test_system_registry_routes_pytest.py`
   - `tests/app/api/test_catalog_routes_pytest.py`
@@ -750,16 +770,128 @@ This version keeps the full target model while forcing phased adoption:
 - `payload_json` JSONB NOT NULL
 - PK (`game_id`, `context_type`, `generated_at`)
 
+#### `nba.nba_game_feature_snapshots` (activate: `v0.8.1`, migration: `0014_v0_8_1__nba_game_feature_snapshots.sql`)
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `computed_at` TIMESTAMPTZ NOT NULL
+- `feature_version` TEXT NOT NULL
+- `season` TEXT NOT NULL
+- `team_context_mode` TEXT NOT NULL DEFAULT `full_game`
+- `pbp_event_count` INTEGER
+- `lead_changes` INTEGER
+- `home_largest_lead` INTEGER
+- `away_largest_lead` INTEGER
+- `home_losing_segments` INTEGER
+- `away_losing_segments` INTEGER
+- `home_led_and_lost` BOOLEAN
+- `away_led_and_lost` BOOLEAN
+- `covered_polymarket_game_flag` BOOLEAN NOT NULL DEFAULT FALSE
+- `home_pre_game_price_min` NUMERIC(10,6)
+- `home_pre_game_price_max` NUMERIC(10,6)
+- `away_pre_game_price_min` NUMERIC(10,6)
+- `away_pre_game_price_max` NUMERIC(10,6)
+- `home_in_game_price_min` NUMERIC(10,6)
+- `home_in_game_price_max` NUMERIC(10,6)
+- `away_in_game_price_min` NUMERIC(10,6)
+- `away_in_game_price_max` NUMERIC(10,6)
+- `price_window_start` TIMESTAMPTZ
+- `price_window_end` TIMESTAMPTZ
+- `coverage_status` TEXT
+- `source_summary_json` JSONB
+- PK (`game_id`, `computed_at`, `feature_version`)
+
+#### `nba.nba_odds_coverage_audits` (activate: `v0.8.4`, migration: `0015_v0_8_4__nba_odds_coverage_audits.sql`)
+- `odds_coverage_audit_id` UUID PK
+- `season` TEXT NOT NULL
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `market_id` UUID FK -> `catalog.markets.market_id`
+- `outcome_id` UUID FK -> `catalog.outcomes.outcome_id`
+- `audited_at` TIMESTAMPTZ NOT NULL
+- `coverage_scope` TEXT NOT NULL
+- `coverage_status` TEXT NOT NULL
+- `history_points` INTEGER
+- `fallback_points` INTEGER
+- `window_start` TIMESTAMPTZ
+- `window_end` TIMESTAMPTZ
+- `issue_code` TEXT
+- `details_json` JSONB
+
+#### `nba.nba_team_feature_rollups` (activate: `v0.8.7`, migration: `0016_v0_8_7__nba_team_feature_rollups.sql`)
+- `team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `season` TEXT NOT NULL
+- `computed_at` TIMESTAMPTZ NOT NULL
+- `feature_version` TEXT NOT NULL
+- `sample_games` INTEGER
+- `covered_games` INTEGER
+- `wins` INTEGER
+- `losses` INTEGER
+- `avg_lead_changes` NUMERIC(10,4)
+- `avg_losing_segments` NUMERIC(10,4)
+- `avg_largest_lead_in_losses` NUMERIC(10,4)
+- `losses_after_leading` INTEGER
+- `underdog_games_with_coverage` INTEGER
+- `favorite_games_with_coverage` INTEGER
+- `avg_underdog_in_game_range` NUMERIC(10,6)
+- `avg_favorite_in_game_range` NUMERIC(10,6)
+- `classification_tags_json` JSONB
+- `notes_json` JSONB
+- PK (`team_id`, `season`, `computed_at`, `feature_version`)
+
+#### `nba.nba_playoff_series` (activate: `v0.9.1`, planned migration: `0017_v0_9_1__nba_playoff_series.sql`)
+- `series_id` UUID PK
+- `season` TEXT NOT NULL
+- `round_code` TEXT NOT NULL
+- `conference_code` TEXT
+- `home_team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `away_team_id` INTEGER FK -> `nba.nba_teams.team_id`
+- `series_status` TEXT NOT NULL
+- `best_of` INTEGER NOT NULL DEFAULT 7
+- `home_wins` INTEGER NOT NULL DEFAULT 0
+- `away_wins` INTEGER NOT NULL DEFAULT 0
+- `start_date` DATE
+- `end_date` DATE
+- `metadata_json` JSONB
+- `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `updated_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+
+#### `nba.nba_playoff_series_game_links` (activate: `v0.9.2`, planned migration: `0018_v0_9_2__nba_playoff_series_game_links.sql`)
+- `series_game_link_id` UUID PK
+- `series_id` UUID FK -> `nba.nba_playoff_series.series_id`
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `game_no` INTEGER NOT NULL
+- `linked_at` TIMESTAMPTZ NOT NULL DEFAULT now()
+- `notes_json` JSONB
+
+#### `nba.nba_playoff_feature_snapshots` (activate: `v0.9.3`, planned migration: `0019_v0_9_3__nba_playoff_feature_snapshots.sql`)
+- `series_id` UUID FK -> `nba.nba_playoff_series.series_id`
+- `game_id` TEXT FK -> `nba.nba_games.game_id`
+- `event_id` UUID FK -> `catalog.events.event_id`
+- `computed_at` TIMESTAMPTZ NOT NULL
+- `feature_version` TEXT NOT NULL
+- `series_state` TEXT
+- `leverage_score` NUMERIC(10,4)
+- `lead_changes` INTEGER
+- `home_largest_lead` INTEGER
+- `away_largest_lead` INTEGER
+- `home_in_game_price_min` NUMERIC(10,6)
+- `home_in_game_price_max` NUMERIC(10,6)
+- `away_in_game_price_min` NUMERIC(10,6)
+- `away_in_game_price_max` NUMERIC(10,6)
+- `coverage_status` TEXT
+- `summary_json` JSONB
+- PK (`series_id`, `game_id`, `computed_at`, `feature_version`)
+
 ### RESEARCH / CHROMA LINK
 
-#### `research.event_collections` (activate: `v0.8.2`)
+#### `research.event_collections` (activate: `v1.7.1`)
 - `event_collection_id` UUID PK
 - `event_id` UUID FK -> `catalog.events.event_id`
 - `collection_name` TEXT NOT NULL
 - `collection_type` TEXT NOT NULL
 - `created_at` TIMESTAMPTZ NOT NULL DEFAULT now()
 
-#### `research.event_documents` (activate: `v0.8.3`)
+#### `research.event_documents` (activate: `v1.7.1`)
 - `event_document_id` UUID PK
 - `event_id` UUID FK -> `catalog.events.event_id`
 - `source` TEXT
@@ -856,6 +988,28 @@ This version keeps the full target model while forcing phased adoption:
 ### `v0.6.2` (`0011_v0_6_2__portfolio_valuation_snapshots.sql`)
 1. `portfolio.valuation_snapshots`
 
+### `v0.8.1` (`0014_v0_8_1__nba_game_feature_snapshots.sql`, implemented)
+1. `nba.nba_game_feature_snapshots`
+
+### `v0.8.4` (`0015_v0_8_4__nba_odds_coverage_audits.sql`, implemented)
+1. `nba.nba_odds_coverage_audits`
+
+### `v0.8.7` (`0016_v0_8_7__nba_team_feature_rollups.sql`, implemented)
+1. `nba.nba_team_feature_rollups`
+
+### `v0.9.1` (`0017_v0_9_1__nba_playoff_series.sql`, planned)
+1. `nba.nba_playoff_series`
+
+### `v0.9.2` (`0018_v0_9_2__nba_playoff_series_game_links.sql`, planned)
+1. `nba.nba_playoff_series_game_links`
+
+### `v0.9.3` (`0019_v0_9_3__nba_playoff_feature_snapshots.sql`, planned)
+1. `nba.nba_playoff_feature_snapshots`
+
+### `v1.7.1` (`0020_v1_7_1__research_event_collections.sql` and `0021_v1_7_1__research_event_documents.sql`, planned)
+1. `research.event_collections`
+2. `research.event_documents`
+
 All other tables remain deferred until their checkpoint phase is completed.
 
 ## Required indices and uniqueness (apply by phase)
@@ -887,6 +1041,16 @@ All other tables remain deferred until their checkpoint phase is completed.
 - `ops.job_runs(job_id, started_at DESC)` index (`v0.5.1`)
 - `ops.job_runs(status, started_at DESC)` index (`v0.5.1`)
 - `portfolio.valuation_snapshots(account_id, captured_at DESC)` index (`v0.6.2`)
+- `nba.nba_game_feature_snapshots(game_id, computed_at DESC)` index (`v0.8.1`, implemented)
+- `nba.nba_game_feature_snapshots(season, coverage_status, computed_at DESC)` index (`v0.8.1`, implemented)
+- `nba.nba_odds_coverage_audits(game_id, coverage_scope, audited_at DESC)` index (`v0.8.4`, implemented)
+- `nba.nba_odds_coverage_audits(event_id, coverage_status, audited_at DESC)` index (`v0.8.4`, implemented)
+- `nba.nba_team_feature_rollups(team_id, season, computed_at DESC)` index (`v0.8.7`, implemented)
+- `nba.nba_playoff_series(season, round_code, series_status)` index (`v0.9.1`, planned)
+- `nba.nba_playoff_series_game_links(series_id, game_no)` unique (`v0.9.2`, planned)
+- `nba.nba_playoff_feature_snapshots(series_id, computed_at DESC)` index (`v0.9.3`, planned)
+- `research.event_collections(event_id, collection_type)` unique (`v1.7.1`, planned)
+- `research.event_documents(event_id, ingested_at DESC)` index (`v1.7.1`, planned)
 
 ## Table-phase-columns relation checklist
 This document is authoritative for:

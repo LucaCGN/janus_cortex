@@ -198,6 +198,41 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 - Limitations:
   - Same as base schedule limitation: endpoint is still current-season-scoped and not a full historical archive.
 
+### NBA targeted hydration validation (`v0.8.6`)
+
+#### `POST /v1/sync/nba/schedule`, `POST /v1/sync/nba/live/{game_id}`, `GET /v1/nba/games/{game_id}/live`, and `GET /v1/nba/games/{game_id}/context/pre`
+- Validation date: `2026-03-15` (run timestamp `2026-03-15T23:53:45Z`).
+- Observed behavior:
+  - live scoreboard sample size: `7` games.
+  - status distribution at validation time: `4 finished`, `1 live`, `2 upcoming`.
+  - live scoreboard source of truth for the user-requested games:
+    - `POR @ PHI` was the only live game (`Q4 8:34`).
+    - `GSW @ NYK` was still upcoming (`8:00 pm ET`).
+  - day-level schedule sync remained correct for row presence:
+    - `/v1/sync/nba/schedule` returned `202 success`.
+    - summary: `missing_today_detected=0`, `missing_today_inserted=0`, `ongoing_games=1`.
+    - `/v1/nba/games?game_date=2026-03-15` returned `7` rows, matching live scoreboard count exactly.
+  - targeted live hydration closed the finished/live data gap for the focus set:
+    - finished games synced: `MIN @ OKC`, `DAL @ CLE`, `DET @ TOR`, `IND @ MIL`.
+    - live game synced: `POR @ PHI`.
+    - post-sync DB/API counts:
+      - `MIN @ OKC`: `snapshot_count=2`, `pbp_count=580`
+      - `DAL @ CLE`: `snapshot_count=2`, `pbp_count=562`
+      - `DET @ TOR`: `snapshot_count=2`, `pbp_count=579`
+      - `IND @ MIL`: `snapshot_count=3`, `pbp_count=534`
+      - `POR @ PHI`: `snapshot_count=2`, `pbp_count=472`
+  - upcoming games behaved as expected before tip-off:
+    - `GSW @ NYK`: `/live` returned `0` snapshots and `0` pbp rows; `/context/pre` returned `200` with `context_type=pre`.
+    - `UTA @ SAC`: `/live` returned `0` snapshots and `0` pbp rows; `/context/pre` returned `200` with `context_type=pre`.
+- Coverage status:
+  - Past/today completed games via targeted sync: `AVAILABLE`.
+  - Current live game via targeted sync: `AVAILABLE`.
+  - Future scheduled games via schedule row + pre-context: `AVAILABLE`.
+- Practical note:
+  - Schedule sync is the presence and state-classification layer.
+  - Targeted per-game sync is the hydration layer for live snapshots and play-by-play.
+  - Upcoming games should stay empty on `/live` until tip-off; they are served through schedule rows and `/context/pre`.
+
 ### Polymarket same-day gap closure (`v0.4.2` + `v0.4.6`)
 
 #### `app/data/pipelines/daily/polymarket/sync_markets.py` and `app/data/pipelines/daily/polymarket/backfill_retry.py`
@@ -440,6 +475,43 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
   - skipped: Gamma split-window coverage because provider did not expose one of the sampled windows.
   - skipped: mixed-window odds-history coverage because provider did not expose both past and future games in the sampled history window.
 
+### Current-day live validation (`2026-03-15`)
+
+#### FastAPI + DB validation for finished, live, and upcoming games
+- Validation date: `2026-03-15`.
+- Execution path:
+  - `POST /v1/sync/nba/schedule` with `schedule_window_days=2`
+  - `GET /v1/nba/games` filtered by `game_date=2026-03-15`
+  - targeted `GET /v1/nba/games/{game_id}`, `GET /v1/nba/games/{game_id}/live`, `GET /v1/nba/games/{game_id}/play-by-play`, and `GET /v1/nba/games/{game_id}/context/pre`
+- Observed scoreboard behavior:
+  - total games on scoreboard: `7`
+  - status distribution: `{finished=1, live=3, upcoming=3}`
+  - primary validated date: `2026-03-15`
+- API/DB reconciliation:
+  - `/v1/nba/games?game_date=2026-03-15` -> `7`
+  - `/v1/nba/games?game_date=2026-03-15&finished_only=true` -> `1`
+  - `/v1/nba/games?game_date=2026-03-15&live_only=true` -> `3`
+  - `/v1/nba/games?game_date=2026-03-15&upcoming_only=true` -> `3`
+  - DB `nba.nba_games` rows for `2026-03-15`: `7`
+- Sample game checks:
+  - finished sample `0022500976` (`MIN @ OKC`):
+    - initial schedule sync created the game row but not snapshot/PBP history
+    - after `POST /v1/sync/nba/live/0022500976`, `/v1/nba/games/0022500976/live` returned `snapshot_count=1`, `pbp_count=20`
+  - live sample `0022500979` (`IND @ MIL`):
+    - `/v1/nba/games/0022500979/live` returned `snapshot_count=1` before targeted sync
+    - after `POST /v1/sync/nba/live/0022500979`, `/v1/nba/games/0022500979/live` returned `snapshot_count=2`, `pbp_count=20`
+  - upcoming sample `0022500980` (`POR @ PHI`):
+    - `GET /v1/nba/games/0022500980/context/pre?refresh_cache=true` returned `200` with `context_type=pre`
+- Current DB detail for `2026-03-15` after targeted sync:
+  - `nba.nba_live_game_snapshots` rows joined to the date: `5`
+  - `nba.nba_play_by_play` rows joined to the date: `1615`
+- Coverage status:
+  - current-day finished game serving: `AVAILABLE` with on-demand game sync
+  - current-day live game serving: `AVAILABLE`
+  - current-day upcoming game serving: `AVAILABLE` for schedule and pre-context
+- Limitation:
+  - schedule sync alone does not materialize finished-game live snapshots or play-by-play; those rows appear after targeted game sync or if the game was captured while ongoing.
+
 ### 2025-26 season strategy audit gate (pre-`v0.8.1`)
 
 #### Full-season play-by-play feasibility for lead-change analytics
@@ -491,6 +563,38 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
   - full-league full-season odds-history backfill from current provider path: `NOT FULLY AVAILABLE`
 - Limitation:
   - the current provider path does not expose a complete season of NBA moneyline events for all finished games, so league-wide season odds analytics remain coverage-limited even though covered games have usable in-game history.
+
+### Regular-season feature refresh pipeline (`v0.8.1` to `v0.8.8` implementation block)
+
+#### `app/data/pipelines/daily/nba/regular_season_features.py::run_nba_regular_season_refresh`
+- Validation date: `2026-03-14`.
+- Live bounded refresh evidence:
+  - command: `python -m app.data.pipelines.daily.nba.regular_season_features --season 2025-26 --only-finished --max-games 12`
+  - result:
+    - `metadata_games_upserted=1322`
+    - `feature_snapshots_written=12`
+    - `pbp_backfilled_games=12`
+    - `pbp_backfilled_rows=6824`
+    - `coverage_status_counts={'no_matching_event': 12}`
+- Wider play-by-play backfill evidence:
+  - command: `python -m app.data.pipelines.daily.nba.regular_season_features --season 2025-26 --only-finished --max-games 50 --skip-odds-fetch`
+  - result:
+    - `feature_snapshots_written=50`
+    - `pbp_backfilled_games=38`
+    - `pbp_backfilled_rows=21741`
+    - `rollups_written=30`
+- DB state after bounded runs:
+  - `nba.nba_game_feature_snapshots=52`
+  - `nba.nba_odds_coverage_audits=53`
+  - `nba.nba_team_feature_rollups=30`
+  - latest timestamps near `2026-03-14T21:57Z`
+- Coverage status:
+  - finished-game play-by-play backfill for bounded slices: `AVAILABLE`
+  - schedule-anchored odds history for covered games: `AVAILABLE`
+  - current recent finished-game Polymarket coverage: `VERY PARTIAL` in live bounded runs (`no_matching_event` dominated latest slices)
+- Limitation:
+  - the feature pipeline is working, but recent regular-season game coverage on the Polymarket side is still sparse enough that most bounded live runs end in `coverage_status=no_matching_event`.
+  - season-scale feature completeness is therefore currently driven by NBA play-by-play availability, while season-scale odds completeness remains provider-limited.
 
 ## Practical implications for v0.1 planning
 1. NBA past season goal is not met with current schedule method; an alternate historical endpoint/source is required.
