@@ -81,6 +81,7 @@ from app.data.pipelines.daily.nba.analysis.mart_state_panel import (
 from app.data.pipelines.daily.nba.analysis.reports import (
     build_analysis_report as _build_analysis_report_impl,
 )
+from app.data.pipelines.daily.nba.analysis.models import train_analysis_baselines as _train_analysis_baselines_impl
 from app.data.pipelines.daily.nba.analysis.universe import (
     build_analysis_universe_qa_summary as _build_analysis_universe_qa_summary,
     load_analysis_universe as _load_analysis_universe_bundle,
@@ -304,7 +305,9 @@ def _format_num(value: float | None, digits: int = 3) -> str:
 
 
 def _price_band_label(price: float | None) -> str | None:
-    label, _ = _opening_band_for_price(price)
+    from app.data.pipelines.daily.nba.analysis.mart_game_profiles import opening_band_for_price
+
+    label, _ = opening_band_for_price(price)
     return label
 
 
@@ -509,6 +512,11 @@ def _load_state_panel_df(connection: Any, *, season: str, season_phase: str, ana
 
 
 def build_analysis_mart(request: AnalysisMartBuildRequest) -> dict[str, Any]:
+    from app.data.pipelines.daily.nba.analysis.mart_game_profiles import (
+        derive_game_rows as _derive_game_rows,
+        load_analysis_bundle as _load_analysis_bundle,
+    )
+
     universe_request = AnalysisUniverseRequest(
         season=request.season,
         season_phase=request.season_phase,
@@ -1286,49 +1294,7 @@ def _render_model_markdown(payload: dict[str, Any]) -> str:
 
 
 def train_analysis_baselines(request: ModelRunRequest) -> dict[str, Any]:
-    output_dir = _ensure_output_dir(request.output_root, request.season, request.season_phase, request.analysis_version) / "models"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with managed_connection() as connection:
-        profiles_df = _load_game_profiles_df(
-            connection,
-            season=request.season,
-            season_phase=request.season_phase,
-            analysis_version=request.analysis_version,
-        )
-        state_df = _load_state_panel_df(
-            connection,
-            season=request.season,
-            season_phase=request.season_phase,
-            analysis_version=request.analysis_version,
-        )
-    state_model_df = _prepare_state_model_frame(state_df)
-    train_cutoff = _resolve_train_cutoff(state_model_df["game_date"] if not state_model_df.empty else pd.Series(dtype="datetime64[ns]"), request.train_cutoff)
-    tracks: dict[str, Any] = {}
-    requested_tracks = (
-        [request.target_family]
-        if request.target_family != "all"
-        else ["volatility_inversion", "trade_window_quality", "winner_definition_timing"]
-    )
-    if "volatility_inversion" in requested_tracks:
-        tracks["volatility_inversion"] = _train_volatility_inversion_baseline(state_model_df, train_cutoff)
-    if "trade_window_quality" in requested_tracks:
-        tracks["trade_window_quality"] = _train_trade_window_quality_baseline(state_model_df, train_cutoff)
-    if "winner_definition_timing" in requested_tracks:
-        tracks["winner_definition_timing"] = _train_winner_definition_timing_baseline(state_model_df, profiles_df, train_cutoff)
-
-    payload = {
-        "season": request.season,
-        "season_phase": request.season_phase,
-        "analysis_version": request.analysis_version,
-        "feature_set_version": request.feature_set_version,
-        "train_cutoff": train_cutoff.isoformat() if train_cutoff is not None else None,
-        "validation_window": request.validation_window,
-        "tracks": tracks,
-        "artifacts": {},
-    }
-    payload["artifacts"]["json"] = _write_json(output_dir / "train_analysis_baselines.json", payload)
-    payload["artifacts"]["markdown"] = _write_markdown(output_dir / "train_analysis_baselines.md", _render_model_markdown(payload))
-    return to_jsonable(payload)
+    return _train_analysis_baselines_impl(request)
 
 
 def _build_parser():
