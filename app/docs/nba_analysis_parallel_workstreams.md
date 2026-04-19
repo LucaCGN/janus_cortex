@@ -17,15 +17,18 @@
   - finished games: `1224`
   - linked Polymarket events: `1222`
   - feature snapshots: `1224`
-  - `covered_pre_and_ingame`: `1209`
+  - `covered_pre_and_ingame`: `1198`
+  - `research_ready`: `1198`
+  - `descriptive_only`: `26`
   - coverage residuals:
     - `no_history=10`
-    - `covered_partial=2`
+    - `covered_partial=13`
     - `pregame_only=1`
     - `no_matching_event=2`
+  - note: earlier planning drafts referenced `1209` research-ready games; the restored live corpus currently resolves to `1198` because `11` additional games land in `covered_partial` rather than the older baseline.
 - Current mart status:
   - `nba.nba_analysis_game_team_profiles=2448`
-  - `nba.nba_analysis_state_panel=1388443`
+  - `nba.nba_analysis_state_panel=1379024`
 - Existing CLI surface already present:
   - `build_analysis_mart`
   - `build_analysis_report`
@@ -419,14 +422,14 @@
   - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/data/pipelines/daily/nba`
 
 ## Ready-To-Assign Ticket List
-- [ ] `A0` Split analysis package and freeze internal contracts
-- [ ] `A1` Build research-universe loader and QA report
-- [ ] `A2` Isolate game-team and season aggregate mart builders
-- [ ] `A3` Isolate state-panel and winner-definition builders
-- [ ] `A4` Build stable descriptive report pack from mart outputs only
-- [ ] `A5` Implement reusable backtest engine and three baseline families
-- [ ] `A6` Implement interpretable predictive baselines with time-based validation
-- [ ] `A7` Build experimental player-impact shadow artifact
+- [x] `A0` Split analysis package and freeze internal contracts
+- [x] `A1` Build research-universe loader and QA report
+- [x] `A2` Isolate game-team and season aggregate mart builders
+- [x] `A3` Isolate state-panel and winner-definition builders
+- [x] `A4` Build stable descriptive report pack from mart outputs only
+- [x] `A5` Implement reusable backtest engine and three baseline families
+- [x] `A6` Implement interpretable predictive baselines with time-based validation
+- [x] `A7` Build experimental player-impact shadow artifact
 - [ ] `A8` Hold consumer adapters until offline outputs stabilize
 
 ## Artifact Sync Requirements

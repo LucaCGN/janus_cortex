@@ -13,7 +13,7 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_WINNER_THRESHOLDS,
     RESEARCH_READY_STATUSES,
 )
-from app.sandboxes.nba_validation_dashboard.service import (
+from app.data.pipelines.daily.nba.analysis.bundle_loader import (
     _build_market_summary,
     _build_price_snapshots_for_events,
     _load_game,
@@ -86,13 +86,19 @@ def _team_label_variants(game: dict[str, Any], team_side: str) -> set[str]:
     city = str(game.get(f"{team_side}_team_city") or "").strip()
     name = str(game.get(f"{team_side}_team_name") or "").strip()
     slug = str(game.get(f"{team_side}_team_slug") or "").strip()
+    normalized_name = _normalize_text(name)
+    name_parts = normalized_name.split()
     variants = {
         _normalize_text(city),
-        _normalize_text(name),
+        normalized_name,
         _normalize_text(slug),
         _normalize_text(f"{city} {name}"),
         _normalize_text(f"{name} {city}"),
     }
+    if name_parts:
+        variants.add(" ".join(name_parts[-1:]))
+    if len(name_parts) >= 2:
+        variants.add(" ".join(name_parts[-2:]))
     return {variant for variant in variants if variant}
 
 

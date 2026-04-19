@@ -110,11 +110,17 @@ def _apply_classification(frame: pd.DataFrame) -> pd.DataFrame:
         if column not in work.columns:
             work[column] = pd.NA
 
+    snapshot_pregame_market = work[pre_columns].notna().all(axis=1)
+    snapshot_ingame_market = work[ingame_columns].notna().all(axis=1)
+    snapshot_market_extrema_present = work[[*pre_columns, *ingame_columns]].notna().any(axis=1)
+    coverage_implies_market_path = work["coverage_status"].isin(RESEARCH_READY_STATUSES)
+
     work["has_feature_snapshot"] = work["feature_computed_at"].notna()
     work["has_linked_event"] = work["feature_event_id"].notna() | (work["linked_event_count"] > 0)
     work["has_timed_pbp"] = work["timed_pbp_event_count"] > 0
-    work["has_bilateral_pregame_market"] = work[pre_columns].notna().all(axis=1)
-    work["has_bilateral_ingame_market"] = work[ingame_columns].notna().all(axis=1)
+    work["market_path_inferred_from_coverage_status"] = coverage_implies_market_path & ~snapshot_market_extrema_present
+    work["has_bilateral_pregame_market"] = snapshot_pregame_market | work["market_path_inferred_from_coverage_status"]
+    work["has_bilateral_ingame_market"] = snapshot_ingame_market | work["market_path_inferred_from_coverage_status"]
     work["has_bilateral_market_path"] = work["has_bilateral_pregame_market"] & work["has_bilateral_ingame_market"]
     if "research_ready_flag" in work.columns:
         work["research_ready_flag"] = _coerce_bool(work["research_ready_flag"])

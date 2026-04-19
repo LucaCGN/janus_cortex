@@ -250,10 +250,6 @@ def seeded_universe_games() -> dict[str, str]:
             event_id=research_event_id,
             pbp_event_count=2,
             covered_polymarket_game_flag=True,
-            home_pre=(0.68, 0.72),
-            away_pre=(0.28, 0.32),
-            home_in=(0.55, 0.91),
-            away_in=(0.09, 0.45),
         )
 
         _seed_game(repo, game_id=no_history_game_id, game_start=no_history_start, home_slug="NYK", away_slug="CHA")
@@ -389,6 +385,11 @@ def test_load_analysis_universe_classification_pytest(seeded_universe_games: dic
         seeded_universe_games["pregame_only"],
         seeded_universe_games["no_matching_event"],
     }
+    research_ready_row = universe.full_universe.loc[
+        universe.full_universe["game_id"].astype(str) == seeded_universe_games["research_ready"]
+    ].iloc[0]
+    assert bool(research_ready_row["has_bilateral_market_path"]) is True
+    assert bool(research_ready_row["market_path_inferred_from_coverage_status"]) is True
 
 
 def test_analysis_universe_qa_summary_pytest(seeded_universe_games: dict[str, str]) -> None:

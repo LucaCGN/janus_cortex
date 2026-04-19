@@ -969,6 +969,12 @@ class JanusUpsertRepository:
         away_team_slug: str | None = None,
         home_score: int | None = None,
         away_score: int | None = None,
+        season_phase: str | None = None,
+        season_phase_label: str | None = None,
+        season_phase_sub_label: str | None = None,
+        season_phase_subtype: str | None = None,
+        series_text: str | None = None,
+        series_game_number: str | None = None,
         updated_at: datetime | None = None,
     ) -> str:
         _require_non_empty("game_id", game_id)
@@ -978,9 +984,10 @@ class JanusUpsertRepository:
                 INSERT INTO nba.nba_games (
                     game_id, season, game_date, game_start_time, game_status, game_status_text,
                     period, game_clock, home_team_id, away_team_id, home_team_slug, away_team_slug,
-                    home_score, away_score, updated_at
+                    home_score, away_score, season_phase, season_phase_label, season_phase_sub_label,
+                    season_phase_subtype, series_text, series_game_number, updated_at
                 ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 )
                 ON CONFLICT (game_id)
                 DO UPDATE SET
@@ -997,6 +1004,12 @@ class JanusUpsertRepository:
                     away_team_slug = EXCLUDED.away_team_slug,
                     home_score = EXCLUDED.home_score,
                     away_score = EXCLUDED.away_score,
+                    season_phase = COALESCE(EXCLUDED.season_phase, nba.nba_games.season_phase),
+                    season_phase_label = COALESCE(EXCLUDED.season_phase_label, nba.nba_games.season_phase_label),
+                    season_phase_sub_label = COALESCE(EXCLUDED.season_phase_sub_label, nba.nba_games.season_phase_sub_label),
+                    season_phase_subtype = COALESCE(EXCLUDED.season_phase_subtype, nba.nba_games.season_phase_subtype),
+                    series_text = COALESCE(EXCLUDED.series_text, nba.nba_games.series_text),
+                    series_game_number = COALESCE(EXCLUDED.series_game_number, nba.nba_games.series_game_number),
                     updated_at = EXCLUDED.updated_at
                 RETURNING game_id;
                 """,
@@ -1015,6 +1028,12 @@ class JanusUpsertRepository:
                     away_team_slug,
                     home_score,
                     away_score,
+                    season_phase,
+                    season_phase_label,
+                    season_phase_sub_label,
+                    season_phase_subtype,
+                    series_text,
+                    series_game_number,
                     updated_at,
                 ),
             )

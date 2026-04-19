@@ -50,30 +50,11 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     BacktestRunRequest,
     ModelRunRequest,
 )
-try:
-    from app.data.pipelines.daily.nba.analysis.mart_game_profiles import (
-        derive_game_rows as _derive_game_rows,
-        load_analysis_bundle as _load_analysis_bundle,
-        opening_band_for_price as _opening_band_for_price,
-    )
-except ModuleNotFoundError:  # pragma: no cover - compatibility fallback for the clean A5 worktree
-    def _opening_band_for_price(price: float | None) -> tuple[str | None, int | None]:
-        if price is None or pd.isna(price):
-            return None, None
-        cents = min(99, max(0, int(math.floor(float(price) * 100.0 + 1e-9))))
-        lower = (cents // 10) * 10
-        upper = lower + 10
-        if upper > 100:
-            upper = 100
-        return f"{lower}-{upper}", int(lower // 10)
-
-
-    def _derive_game_rows(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        raise ModuleNotFoundError("app.sandboxes.nba_validation_dashboard.service is not available in this worktree")
-
-
-    def _load_analysis_bundle(*args: Any, **kwargs: Any) -> Any:
-        raise ModuleNotFoundError("app.sandboxes.nba_validation_dashboard.service is not available in this worktree")
+from app.data.pipelines.daily.nba.analysis.mart_game_profiles import (
+    derive_game_rows as _derive_game_rows,
+    load_analysis_bundle as _load_analysis_bundle,
+    opening_band_for_price as _opening_band_for_price,
+)
 from app.data.pipelines.daily.nba.analysis.mart_state_panel import (
     build_state_rows_for_side as _build_state_rows_for_side,
     build_winner_definition_profile_rows as _build_winner_definition_profile_rows,
@@ -459,7 +440,14 @@ def load_analysis_universe(connection: Any, request: AnalysisUniverseRequest) ->
 
 
 def _build_completeness_report(universe_df: pd.DataFrame) -> dict[str, Any]:
-    return _build_analysis_universe_qa_summary(universe_df)
+    frame = universe_df.copy()
+    if not frame.empty and "research_ready_flag" not in frame.columns and "classification" not in frame.columns:
+        if "coverage_status" in frame.columns:
+            coverage_status = frame["coverage_status"].fillna("missing_feature_snapshot").astype(str)
+        else:
+            coverage_status = pd.Series(["missing_feature_snapshot"] * len(frame), index=frame.index, dtype="object")
+        frame["research_ready_flag"] = coverage_status.isin(RESEARCH_READY_STATUSES)
+    return _build_analysis_universe_qa_summary(frame)
 
 
 def _load_state_panel_df(connection: Any, *, season: str, season_phase: str, analysis_version: str) -> pd.DataFrame:
