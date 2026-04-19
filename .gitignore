@@ -1,10 +1,22 @@
 .env
 .venv
-.log.*
-.yml.*
-.png.*
-logs
-__pycache__*
+*.log
+logs/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.playwright-cli/
+output/
+*.parquet
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Keep authored source/config assets trackable.
+# Generated JSON/YAML/PNG artifacts should live under ignored output dirs.
+
 tests*
 !tests/
 !tests/**
