@@ -50,11 +50,30 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     BacktestRunRequest,
     ModelRunRequest,
 )
-from app.data.pipelines.daily.nba.analysis.mart_game_profiles import (
-    derive_game_rows as _derive_game_rows,
-    load_analysis_bundle as _load_analysis_bundle,
-    opening_band_for_price as _opening_band_for_price,
-)
+try:
+    from app.data.pipelines.daily.nba.analysis.mart_game_profiles import (
+        derive_game_rows as _derive_game_rows,
+        load_analysis_bundle as _load_analysis_bundle,
+        opening_band_for_price as _opening_band_for_price,
+    )
+except ModuleNotFoundError:  # pragma: no cover - compatibility fallback for the clean A5 worktree
+    def _opening_band_for_price(price: float | None) -> tuple[str | None, int | None]:
+        if price is None or pd.isna(price):
+            return None, None
+        cents = min(99, max(0, int(math.floor(float(price) * 100.0 + 1e-9))))
+        lower = (cents // 10) * 10
+        upper = lower + 10
+        if upper > 100:
+            upper = 100
+        return f"{lower}-{upper}", int(lower // 10)
+
+
+    def _derive_game_rows(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        raise ModuleNotFoundError("app.sandboxes.nba_validation_dashboard.service is not available in this worktree")
+
+
+    def _load_analysis_bundle(*args: Any, **kwargs: Any) -> Any:
+        raise ModuleNotFoundError("app.sandboxes.nba_validation_dashboard.service is not available in this worktree")
 from app.data.pipelines.daily.nba.analysis.mart_state_panel import (
     build_state_rows_for_side as _build_state_rows_for_side,
     build_winner_definition_profile_rows as _build_winner_definition_profile_rows,
@@ -1045,60 +1064,9 @@ def _render_backtest_markdown(payload: dict[str, Any]) -> str:
 
 
 def run_analysis_backtests(request: BacktestRunRequest) -> dict[str, Any]:
-    output_dir = _ensure_output_dir(request.output_root, request.season, request.season_phase, request.analysis_version) / "backtests"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    with managed_connection() as connection:
-        state_df = _load_state_panel_df(
-            connection,
-            season=request.season,
-            season_phase=request.season_phase,
-            analysis_version=request.analysis_version,
-        )
-    if state_df.empty:
-        payload = {
-            "season": request.season,
-            "season_phase": request.season_phase,
-            "analysis_version": request.analysis_version,
-            "families": {},
-            "error": "state_panel_empty",
-        }
-        payload["artifacts"] = {"json": _write_json(output_dir / "run_analysis_backtests.json", payload)}
-        return payload
+    from app.data.pipelines.daily.nba.analysis.backtests.engine import run_analysis_backtests as _run_analysis_backtests
 
-    families_to_run = (
-        [request.strategy_family]
-        if request.strategy_family != "all"
-        else ["reversion", "inversion", "winner_definition"]
-    )
-    family_summaries: dict[str, Any] = {}
-    family_trades: dict[str, pd.DataFrame] = {}
-    for family in families_to_run:
-        if family == "reversion":
-            trades = _simulate_reversion_trades(state_df, request.slippage_cents)
-        elif family == "inversion":
-            trades = _simulate_inversion_trades(state_df, request.slippage_cents)
-        elif family == "winner_definition":
-            trades = _simulate_winner_definition_trades(state_df, request.slippage_cents)
-        else:
-            continue
-        trades_df = pd.DataFrame(trades)
-        family_trades[family] = trades_df
-        family_summaries[family] = _summarize_trades(trades_df)
-    payload = {
-        "season": request.season,
-        "season_phase": request.season_phase,
-        "analysis_version": request.analysis_version,
-        "slippage_cents": request.slippage_cents,
-        "families": family_summaries,
-        "artifacts": {},
-    }
-    payload["artifacts"]["json"] = _write_json(output_dir / "run_analysis_backtests.json", payload)
-    payload["artifacts"]["markdown"] = _write_markdown(output_dir / "run_analysis_backtests.md", _render_backtest_markdown(payload))
-    for family, trades_df in family_trades.items():
-        payload["artifacts"].update(
-            {f"{family}_{key}": value for key, value in _write_frame(output_dir / f"{family}_trades", trades_df).items()}
-        )
-    return to_jsonable(payload)
+    return _run_analysis_backtests(request)
 
 
 def _prepare_state_model_frame(state_df: pd.DataFrame) -> pd.DataFrame:
