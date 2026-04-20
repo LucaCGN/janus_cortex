@@ -20,7 +20,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\run_analysis_validation.ps1 -Ta
 What this does:
 1. resets the disposable Docker Postgres database
 2. runs DB smoke validation
-3. runs the Postgres-backed NBA analysis pytest sweep
+3. runs the Postgres-backed NBA analysis pytest sweep, including the analysis studio route smoke
 4. runs direct CLI commands for mart, report, backtests, and baselines
 5. captures a final universe plus mart snapshot
 6. writes `validation_summary.json` and `validation_summary.md` under `JANUS_LOCAL_ROOT\archives\output\nba_analysis_validation\...`

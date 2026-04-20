@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Janus Cortex Analysis Studio</title>
+  <link rel="stylesheet" href="/analysis-studio/static/analysis_studio.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <p class="eyebrow">Janus Cortex / Analysis Studio</p>
+      <h1>Offline NBA research, strategy, and model outputs in one read-only surface.</h1>
+      <p class="hero-copy">
+        This studio is the permanent UI entry point for the analysis module. It reads the
+        consumer snapshot contract, not raw ingest tables and not branch-local JSON parsing.
+      </p>
+      <div class="hero-grid">
+        <div class="hero-card">
+          <span class="hero-label">Current lane</span>
+          <strong>F1 Frontend Module Scaffold</strong>
+        </div>
+        <div class="hero-card">
+          <span class="hero-label">Backend contract</span>
+          <strong>`load_analysis_consumer_snapshot`</strong>
+        </div>
+        <div class="hero-card">
+          <span class="hero-label">Scope rule</span>
+          <strong>Read-only adapter consumption only</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel control-panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Snapshot Loader</p>
+          <h2>Choose the analysis output to inspect</h2>
+        </div>
+        <form id="snapshot-form" class="control-grid">
+          <label>
+            <span>Season</span>
+            <input id="season" name="season" value="2025-26" required>
+          </label>
+          <label>
+            <span>Phase</span>
+            <input id="season_phase" name="season_phase" value="regular_season" required>
+          </label>
+          <label>
+            <span>Analysis Version</span>
+            <input id="analysis_version" name="analysis_version" placeholder="latest if blank">
+          </label>
+          <label>
+            <span>Backtest Experiment</span>
+            <input id="backtest_experiment_id" name="backtest_experiment_id" placeholder="optional guard">
+          </label>
+          <label class="control-span">
+            <span>Artifact Root Override</span>
+            <input id="output_root" name="output_root" placeholder="optional local override for validation">
+          </label>
+          <div class="actions">
+            <button id="load-button" type="submit">Load snapshot</button>
+            <p id="status-line" class="status-line">Waiting for the first snapshot request.</p>
+          </div>
+        </form>
+        <p id="error-line" class="error-line" hidden></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Resolved Output</p>
+          <h2>Snapshot metadata</h2>
+        </div>
+        <div id="metadata-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Research Universe</p>
+          <h2>Coverage and readiness summary</h2>
+        </div>
+        <div id="universe-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Benchmark</p>
+          <h2>Strategy rankings</h2>
+        </div>
+        <div id="strategy-table" class="table-wrap empty-state">Load a snapshot to inspect ranked strategy families.</div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Models</p>
+            <h2>Track summary</h2>
+          </div>
+          <div id="model-list" class="stack-list empty-state">No model tracks loaded yet.</div>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Report Pack</p>
+            <h2>Section inventory</h2>
+          </div>
+          <div id="report-sections" class="stack-list empty-state">No report sections loaded yet.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Artifacts</p>
+          <h2>Normalized output paths</h2>
+        </div>
+        <div id="artifact-grid" class="artifact-grid empty-state">No artifacts loaded yet.</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/analysis-studio/static/analysis_studio.js"></script>
+</body>
+</html>

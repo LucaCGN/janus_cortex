@@ -125,7 +125,7 @@ try {
     }
 
     $commands.Add((Invoke-LoggedCommand -Name 'describe_target' -FilePath 'python' -CommandArgs @('-m', 'app.data.databases.migrate', '--describe-target')))
-    $commands.Add((Invoke-LoggedCommand -Name 'analysis_pytest_sweep' -FilePath 'python' -CommandArgs @('-m', 'pytest', '-q', 'tests/app/data/pipelines/daily/nba/test_analysis_universe_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_mart_game_profiles_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_module_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_models_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_consumer_adapters_pytest.py')))
+    $commands.Add((Invoke-LoggedCommand -Name 'analysis_pytest_sweep' -FilePath 'python' -CommandArgs @('-m', 'pytest', '-q', 'tests/app/api/test_analysis_studio_router_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_universe_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_mart_game_profiles_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_module_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_models_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_consumer_adapters_pytest.py')))
 
     $martArgs = @('-m', 'app.data.pipelines.daily.nba.analysis_module', 'build_analysis_mart', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion, '--output-root', $OutputRoot)
     if ($RebuildMart -or $Target -eq 'disposable') {
