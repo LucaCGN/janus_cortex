@@ -18,6 +18,21 @@ Analysis branch for sequential bankroll simulation and strategy refinement under
 - refinement of the surviving strategy families under the new sequential premises
 - random-holdout and naive-baseline comparison outputs for the sequential framing
 
+## Current Status
+- `P1` complete:
+  - bankroll contract frozen at `10.0` starting capital, `1.0` position fraction, `100`-game window, one-open-position-at-a-time
+- `P2` complete:
+  - per-family portfolio replay is now emitted as benchmark artifacts
+- `P3` complete for the current default family set:
+  - `inversion` and `winner_definition` survive the sequential lens
+  - `reversion`, `comeback_reversion`, and `volatility_scalp` are currently drop candidates
+  - tested threshold-tightening variants for `inversion` and `winner_definition` were rejected because they underperformed the original defaults under bankroll compounding
+- `P4` complete for the first seeded holdout pass:
+  - sequential candidate-freeze outputs now include full, time-validation, and random-holdout bankroll results
+- current focus inside `P5`:
+  - publish the frozen results
+  - decide whether the next branch should be repeated-seed robustness, combined portfolio construction, or visualization
+
 Likely write scope:
 - `app/data/pipelines/daily/nba/analysis/backtests/*`
 - sequential benchmark helpers and tests
@@ -102,4 +117,3 @@ Validation:
 Next branch:
 - follow-on diagnostics or visualization lane if the sequential outputs need a dedicated surface
 - season-continuity branches can continue in parallel once the sequential lane is scoped
-

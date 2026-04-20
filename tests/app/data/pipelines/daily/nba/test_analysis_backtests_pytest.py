@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.data.pipelines.daily.nba.analysis.backtests import engine
+from app.data.pipelines.daily.nba.analysis.backtests.portfolio import simulate_trade_portfolio
 from app.data.pipelines.daily.nba.analysis.contracts import ANALYSIS_VERSION, BacktestRunRequest
 
 
@@ -451,6 +452,77 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
         assert float(zero_df.iloc[0]["gross_return_with_slippage"]) > float(one_df.iloc[0]["gross_return_with_slippage"])
 
 
+def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
+    trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G1",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "opponent_team_slug": "LAL",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.50,
+            },
+            {
+                "game_id": "G2",
+                "team_side": "home",
+                "team_slug": "NYK",
+                "opponent_team_slug": "MIA",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 15, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 1.00,
+            },
+            {
+                "game_id": "G3",
+                "team_side": "away",
+                "team_slug": "DEN",
+                "opponent_team_slug": "UTA",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 45, tzinfo=timezone.utc),
+                "gross_return_with_slippage": -0.25,
+            },
+            {
+                "game_id": "G4",
+                "team_side": "away",
+                "team_slug": "ATL",
+                "opponent_team_slug": "CLE",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 21, 10, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.20,
+            },
+        ]
+    )
+
+    summary, steps_df = simulate_trade_portfolio(
+        trades_df,
+        sample_name="full_sample",
+        strategy_family="inversion",
+        initial_bankroll=10.0,
+        position_size_fraction=1.0,
+        game_limit=3,
+    )
+
+    assert summary["games_considered"] == 3
+    assert summary["trade_count_considered"] == 3
+    assert summary["executed_trade_count"] == 2
+    assert summary["skipped_overlap_count"] == 1
+    assert summary["skipped_bankroll_count"] == 0
+    assert summary["ending_bankroll"] == 11.25
+    assert summary["compounded_return"] == 0.125
+    assert summary["max_drawdown_pct"] == 0.25
+    assert list(steps_df["portfolio_action"]) == ["executed", "skipped", "executed"]
+    assert list(steps_df["skip_reason"]) == [None, "overlap", None]
+
+
 def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None:
     frame = _build_benchmark_state_frame()
     request = BacktestRunRequest(
@@ -461,22 +533,27 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
         holdout_ratio=0.4,
         holdout_seed=7,
         min_trade_count=1,
+        portfolio_initial_bankroll=10.0,
+        portfolio_position_size_fraction=1.0,
+        portfolio_game_limit=100,
         output_root=str(tmp_path),
     )
 
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v1"
+    assert first.payload["benchmark"]["contract_version"] == "v2"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
     assert first.benchmark_frames["split_summary"].equals(second.benchmark_frames["split_summary"])
+    assert first.benchmark_frames["portfolio_summary"].equals(second.benchmark_frames["portfolio_summary"])
     assert set(first.benchmark_frames["comparator_summary"]["comparator_name"]) == {
         "no_trade",
         "winner_prediction_hold_to_end",
     }
     assert set(first.benchmark_frames["candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
+    assert set(first.benchmark_frames["portfolio_candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
 
     payload = engine.write_benchmark_artifacts(first, tmp_path / "benchmark")
     assert Path(payload["artifacts"]["benchmark_split_summary_csv"]).exists()
@@ -485,4 +562,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["benchmark_sample_vs_full_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_context_rankings_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_candidate_freeze_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_portfolio_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_portfolio_steps_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_portfolio_candidate_freeze_csv"]).exists()
     assert Path(payload["artifacts"]["experiment_registry_json"]).exists()

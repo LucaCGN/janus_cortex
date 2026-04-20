@@ -4,6 +4,10 @@ from typing import Any
 
 import pandas as pd
 
+from app.data.pipelines.daily.nba.analysis.contracts import (
+    DEFAULT_INVERSION_ENTRY_THRESHOLD,
+    DEFAULT_INVERSION_EXIT_THRESHOLD,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.engine import simulate_trade_loop
 from app.data.pipelines.daily.nba.analysis.backtests.specs import TradeSelection
 
@@ -21,15 +25,22 @@ def _select_inversion_entry(group: pd.DataFrame) -> TradeSelection | None:
         if index == 0:
             previous_price = float(price)
             continue
-        if previous_price < 0.5 and float(price) >= 0.5:
-            return TradeSelection(entry_index=index, metadata={})
+        if previous_price < DEFAULT_INVERSION_ENTRY_THRESHOLD and float(price) >= DEFAULT_INVERSION_ENTRY_THRESHOLD:
+            return TradeSelection(
+                entry_index=index,
+                metadata={
+                    "entry_threshold": DEFAULT_INVERSION_ENTRY_THRESHOLD,
+                    "exit_threshold": DEFAULT_INVERSION_EXIT_THRESHOLD,
+                },
+            )
         previous_price = float(price)
     return None
 
 
 def _select_inversion_exit(group: pd.DataFrame, selection: TradeSelection) -> int | None:
+    exit_threshold = float(selection.metadata["exit_threshold"])
     future = group.iloc[selection.entry_index + 1 :]
-    exit_candidates = future[future["team_price"] < 0.5]
+    exit_candidates = future[future["team_price"] < exit_threshold]
     if exit_candidates.empty:
         return int(len(group) - 1)
     return int(exit_candidates.index[0])
