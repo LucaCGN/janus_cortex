@@ -17,6 +17,10 @@ Main helpers under `app.data.pipelines.daily.nba.analysis.consumer_adapters`:
 - `load_analysis_consumer_bundle(request)`
 - `build_analysis_consumer_snapshot(bundle)`
 - `load_analysis_consumer_snapshot(request)`
+- `build_analysis_backtest_index(bundle)`
+- `load_analysis_backtest_index(request)`
+- `build_analysis_backtest_family_detail(bundle, strategy_family=..., trade_limit=..., context_limit=..., trace_limit=...)`
+- `load_analysis_backtest_family_detail(request, strategy_family=..., trade_limit=..., context_limit=..., trace_limit=...)`
 
 Request contract:
 - `AnalysisConsumerRequest`
@@ -109,8 +113,28 @@ Consumers should not:
 
 Consumers should:
 - use the normalized snapshot
+- use the backtest index and family-detail helpers when they need per-family benchmark drilldown
 - treat missing required artifacts as a load failure
 - pass explicit `analysis_version` or `backtest_experiment_id` when reproducibility matters
+
+## Backtest Detail Surface
+The backtest detail helpers expose a second read-only layer on top of the benchmark bundle:
+
+- family index:
+  - benchmark summary
+  - ranked family list
+  - normalized per-family artifact paths
+- family detail:
+  - selected family summary
+  - sample-level family summaries
+  - candidate-freeze row
+  - comparator summary rows
+  - context ranking rows
+  - bounded best and worst trade previews
+  - bounded context summary previews
+  - bounded trade traces
+
+These helpers are the stable path for later frontend strategy-comparison views.
 
 ## Frontend Handoff
 The frontend branch should build on:
