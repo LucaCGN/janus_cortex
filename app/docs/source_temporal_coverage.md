@@ -606,7 +606,7 @@ This artifact is mandatory for `v0.1.*` node validation and must be updated when
 5. For Gamma events, use multiple narrower windows (past + future) instead of one broad range when validating temporal coverage.
 
 ## Required updates when this file changes
-- active checkpoint file (currently `dev-checkpoint/v0.8.1.md`)
+- active checkpoint file in the local checkpoint ledger (currently `v0.8.1`)
 - `app/docs/development_guide.md`
 - `app/docs/scalable_db_schema_proposal.md` (if schema implications change)
 - `app/docs/scalable_api_routes_proposal.md` (if route readiness changes)

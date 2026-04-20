@@ -33,7 +33,7 @@ v2 scope:
 
 ## Current Phase
 - Active phase: `v0.8.1` with explicit parallel implementation work across `v0.8.2` to `v0.8.8`
-- Reference source of truth: `dev-checkpoint/v0.8.1.md`
+- Reference source of truth: local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
 - Latest completed block: `v0.7.1` to `v0.7.6` closed on `2026-03-14`
 - Pre-`v0.8.1` gate completed on `2026-03-14`: full-season `2025-26` strategy-data audit confirmed full finished-game play-by-play coverage and partial season-wide Polymarket odds coverage.
 - Live `v0.8` implementation state on `2026-03-14`:
@@ -51,10 +51,10 @@ v2 scope:
 ## Canonical Planning Files
 1. `app/docs/scalable_db_schema_proposal.md`
 2. `app/docs/scalable_api_routes_proposal.md`
-3. `dev-checkpoint/README.md`
-4. `dev-checkpoint/v0.X.Y.md` and `dev-checkpoint/v1.X.Y.md`
-5. `app/docs/source_temporal_coverage.md`
-6. `app/docs/development_guide.md` (this file)
+3. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
+4. `app/docs/source_temporal_coverage.md`
+5. `app/docs/development_guide.md` (this file)
+6. `app/docs/local_workspace_convention.md`
 7. `app/docs/app_structure_modularization_plan.md`
 8. `app/docs/openapi_v0_8_snapshot.json`
 
@@ -85,7 +85,7 @@ Completed structure checkpoints:
 Update all:
 - `app/docs/scalable_db_schema_proposal.md`
 - current checkpoint file
-- `dev-checkpoint/README.md`
+- local checkpoint ledger README under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
 - `README.md` if the roadmap or scope definition changed
 
 Also keep synchronized:
@@ -109,7 +109,7 @@ Also keep synchronized:
 ### C. If node method changed (`app/data/nodes/*`)
 Update all:
 - current checkpoint method inventory section
-- `dev-checkpoint/README.md` if the phase objective or dependency meaning changed
+- local checkpoint ledger README under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` if the phase objective or dependency meaning changed
 - test commands and expected outcomes in the checkpoint
 - dedicated pytest modules for changed methods
 - temporal coverage notes in `app/docs/source_temporal_coverage.md` when time-based methods are involved
@@ -159,6 +159,12 @@ If a source endpoint is unstable or unavailable:
 - do not delete prior checkpoint files
 - use additional subphases freely when a block needs more granularity; phase depth is not capped at `.6`
 
+## Local Workspace Rule
+- keep branch-independent local state under `JANUS_LOCAL_ROOT`, not in the repository root
+- default workspace local root: `C:\code-personal\janus-local\janus_cortex`
+- use [tools/janus_local.ps1](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/tools/janus_local.ps1) to create the local layout, move ad hoc folders, export stash snapshots, and clear generated caches
+- do not recreate repo-root `dev-checkpoint`, `reference`, or `output` folders unless they are temporary and immediately moved out again
+
 ## Definition of Done
 A checkpoint is only `done` when:
 1. all in-scope implementation tasks are complete,
@@ -190,11 +196,11 @@ Before closing any session:
 2. schema doc table-phase-column relations reflect the latest plan
 3. route doc activation matrix reflects the latest route state
 4. if a phase completed, the next phase is marked `in_progress`
-5. root `README.md` and `dev-checkpoint/README.md` agree on roadmap scope
+5. root `README.md` and the local checkpoint ledger README agree on roadmap scope
 
 ## Fast Reference Commands
-- list checkpoints: `Get-ChildItem dev-checkpoint`
-- open active phase: `Get-Content -Raw dev-checkpoint/v0.8.1.md`
+- show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
+- ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
 - list node files: `rg --files app/data/nodes`
 - track schema mentions: `rg -n "activate:|table|column|phase" app/docs/scalable_db_schema_proposal.md`
 - track routes mentions: `rg -n "v0\.|v1\.|v2\.|/v1/" app/docs/scalable_api_routes_proposal.md`

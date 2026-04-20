@@ -1061,5 +1061,5 @@ This document is authoritative for:
 On every schema change you must update:
 1. this file,
 2. `app/docs/development_guide.md` current phase section,
-3. corresponding file under `dev-checkpoint/`.
+3. corresponding file in the local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`.
 

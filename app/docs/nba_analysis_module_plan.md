@@ -24,7 +24,7 @@
 - Offline report generation from mart outputs only.
 - Offline backtesting families using mart state rows only.
 - Interpretable baseline modeling outputs with time-based validation.
-- JSON, Markdown, CSV, and optional parquet artifacts under `output/nba_analysis`.
+- JSON, Markdown, CSV, and optional parquet artifacts under `JANUS_LOCAL_ROOT\archives\output\nba_analysis`.
 
 ## Scope Out
 - Play-in, playoffs, preseason, and unfinished postseason games in v1.
@@ -93,4 +93,4 @@
 ## Artifact Sync Requirements
 - Keep `app/docs/development_guide.md` aligned with the offline-first research-lane note.
 - Keep `app/docs/scalable_db_schema_proposal.md` aligned with migration `0018_v1_0_1__nba_analysis_mart.sql`.
-- Keep `dev-checkpoint/README.md` and `dev-checkpoint/v1.0.1.md` aligned with the phase status of this analysis lane.
+- Keep the local checkpoint ledger README and `v1.0.1` checkpoint entry aligned with the phase status of this analysis lane.

@@ -1,14 +1,26 @@
 .env
-.venv
-*.log
-logs/
+.venv/
+
+# Python caches and tooling outputs
 __pycache__/
-**/__pycache__/
 *.py[cod]
-**/*.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# Local browser and log artifacts
 .playwright-cli/
+logs/
+*.log
+
+# Local generated data and databases
 output/
+reference/
+dev-checkpoint/
 *.parquet
 *.db
 *.db-shm
@@ -16,18 +28,8 @@ output/
 *.sqlite
 *.sqlite3
 
-# Keep authored source/config assets trackable.
-# Generated JSON/YAML/PNG artifacts should live under ignored output dirs.
-
-tests*
-!tests/
-!tests/**
-/routes
-/dev
-=========== /DEV SCRIPTS===========
-consolidate_codebase.py
-codebase_summary.md
-run_all_tests.py
-test_nba.py
-reference
-dev-checkpoint
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

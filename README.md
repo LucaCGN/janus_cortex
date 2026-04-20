@@ -4,7 +4,7 @@ Personal prediction-market data framework focused on production-grade data struc
 
 ## Current Status
 - Active checkpoint root: `v0.8.1` with parallel implementation work through `v0.8.8`
-- Checkpoint ledger source of truth: `dev-checkpoint/README.md`
+- Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
 - Current priority: maximize recoverable 2025/26 NBA regular-season game-state and odds data before playoffs begin.
 - Current scope: data platform readiness and analysis-serving, not autonomous strategy execution.
 - Live implementation snapshot on `2026-03-14`:
@@ -54,8 +54,8 @@ The project uses a provider/category/module split:
 4. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
 
 ## Key Planning Docs
-- `dev-checkpoint/README.md`
 - `app/docs/development_guide.md`
+- `app/docs/local_workspace_convention.md`
 - `app/docs/scalable_db_schema_proposal.md`
 - `app/docs/scalable_api_routes_proposal.md`
 - `app/docs/source_temporal_coverage.md`
@@ -82,6 +82,7 @@ Common commands:
 - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/api`
 
 ## Notes
-- `dev-checkpoint/*` is the execution ledger across sessions and should stay synchronized with schema and route docs.
+- Local checkpoint and reference material should live under `JANUS_LOCAL_ROOT` rather than the repository root.
+- Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
 - Sports-core data completeness comes before Chroma, LLM memory, or broader multi-module expansion.
 - Strategy logic remains intentionally outside the core app until the data contracts and service layers are stable.
