@@ -6,6 +6,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     write_benchmark_artifacts,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
+    build_combined_portfolio_benchmark_frames,
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
     simulate_trade_portfolio,
@@ -18,6 +19,7 @@ __all__ = [
     "BenchmarkRunResult",
     "StrategyDefinition",
     "TradeSelection",
+    "build_combined_portfolio_benchmark_frames",
     "build_backtest_result",
     "build_benchmark_run_result",
     "build_portfolio_benchmark_frames",

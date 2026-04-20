@@ -18,7 +18,7 @@ This reference covers:
 - random-train sample
 - random-holdout sample
 
-The benchmark contract version is `v1`.
+The benchmark contract version is now `v3`.
 
 ## Shared Metrics
 Every strategy family is scored with the same metric set:
@@ -63,6 +63,11 @@ The backtest runner now emits:
 - `benchmark_sample_vs_full`
 - `benchmark_context_rankings`
 - `benchmark_candidate_freeze`
+- `benchmark_portfolio_summary`
+- `benchmark_portfolio_steps`
+- `benchmark_portfolio_candidate_freeze`
+- `benchmark_portfolio_robustness_detail`
+- `benchmark_portfolio_robustness_summary`
 - `benchmark_experiment_registry.json`
 
 ## Candidate Freeze Labels
@@ -85,4 +90,9 @@ The first benchmark labels are intentionally conservative:
 - or mixed benchmark signals
 
 ## Operator Note
-This benchmark lane does not pick a live strategy. It produces the first disciplined comparison surface so the next adapter and frontend branches can consume stable results instead of ad hoc backtest logs.
+This benchmark lane still does not pick a live strategy. It now produces:
+- the family-level benchmark surface
+- the sequential bankroll surface
+- repeated-seed robustness evidence on the surviving families
+
+The next decision layer should stay statistical for allocation and promotion. Any later LLM usage should be interpretive only and should consume these benchmark artifacts rather than replacing them.

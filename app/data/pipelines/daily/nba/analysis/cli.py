@@ -12,12 +12,28 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT,
     DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
+    DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
     DEFAULT_SEASON,
     DEFAULT_SEASON_PHASE,
     AnalysisMartBuildRequest,
     BacktestRunRequest,
     ModelRunRequest,
 )
+
+
+def _parse_int_csv(value: str | None, *, fallback: tuple[int, ...]) -> tuple[int, ...]:
+    if value is None:
+        return fallback
+    parsed: list[int] = []
+    for chunk in str(value).split(","):
+        cleaned = chunk.strip()
+        if not cleaned:
+            continue
+        try:
+            parsed.append(int(cleaned))
+        except ValueError:
+            continue
+    return tuple(parsed) if parsed else fallback
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,6 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--train-cutoff", default=None)
     backtest_parser.add_argument("--holdout-ratio", type=float, default=DEFAULT_BACKTEST_HOLDOUT_RATIO)
     backtest_parser.add_argument("--holdout-seed", type=int, default=DEFAULT_BACKTEST_HOLDOUT_SEED)
+    backtest_parser.add_argument(
+        "--robustness-seeds",
+        default=",".join(str(seed) for seed in DEFAULT_BACKTEST_ROBUSTNESS_SEEDS),
+    )
     backtest_parser.add_argument("--min-trade-count", type=int, default=DEFAULT_BACKTEST_MIN_TRADE_COUNT)
     backtest_parser.add_argument("--portfolio-initial-bankroll", type=float, default=DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL)
     backtest_parser.add_argument(
@@ -109,6 +129,10 @@ def dispatch_command(
                 train_cutoff=args.train_cutoff,
                 holdout_ratio=args.holdout_ratio,
                 holdout_seed=args.holdout_seed,
+                robustness_seeds=_parse_int_csv(
+                    args.robustness_seeds,
+                    fallback=DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
+                ),
                 min_trade_count=args.min_trade_count,
                 portfolio_initial_bankroll=args.portfolio_initial_bankroll,
                 portfolio_position_size_fraction=args.portfolio_position_size_fraction,

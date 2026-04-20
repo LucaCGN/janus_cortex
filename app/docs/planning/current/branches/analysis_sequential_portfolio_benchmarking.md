@@ -29,9 +29,13 @@ Analysis branch for sequential bankroll simulation and strategy refinement under
   - tested threshold-tightening variants for `inversion` and `winner_definition` were rejected because they underperformed the original defaults under bankroll compounding
 - `P4` complete for the first seeded holdout pass:
   - sequential candidate-freeze outputs now include full, time-validation, and random-holdout bankroll results
-- current focus inside `P5`:
-  - publish the frozen results
-  - decide whether the next branch should be repeated-seed robustness, combined portfolio construction, or visualization
+- `P5` complete:
+  - frozen sequential portfolio results published
+  - follow-on branch selected: repeated-seed robustness plus combined keep-family sleeve
+
+Handoff note:
+- this branch is now complete as the base sequential benchmark lane
+- continued work now lives in [analysis_portfolio_robustness.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_portfolio_robustness.md)
 
 Likely write scope:
 - `app/data/pipelines/daily/nba/analysis/backtests/*`
@@ -115,5 +119,6 @@ Validation:
 
 ## Handoff
 Next branch:
-- follow-on diagnostics or visualization lane if the sequential outputs need a dedicated surface
-- season-continuity branches can continue in parallel once the sequential lane is scoped
+- repeated-seed robustness and combined keep-family sleeve lane
+- after that, either an allocation/priority branch or a read-only visualization lane
+- season-continuity branches can continue in parallel once the robustness lane is merged

@@ -137,6 +137,9 @@ The goal is a comparable multi-family backtest program.
   - no-trade baseline
   - naive winner-prediction style reference where relevant
   - repeated holdout behavior, not one single sample
+- Sequential portfolio promotion also requires:
+  - repeated-seed bankroll robustness on the current holdout policy
+  - explicit collision analysis if multiple surviving families are replayed in one shared sleeve
 
 ## Promotion Rules
 - Do not promote any model to a serving layer if:
@@ -151,6 +154,7 @@ The goal is a comparable multi-family backtest program.
 - LLM usage remains downstream only:
   - it may consume structured mart, backtest, and baseline outputs later
   - it is not part of the baseline training loop
+  - the current plausible use case is interpretation of borderline or collision-heavy cases after the statistical gate, not replacement of the statistical gate
 
 ## Artifact Sync Requirements
 - When baseline families or metrics change, update:
