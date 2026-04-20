@@ -270,6 +270,15 @@ class BacktestRunRequest:
 
 
 @dataclass(slots=True)
+class AnalysisConsumerRequest:
+    season: str = DEFAULT_SEASON
+    season_phase: str = DEFAULT_SEASON_PHASE
+    analysis_version: str | None = None
+    backtest_experiment_id: str | None = None
+    output_root: str | None = None
+
+
+@dataclass(slots=True)
 class ModelRunRequest:
     season: str = DEFAULT_SEASON
     season_phase: str = DEFAULT_SEASON_PHASE

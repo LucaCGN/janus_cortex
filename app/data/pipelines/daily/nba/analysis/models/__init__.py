@@ -130,9 +130,10 @@ def train_analysis_baselines(request: ModelRunRequest) -> dict[str, Any]:
         "tracks": tracks,
         "artifacts": {},
     }
-    payload["artifacts"]["json"] = write_json(output_dir / "train_analysis_baselines.json", payload)
+    payload["artifacts"]["json"] = str(output_dir / "train_analysis_baselines.json")
     payload["artifacts"]["markdown"] = write_markdown(output_dir / "train_analysis_baselines.md", _render_model_markdown(payload))
     payload["artifacts"]["tracks"] = artifacts
+    write_json(Path(payload["artifacts"]["json"]), payload)
     return to_jsonable(payload)
 
 
