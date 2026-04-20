@@ -2,6 +2,19 @@
 
 This folder contains Postgres connection helpers and SQL migrations.
 
+## Target Safety
+Set `JANUS_DB_TARGET` explicitly before DB integration work:
+- `disposable`: local Docker Postgres created from migrations only
+- `dev_clone`: non-live copy of shared data
+- `shared_live`: shared live or production-like database
+
+`postgres_live` pytest modules only run when:
+- `JANUS_RUN_DB_TESTS=1`
+- and `JANUS_DB_TARGET` is `disposable` or `dev_clone`
+
+Explicit override:
+- `JANUS_ALLOW_UNSAFE_DB_TESTS=1`
+
 ## Environment
 Required variables (from `.env`):
 - `JANUS_POSTGRES_HOST`
@@ -16,8 +29,18 @@ Optional:
 
 ## Commands
 - list migrations: `python -m app.data.databases.migrate --list`
+- describe current target: `python -m app.data.databases.migrate --describe-target`
 - apply pending migrations: `python -m app.data.databases.migrate`
+- drop managed schemas and re-apply migrations on a safe target:
+  - `python -m app.data.databases.migrate --drop-managed-schemas --require-safe-target`
 - apply up to one migration: `python -m app.data.databases.migrate --to 0002_v0_3_2__sync_and_raw_payloads.sql`
+
+Disposable local Postgres helper:
+- status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 status`
+- bootstrap disposable DB: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 bootstrap-disposable`
+- reset disposable DB: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 reset-disposable`
+- smoke disposable DB: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 smoke-disposable`
+- teardown disposable DB: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 teardown-disposable`
 
 Repository primitives:
 - module: `app/data/databases/repositories/upsert_primitives.py`
@@ -85,5 +108,6 @@ Current implemented migrations:
 
 Notes:
 - Tests marked `postgres_live` are skipped by default unless `JANUS_RUN_DB_TESTS=1`.
+- Postgres integration tests are also skipped unless `JANUS_DB_TARGET` is `disposable` or `dev_clone`.
 - Tests marked `live_api` are skipped unless `JANUS_RUN_LIVE_TESTS=1`.
 - The migration test module drops managed schemas before execution to guarantee a clean baseline.

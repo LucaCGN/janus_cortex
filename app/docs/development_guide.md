@@ -182,6 +182,9 @@ If a source endpoint is unstable or unavailable:
 - stage 4: only after stages 1-3 pass, run shared live DB validation or apply migrations
 - SQLite is a safety and logic gate, not proof of Postgres migration compatibility
 - never point `JANUS_RUN_DB_TESTS=1` or migration commands at the live database first
+- classify the target with `JANUS_DB_TARGET` before running DB integration tests
+- default DB integration targets are `disposable` and `dev_clone`
+- use `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 reset-disposable` to create a clean disposable Postgres baseline
 
 ## Parallel Branch Rule
 - one branch owns one narrow write scope
@@ -225,8 +228,10 @@ Before closing any session:
 ## Fast Reference Commands
 - open reference index: `Get-Content app/docs/reference/README.md`
 - open master dependency graph: `Get-Content app/docs/reference/master_execution_dependency_graph.md`
+- open DB safety workflow: `Get-Content app/docs/reference/database_safety_workflow.md`
 - show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 - ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
+- show disposable DB status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 status`
 - open current planning index: `Get-Content app/docs/planning/README.md`
 - open current roadmap: `Get-Content app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
 - list node files: `rg --files app/data/nodes`

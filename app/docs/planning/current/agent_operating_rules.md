@@ -20,6 +20,8 @@
 ## Migration Rules
 - every migration branch needs a clear target phase and matching schema-doc update
 - validate `python -m app.data.databases.migrate --list` before applying anything
+- inspect the current DB target with `python -m app.data.databases.migrate --describe-target`
+- prefer `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 reset-disposable` before DB integration tests
 - run migration tests on a disposable Postgres database before a dev-clone validation
 - keep a rollback or restore note in the branch plan before any shared-db apply
 - if a migration affects large existing tables, validate runtime on a dev clone before merge approval

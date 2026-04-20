@@ -17,6 +17,7 @@ If `JANUS_LOCAL_ROOT` is unset, the repo helper defaults to the path above.
 Stable subpaths:
 - `tracks/dev-checkpoint`
 - `tracks/reference`
+- `tracks/reference/db`
 - `tracks/planning/current`
 - `tracks/planning/archive`
 - `archives/output`
@@ -44,6 +45,7 @@ Common commands:
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status
+powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 status
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 track-path -SourcePath .\dev-checkpoint -Name dev-checkpoint
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 track-path -SourcePath .\reference -Name reference
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 archive-path -SourcePath .\output -Name output
@@ -52,6 +54,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 clean-generated
 ```
 
 For the analysis CLI, default artifact output resolves to `JANUS_LOCAL_ROOT\archives\output\nba_analysis` when `JANUS_LOCAL_ROOT` is set, or to the standard Windows local root if it exists.
+
+Disposable Postgres env snapshots and DB reference notes should live under `JANUS_LOCAL_ROOT\tracks\reference\db`.
 
 ## Parallel Branch Hygiene
 Before removing a worktree or deleting a lane branch:
