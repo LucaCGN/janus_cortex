@@ -4,7 +4,8 @@ from typing import Any
 
 import pandas as pd
 
-from app.data.pipelines.daily.nba.analysis.backtests.engine import DEFAULT_WINNER_DEFINITION_BREAK, DEFAULT_WINNER_DEFINITION_ENTRY, TradeSelection, simulate_trade_loop
+from app.data.pipelines.daily.nba.analysis.backtests.engine import DEFAULT_WINNER_DEFINITION_BREAK, DEFAULT_WINNER_DEFINITION_ENTRY, simulate_trade_loop
+from app.data.pipelines.daily.nba.analysis.backtests.specs import TradeSelection
 
 
 def _select_winner_definition_entry(group: pd.DataFrame) -> TradeSelection | None:

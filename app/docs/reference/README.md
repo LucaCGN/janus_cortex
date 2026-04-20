@@ -24,6 +24,9 @@ Use planning docs for:
 - [database_safety_workflow.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/database_safety_workflow.md)
 - [offline_analysis_validation_workflow.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/offline_analysis_validation_workflow.md)
 
+### Strategy Lab
+- [analysis_strategy_lab_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_strategy_lab_reference.md)
+
 ### Mission And Research Intent
 - [analysis_mission_and_trading_hypotheses.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_mission_and_trading_hypotheses.md)
 

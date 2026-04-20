@@ -230,6 +230,7 @@ Before closing any session:
 - open master dependency graph: `Get-Content app/docs/reference/master_execution_dependency_graph.md`
 - open DB safety workflow: `Get-Content app/docs/reference/database_safety_workflow.md`
 - open analysis validation workflow: `Get-Content app/docs/reference/offline_analysis_validation_workflow.md`
+- open strategy lab reference: `Get-Content app/docs/reference/analysis_strategy_lab_reference.md`
 - show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 - ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
 - show disposable DB status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 status`

@@ -8,9 +8,9 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     DEFAULT_REVERSION_DRAWDOWN,
     DEFAULT_REVERSION_EXIT_BUFFER,
     DEFAULT_REVERSION_OPEN_THRESHOLD,
-    TradeSelection,
     simulate_trade_loop,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.specs import TradeSelection
 
 
 def _select_reversion_entry(group: pd.DataFrame) -> TradeSelection | None:
