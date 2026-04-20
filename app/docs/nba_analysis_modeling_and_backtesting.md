@@ -55,6 +55,15 @@
   - enter at `>= 80c`
   - exit on break below `75c` or end of game
 
+## Next Strategy Families To Add
+- quarter-context comeback reversion
+- opening-band volatility scalp
+- scoreboard-control mismatch fade or continuation
+- run-exhaustion or run-stabilization rules if the state panel supports them cleanly
+
+The goal is not one "winner" strategy immediately.
+The goal is a comparable multi-family backtest program.
+
 ## Backtest Output Contract
 - Per trade:
   - entry / exit timestamps
@@ -106,6 +115,7 @@
 - Use time-based train / validation split only.
 - Default cutoff:
   - `75%` of observed game dates unless a cutoff is explicitly provided
+- In addition to time-based validation, keep a random holdout sample in the `5%-10%` range for strategy comparison.
 - Metrics:
   - classification:
     - Brier score
@@ -115,15 +125,29 @@
     - RMSE
     - MAE
     - rank correlation
+- Strategy families must also report:
+  - trade count
+  - slippage-adjusted return
+  - hold-time distribution
+  - MFE / MAE summary
 - Every model is compared against a naive baseline:
   - classification: train-set base rate
   - regression / timing: train-set global mean
+- Every strategy family is also compared against:
+  - no-trade baseline
+  - naive winner-prediction style reference where relevant
+  - repeated holdout behavior, not one single sample
 
 ## Promotion Rules
 - Do not promote any model to a serving layer if:
   - validation data is insufficient
   - it loses to the naive baseline
   - feature leakage is detected
+- Do not promote a strategy family if:
+  - it only looks good on a narrow narrative slice
+  - it fails after slippage stress
+  - it cannot be explained with trade-trace artifacts
+  - it cannot survive comparison on the random holdout workflow
 - LLM usage remains downstream only:
   - it may consume structured mart, backtest, and baseline outputs later
   - it is not part of the baseline training loop

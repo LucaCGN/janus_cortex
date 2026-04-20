@@ -15,9 +15,16 @@
 6. extend season support for playoffs, preseason, and WNBA
 
 ## Canonical Current Planning Files
+- [roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
+- [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 - [branch_strategy.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branch_strategy.md)
 - [agent_operating_rules.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/agent_operating_rules.md)
 - [nba_analysis_next_steps.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/nba_analysis_next_steps.md)
+
+## Working Rule
+- the roadmap doc explains the milestone path
+- the branch directory explains the exact branch-by-branch subphase breakdown
+- the next-steps doc is the short operational summary, not the full decomposition
 
 ## Local Companion Files
 Keep branch-by-branch local tracking in:

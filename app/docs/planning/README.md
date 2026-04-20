@@ -3,11 +3,16 @@
 ## Purpose
 Separate active execution planning from archived execution history, while keeping stable product and data-contract docs outside the churn of branch-by-branch work.
 
+Paired reference docs live under:
+- [app/docs/reference/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/README.md)
+
 ## Planning Layers
 
 ### Current Planning
 Use these files for the next active work wave:
 - [current/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/README.md)
+- [current/roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
+- [current/branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 - [current/branch_strategy.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branch_strategy.md)
 - [current/agent_operating_rules.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/agent_operating_rules.md)
 - [current/nba_analysis_next_steps.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/nba_analysis_next_steps.md)
@@ -18,6 +23,7 @@ Use these files to understand why the codebase looks the way it does after a com
 
 ## Stable Product Docs
 These stay authoritative even as branch plans change:
+- [app/docs/reference/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/README.md)
 - [app/docs/nba_analysis_module_plan.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_module_plan.md)
 - [app/docs/nba_analysis_data_products.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_data_products.md)
 - [app/docs/nba_analysis_modeling_and_backtesting.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_modeling_and_backtesting.md)
@@ -39,3 +45,4 @@ Use the local planning ledger for:
 - If a plan is guiding current work, keep it under `app/docs/planning/current`.
 - If a plan explains a completed or superseded work wave, list it under `app/docs/planning/archive`.
 - Do not overwrite the rationale for a completed wave with the next wave's plan.
+- If a document is explaining system truth rather than next execution, move or index it under `app/docs/reference`.

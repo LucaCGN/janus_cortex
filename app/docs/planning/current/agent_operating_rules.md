@@ -4,7 +4,8 @@
 1. run `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 2. read [app/docs/planning/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/README.md)
 3. read the current branch strategy and next-steps docs before creating or reusing a branch
-4. confirm whether the task belongs to `analysis`, `data`, `frontend`, `ops`, `season`, or `docs`
+4. read the specific branch plan under `app/docs/planning/current/branches/` before starting implementation
+5. confirm whether the task belongs to `analysis`, `data`, `frontend`, `ops`, `season`, or `docs`
 
 ## Database Safety Ladder
 - always validate data-shape logic locally before touching shared databases

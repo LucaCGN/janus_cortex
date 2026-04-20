@@ -54,6 +54,9 @@
 8. `codex/season-wnba-bootstrap`
    - prepare WNBA carry-over and offseason continuity work
 
+Detailed subphase plans live under:
+- [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
+
 ## Branch Launch Guidance
 - do not launch frontend before read-only consumer contracts stabilize
 - do not launch season-expansion branches before dev-db safety and validation hardening are in place

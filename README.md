@@ -5,8 +5,8 @@ Personal prediction-market data framework focused on production-grade data struc
 ## Current Status
 - Active checkpoint root: `v0.8.1` with parallel implementation work through `v0.8.8`
 - Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
-- Current priority: maximize recoverable 2025/26 NBA regular-season game-state and odds data before playoffs begin.
-- Current scope: data platform readiness and analysis-serving, not autonomous strategy execution.
+- Current priority: validate and expand the offline NBA analysis module into a multi-algorithm backtest program on non-live infrastructure.
+- Current scope: safe DB validation, strategy benchmarking, and read-only research consumers before any live automation.
 - Live implementation snapshot on `2026-03-14`:
   - `nba.nba_game_feature_snapshots=52`
   - `nba.nba_odds_coverage_audits=53`
@@ -54,7 +54,9 @@ The project uses a provider/category/module split:
 4. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
 
 ## Key Planning Docs
+- `app/docs/reference/README.md`
 - `app/docs/planning/README.md`
+- `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
 - `app/docs/development_guide.md`
 - `app/docs/local_workspace_convention.md`
 - `app/docs/scalable_db_schema_proposal.md`

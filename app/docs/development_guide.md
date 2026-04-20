@@ -34,6 +34,8 @@ v2 scope:
 ## Current Phase
 - Active phase: `v0.8.1` with explicit parallel implementation work across `v0.8.2` to `v0.8.8`
 - Reference source of truth: local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
+- Current analysis-program baseline: `v1.0.1` completed through `A0-A7`
+- Current analysis critical path: `v1.0.2` DB safety, `v1.0.3` non-live validation, `v1.1.0` benchmarked multi-algorithm backtest candidate
 - Latest completed block: `v0.7.1` to `v0.7.6` closed on `2026-03-14`
 - Pre-`v0.8.1` gate completed on `2026-03-14`: full-season `2025-26` strategy-data audit confirmed full finished-game play-by-play coverage and partial season-wide Polymarket odds coverage.
 - Live `v0.8` implementation state on `2026-03-14`:
@@ -49,16 +51,19 @@ v2 scope:
 - `v2.0.0`: multi-module expansion into WNBA, crypto, geopolitical, and general events
 
 ## Canonical Planning Files
-1. `app/docs/scalable_db_schema_proposal.md`
-2. `app/docs/scalable_api_routes_proposal.md`
-3. `app/docs/planning/README.md`
-4. `app/docs/planning/current/agent_operating_rules.md`
-5. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
-6. `app/docs/source_temporal_coverage.md`
-7. `app/docs/development_guide.md` (this file)
-8. `app/docs/local_workspace_convention.md`
-9. `app/docs/app_structure_modularization_plan.md`
-10. `app/docs/openapi_v0_8_snapshot.json`
+1. `app/docs/reference/README.md`
+2. `app/docs/scalable_db_schema_proposal.md`
+3. `app/docs/scalable_api_routes_proposal.md`
+4. `app/docs/planning/README.md`
+5. `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
+6. `app/docs/planning/current/branches/README.md`
+7. `app/docs/planning/current/agent_operating_rules.md`
+8. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
+9. `app/docs/source_temporal_coverage.md`
+10. `app/docs/development_guide.md` (this file)
+11. `app/docs/local_workspace_convention.md`
+12. `app/docs/app_structure_modularization_plan.md`
+13. `app/docs/openapi_v0_8_snapshot.json`
 
 ## Structure Gate Reminder
 The pre-`v0.3` structure gate is completed and documented in:
@@ -217,9 +222,11 @@ Before closing any session:
 5. root `README.md` and the local checkpoint ledger README agree on roadmap scope
 
 ## Fast Reference Commands
+- open reference index: `Get-Content app/docs/reference/README.md`
 - show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 - ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
 - open current planning index: `Get-Content app/docs/planning/README.md`
+- open current roadmap: `Get-Content app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
 - list node files: `rg --files app/data/nodes`
 - track schema mentions: `rg -n "activate:|table|column|phase" app/docs/scalable_db_schema_proposal.md`
 - track routes mentions: `rg -n "v0\.|v1\.|v2\.|/v1/" app/docs/scalable_api_routes_proposal.md`

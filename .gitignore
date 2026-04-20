@@ -18,9 +18,9 @@ logs/
 *.log
 
 # Local generated data and databases
-output/
-reference/
-dev-checkpoint/
+/output/
+/reference/
+/dev-checkpoint/
 *.parquet
 *.db
 *.db-shm

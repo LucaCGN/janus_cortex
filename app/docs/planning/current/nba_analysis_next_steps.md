@@ -8,6 +8,10 @@ Turn the current offline NBA analysis stack into a repeatable trading-research p
 - expose visual feedback and operator controls through a dedicated frontend module
 - carry the program forward into playoffs, preseason, and WNBA continuity work
 
+Detailed milestone and branch decomposition now lives in:
+- [roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
+- [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
+
 ## What Is Already Done
 - `A0-A7` implementation wave completed:
   - package split
