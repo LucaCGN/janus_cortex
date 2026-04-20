@@ -9,7 +9,7 @@ import pandas as pd
 from app.api.db import to_jsonable
 from app.data.databases.postgres import managed_connection
 from app.data.pipelines.daily.nba.analysis.artifacts import ensure_output_dir, write_frame, write_json, write_markdown
-from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, StrategyDefinition, TradeSelection
+from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, BenchmarkRunResult, StrategyDefinition, TradeSelection
 from app.data.pipelines.daily.nba.analysis.contracts import (
     ANALYSIS_VERSION,
     DEFAULT_OUTPUT_ROOT,
@@ -475,7 +475,10 @@ def _build_trade_traces(
 
 
 def build_backtest_result(state_df: pd.DataFrame, request: BacktestRunRequest) -> BacktestResult:
+    from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
+
     work = _prepare_state_panel_frame(state_df)
+    strategy_registry = resolve_strategy_registry(request.strategy_family)
     if work.empty:
         payload = {
             "season": request.season,
@@ -485,15 +488,12 @@ def build_backtest_result(state_df: pd.DataFrame, request: BacktestRunRequest) -
             "state_rows_considered": 0,
             "games_considered": 0,
             "families": {},
-            "registry": {},
+            "registry": _registry_payload(strategy_registry),
             "error": "state_panel_empty",
         }
         empty_frames: dict[str, pd.DataFrame] = {}
-        return BacktestResult(payload=payload, trade_frames=empty_frames, state_df=work, strategy_registry={})
+        return BacktestResult(payload=payload, trade_frames=empty_frames, state_df=work, strategy_registry=strategy_registry)
 
-    from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
-
-    strategy_registry = resolve_strategy_registry(request.strategy_family)
     family_summaries: dict[str, Any] = {}
     family_trades: dict[str, pd.DataFrame] = {}
     for family, definition in strategy_registry.items():
@@ -562,6 +562,18 @@ def write_backtest_artifacts(result: BacktestResult, output_dir: Path) -> dict[s
     return to_jsonable(payload)
 
 
+def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunRequest) -> BenchmarkRunResult:
+    from app.data.pipelines.daily.nba.analysis.backtests.benchmarking import build_benchmark_run_result as _build_benchmark_run_result
+
+    return _build_benchmark_run_result(state_df, request)
+
+
+def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> dict[str, Any]:
+    from app.data.pipelines.daily.nba.analysis.backtests.benchmarking import write_benchmark_artifacts as _write_benchmark_artifacts
+
+    return _write_benchmark_artifacts(result, output_dir)
+
+
 def run_analysis_backtests(request: BacktestRunRequest) -> dict[str, Any]:
     output_dir = ensure_output_dir(request.output_root, request.season, request.season_phase, request.analysis_version) / "backtests"
     with managed_connection() as connection:
@@ -571,16 +583,19 @@ def run_analysis_backtests(request: BacktestRunRequest) -> dict[str, Any]:
             season_phase=request.season_phase,
             analysis_version=request.analysis_version,
         )
-    result = build_backtest_result(state_df, request)
-    return write_backtest_artifacts(result, output_dir)
+    result = build_benchmark_run_result(state_df, request)
+    return write_benchmark_artifacts(result, output_dir)
 
 
 __all__ = [
     "BACKTEST_TRADE_COLUMNS",
     "BacktestResult",
+    "BenchmarkRunResult",
     "build_backtest_result",
+    "build_benchmark_run_result",
     "load_analysis_backtest_state_panel_df",
     "run_analysis_backtests",
     "simulate_trade_loop",
     "write_backtest_artifacts",
+    "write_benchmark_artifacts",
 ]

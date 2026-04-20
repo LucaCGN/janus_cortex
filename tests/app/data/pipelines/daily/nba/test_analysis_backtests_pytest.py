@@ -353,6 +353,22 @@ def _build_state_frame() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _build_benchmark_state_frame() -> pd.DataFrame:
+    frame = _build_state_frame().copy()
+    game_bases = {
+        "002A5REV": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+        "002A5INV": datetime(2026, 2, 25, 20, 0, tzinfo=timezone.utc),
+        "002A5WIN": datetime(2026, 2, 28, 20, 0, tzinfo=timezone.utc),
+        "002A5CBK": datetime(2026, 3, 3, 20, 0, tzinfo=timezone.utc),
+        "002A5SCALP": datetime(2026, 3, 6, 20, 0, tzinfo=timezone.utc),
+    }
+    for game_id, base in game_bases.items():
+        mask = frame["game_id"] == game_id
+        frame.loc[mask, "event_at"] = frame.loc[mask, "state_index"].apply(lambda idx: base + timedelta(minutes=int(idx)))
+        frame.loc[mask, "game_date"] = base.date()
+    return frame
+
+
 def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None:
     frame = _build_state_frame()
     request = BacktestRunRequest(
@@ -433,3 +449,40 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
         assert len(zero_df) == len(one_df) == 1
         assert (one_df["gross_return_with_slippage"] <= zero_df["gross_return_with_slippage"]).all()
         assert float(zero_df.iloc[0]["gross_return_with_slippage"]) > float(one_df.iloc[0]["gross_return_with_slippage"])
+
+
+def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None:
+    frame = _build_benchmark_state_frame()
+    request = BacktestRunRequest(
+        season="2025-26",
+        season_phase="regular_season",
+        strategy_family="all",
+        slippage_cents=1,
+        holdout_ratio=0.4,
+        holdout_seed=7,
+        min_trade_count=1,
+        output_root=str(tmp_path),
+    )
+
+    first = engine.build_benchmark_run_result(frame, request)
+    second = engine.build_benchmark_run_result(frame, request)
+
+    assert first.payload["benchmark"]["contract_version"] == "v1"
+    assert first.payload["benchmark"]["time_validation_cutoff"] is not None
+    assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
+    assert first.split_results["random_holdout"].payload["games_considered"] > 0
+    assert first.benchmark_frames["split_summary"].equals(second.benchmark_frames["split_summary"])
+    assert set(first.benchmark_frames["comparator_summary"]["comparator_name"]) == {
+        "no_trade",
+        "winner_prediction_hold_to_end",
+    }
+    assert set(first.benchmark_frames["candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
+
+    payload = engine.write_benchmark_artifacts(first, tmp_path / "benchmark")
+    assert Path(payload["artifacts"]["benchmark_split_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_family_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_comparator_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_sample_vs_full_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_context_rankings_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_candidate_freeze_csv"]).exists()
+    assert Path(payload["artifacts"]["experiment_registry_json"]).exists()

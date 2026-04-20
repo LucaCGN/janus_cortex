@@ -6,6 +6,9 @@ from typing import Any, Callable
 
 from app.data.pipelines.daily.nba.analysis.contracts import (
     ANALYSIS_VERSION,
+    DEFAULT_BACKTEST_HOLDOUT_RATIO,
+    DEFAULT_BACKTEST_HOLDOUT_SEED,
+    DEFAULT_BACKTEST_MIN_TRADE_COUNT,
     DEFAULT_SEASON,
     DEFAULT_SEASON_PHASE,
     AnalysisMartBuildRequest,
@@ -40,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--entry-rule", default=None)
     backtest_parser.add_argument("--exit-rule", default=None)
     backtest_parser.add_argument("--slippage-cents", type=int, default=0)
+    backtest_parser.add_argument("--train-cutoff", default=None)
+    backtest_parser.add_argument("--holdout-ratio", type=float, default=DEFAULT_BACKTEST_HOLDOUT_RATIO)
+    backtest_parser.add_argument("--holdout-seed", type=int, default=DEFAULT_BACKTEST_HOLDOUT_SEED)
+    backtest_parser.add_argument("--min-trade-count", type=int, default=DEFAULT_BACKTEST_MIN_TRADE_COUNT)
     backtest_parser.add_argument("--output-root", default=None)
 
     model_parser = subparsers.add_parser("train_analysis_baselines")
@@ -89,6 +96,10 @@ def dispatch_command(
                 entry_rule=args.entry_rule,
                 exit_rule=args.exit_rule,
                 slippage_cents=args.slippage_cents,
+                train_cutoff=args.train_cutoff,
+                holdout_ratio=args.holdout_ratio,
+                holdout_seed=args.holdout_seed,
+                min_trade_count=args.min_trade_count,
                 analysis_version=args.analysis_version,
                 output_root=args.output_root,
             )
