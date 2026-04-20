@@ -20,11 +20,14 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     COMBINED_KEEP_FAMILIES_PORTFOLIO,
     PORTFOLIO_CANDIDATE_FREEZE_COLUMNS,
+    PORTFOLIO_SCOPE_ROUTED,
     PORTFOLIO_SUMMARY_COLUMNS,
     PORTFOLIO_SCOPE_SINGLE_FAMILY,
+    STATISTICAL_ROUTING_PORTFOLIO,
     build_combined_portfolio_benchmark_frames,
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
+    build_routed_portfolio_benchmark_frames,
     normalize_portfolio_game_limit,
     normalize_portfolio_initial_bankroll,
     normalize_portfolio_position_size_fraction,
@@ -123,6 +126,18 @@ BENCHMARK_CANDIDATE_FREEZE_COLUMNS = (
     "full_delta_vs_no_trade",
     "random_holdout_delta_vs_no_trade",
     "full_delta_vs_winner_prediction_hold_to_end",
+)
+
+BENCHMARK_ROUTE_SUMMARY_COLUMNS = (
+    "selection_sample_name",
+    "opening_band",
+    "selected_family",
+    "selection_reason",
+    "selected_trade_count",
+    "selected_win_rate",
+    "selected_avg_gross_return_with_slippage",
+    "positive_family_count",
+    "family_count_considered",
 )
 
 PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS = (
@@ -670,6 +685,79 @@ def _build_candidate_freeze_frame(
     return pd.DataFrame(rows, columns=BENCHMARK_CANDIDATE_FREEZE_COLUMNS)
 
 
+def _build_opening_band_route_summary_frame(
+    split_results: dict[str, BacktestResult],
+    *,
+    strategy_families: tuple[str, ...],
+    selection_sample_name: str,
+    min_trade_count: int,
+) -> tuple[pd.DataFrame, dict[str, str]]:
+    if not strategy_families:
+        return pd.DataFrame(columns=BENCHMARK_ROUTE_SUMMARY_COLUMNS), {}
+    selection_result = split_results.get(selection_sample_name)
+    if selection_result is None:
+        return pd.DataFrame(columns=BENCHMARK_ROUTE_SUMMARY_COLUMNS), {}
+
+    rows: list[dict[str, Any]] = []
+    required_trades = max(1, int(min_trade_count))
+    for family in strategy_families:
+        trades_df = selection_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+        if trades_df.empty:
+            continue
+        summary = (
+            trades_df.groupby("opening_band", dropna=False)
+            .agg(
+                trade_count=("game_id", "count"),
+                win_rate=("gross_return_with_slippage", lambda values: float((pd.Series(values) > 0).mean())),
+                avg_gross_return_with_slippage=("gross_return_with_slippage", "mean"),
+            )
+            .reset_index()
+        )
+        summary["strategy_family"] = family
+        rows.extend(summary.to_dict(orient="records"))
+
+    comparison_df = pd.DataFrame(rows)
+    if comparison_df.empty:
+        return pd.DataFrame(columns=BENCHMARK_ROUTE_SUMMARY_COLUMNS), {}
+
+    route_rows: list[dict[str, Any]] = []
+    route_map: dict[str, str] = {}
+    for opening_band, band_df in comparison_df.groupby("opening_band", dropna=False, sort=True):
+        eligible = band_df[band_df["trade_count"] >= required_trades].copy()
+        if eligible.empty:
+            eligible = band_df.copy()
+            selection_reason = "best_available_avg_return"
+        else:
+            positive = eligible[eligible["avg_gross_return_with_slippage"] > 0].copy()
+            if not positive.empty:
+                eligible = positive
+                selection_reason = "best_positive_avg_return"
+            else:
+                selection_reason = "best_non_positive_avg_return"
+        selected = eligible.sort_values(
+            ["avg_gross_return_with_slippage", "trade_count", "strategy_family"],
+            ascending=[False, False, True],
+            kind="mergesort",
+        ).iloc[0]
+        opening_band_key = str(opening_band)
+        route_map[opening_band_key] = str(selected["strategy_family"])
+        route_rows.append(
+            {
+                "selection_sample_name": selection_sample_name,
+                "opening_band": opening_band_key,
+                "selected_family": str(selected["strategy_family"]),
+                "selection_reason": selection_reason,
+                "selected_trade_count": int(selected["trade_count"]),
+                "selected_win_rate": float(selected["win_rate"]),
+                "selected_avg_gross_return_with_slippage": float(selected["avg_gross_return_with_slippage"]),
+                "positive_family_count": int((band_df["avg_gross_return_with_slippage"] > 0).sum()),
+                "family_count_considered": int(len(band_df)),
+            }
+        )
+    route_summary_df = pd.DataFrame(route_rows, columns=BENCHMARK_ROUTE_SUMMARY_COLUMNS)
+    return route_summary_df, route_map
+
+
 def _portfolio_robustness_label(positive_seed_count: int, seed_count: int) -> tuple[str, str]:
     if seed_count <= 0:
         return "not_run", "no_robustness_seeds"
@@ -854,6 +942,24 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         starting_bankroll=request.portfolio_initial_bankroll,
         min_trade_count=request.min_trade_count,
     )
+    starting_bankroll = normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll)
+    positive_routing_families = tuple(
+        sorted(
+            str(row["strategy_family"])
+            for row in portfolio_summary_df.to_dict(orient="records")
+            if row.get("sample_name") == "full_sample"
+            and row.get("portfolio_scope") == PORTFOLIO_SCOPE_SINGLE_FAMILY
+            and str(row.get("strategy_family")) in registry
+            and _safe_float(row.get("ending_bankroll")) is not None
+            and float(row["ending_bankroll"]) > starting_bankroll
+        )
+    )
+    route_summary_df, opening_band_route_map = _build_opening_band_route_summary_frame(
+        split_results,
+        strategy_families=positive_routing_families,
+        selection_sample_name="time_train",
+        min_trade_count=max(3, int(request.min_trade_count) // 4),
+    )
     keep_families = tuple(
         sorted(
             row["strategy_family"]
@@ -874,6 +980,20 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         portfolio_summary_df = pd.concat([portfolio_summary_df, combined_portfolio_summary_df], ignore_index=True)
     if not combined_portfolio_steps_df.empty:
         portfolio_steps_df = pd.concat([portfolio_steps_df, combined_portfolio_steps_df], ignore_index=True)
+    routed_portfolio_summary_df, routed_portfolio_steps_df = build_routed_portfolio_benchmark_frames(
+        split_results,
+        opening_band_route_map=opening_band_route_map,
+        strategy_families=positive_routing_families,
+        initial_bankroll=request.portfolio_initial_bankroll,
+        position_size_fraction=request.portfolio_position_size_fraction,
+        game_limit=request.portfolio_game_limit,
+        split_order=_SPLIT_ORDER,
+        routed_family_name=STATISTICAL_ROUTING_PORTFOLIO,
+    )
+    if not routed_portfolio_summary_df.empty:
+        portfolio_summary_df = pd.concat([portfolio_summary_df, routed_portfolio_summary_df], ignore_index=True)
+    if not routed_portfolio_steps_df.empty:
+        portfolio_steps_df = pd.concat([portfolio_steps_df, routed_portfolio_steps_df], ignore_index=True)
     robustness_families = tuple(sorted(registry.keys()))
     portfolio_robustness_detail_df, portfolio_robustness_summary_df = _build_portfolio_robustness_frames(
         work,
@@ -909,6 +1029,9 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_keep_families": list(keep_families),
         "portfolio_robustness_families": list(robustness_families),
         "portfolio_combined_family_name": COMBINED_KEEP_FAMILIES_PORTFOLIO if len(keep_families) >= 2 else None,
+        "portfolio_routing_families": list(positive_routing_families),
+        "portfolio_routing_family_name": STATISTICAL_ROUTING_PORTFOLIO if opening_band_route_map else None,
+        "portfolio_opening_band_route_map": opening_band_route_map,
         "portfolio_metric_columns": [
             "ending_bankroll",
             "total_pnl_amount",
@@ -925,6 +1048,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "sample_vs_full": to_jsonable(sample_vs_full_df.to_dict(orient="records")),
         "context_rankings": to_jsonable(context_rankings_df.to_dict(orient="records")),
         "candidate_freeze": to_jsonable(candidate_freeze_df.to_dict(orient="records")),
+        "route_summary": to_jsonable(route_summary_df.to_dict(orient="records")),
         "portfolio_summary": to_jsonable(portfolio_summary_df.to_dict(orient="records")),
         "portfolio_candidate_freeze": to_jsonable(portfolio_candidate_freeze_df.to_dict(orient="records")),
         "portfolio_robustness_detail": to_jsonable(portfolio_robustness_detail_df.to_dict(orient="records")),
@@ -945,6 +1069,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "sample_vs_full": sample_vs_full_df,
         "context_rankings": context_rankings_df,
         "candidate_freeze": candidate_freeze_df,
+        "route_summary": route_summary_df,
         "portfolio_summary": portfolio_summary_df,
         "portfolio_steps": portfolio_steps_df,
         "portfolio_candidate_freeze": portfolio_candidate_freeze_df,
@@ -962,6 +1087,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
 def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
     benchmark = payload.get("benchmark") or {}
     freeze_rows = benchmark.get("candidate_freeze") or []
+    route_rows = benchmark.get("route_summary") or []
     portfolio_freeze_rows = benchmark.get("portfolio_candidate_freeze") or []
     portfolio_robustness_rows = benchmark.get("portfolio_robustness_summary") or []
     portfolio_full_rows = [row for row in (benchmark.get("portfolio_summary") or []) if row.get("sample_name") == "full_sample"]
@@ -1029,6 +1155,19 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
                 f"- {row.get('strategy_family')}: `{row.get('candidate_label')}` because `{row.get('label_reason')}`"
             )
         lines.append("")
+    lines.extend(["## Statistical Routing", ""])
+    if not route_rows:
+        lines.append("- No opening-band routing rows were produced.")
+        lines.append("")
+    else:
+        for row in route_rows:
+            lines.append(
+                f"- {row.get('opening_band')}: `{row.get('selected_family')}` from `{row.get('selection_sample_name')}`"
+                f" because `{row.get('selection_reason')}`;"
+                f" avg return `{_format_num(row.get('selected_avg_gross_return_with_slippage'))}`"
+                f" across `{row.get('selected_trade_count')}` trades"
+            )
+        lines.append("")
     lines.extend(["## Combined Keep-Family Sleeve", ""])
     if combined_full_row is None:
         lines.append("- No combined keep-family sleeve was produced.")
@@ -1094,6 +1233,7 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "sample_vs_full": "benchmark_sample_vs_full",
         "context_rankings": "benchmark_context_rankings",
         "candidate_freeze": "benchmark_candidate_freeze",
+        "route_summary": "benchmark_route_summary",
         "portfolio_summary": "benchmark_portfolio_summary",
         "portfolio_steps": "benchmark_portfolio_steps",
         "portfolio_candidate_freeze": "benchmark_portfolio_candidate_freeze",
@@ -1122,6 +1262,7 @@ __all__ = [
     "BENCHMARK_COMPARATOR_COLUMNS",
     "BENCHMARK_CONTEXT_RANK_COLUMNS",
     "BENCHMARK_FAMILY_SUMMARY_COLUMNS",
+    "BENCHMARK_ROUTE_SUMMARY_COLUMNS",
     "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",
     "PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS",
     "PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS",

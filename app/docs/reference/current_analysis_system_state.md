@@ -5,8 +5,8 @@
 
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
-- status: validated branch state now extends through post-baseline safety, validation, strategy, benchmarking, read-only consumer adapters, studio alpha, and the sequential portfolio robustness follow-on
-- current active analysis planning lane: portfolio allocation and visualization follow-on after the robustness and combined-sleeve pass
+- status: validated branch state now extends through post-baseline safety, validation, strategy, benchmarking, read-only consumer adapters, studio alpha, sequential portfolio robustness, and the first strategy-refinement plus routing pass
+- current active analysis planning lane: portfolio allocation, route-learning follow-on, and visualization after the refined strategy pass
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -26,6 +26,7 @@ Completed implementation wave:
 - `v1.3.1` read-only family comparison follow-on lane
 - `v1.4.0` sequential portfolio benchmark
 - `v1.4.1` repeated-seed robustness and combined keep-family sleeve
+- `v1.4.2` dynamic strategy refinement, underdog continuation follow-on, and first statistical routing lane
 
 ## Current CLI Surface
 - `build_analysis_mart`
@@ -90,7 +91,7 @@ Historical note:
   - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
 
 ## Current Sequential Portfolio Snapshot
-- benchmark contract version: `v4`
+- benchmark contract version: `v5`
 - active bankroll contract:
   - starting bankroll `10.0`
   - position size fraction `1.0`
@@ -109,19 +110,27 @@ Historical note:
   - `11519`
 - current validated active families:
   - `inversion`
-    - full-sample ending bankroll `790514.77`
-    - random-holdout ending bankroll `377435.94`
-    - random-holdout max drawdown `30.94%`
+    - full-sample ending bankroll `46420820.82`
+    - random-holdout ending bankroll `3203.39`
+    - random-holdout max drawdown `41.13%`
     - repeated-seed status `stable_positive`
-    - repeated-seed median bankroll `306157.58`
-    - repeated-seed worst drawdown `52.35%`
+    - repeated-seed median bankroll `2479.15`
+    - repeated-seed worst drawdown `56.27%`
   - `winner_definition`
-    - full-sample ending bankroll `2359.91`
-    - random-holdout ending bankroll `213303.89`
-    - random-holdout max drawdown `29.81%`
+    - full-sample ending bankroll `2490.05`
+    - random-holdout ending bankroll `172595.35`
+    - random-holdout max drawdown `28.48%`
     - repeated-seed status `stable_positive`
-    - repeated-seed median bankroll `120694.72`
-    - repeated-seed worst drawdown `37.71%`
+    - repeated-seed median bankroll `141733.35`
+    - repeated-seed worst drawdown `52.38%`
+  - `underdog_liftoff`
+    - full-sample ending bankroll `82867.67`
+    - random-holdout ending bankroll `73.39`
+    - random-holdout max drawdown `14.01%`
+    - repeated-seed status `mixed`
+    - positive seeds `9/10`
+    - repeated-seed median bankroll `25.22`
+    - repeated-seed worst drawdown `48.19%`
 - current non-surviving families under the 10-seed lens:
   - `reversion`
     - repeated-seed status `stable_negative`
@@ -137,11 +146,17 @@ Historical note:
     - median bankroll `2.62`
 - current combined keep-family sleeve:
   - `combined_keep_families`
-    - members `inversion,winner_definition`
-    - full-sample ending bankroll `17867.59`
-    - full-sample max drawdown `25.36%`
-    - random-holdout ending bankroll `28604419.86`
-    - interpretation: lower drawdown than pure `inversion`, but lower full-sample terminal bankroll because overlap collisions skip many inversion entries
+    - members `inversion,underdog_liftoff,winner_definition`
+    - full-sample ending bankroll `58310.08`
+    - full-sample max drawdown `33.09%`
+    - random-holdout ending bankroll `12524360.00`
+    - interpretation: useful as a diversification surface, but still below pure `inversion` because overlap collisions skip many inversion entries
+- current statistical routing lane:
+  - `statistical_routing_v1`
+    - full-sample ending bankroll `22480.43`
+    - full-sample max drawdown `31.20%`
+    - random-holdout ending bankroll `1330294.00`
+    - training-derived opening-band map currently routes `10-50` bands to `inversion` and `50+` bands to `winner_definition`
 - current dropped families under the sequential lens:
   - `reversion`
   - `comeback_reversion`

@@ -9,6 +9,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     build_combined_portfolio_benchmark_frames,
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
+    build_routed_portfolio_benchmark_frames,
     simulate_trade_portfolio,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.registry import build_strategy_registry, resolve_strategy_registry
@@ -24,6 +25,7 @@ __all__ = [
     "build_benchmark_run_result",
     "build_portfolio_benchmark_frames",
     "build_portfolio_candidate_freeze_frame",
+    "build_routed_portfolio_benchmark_frames",
     "build_strategy_registry",
     "resolve_strategy_registry",
     "run_analysis_backtests",

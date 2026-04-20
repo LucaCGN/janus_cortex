@@ -6,6 +6,10 @@ import pandas as pd
 
 from app.data.pipelines.daily.nba.analysis.backtests.engine import DEFAULT_WINNER_DEFINITION_BREAK, DEFAULT_WINNER_DEFINITION_ENTRY, simulate_trade_loop
 from app.data.pipelines.daily.nba.analysis.backtests.specs import TradeSelection
+from app.data.pipelines.daily.nba.analysis.contracts import (
+    DEFAULT_WINNER_DEFINITION_BIG_LEAD_BREAK,
+    DEFAULT_WINNER_DEFINITION_BIG_LEAD_SCORE_DIFF,
+)
 
 
 def _select_winner_definition_entry(group: pd.DataFrame) -> TradeSelection | None:
@@ -14,11 +18,19 @@ def _select_winner_definition_entry(group: pd.DataFrame) -> TradeSelection | Non
     if not bool(trigger.any()):
         return None
     entry_index = int(trigger[trigger].index[0])
+    entry_row = group.iloc[entry_index]
+    entry_score_diff = float(entry_row["score_diff"]) if pd.notna(entry_row["score_diff"]) else None
+    exit_threshold = (
+        DEFAULT_WINNER_DEFINITION_BIG_LEAD_BREAK
+        if entry_score_diff is not None and entry_score_diff >= DEFAULT_WINNER_DEFINITION_BIG_LEAD_SCORE_DIFF
+        else DEFAULT_WINNER_DEFINITION_BREAK
+    )
     return TradeSelection(
         entry_index=entry_index,
         metadata={
             "entry_threshold": DEFAULT_WINNER_DEFINITION_ENTRY,
-            "exit_threshold": DEFAULT_WINNER_DEFINITION_BREAK,
+            "exit_threshold": exit_threshold,
+            "entry_score_diff": entry_score_diff,
         },
     )
 
@@ -37,7 +49,7 @@ def simulate_winner_definition_trades(state_df: pd.DataFrame, *, slippage_cents:
         state_df,
         strategy_family="winner_definition",
         entry_rule="reach_80c",
-        exit_rule="break_75c_or_end",
+        exit_rule="dynamic_break_75c_or_76c_or_end",
         slippage_cents=slippage_cents,
         entry_selector=_select_winner_definition_entry,
         exit_selector=_select_winner_definition_exit,

@@ -6,8 +6,9 @@ Freeze the benchmark contract that promotes the strategy lab into a reproducible
 This reference covers:
 - which benchmark splits exist
 - which comparators every family is scored against
-- which comparative artifacts the backtest runner now emits
-- how the first `keep`, `drop`, and `experimental` labels are derived
+- which comparative artifacts the backtest runner emits
+- how the current `keep`, `drop`, and `experimental` labels are derived
+- how the opening-band routing lane is selected
 
 ## Benchmark Contract
 `run_analysis_backtests` remains the canonical CLI entry point, but it now evaluates strategies under one shared benchmark contract:
@@ -18,7 +19,7 @@ This reference covers:
 - random-train sample
 - random-holdout sample
 
-The benchmark contract version is now `v4`.
+The benchmark contract version is now `v5`.
 
 ## Shared Metrics
 Every strategy family is scored with the same metric set:
@@ -42,8 +43,6 @@ Each family and sample is compared against:
 - hold until the last observed state of that game-side path
 - use the same slippage setting as the strategy run
 
-This keeps timing-sensitive strategies comparable against a naive "take the side and hold it" baseline.
-
 ## Split Policy
 ### Time Validation
 - reuses the same game-date cutoff logic as the modeling package
@@ -63,6 +62,7 @@ The backtest runner now emits:
 - `benchmark_sample_vs_full`
 - `benchmark_context_rankings`
 - `benchmark_candidate_freeze`
+- `benchmark_route_summary`
 - `benchmark_portfolio_summary`
 - `benchmark_portfolio_steps`
 - `benchmark_portfolio_candidate_freeze`
@@ -71,7 +71,7 @@ The backtest runner now emits:
 - `benchmark_experiment_registry.json`
 
 ## Candidate Freeze Labels
-The first benchmark labels are intentionally conservative:
+The benchmark labels remain intentionally conservative:
 
 ### `keep`
 - full sample meets the minimum trade count
@@ -89,11 +89,21 @@ The first benchmark labels are intentionally conservative:
 - missing validation or holdout trades
 - or mixed benchmark signals
 
+## Routing Layer
+The current routing lane is statistical, not model-driven:
+- derive an opening-band family map from `time_train`
+- prefer the highest positive average slippage-adjusted return for that opening band
+- fall back to the best available average return when no positive family exists in-band
+- replay that band map through every split as `statistical_routing_v1`
+
+This lane currently answers whether game categorization is viable without introducing a learned model.
+
 ## Operator Note
-This benchmark lane still does not pick a live strategy. It now produces:
+This benchmark lane still does not pick a live strategy automatically. It produces:
 - the family-level benchmark surface
 - the sequential bankroll surface
 - repeated-seed robustness evidence across the full family set
-- the first combined keep-family sleeve on top of the surviving single-family set
+- the combined keep-family sleeve
+- the first statistical routing surface
 
 The next decision layer should stay statistical for allocation and promotion. Any later LLM usage should be interpretive only and should consume these benchmark artifacts rather than replacing them.

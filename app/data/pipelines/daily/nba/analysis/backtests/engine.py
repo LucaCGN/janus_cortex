@@ -269,7 +269,7 @@ def simulate_trade_loop(
         if selection is None:
             continue
         exit_index = exit_selector(ordered, selection)
-        if exit_index is None or exit_index < selection.entry_index:
+        if exit_index is None or exit_index <= selection.entry_index:
             continue
         trades.append(
             _trade_row(

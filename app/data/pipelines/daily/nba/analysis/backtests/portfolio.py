@@ -15,7 +15,9 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
 
 PORTFOLIO_SCOPE_SINGLE_FAMILY = "single_family"
 PORTFOLIO_SCOPE_COMBINED = "combined_family_set"
+PORTFOLIO_SCOPE_ROUTED = "routed_family_set"
 COMBINED_KEEP_FAMILIES_PORTFOLIO = "combined_keep_families"
+STATISTICAL_ROUTING_PORTFOLIO = "statistical_routing_v1"
 
 PORTFOLIO_SUMMARY_COLUMNS = (
     "sample_name",
@@ -418,6 +420,68 @@ def build_combined_portfolio_benchmark_frames(
     return summary_df, steps_df
 
 
+def build_routed_portfolio_benchmark_frames(
+    split_results: dict[str, BacktestResult],
+    *,
+    opening_band_route_map: dict[str, str],
+    strategy_families: tuple[str, ...] | list[str],
+    initial_bankroll: float,
+    position_size_fraction: float,
+    game_limit: int | None,
+    split_order: tuple[str, ...],
+    routed_family_name: str = STATISTICAL_ROUTING_PORTFOLIO,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    routed_members = _normalize_family_members(routed_family_name, strategy_families)
+    if not opening_band_route_map or not routed_members:
+        return pd.DataFrame(columns=PORTFOLIO_SUMMARY_COLUMNS), pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS)
+
+    summary_rows: list[dict[str, Any]] = []
+    step_frames: list[pd.DataFrame] = []
+    empty_columns = [*BACKTEST_TRADE_COLUMNS, "source_strategy_family", "route_selected_family"]
+    valid_families = set(routed_members)
+    for sample_name in split_order:
+        split_result = split_results.get(sample_name)
+        if split_result is None:
+            continue
+        trade_frames: list[pd.DataFrame] = []
+        for family in routed_members:
+            trades_df = split_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+            if trades_df.empty:
+                continue
+            family_frame = trades_df.copy()
+            family_frame["route_selected_family"] = family_frame["opening_band"].map(opening_band_route_map)
+            family_frame = family_frame[family_frame["route_selected_family"] == family].copy()
+            if family_frame.empty:
+                continue
+            family_frame["source_strategy_family"] = family
+            trade_frames.append(family_frame)
+        combined_trades_df = (
+            pd.concat(trade_frames, ignore_index=True)
+            if trade_frames
+            else pd.DataFrame(columns=empty_columns)
+        )
+        combined_trades_df = combined_trades_df[
+            combined_trades_df["source_strategy_family"].isin(valid_families)
+        ].copy() if not combined_trades_df.empty else combined_trades_df
+        summary, steps_df = simulate_trade_portfolio(
+            combined_trades_df,
+            sample_name=sample_name,
+            strategy_family=routed_family_name,
+            portfolio_scope=PORTFOLIO_SCOPE_ROUTED,
+            strategy_family_members=routed_members,
+            initial_bankroll=initial_bankroll,
+            position_size_fraction=position_size_fraction,
+            game_limit=game_limit,
+        )
+        summary_rows.append(summary)
+        if not steps_df.empty:
+            step_frames.append(steps_df)
+
+    summary_df = pd.DataFrame(summary_rows, columns=PORTFOLIO_SUMMARY_COLUMNS)
+    steps_df = pd.concat(step_frames, ignore_index=True) if step_frames else pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS)
+    return summary_df, steps_df
+
+
 def _portfolio_candidate_label(
     *,
     full_executed_trade_count: int,
@@ -503,14 +567,17 @@ __all__ = [
     "COMBINED_KEEP_FAMILIES_PORTFOLIO",
     "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",
     "PORTFOLIO_SCOPE_COMBINED",
+    "PORTFOLIO_SCOPE_ROUTED",
     "PORTFOLIO_SCOPE_SINGLE_FAMILY",
     "PORTFOLIO_STEP_COLUMNS",
     "PORTFOLIO_SUMMARY_COLUMNS",
     "build_combined_portfolio_benchmark_frames",
     "build_portfolio_benchmark_frames",
     "build_portfolio_candidate_freeze_frame",
+    "build_routed_portfolio_benchmark_frames",
     "normalize_portfolio_game_limit",
     "normalize_portfolio_initial_bankroll",
     "normalize_portfolio_position_size_fraction",
     "simulate_trade_portfolio",
+    "STATISTICAL_ROUTING_PORTFOLIO",
 ]

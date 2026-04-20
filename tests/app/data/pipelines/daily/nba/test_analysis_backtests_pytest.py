@@ -10,6 +10,7 @@ from app.data.pipelines.daily.nba.analysis.backtests import engine
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     build_combined_portfolio_benchmark_frames,
     simulate_trade_portfolio,
+    build_routed_portfolio_benchmark_frames,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult
 from app.data.pipelines.daily.nba.analysis.contracts import ANALYSIS_VERSION, BacktestRunRequest
@@ -33,11 +34,13 @@ def _build_state_row(
     score_diff_bucket: str = "lead_1_4",
     context_bucket: str = "Q1|lead_1_4",
     net_points_last_5_events: float | None = None,
+    seconds_to_game_end: float | None = None,
 ) -> dict[str, object]:
     resolved_score_for = score_for if score_for is not None else 10 + state_index
     resolved_score_against = score_against if score_against is not None else 8 + state_index
     resolved_score_diff = score_diff if score_diff is not None else resolved_score_for - resolved_score_against
     resolved_net_points = net_points_last_5_events if net_points_last_5_events is not None else 2 * state_index
+    resolved_seconds_to_game_end = seconds_to_game_end if seconds_to_game_end is not None else float(720 - (state_index * 60))
     return {
         "game_id": game_id,
         "team_side": "home",
@@ -61,7 +64,7 @@ def _build_state_row(
         "period_label": period_label,
         "clock": "PT11M00.00S",
         "clock_elapsed_seconds": float(state_index * 60),
-        "seconds_to_game_end": float(720 - (state_index * 60)),
+        "seconds_to_game_end": resolved_seconds_to_game_end,
         "score_for": resolved_score_for,
         "score_against": resolved_score_against,
         "score_diff": resolved_score_diff,
@@ -355,6 +358,82 @@ def _build_state_frame() -> pd.DataFrame:
             context_bucket="Q1|tied",
             net_points_last_5_events=2,
         ),
+        _build_state_row(
+            game_id="002A5LIFT",
+            team_slug="ATL",
+            opponent_team_slug="BOS",
+            opening_price=0.30,
+            state_index=0,
+            team_price=0.30,
+            event_at=base + timedelta(minutes=50),
+            opening_band="30-40",
+            period=1,
+            period_label="Q1",
+            score_for=18,
+            score_against=18,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q1|tied",
+            net_points_last_5_events=0,
+            seconds_to_game_end=1800.0,
+        ),
+        _build_state_row(
+            game_id="002A5LIFT",
+            team_slug="ATL",
+            opponent_team_slug="BOS",
+            opening_price=0.30,
+            state_index=1,
+            team_price=0.34,
+            event_at=base + timedelta(minutes=51),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_for=22,
+            score_against=26,
+            score_diff=-4,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q2|trail_1_4",
+            net_points_last_5_events=1,
+            seconds_to_game_end=1740.0,
+        ),
+        _build_state_row(
+            game_id="002A5LIFT",
+            team_slug="ATL",
+            opponent_team_slug="BOS",
+            opening_price=0.30,
+            state_index=2,
+            team_price=0.39,
+            event_at=base + timedelta(minutes=52),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_for=27,
+            score_against=29,
+            score_diff=-2,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q2|trail_1_4",
+            net_points_last_5_events=3,
+            seconds_to_game_end=1680.0,
+        ),
+        _build_state_row(
+            game_id="002A5LIFT",
+            team_slug="ATL",
+            opponent_team_slug="BOS",
+            opening_price=0.30,
+            state_index=3,
+            team_price=0.50,
+            event_at=base + timedelta(minutes=53),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_for=31,
+            score_against=31,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q2|tied",
+            net_points_last_5_events=6,
+            seconds_to_game_end=1620.0,
+        ),
     ]
     return pd.DataFrame(rows)
 
@@ -367,6 +446,7 @@ def _build_benchmark_state_frame() -> pd.DataFrame:
         "002A5WIN": datetime(2026, 2, 28, 20, 0, tzinfo=timezone.utc),
         "002A5CBK": datetime(2026, 3, 3, 20, 0, tzinfo=timezone.utc),
         "002A5SCALP": datetime(2026, 3, 6, 20, 0, tzinfo=timezone.utc),
+        "002A5LIFT": datetime(2026, 3, 9, 20, 0, tzinfo=timezone.utc),
     }
     for game_id, base in game_bases.items():
         mask = frame["game_id"] == game_id
@@ -388,17 +468,19 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     result = engine.build_backtest_result(frame, request)
 
     assert result.payload["state_rows_considered"] == len(frame)
-    assert result.payload["games_considered"] == 5
+    assert result.payload["games_considered"] == 6
     assert set(result.payload["registry"].keys()) == {
         "reversion",
         "inversion",
         "winner_definition",
+        "underdog_liftoff",
         "comeback_reversion",
         "volatility_scalp",
     }
     assert result.payload["families"]["reversion"]["trade_count"] == 1
     assert result.payload["families"]["inversion"]["trade_count"] == 1
     assert result.payload["families"]["winner_definition"]["trade_count"] == 1
+    assert result.payload["families"]["underdog_liftoff"]["trade_count"] == 1
     assert result.payload["families"]["comeback_reversion"]["trade_count"] == 1
     assert result.payload["families"]["volatility_scalp"]["trade_count"] == 1
 
@@ -418,6 +500,7 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["reversion_csv"]).exists()
     assert Path(payload["artifacts"]["inversion_csv"]).exists()
     assert Path(payload["artifacts"]["winner_definition_csv"]).exists()
+    assert Path(payload["artifacts"]["underdog_liftoff_csv"]).exists()
     assert Path(payload["artifacts"]["comeback_reversion_csv"]).exists()
     assert Path(payload["artifacts"]["volatility_scalp_csv"]).exists()
     assert Path(payload["artifacts"]["reversion_best_trades_csv"]).exists()
@@ -449,7 +532,7 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
         ),
     )
 
-    for family in ("reversion", "inversion", "winner_definition", "comeback_reversion", "volatility_scalp"):
+    for family in ("reversion", "inversion", "winner_definition", "underdog_liftoff", "comeback_reversion", "volatility_scalp"):
         zero_df = zero.trade_frames[family].sort_values(["game_id", "entry_state_index"]).reset_index(drop=True)
         one_df = one.trade_frames[family].sort_values(["game_id", "entry_state_index"]).reset_index(drop=True)
         assert len(zero_df) == len(one_df) == 1
@@ -620,6 +703,95 @@ def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> 
     assert list(steps_df["portfolio_action"]) == ["executed", "skipped", "executed", "executed"]
 
 
+def test_routed_portfolio_lane_selects_family_by_opening_band() -> None:
+    inversion_trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G1",
+                "team_side": "home",
+                "team_slug": "UTA",
+                "opponent_team_slug": "DEN",
+                "opening_band": "40-50",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.50,
+            }
+        ]
+    )
+    winner_definition_trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G2",
+                "team_side": "away",
+                "team_slug": "NYK",
+                "opponent_team_slug": "MIA",
+                "opening_band": "70-80",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 20, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.20,
+            }
+        ]
+    )
+    underdog_liftoff_trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G3",
+                "team_side": "home",
+                "team_slug": "ATL",
+                "opponent_team_slug": "BOS",
+                "opening_band": "20-30",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 40, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 50, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.30,
+            }
+        ]
+    )
+    split_results = {
+        "full_sample": BacktestResult(
+            payload={},
+            trade_frames={
+                "inversion": inversion_trades_df,
+                "winner_definition": winner_definition_trades_df,
+                "underdog_liftoff": underdog_liftoff_trades_df,
+            },
+            state_df=pd.DataFrame(),
+            strategy_registry={},
+        )
+    }
+
+    summary_df, steps_df = build_routed_portfolio_benchmark_frames(
+        split_results,
+        opening_band_route_map={
+            "20-30": "underdog_liftoff",
+            "40-50": "inversion",
+            "70-80": "winner_definition",
+        },
+        strategy_families=("inversion", "winner_definition", "underdog_liftoff"),
+        initial_bankroll=10.0,
+        position_size_fraction=1.0,
+        game_limit=3,
+        split_order=("full_sample",),
+    )
+
+    assert len(summary_df) == 1
+    summary = summary_df.iloc[0]
+    assert summary["strategy_family"] == "statistical_routing_v1"
+    assert summary["portfolio_scope"] == "routed_family_set"
+    assert summary["executed_trade_count"] == 3
+    assert summary["ending_bankroll"] == pytest.approx(23.4)
+    assert list(steps_df["source_strategy_family"]) == [
+        "inversion",
+        "winner_definition",
+        "underdog_liftoff",
+    ]
+
+
 def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None:
     frame = _build_benchmark_state_frame()
     request = BacktestRunRequest(
@@ -640,7 +812,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v4"
+    assert first.payload["benchmark"]["contract_version"] == "v5"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
@@ -654,6 +826,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     }
     assert set(first.benchmark_frames["candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
     assert set(first.benchmark_frames["portfolio_candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
+    assert set(first.benchmark_frames["route_summary"]["selected_family"]).issubset(set(first.payload["experiment"]["strategy_families"]))
     registry_families = tuple(first.payload["experiment"]["strategy_families"])
     keep_families = tuple(first.payload["benchmark"]["portfolio_keep_families"])
     robustness_detail_df = first.benchmark_frames["portfolio_robustness_detail"]
@@ -681,6 +854,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["benchmark_sample_vs_full_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_context_rankings_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_candidate_freeze_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_route_summary_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_summary_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_steps_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_candidate_freeze_csv"]).exists()

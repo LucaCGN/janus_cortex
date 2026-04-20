@@ -4,6 +4,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.comeback_reversion import s
 from app.data.pipelines.daily.nba.analysis.backtests.inversion import simulate_inversion_trades
 from app.data.pipelines.daily.nba.analysis.backtests.reversion import simulate_reversion_trades
 from app.data.pipelines.daily.nba.analysis.backtests.specs import StrategyDefinition
+from app.data.pipelines.daily.nba.analysis.backtests.underdog_liftoff import simulate_underdog_liftoff_trades
 from app.data.pipelines.daily.nba.analysis.backtests.volatility_scalp import simulate_volatility_scalp_trades
 from app.data.pipelines.daily.nba.analysis.backtests.winner_definition import simulate_winner_definition_trades
 
@@ -21,21 +22,30 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
         ),
         StrategyDefinition(
             family="inversion",
-            entry_rule="first_cross_above_50c",
-            exit_rule="break_back_below_50c_or_end",
-            description="Underdog continuation once the in-game price first crosses above 50c.",
+            entry_rule="dynamic_cross_above_45c_or_50c_with_momentum",
+            exit_rule="break_back_below_48c_or_end",
+            description="Dynamic underdog continuation with deeper early entries for live underdogs and a tighter 48c protection line.",
             comparator_group="underdog_continuation",
-            tags=("underdog", "continuation", "50c_cross"),
+            tags=("underdog", "continuation", "dynamic_thresholds"),
             simulator=simulate_inversion_trades,
         ),
         StrategyDefinition(
             family="winner_definition",
             entry_rule="reach_80c",
-            exit_rule="break_75c_or_end",
-            description="Winner-definition continuation after the market reaches 80c.",
+            exit_rule="dynamic_break_75c_or_76c_or_end",
+            description="Winner-definition continuation after 80c with a slightly wider break line for stronger scoreboard control.",
             comparator_group="winner_lock",
-            tags=("winner_definition", "continuation", "late_game"),
+            tags=("winner_definition", "continuation", "dynamic_exit"),
             simulator=simulate_winner_definition_trades,
+        ),
+        StrategyDefinition(
+            family="underdog_liftoff",
+            entry_rule="cross_above_38c_with_momentum",
+            exit_rule="hit_50c_or_minus_4c_or_end",
+            description="Underdog continuation that buys a rebound through 38c with positive momentum and exits at 50c or a 4c stop.",
+            comparator_group="underdog_continuation",
+            tags=("underdog", "continuation", "rebound_confirmation"),
+            simulator=simulate_underdog_liftoff_trades,
         ),
         StrategyDefinition(
             family="comeback_reversion",
