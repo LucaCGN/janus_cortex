@@ -180,10 +180,42 @@ input {
   padding: 10px 14px;
 }
 
+select {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(49, 57, 43, 0.16);
+  border-radius: 14px;
+  color: var(--text);
+  font: inherit;
+  min-height: 46px;
+  padding: 10px 14px;
+}
+
 input:focus,
+select:focus,
 button:focus {
   outline: 2px solid rgba(52, 93, 79, 0.32);
   outline-offset: 2px;
+}
+
+.checkbox-row {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.4);
+  border: 1px solid rgba(49, 57, 43, 0.1);
+  border-radius: 14px;
+  display: flex;
+  gap: 12px;
+  min-height: 46px;
+  padding: 10px 14px;
+}
+
+.checkbox-row input {
+  min-height: auto;
+  width: 18px;
+}
+
+.checkbox-row span {
+  margin: 0;
 }
 
 .actions {

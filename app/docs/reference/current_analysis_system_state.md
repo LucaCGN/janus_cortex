@@ -71,19 +71,27 @@ Historical note:
 - CLI smoke passed:
   - `python -m app.data.pipelines.daily.nba.analysis_module -h`
 - disposable non-live validation runner passed with consumer snapshot capture:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_013242`
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_083426`
 
 ## Current Frontend Surface
-- permanent frontend scaffold branch uses the existing FastAPI runtime
+- permanent frontend branch uses the existing FastAPI runtime and static assets
 - current routes:
   - `GET /analysis-studio`
   - `GET /v1/analysis/studio/snapshot`
-- current frontend scope is read-only and contract-driven
+  - `GET /v1/analysis/studio/control`
+  - `GET /v1/analysis/studio/runs`
+  - `GET /v1/analysis/studio/runs/{run_id}`
+  - `POST /v1/analysis/studio/runs`
+- current frontend scope is read-only for analysis consumption plus guarded local run control
+- studio now surfaces:
+  - latest validation summary under `JANUS_LOCAL_ROOT`
+  - available analysis versions under the default output root
+  - in-memory local run registry with stdout/stderr and output-root tracking
 
 ## Current Gaps
-- permanent frontend exists only as the first scaffold, not the full operator studio
+- game context explorer is still pending
 - season-continuity branches for playoffs/preseason and WNBA are still pending
-- run control, game explorer, and strategy comparison subphases are still pending
+- deeper strategy comparison and operator hardening subphases are still pending
 
 ## Output Root Convention
 - default analysis artifact root on this machine resolves to:

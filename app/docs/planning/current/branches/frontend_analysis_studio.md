@@ -46,6 +46,12 @@ Immediate slice order:
 - `F2b` add guarded local-only run actions for mart, report, backtests, and baselines
 - `F2c` surface run status, stdout/stderr log paths, and last-output links inside the studio
 
+Current branch state:
+- `F2a` is implemented through the studio control route and validation-history panels
+- `F2b` is implemented through a whitelisted local run launcher for validation, mart, report, backtests, and baselines
+- `F2c` is implemented through the in-memory run registry plus stdout/stderr and output-root tracking
+- next frontend decision is whether `F3` should read directly from analysis artifacts, from additional read-only API summaries, or from both
+
 ### `F3` Game Context Explorer
 Objective:
 - display game-level and state-level context with analysis overlays
@@ -78,6 +84,14 @@ Frontend should not:
 - serve static assets from `frontend/analysis_studio/static`
 - expose a single read-only snapshot route aligned to `AnalysisConsumerRequest`
 - keep later subphases free to decide whether run control should remain in FastAPI or move behind another boundary
+
+## Current Route Surface
+- `GET /analysis-studio`
+- `GET /v1/analysis/studio/snapshot`
+- `GET /v1/analysis/studio/control`
+- `GET /v1/analysis/studio/runs`
+- `GET /v1/analysis/studio/runs/{run_id}`
+- `POST /v1/analysis/studio/runs`
 
 ## Parallelization Note
 - keep frontend work inside `frontend/analysis_studio/*`, `app/api/routers/analysis_studio.py`, and frontend reference docs

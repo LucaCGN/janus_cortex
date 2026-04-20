@@ -10,23 +10,23 @@
   <div class="shell">
     <header class="hero">
       <p class="eyebrow">Janus Cortex / Analysis Studio</p>
-      <h1>Offline NBA research, strategy, and model outputs in one read-only surface.</h1>
+      <h1>Offline NBA research, strategy, model, and operator state in one local-first surface.</h1>
       <p class="hero-copy">
-        This studio is the permanent UI entry point for the analysis module. It reads the
-        consumer snapshot contract, not raw ingest tables and not branch-local JSON parsing.
+        The studio still reads the consumer snapshot contract for analysis results, but it now
+        also tracks local validation history and guarded operator runs under `JANUS_LOCAL_ROOT`.
       </p>
       <div class="hero-grid">
         <div class="hero-card">
           <span class="hero-label">Current lane</span>
-          <strong>F1 Frontend Module Scaffold</strong>
+          <strong>F2 Run Control Surface</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Backend contract</span>
-          <strong>`load_analysis_consumer_snapshot`</strong>
+          <strong>`load_analysis_consumer_snapshot` plus studio control routes</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Scope rule</span>
-          <strong>Read-only adapter consumption only</strong>
+          <strong>Whitelisted local commands only, always writing under the local workspace root</strong>
         </div>
       </div>
     </header>
@@ -48,7 +48,8 @@
           </label>
           <label>
             <span>Analysis Version</span>
-            <input id="analysis_version" name="analysis_version" placeholder="latest if blank">
+            <input id="analysis_version" name="analysis_version" placeholder="latest if blank" list="analysis-version-options">
+            <datalist id="analysis-version-options"></datalist>
           </label>
           <label>
             <span>Backtest Experiment</span>
@@ -64,6 +65,57 @@
           </div>
         </form>
         <p id="error-line" class="error-line" hidden></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Operator Surface</p>
+          <h2>Local workspace and artifact status</h2>
+        </div>
+        <div id="control-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Run Control</p>
+            <h2>Launch guarded local analysis commands</h2>
+          </div>
+          <form id="run-form" class="control-grid">
+            <label>
+              <span>Action</span>
+              <select id="run_action" name="action">
+                <option value="run_analysis_validation">Full validation sweep</option>
+                <option value="build_analysis_mart">Build analysis mart</option>
+                <option value="build_analysis_report">Build analysis report</option>
+                <option value="run_analysis_backtests">Run analysis backtests</option>
+                <option value="train_analysis_baselines">Train analysis baselines</option>
+              </select>
+            </label>
+            <label>
+              <span>Validation Target</span>
+              <select id="validation_target" name="validation_target">
+                <option value="disposable">disposable</option>
+                <option value="dev_clone">dev_clone</option>
+              </select>
+            </label>
+            <label class="control-span checkbox-row">
+              <input id="rebuild" name="rebuild" type="checkbox">
+              <span>Force mart rebuild when the selected action supports it</span>
+            </label>
+            <div class="actions">
+              <button id="run-button" type="submit">Start run</button>
+              <p id="run-status-line" class="status-line">Runs use the season, phase, and version from the snapshot loader above.</p>
+            </div>
+          </form>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Latest Validation</p>
+            <h2>Most recent non-live sweep</h2>
+          </div>
+          <div id="latest-validation" class="stack-list empty-state">No validation summary found yet.</div>
+        </div>
       </section>
 
       <section class="panel">
@@ -104,6 +156,23 @@
             <h2>Section inventory</h2>
           </div>
           <div id="report-sections" class="stack-list empty-state">No report sections loaded yet.</div>
+        </div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Recent Runs</p>
+            <h2>Studio command registry</h2>
+          </div>
+          <div id="run-list" class="stack-list empty-state">No studio runs launched yet.</div>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Recent Validations</p>
+            <h2>History under JANUS_LOCAL_ROOT</h2>
+          </div>
+          <div id="recent-validations" class="stack-list empty-state">No validation history found.</div>
         </div>
       </section>
 
