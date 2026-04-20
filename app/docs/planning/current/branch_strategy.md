@@ -10,7 +10,7 @@
 
 | Category | Branch Prefix | Owns | Notes |
 | --- | --- | --- | --- |
-| Analysis core | `codex/analysis-...` | `app/data/pipelines/daily/nba/analysis/*`, analysis tests, analysis docs | offline mart, reports, backtests, models, research consumers |
+| Analysis core | `codex/analysis-...` | `app/data/pipelines/daily/nba/analysis/*`, analysis tests, analysis docs | offline mart, reports, backtests, models, strategy refinement, sequential portfolio benchmarking |
 | Data platform | `codex/data-...` | `app/data/databases/*`, `app/data/pipelines/daily/*`, data tests, schema docs | migrations, sync pipelines, dev DB safety, season-scope ingestion |
 | Frontend | `codex/frontend-...` | future `frontend/*`, consumer-facing contracts, frontend docs | permanent UI only, not sandboxes |
 | Ops/runtime | `codex/ops-...` | automation scripts, validation jobs, operator runbooks | daily refresh hardening, validation orchestration, monitoring |
@@ -19,6 +19,7 @@
 
 ## Recommended Repository Shape Going Forward
 - keep offline research logic under `app/data/pipelines/daily/nba/analysis/*`
+- keep sequential portfolio simulation under the analysis core lane rather than in frontend code
 - keep read-only consumer adapters under a dedicated backend surface after `A8` approval
 - create the permanent frontend under `frontend/analysis_studio/`
 - keep local-only branch registers, outputs, and active notes under `JANUS_LOCAL_ROOT`
@@ -38,34 +39,29 @@
 - integration branches are temporary and should never become the long-term source of truth
 - if a lane is small enough to merge directly into `main` after validation, do that instead
 
+## Completed And Archived Branches
+- `codex/data-dev-db-safety`
+- `codex/ops-analysis-validation`
+- `codex/analysis-strategy-lab`
+- `codex/analysis-sampling-benchmarking`
+- `codex/analysis-a8-consumer-adapters`
+- `codex/frontend-analysis-studio`
+- `codex/analysis-backtest-detail-contract`
+- `codex/frontend-analysis-comparison`
+
 ## Current Dependency Ladder
-1. `codex/data-dev-db-safety`
-   - build the safe local SQLite plus disposable Postgres plus dev-clone workflow
-2. `codex/ops-analysis-validation`
-   - run full-season mart, report, backtest, and baseline validations on the dev database
-3. `codex/analysis-strategy-lab`
-   - convert current research outputs into comparable trading-strategy candidates
-4. `codex/analysis-sampling-benchmarking`
-   - add 5%-10% random-sample holdouts, naive benchmarks, and experiment registry outputs
-5. `codex/analysis-a8-consumer-adapters`
-   - expose stable read-only contracts for downstream consumers
-6. `codex/frontend-analysis-studio`
-   - build the dedicated frontend studio alpha through run control and game explorer
-7. `codex/analysis-backtest-detail-contract`
-   - expose per-family backtest comparison detail through a read-only analysis contract
-8. `codex/frontend-analysis-comparison`
-   - consume the detail contract in the permanent studio without widening the alpha branch PR
-9. `codex/season-playoffs-preseason`
+1. `codex/analysis-sequential-portfolio-benchmarking`
+   - rerun each strategy family under a linear bankroll path and freeze the surviving candidates
+2. `codex/season-playoffs-preseason`
    - prepare season-scope structures for play-in, playoffs, and preseason
-10. `codex/season-wnba-bootstrap`
+3. `codex/season-wnba-bootstrap`
    - prepare WNBA carry-over and offseason continuity work
 
 Detailed subphase plans live under:
 - [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 
 ## Branch Launch Guidance
-- do not launch frontend before read-only consumer contracts stabilize
-- do not widen a validated frontend alpha PR with comparison-contract work; split the read-only detail contract first
-- do not launch the frontend comparison lane until both the studio alpha and the backtest detail contract are merged to `main`
+- do not launch sequential portfolio benchmarking before the sampling benchmark contract is stable on `main`
+- do not let sequential bankroll accounting change the underlying strategy-family math without a separate branch and explicit doc update
 - do not launch season-expansion branches before dev-db safety and validation hardening are in place
-- do not launch strategy-comparison branches before the current offline stack has a clean validation report
+- do not launch new strategy-refinement branches before the current offline stack has a clean validation report

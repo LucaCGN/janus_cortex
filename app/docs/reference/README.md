@@ -30,6 +30,9 @@ Use planning docs for:
 - [analysis_consumer_adapters_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_consumer_adapters_reference.md)
 - [analysis_studio_frontend_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_studio_frontend_reference.md)
 
+### Sequential Portfolio Benchmarking
+- [analysis_sequential_portfolio_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md)
+
 ### Mission And Research Intent
 - [analysis_mission_and_trading_hypotheses.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_mission_and_trading_hypotheses.md)
 

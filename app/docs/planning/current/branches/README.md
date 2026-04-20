@@ -5,21 +5,13 @@ Each branch plan defines one narrow write scope, explicit dependencies, and subp
 
 Read the branch doc before creating the branch.
 
-## Critical Path Branches
-- [data_dev_db_safety.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/data_dev_db_safety.md)
-- [ops_analysis_validation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/ops_analysis_validation.md)
-- [analysis_strategy_lab.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_strategy_lab.md)
-- [analysis_sampling_benchmarking.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_sampling_benchmarking.md)
-
-## Downstream Branches
-- [analysis_consumer_adapters.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_consumer_adapters.md)
-- [frontend_analysis_studio.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_studio.md)
-- [analysis_backtest_detail_contract.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_backtest_detail_contract.md)
-- [frontend_analysis_comparison.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_comparison.md)
-
-## Secondary Season-Continuity Branches
+## Active Branch Plans
+- [analysis_sequential_portfolio_benchmarking.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_sequential_portfolio_benchmarking.md)
 - [season_playoffs_preseason.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_playoffs_preseason.md)
 - [season_wnba_bootstrap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_wnba_bootstrap.md)
+
+## Archived Branch Plans
+- historical branch plans now live under [../archive/branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/README.md)
 
 ## Branch Doc Template
 Every branch doc should answer:

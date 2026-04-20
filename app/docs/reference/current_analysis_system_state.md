@@ -6,6 +6,7 @@
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
 - status: validated branch state now extends through post-baseline safety, validation, strategy, benchmarking, and read-only consumer-adapter lanes
+- current active analysis planning lane: sequential portfolio benchmarking and strategy refinement
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -102,7 +103,8 @@ Historical note:
   - read-only family comparison index and bounded per-family detail backed by the analysis consumer adapter layer
 
 ## Current Gaps
-- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is still pending
+- sequential bankroll simulation is the next active analysis lens and still needs a formal contract
+- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is optional follow-up work, not the immediate frontend dependency
 - richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - operator hardening beyond the current run-control surface is still pending
@@ -117,3 +119,4 @@ Historical note:
 - [app/docs/nba_analysis_data_products.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_data_products.md)
 - [app/docs/nba_analysis_modeling_and_backtesting.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_modeling_and_backtesting.md)
 - [app/docs/planning/current/roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
+- [app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md)
