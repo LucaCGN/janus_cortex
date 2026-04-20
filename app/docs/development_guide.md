@@ -52,18 +52,19 @@ v2 scope:
 
 ## Canonical Planning Files
 1. `app/docs/reference/README.md`
-2. `app/docs/scalable_db_schema_proposal.md`
-3. `app/docs/scalable_api_routes_proposal.md`
-4. `app/docs/planning/README.md`
-5. `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
-6. `app/docs/planning/current/branches/README.md`
-7. `app/docs/planning/current/agent_operating_rules.md`
-8. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
-9. `app/docs/source_temporal_coverage.md`
-10. `app/docs/development_guide.md` (this file)
-11. `app/docs/local_workspace_convention.md`
-12. `app/docs/app_structure_modularization_plan.md`
-13. `app/docs/openapi_v0_8_snapshot.json`
+2. `app/docs/reference/master_execution_dependency_graph.md`
+3. `app/docs/scalable_db_schema_proposal.md`
+4. `app/docs/scalable_api_routes_proposal.md`
+5. `app/docs/planning/README.md`
+6. `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
+7. `app/docs/planning/current/branches/README.md`
+8. `app/docs/planning/current/agent_operating_rules.md`
+9. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
+10. `app/docs/source_temporal_coverage.md`
+11. `app/docs/development_guide.md` (this file)
+12. `app/docs/local_workspace_convention.md`
+13. `app/docs/app_structure_modularization_plan.md`
+14. `app/docs/openapi_v0_8_snapshot.json`
 
 ## Structure Gate Reminder
 The pre-`v0.3` structure gate is completed and documented in:
@@ -223,6 +224,7 @@ Before closing any session:
 
 ## Fast Reference Commands
 - open reference index: `Get-Content app/docs/reference/README.md`
+- open master dependency graph: `Get-Content app/docs/reference/master_execution_dependency_graph.md`
 - show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 - ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
 - open current planning index: `Get-Content app/docs/planning/README.md`

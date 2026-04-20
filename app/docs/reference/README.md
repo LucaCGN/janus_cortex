@@ -17,6 +17,9 @@ Use planning docs for:
 
 ## Reference Layers
 
+### Master Control
+- [master_execution_dependency_graph.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/master_execution_dependency_graph.md)
+
 ### Mission And Research Intent
 - [analysis_mission_and_trading_hypotheses.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_mission_and_trading_hypotheses.md)
 

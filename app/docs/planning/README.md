@@ -5,6 +5,7 @@ Separate active execution planning from archived execution history, while keepin
 
 Paired reference docs live under:
 - [app/docs/reference/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/README.md)
+- [app/docs/reference/master_execution_dependency_graph.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/master_execution_dependency_graph.md)
 
 ## Planning Layers
 
