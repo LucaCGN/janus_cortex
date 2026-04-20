@@ -19,10 +19,19 @@ def _build_state_row(
     team_price: float,
     event_at: datetime,
     opening_band: str,
+    period: int = 1,
     period_label: str = "Q1",
+    score_for: int | None = None,
+    score_against: int | None = None,
+    score_diff: int | None = None,
     score_diff_bucket: str = "lead_1_4",
     context_bucket: str = "Q1|lead_1_4",
+    net_points_last_5_events: float | None = None,
 ) -> dict[str, object]:
+    resolved_score_for = score_for if score_for is not None else 10 + state_index
+    resolved_score_against = score_against if score_against is not None else 8 + state_index
+    resolved_score_diff = score_diff if score_diff is not None else resolved_score_for - resolved_score_against
+    resolved_net_points = net_points_last_5_events if net_points_last_5_events is not None else 2 * state_index
     return {
         "game_id": game_id,
         "team_side": "home",
@@ -42,19 +51,19 @@ def _build_state_row(
         "event_index": state_index,
         "action_id": str(state_index),
         "event_at": event_at,
-        "period": 1,
+        "period": period,
         "period_label": period_label,
         "clock": "PT11M00.00S",
         "clock_elapsed_seconds": float(state_index * 60),
         "seconds_to_game_end": float(720 - (state_index * 60)),
-        "score_for": 10 + state_index,
-        "score_against": 8 + state_index,
-        "score_diff": 2,
+        "score_for": resolved_score_for,
+        "score_against": resolved_score_against,
+        "score_diff": resolved_score_diff,
         "score_diff_bucket": score_diff_bucket,
         "context_bucket": context_bucket,
-        "team_led_flag": True,
-        "team_trailed_flag": False,
-        "tied_flag": False,
+        "team_led_flag": resolved_score_diff > 0,
+        "team_trailed_flag": resolved_score_diff < 0,
+        "tied_flag": resolved_score_diff == 0,
         "market_favorite_flag": opening_price >= 0.5,
         "scoreboard_control_mismatch_flag": False,
         "final_winner_flag": True,
@@ -63,9 +72,9 @@ def _build_state_row(
         "delta_for": 2,
         "delta_against": 0,
         "lead_changes_so_far": 0,
-        "team_points_last_5_events": 2 * state_index,
+        "team_points_last_5_events": max(0.0, resolved_net_points),
         "opponent_points_last_5_events": 0,
-        "net_points_last_5_events": 2 * state_index,
+        "net_points_last_5_events": resolved_net_points,
         "opening_price": opening_price,
         "opening_band": opening_band,
         "team_price": team_price,
@@ -232,6 +241,114 @@ def _build_state_frame() -> pd.DataFrame:
             score_diff_bucket="lead_1_4",
             context_bucket="Q2|lead_1_4",
         ),
+        _build_state_row(
+            game_id="002A5CBK",
+            team_slug="ATL",
+            opponent_team_slug="CLE",
+            opening_price=0.35,
+            state_index=0,
+            team_price=0.35,
+            event_at=base + timedelta(minutes=30),
+            opening_band="30-40",
+            period=1,
+            period_label="Q1",
+            score_for=20,
+            score_against=20,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q1|tied",
+            net_points_last_5_events=0,
+        ),
+        _build_state_row(
+            game_id="002A5CBK",
+            team_slug="ATL",
+            opponent_team_slug="CLE",
+            opening_price=0.35,
+            state_index=1,
+            team_price=0.24,
+            event_at=base + timedelta(minutes=31),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_for=24,
+            score_against=30,
+            score_diff=-6,
+            score_diff_bucket="trail_5_9",
+            context_bucket="Q2|trail_5_9",
+            net_points_last_5_events=4,
+        ),
+        _build_state_row(
+            game_id="002A5CBK",
+            team_slug="ATL",
+            opponent_team_slug="CLE",
+            opening_price=0.35,
+            state_index=2,
+            team_price=0.33,
+            event_at=base + timedelta(minutes=32),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_for=28,
+            score_against=31,
+            score_diff=-3,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q2|trail_1_4",
+            net_points_last_5_events=5,
+        ),
+        _build_state_row(
+            game_id="002A5SCALP",
+            team_slug="SAC",
+            opponent_team_slug="PHX",
+            opening_price=0.58,
+            state_index=0,
+            team_price=0.58,
+            event_at=base + timedelta(minutes=40),
+            opening_band="50-60",
+            period=1,
+            period_label="Q1",
+            score_for=14,
+            score_against=14,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q1|tied",
+            net_points_last_5_events=0,
+        ),
+        _build_state_row(
+            game_id="002A5SCALP",
+            team_slug="SAC",
+            opponent_team_slug="PHX",
+            opening_price=0.58,
+            state_index=1,
+            team_price=0.44,
+            event_at=base + timedelta(minutes=41),
+            opening_band="50-60",
+            period=1,
+            period_label="Q1",
+            score_for=18,
+            score_against=20,
+            score_diff=-2,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q1|trail_1_4",
+            net_points_last_5_events=-2,
+        ),
+        _build_state_row(
+            game_id="002A5SCALP",
+            team_slug="SAC",
+            opponent_team_slug="PHX",
+            opening_price=0.58,
+            state_index=2,
+            team_price=0.54,
+            event_at=base + timedelta(minutes=42),
+            opening_band="50-60",
+            period=1,
+            period_label="Q1",
+            score_for=22,
+            score_against=22,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q1|tied",
+            net_points_last_5_events=2,
+        ),
     ]
     return pd.DataFrame(rows)
 
@@ -249,10 +366,19 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     result = engine.build_backtest_result(frame, request)
 
     assert result.payload["state_rows_considered"] == len(frame)
-    assert result.payload["games_considered"] == 3
+    assert result.payload["games_considered"] == 5
+    assert set(result.payload["registry"].keys()) == {
+        "reversion",
+        "inversion",
+        "winner_definition",
+        "comeback_reversion",
+        "volatility_scalp",
+    }
     assert result.payload["families"]["reversion"]["trade_count"] == 1
     assert result.payload["families"]["inversion"]["trade_count"] == 1
     assert result.payload["families"]["winner_definition"]["trade_count"] == 1
+    assert result.payload["families"]["comeback_reversion"]["trade_count"] == 1
+    assert result.payload["families"]["volatility_scalp"]["trade_count"] == 1
 
     for family, trades_df in result.trade_frames.items():
         assert not trades_df.empty
@@ -266,9 +392,16 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     payload = engine.write_backtest_artifacts(result, tmp_path / "backtests")
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()
+    assert Path(payload["artifacts"]["family_summary_csv"]).exists()
     assert Path(payload["artifacts"]["reversion_csv"]).exists()
     assert Path(payload["artifacts"]["inversion_csv"]).exists()
     assert Path(payload["artifacts"]["winner_definition_csv"]).exists()
+    assert Path(payload["artifacts"]["comeback_reversion_csv"]).exists()
+    assert Path(payload["artifacts"]["volatility_scalp_csv"]).exists()
+    assert Path(payload["artifacts"]["reversion_best_trades_csv"]).exists()
+    assert Path(payload["artifacts"]["reversion_worst_trades_csv"]).exists()
+    assert Path(payload["artifacts"]["reversion_context_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["reversion_trade_traces_json"]).exists()
 
 
 def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
@@ -294,7 +427,7 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
         ),
     )
 
-    for family in ("reversion", "inversion", "winner_definition"):
+    for family in ("reversion", "inversion", "winner_definition", "comeback_reversion", "volatility_scalp"):
         zero_df = zero.trade_frames[family].sort_values(["game_id", "entry_state_index"]).reset_index(drop=True)
         one_df = one.trade_frames[family].sort_values(["game_id", "entry_state_index"]).reset_index(drop=True)
         assert len(zero_df) == len(one_df) == 1

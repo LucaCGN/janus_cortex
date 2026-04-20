@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -10,6 +9,7 @@ import pandas as pd
 from app.api.db import to_jsonable
 from app.data.databases.postgres import managed_connection
 from app.data.pipelines.daily.nba.analysis.artifacts import ensure_output_dir, write_frame, write_json, write_markdown
+from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, StrategyDefinition, TradeSelection
 from app.data.pipelines.daily.nba.analysis.contracts import (
     ANALYSIS_VERSION,
     DEFAULT_OUTPUT_ROOT,
@@ -53,6 +53,46 @@ BACKTEST_TRADE_COLUMNS = (
     "slippage_cents",
 )
 
+BACKTEST_FAMILY_SUMMARY_COLUMNS = (
+    "strategy_family",
+    "entry_rule",
+    "exit_rule",
+    "description",
+    "comparator_group",
+    "tags_json",
+    "trade_count",
+    "win_rate",
+    "avg_gross_return",
+    "avg_gross_return_with_slippage",
+    "avg_hold_time_seconds",
+    "avg_mfe_after_entry",
+    "avg_mae_after_entry",
+)
+
+BACKTEST_CONTEXT_SUMMARY_COLUMNS = (
+    "strategy_family",
+    "period_label",
+    "opening_band",
+    "context_bucket",
+    "trade_count",
+    "win_rate",
+    "avg_gross_return_with_slippage",
+    "avg_hold_time_seconds",
+)
+
+BACKTEST_TRACE_STATE_COLUMNS = (
+    "state_index",
+    "event_at",
+    "period_label",
+    "score_diff",
+    "score_diff_bucket",
+    "context_bucket",
+    "team_price",
+    "opening_price",
+    "price_delta_from_open",
+    "net_points_last_5_events",
+)
+
 _STATE_PANEL_NUMERIC_COLUMNS = (
     "state_index",
     "event_index",
@@ -76,18 +116,6 @@ _STATE_PANEL_NUMERIC_COLUMNS = (
     "gap_before_seconds",
     "gap_after_seconds",
 )
-
-
-@dataclass(slots=True)
-class TradeSelection:
-    entry_index: int
-    metadata: dict[str, Any]
-
-
-@dataclass(slots=True)
-class BacktestResult:
-    payload: dict[str, Any]
-    trade_frames: dict[str, pd.DataFrame]
 
 
 EntrySelector = Callable[[pd.DataFrame], TradeSelection | None]
@@ -307,10 +335,14 @@ def _render_backtest_markdown(payload: dict[str, Any]) -> str:
         "",
     ]
     for family, summary in (payload.get("families") or {}).items():
+        registry_meta = (payload.get("registry") or {}).get(family) or {}
         lines.extend(
             [
                 f"## {family}",
                 "",
+                f"- Description: `{registry_meta.get('description', 'n/a')}`",
+                f"- Entry rule: `{registry_meta.get('entry_rule', 'n/a')}`",
+                f"- Exit rule: `{registry_meta.get('exit_rule', 'n/a')}`",
                 f"- Trade count: `{summary.get('trade_count')}`",
                 f"- Win rate: `{_format_pct(summary.get('win_rate'))}`",
                 f"- Average gross return: `{_format_num(summary.get('avg_gross_return'))}`",
@@ -320,6 +352,126 @@ def _render_backtest_markdown(payload: dict[str, Any]) -> str:
             ]
         )
     return "\n".join(lines)
+
+
+def _registry_payload(registry: dict[str, StrategyDefinition]) -> dict[str, Any]:
+    return {
+        family: {
+            "family": definition.family,
+            "entry_rule": definition.entry_rule,
+            "exit_rule": definition.exit_rule,
+            "description": definition.description,
+            "comparator_group": definition.comparator_group,
+            "tags": list(definition.tags),
+        }
+        for family, definition in registry.items()
+    }
+
+
+def _build_family_summary_frame(
+    family_summaries: dict[str, Any],
+    registry: dict[str, StrategyDefinition],
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for family, definition in registry.items():
+        summary = family_summaries.get(family) or {}
+        rows.append(
+            {
+                "strategy_family": family,
+                "entry_rule": definition.entry_rule,
+                "exit_rule": definition.exit_rule,
+                "description": definition.description,
+                "comparator_group": definition.comparator_group,
+                "tags_json": list(definition.tags),
+                "trade_count": summary.get("trade_count"),
+                "win_rate": summary.get("win_rate"),
+                "avg_gross_return": summary.get("avg_gross_return"),
+                "avg_gross_return_with_slippage": summary.get("avg_gross_return_with_slippage"),
+                "avg_hold_time_seconds": summary.get("avg_hold_time_seconds"),
+                "avg_mfe_after_entry": summary.get("avg_mfe_after_entry"),
+                "avg_mae_after_entry": summary.get("avg_mae_after_entry"),
+            }
+        )
+    return pd.DataFrame(rows, columns=BACKTEST_FAMILY_SUMMARY_COLUMNS)
+
+
+def _build_context_summary_frame(trades_df: pd.DataFrame, *, family: str) -> pd.DataFrame:
+    if trades_df.empty:
+        return pd.DataFrame(columns=BACKTEST_CONTEXT_SUMMARY_COLUMNS)
+    summary = (
+        trades_df.groupby(["period_label", "opening_band", "context_bucket"], dropna=False)
+        .agg(
+            trade_count=("game_id", "count"),
+            win_rate=("gross_return_with_slippage", lambda values: float((pd.Series(values) > 0).mean())),
+            avg_gross_return_with_slippage=("gross_return_with_slippage", "mean"),
+            avg_hold_time_seconds=("hold_time_seconds", "mean"),
+        )
+        .reset_index()
+    )
+    summary.insert(0, "strategy_family", family)
+    return summary[list(BACKTEST_CONTEXT_SUMMARY_COLUMNS)]
+
+
+def _build_trade_extremes_frame(trades_df: pd.DataFrame, *, ascending: bool) -> pd.DataFrame:
+    if trades_df.empty:
+        return trades_df.copy()
+    return (
+        trades_df.sort_values(
+            ["gross_return_with_slippage", "hold_time_seconds"],
+            ascending=[ascending, True],
+            kind="mergesort",
+        )
+        .head(5)
+        .reset_index(drop=True)
+    )
+
+
+def _build_trade_traces(
+    state_df: pd.DataFrame,
+    trades_df: pd.DataFrame,
+    *,
+    family: str,
+) -> list[dict[str, Any]]:
+    if trades_df.empty or state_df.empty:
+        return []
+
+    ranked = pd.concat(
+        [
+            _build_trade_extremes_frame(trades_df, ascending=False),
+            _build_trade_extremes_frame(trades_df, ascending=True),
+        ],
+        ignore_index=True,
+    ).drop_duplicates(subset=["game_id", "team_side", "entry_state_index", "exit_state_index"])
+    traces: list[dict[str, Any]] = []
+    for _, trade in ranked.iterrows():
+        group = state_df[
+            (state_df["game_id"] == trade["game_id"])
+            & (state_df["team_side"] == trade["team_side"])
+        ].sort_values("state_index", kind="mergesort")
+        if group.empty:
+            continue
+        start_index = max(0, int(trade["entry_state_index"]) - 1)
+        end_index = int(trade["exit_state_index"]) + 2
+        trace_states = group[
+            (group["state_index"] >= start_index) & (group["state_index"] <= end_index)
+        ][list(BACKTEST_TRACE_STATE_COLUMNS)].copy()
+        if "event_at" in trace_states.columns:
+            trace_states["event_at"] = pd.to_datetime(trace_states["event_at"], errors="coerce", utc=True)
+        traces.append(
+            {
+                "strategy_family": family,
+                "game_id": trade["game_id"],
+                "team_side": trade["team_side"],
+                "team_slug": trade["team_slug"],
+                "entry_state_index": int(trade["entry_state_index"]),
+                "exit_state_index": int(trade["exit_state_index"]),
+                "entry_at": trade["entry_at"],
+                "exit_at": trade["exit_at"],
+                "gross_return_with_slippage": trade["gross_return_with_slippage"],
+                "states": to_jsonable(trace_states.to_dict(orient="records")),
+            }
+        )
+    return traces
 
 
 def build_backtest_result(state_df: pd.DataFrame, request: BacktestRunRequest) -> BacktestResult:
@@ -333,32 +485,19 @@ def build_backtest_result(state_df: pd.DataFrame, request: BacktestRunRequest) -
             "state_rows_considered": 0,
             "games_considered": 0,
             "families": {},
+            "registry": {},
             "error": "state_panel_empty",
         }
         empty_frames: dict[str, pd.DataFrame] = {}
-        return BacktestResult(payload=payload, trade_frames=empty_frames)
+        return BacktestResult(payload=payload, trade_frames=empty_frames, state_df=work, strategy_registry={})
 
-    from app.data.pipelines.daily.nba.analysis.backtests.inversion import simulate_inversion_trades
-    from app.data.pipelines.daily.nba.analysis.backtests.reversion import simulate_reversion_trades
-    from app.data.pipelines.daily.nba.analysis.backtests.winner_definition import simulate_winner_definition_trades
+    from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
 
-    families_to_run = (
-        [request.strategy_family]
-        if request.strategy_family != "all"
-        else ["reversion", "inversion", "winner_definition"]
-    )
+    strategy_registry = resolve_strategy_registry(request.strategy_family)
     family_summaries: dict[str, Any] = {}
     family_trades: dict[str, pd.DataFrame] = {}
-    trade_families = {
-        "reversion": simulate_reversion_trades,
-        "inversion": simulate_inversion_trades,
-        "winner_definition": simulate_winner_definition_trades,
-    }
-    for family in families_to_run:
-        simulator = trade_families.get(family)
-        if simulator is None:
-            continue
-        trades = simulator(work, slippage_cents=request.slippage_cents)
+    for family, definition in strategy_registry.items():
+        trades = definition.simulator(work, slippage_cents=request.slippage_cents)
         trades_df = pd.DataFrame(trades, columns=BACKTEST_TRADE_COLUMNS)
         if not trades_df.empty:
             trades_df = trades_df.sort_values(
@@ -376,21 +515,50 @@ def build_backtest_result(state_df: pd.DataFrame, request: BacktestRunRequest) -
         "state_rows_considered": int(len(work)),
         "games_considered": int(work["game_id"].nunique()) if "game_id" in work.columns else 0,
         "families": family_summaries,
+        "registry": _registry_payload(strategy_registry),
         "artifacts": {},
     }
-    return BacktestResult(payload=payload, trade_frames=family_trades)
+    return BacktestResult(
+        payload=payload,
+        trade_frames=family_trades,
+        state_df=work,
+        strategy_registry=strategy_registry,
+    )
 
 
 def write_backtest_artifacts(result: BacktestResult, output_dir: Path) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = result.payload
     payload["artifacts"] = {}
-    payload["artifacts"]["json"] = write_json(output_dir / "run_analysis_backtests.json", payload)
-    payload["artifacts"]["markdown"] = write_markdown(output_dir / "run_analysis_backtests.md", _render_backtest_markdown(payload))
+    family_summary_df = _build_family_summary_frame(result.payload.get("families") or {}, result.strategy_registry)
+    payload["artifacts"].update(
+        {f"family_summary_{key}": value for key, value in write_frame(output_dir / "family_summary", family_summary_df).items()}
+    )
     for family, trades_df in result.trade_frames.items():
         payload["artifacts"].update(
             {f"{family}_{key}": value for key, value in write_frame(output_dir / f"{family}_trades", trades_df).items()}
         )
+        best_df = _build_trade_extremes_frame(trades_df, ascending=False)
+        worst_df = _build_trade_extremes_frame(trades_df, ascending=True)
+        context_summary_df = _build_context_summary_frame(trades_df, family=family)
+        payload["artifacts"].update(
+            {f"{family}_best_trades_{key}": value for key, value in write_frame(output_dir / f"{family}_best_trades", best_df).items()}
+        )
+        payload["artifacts"].update(
+            {f"{family}_worst_trades_{key}": value for key, value in write_frame(output_dir / f"{family}_worst_trades", worst_df).items()}
+        )
+        payload["artifacts"].update(
+            {
+                f"{family}_context_summary_{key}": value
+                for key, value in write_frame(output_dir / f"{family}_context_summary", context_summary_df).items()
+            }
+        )
+        payload["artifacts"][f"{family}_trade_traces_json"] = write_json(
+            output_dir / f"{family}_trade_traces.json",
+            _build_trade_traces(result.state_df, trades_df, family=family),
+        )
+    payload["artifacts"]["json"] = write_json(output_dir / "run_analysis_backtests.json", payload)
+    payload["artifacts"]["markdown"] = write_markdown(output_dir / "run_analysis_backtests.md", _render_backtest_markdown(payload))
     return to_jsonable(payload)
 
 
@@ -410,7 +578,6 @@ def run_analysis_backtests(request: BacktestRunRequest) -> dict[str, Any]:
 __all__ = [
     "BACKTEST_TRADE_COLUMNS",
     "BacktestResult",
-    "TradeSelection",
     "build_backtest_result",
     "load_analysis_backtest_state_panel_df",
     "run_analysis_backtests",

@@ -4,7 +4,8 @@ from typing import Any
 
 import pandas as pd
 
-from app.data.pipelines.daily.nba.analysis.backtests.engine import TradeSelection, simulate_trade_loop
+from app.data.pipelines.daily.nba.analysis.backtests.engine import simulate_trade_loop
+from app.data.pipelines.daily.nba.analysis.backtests.specs import TradeSelection
 
 
 def _select_inversion_entry(group: pd.DataFrame) -> TradeSelection | None:
