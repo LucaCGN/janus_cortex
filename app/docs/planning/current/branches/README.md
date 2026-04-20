@@ -14,6 +14,7 @@ Read the branch doc before creating the branch.
 ## Downstream Branches
 - [analysis_consumer_adapters.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_consumer_adapters.md)
 - [frontend_analysis_studio.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_studio.md)
+- [analysis_backtest_detail_contract.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_backtest_detail_contract.md)
 
 ## Secondary Season-Continuity Branches
 - [season_playoffs_preseason.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_playoffs_preseason.md)

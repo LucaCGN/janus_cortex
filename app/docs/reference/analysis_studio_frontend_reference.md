@@ -11,7 +11,8 @@ This document is reference, not planning. It describes what the frontend is allo
 - `F1` does not introduce a Node or separate JS build toolchain because the repository does not currently own one
 - the frontend consumes the analysis consumer snapshot contract instead of loading raw artifact JSONs independently
 - local operator run control also stays in the existing FastAPI runtime for now, but it is limited to whitelisted commands and local workspace paths
-- `F3` adds a mart-backed game explorer through thin read-only API routes, so the frontend still does not parse analysis artifacts directly
+- `F3a` adds a mart-backed game explorer through thin read-only API routes, so the frontend still does not parse analysis artifacts directly
+- deeper per-family benchmark comparison is not part of the current branch boundary; it depends on a separate downstream read-only comparison contract
 
 ## Stable Read Surface
 - page route:
@@ -73,12 +74,15 @@ The frontend should not read:
 - `frontend/analysis_studio/static/analysis_studio.js`
 - `app/api/routers/analysis_studio.py`
 
-## Later Frontend Subphases
-- current completed slice:
-  - `F3a` mart-backed game explorer routes plus frontend game index/detail panels
-- `F2` adds run control and operator workflow state
-- `F4` adds deeper strategy comparison and trade-trace views
-- `F5` hardens operator UX for repeated research work
+## Completed And Deferred Frontend Subphases
+- completed on the current branch:
+  - `F1` scaffolded the permanent frontend module
+  - `F2` added run control, validation visibility, and local operator state
+  - `F3a` added mart-backed game explorer routes plus frontend game index/detail panels
+- deferred:
+  - `F3b` richer overlays only if the current explorer proves insufficient
+  - `F4` strategy comparison and trade-trace views after a separate read-only comparison contract branch exists
+  - `F5` operator hardening after the comparison surface settles
 
 ## Constraint
 If a future frontend branch needs a separate JS toolchain, that decision should be explicit and documented as a branch-level architecture change rather than introduced opportunistically.

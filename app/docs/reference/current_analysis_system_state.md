@@ -94,9 +94,11 @@ Historical note:
   - bounded home/away state-panel detail backed by `nba_analysis_state_panel`
 
 ## Current Gaps
-- richer game-context overlays beyond the mart-backed explorer are still pending
+- a separate read-only comparison-detail contract for per-family backtest artifacts is still pending
+- deeper frontend strategy comparison views depend on that contract and are not part of the current studio alpha branch
+- richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
-- deeper strategy comparison and operator hardening subphases are still pending
+- operator hardening beyond the current run-control surface is still pending
 
 ## Output Root Convention
 - default analysis artifact root on this machine resolves to:
