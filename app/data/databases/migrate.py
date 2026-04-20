@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from psycopg2.extensions import connection as PsycopgConnection
 
 from app.data.databases.postgres import ensure_database_exists, managed_connection
+from app.data.databases.safety import describe_database_target, require_safe_db_test_target
 
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
@@ -152,6 +154,21 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="List discovered migrations and exit.",
     )
+    parser.add_argument(
+        "--describe-target",
+        action="store_true",
+        help="Print the currently selected database target and exit.",
+    )
+    parser.add_argument(
+        "--drop-managed-schemas",
+        action="store_true",
+        help="Drop every managed Janus schema before applying migrations.",
+    )
+    parser.add_argument(
+        "--require-safe-target",
+        action="store_true",
+        help="Require JANUS_DB_TARGET to be disposable or dev_clone before continuing.",
+    )
     return parser
 
 
@@ -163,9 +180,17 @@ def main() -> int:
         for migration_id in list_migrations():
             print(migration_id)
         return 0
+    if args.describe_target:
+        print(json.dumps(describe_database_target(), indent=2, sort_keys=True))
+        return 0
+
+    if args.require_safe_target or args.drop_managed_schemas:
+        require_safe_db_test_target("migration command")
 
     ensure_database_exists()
     with managed_connection() as connection:
+        if args.drop_managed_schemas:
+            drop_managed_schemas(connection)
         applied_now = apply_migrations(connection, target=args.target)
 
     if applied_now:
