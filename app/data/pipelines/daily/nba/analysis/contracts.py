@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -7,7 +8,20 @@ from pathlib import Path
 ANALYSIS_VERSION = "v1_0_1"
 DEFAULT_SEASON = "2025-26"
 DEFAULT_SEASON_PHASE = "regular_season"
-DEFAULT_OUTPUT_ROOT = Path("output") / "nba_analysis"
+DEFAULT_LOCAL_ROOT_ENV_VAR = "JANUS_LOCAL_ROOT"
+WINDOWS_LOCAL_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex")
+
+
+def resolve_default_output_root() -> Path:
+    configured_root = os.getenv(DEFAULT_LOCAL_ROOT_ENV_VAR)
+    if configured_root:
+        return Path(configured_root) / "archives" / "output" / "nba_analysis"
+    if os.name == "nt" and WINDOWS_LOCAL_ROOT.exists():
+        return WINDOWS_LOCAL_ROOT / "archives" / "output" / "nba_analysis"
+    return Path("output") / "nba_analysis"
+
+
+DEFAULT_OUTPUT_ROOT = resolve_default_output_root()
 DEFAULT_LOOKAHEAD_STATES = 12
 DEFAULT_LARGE_SWING_THRESHOLD = 0.10
 DEFAULT_WINNER_THRESHOLDS = (70, 80, 90, 95)

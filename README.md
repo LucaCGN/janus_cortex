@@ -54,6 +54,7 @@ The project uses a provider/category/module split:
 4. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
 
 ## Key Planning Docs
+- `app/docs/planning/README.md`
 - `app/docs/development_guide.md`
 - `app/docs/local_workspace_convention.md`
 - `app/docs/scalable_db_schema_proposal.md`
@@ -83,6 +84,7 @@ Common commands:
 
 ## Notes
 - Local checkpoint and reference material should live under `JANUS_LOCAL_ROOT` rather than the repository root.
+- Current execution planning belongs under `app/docs/planning/current`; closed execution waves belong under `app/docs/planning/archive`.
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
 - Sports-core data completeness comes before Chroma, LLM memory, or broader multi-module expansion.
 - Strategy logic remains intentionally outside the core app until the data contracts and service layers are stable.

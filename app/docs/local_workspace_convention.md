@@ -17,6 +17,8 @@ If `JANUS_LOCAL_ROOT` is unset, the repo helper defaults to the path above.
 Stable subpaths:
 - `tracks/dev-checkpoint`
 - `tracks/reference`
+- `tracks/planning/current`
+- `tracks/planning/archive`
 - `archives/output`
 
 ## What Stays In The Repo
@@ -29,6 +31,7 @@ Stable subpaths:
 - ad hoc `output/`
 - local `reference/`
 - local `dev-checkpoint/`
+- active branch registers that are not meant to be committed
 - `.playwright-cli/`
 - `.pytest_cache/`
 - stash-only branch snapshots
@@ -48,6 +51,8 @@ powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 export-stash -N
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 clean-generated
 ```
 
+For the analysis CLI, default artifact output resolves to `JANUS_LOCAL_ROOT\archives\output\nba_analysis` when `JANUS_LOCAL_ROOT` is set, or to the standard Windows local root if it exists.
+
 ## Parallel Branch Hygiene
 Before removing a worktree or deleting a lane branch:
 1. Export any stash you want to preserve into `stashes/`.
@@ -58,4 +63,6 @@ Before removing a worktree or deleting a lane branch:
 ## Session Start Checklist
 1. Run `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`.
 2. Keep new branch-independent notes under the local root, not the repository root.
-3. Use committed docs in `app/docs` for canonical project behavior and design decisions.
+3. Keep active branch registers and session notes under `tracks/planning/current`.
+4. Move superseded local notes to `tracks/planning/archive`.
+5. Use committed docs in `app/docs` for canonical project behavior and design decisions.

@@ -51,12 +51,14 @@ v2 scope:
 ## Canonical Planning Files
 1. `app/docs/scalable_db_schema_proposal.md`
 2. `app/docs/scalable_api_routes_proposal.md`
-3. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
-4. `app/docs/source_temporal_coverage.md`
-5. `app/docs/development_guide.md` (this file)
-6. `app/docs/local_workspace_convention.md`
-7. `app/docs/app_structure_modularization_plan.md`
-8. `app/docs/openapi_v0_8_snapshot.json`
+3. `app/docs/planning/README.md`
+4. `app/docs/planning/current/agent_operating_rules.md`
+5. local checkpoint ledger under `JANUS_LOCAL_ROOT\tracks\dev-checkpoint`
+6. `app/docs/source_temporal_coverage.md`
+7. `app/docs/development_guide.md` (this file)
+8. `app/docs/local_workspace_convention.md`
+9. `app/docs/app_structure_modularization_plan.md`
+10. `app/docs/openapi_v0_8_snapshot.json`
 
 ## Structure Gate Reminder
 The pre-`v0.3` structure gate is completed and documented in:
@@ -163,7 +165,23 @@ If a source endpoint is unstable or unavailable:
 - keep branch-independent local state under `JANUS_LOCAL_ROOT`, not in the repository root
 - default workspace local root: `C:\code-personal\janus-local\janus_cortex`
 - use [tools/janus_local.ps1](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/tools/janus_local.ps1) to create the local layout, move ad hoc folders, export stash snapshots, and clear generated caches
+- keep local branch registers and active session notes under `JANUS_LOCAL_ROOT\tracks\planning\current`
+- move superseded local notes to `JANUS_LOCAL_ROOT\tracks\planning\archive`
 - do not recreate repo-root `dev-checkpoint`, `reference`, or `output` folders unless they are temporary and immediately moved out again
+
+## Database Safety Ladder
+- stage 1: validate new transforms and table-shape assumptions with fixtures, DataFrames, or SQLite-compatible local tests first
+- stage 2: validate migrations and SQL behavior on a disposable local Postgres database created from current migrations
+- stage 3: validate on a dev clone of the live database before touching the shared live database
+- stage 4: only after stages 1-3 pass, run shared live DB validation or apply migrations
+- SQLite is a safety and logic gate, not proof of Postgres migration compatibility
+- never point `JANUS_RUN_DB_TESTS=1` or migration commands at the live database first
+
+## Parallel Branch Rule
+- one branch owns one narrow write scope
+- use category-based branch names from `app/docs/planning/current/branch_strategy.md`
+- merge back to `main` one lane at a time
+- delete the branch and worktree after merge and sync
 
 ## Definition of Done
 A checkpoint is only `done` when:
@@ -201,6 +219,7 @@ Before closing any session:
 ## Fast Reference Commands
 - show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 - ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
+- open current planning index: `Get-Content app/docs/planning/README.md`
 - list node files: `rg --files app/data/nodes`
 - track schema mentions: `rg -n "activate:|table|column|phase" app/docs/scalable_db_schema_proposal.md`
 - track routes mentions: `rg -n "v0\.|v1\.|v2\.|/v1/" app/docs/scalable_api_routes_proposal.md`

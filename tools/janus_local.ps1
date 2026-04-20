@@ -39,6 +39,9 @@ function Get-JanusLayout {
         DevCheckpoint = Join-Path $Root "tracks\dev-checkpoint"
         Reference = Join-Path $Root "tracks\reference"
         Output = Join-Path $Root "archives\output"
+        Planning = Join-Path $Root "tracks\planning"
+        CurrentPlanning = Join-Path $Root "tracks\planning\current"
+        ArchivePlanning = Join-Path $Root "tracks\planning\archive"
     }
 }
 
@@ -147,7 +150,10 @@ switch ($Action) {
             @{ Label = "stashes"; Path = $layout.Stashes },
             @{ Label = "dev_checkpoint"; Path = $layout.DevCheckpoint },
             @{ Label = "reference"; Path = $layout.Reference },
-            @{ Label = "output"; Path = $layout.Output }
+            @{ Label = "output"; Path = $layout.Output },
+            @{ Label = "planning"; Path = $layout.Planning },
+            @{ Label = "planning_current"; Path = $layout.CurrentPlanning },
+            @{ Label = "planning_archive"; Path = $layout.ArchivePlanning }
         )) {
             Write-Output ("{0}={1}" -f $item.Label, $item.Path)
         }
