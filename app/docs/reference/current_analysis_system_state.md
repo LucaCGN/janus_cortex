@@ -67,6 +67,7 @@ Historical note:
 ## Validation Snapshot
 - analysis pytest sweep:
   - branch-local critical-path sweep includes consumer adapter tests
+  - frontend studio router and static asset coverage now includes the F3 game explorer routes
 - skipped checks are Postgres-gated integration validations behind `JANUS_RUN_DB_TESTS=1`
 - CLI smoke passed:
   - `python -m app.data.pipelines.daily.nba.analysis_module -h`
@@ -79,6 +80,8 @@ Historical note:
   - `GET /analysis-studio`
   - `GET /v1/analysis/studio/snapshot`
   - `GET /v1/analysis/studio/control`
+  - `GET /v1/analysis/studio/games`
+  - `GET /v1/analysis/studio/games/{game_id}`
   - `GET /v1/analysis/studio/runs`
   - `GET /v1/analysis/studio/runs/{run_id}`
   - `POST /v1/analysis/studio/runs`
@@ -87,9 +90,11 @@ Historical note:
   - latest validation summary under `JANUS_LOCAL_ROOT`
   - available analysis versions under the default output root
   - in-memory local run registry with stdout/stderr and output-root tracking
+  - finished-game explorer rows backed by `nba_analysis_game_team_profiles`
+  - bounded home/away state-panel detail backed by `nba_analysis_state_panel`
 
 ## Current Gaps
-- game context explorer is still pending
+- richer game-context overlays beyond the mart-backed explorer are still pending
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - deeper strategy comparison and operator hardening subphases are still pending
 

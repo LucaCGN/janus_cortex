@@ -50,11 +50,21 @@ Current branch state:
 - `F2a` is implemented through the studio control route and validation-history panels
 - `F2b` is implemented through a whitelisted local run launcher for validation, mart, report, backtests, and baselines
 - `F2c` is implemented through the in-memory run registry plus stdout/stderr and output-root tracking
-- next frontend decision is whether `F3` should read directly from analysis artifacts, from additional read-only API summaries, or from both
+- `F3a` is implemented as a thin read-only facade over `nba_analysis_game_team_profiles` and `nba_analysis_state_panel`
+- the studio now exposes a finished-game explorer index plus bounded per-game detail views without introducing new storage or frontend-owned artifact parsing
+- next `F3` decision is whether richer context overlays should be added through another read-only route or deferred to a later branch
 
 ### `F3` Game Context Explorer
 Objective:
 - display game-level and state-level context with analysis overlays
+
+Immediate slice order:
+- `F3a` implemented:
+  - `GET /v1/analysis/studio/games`
+  - `GET /v1/analysis/studio/games/{game_id}`
+  - frontend game index and detail panels backed by existing analysis artifacts
+- `F3b` pending:
+  - decide whether to add richer context overlays or linked read helpers beyond the mart-backed explorer payload
 
 ### `F4` Strategy Comparison Views
 Objective:
@@ -89,6 +99,8 @@ Frontend should not:
 - `GET /analysis-studio`
 - `GET /v1/analysis/studio/snapshot`
 - `GET /v1/analysis/studio/control`
+- `GET /v1/analysis/studio/games`
+- `GET /v1/analysis/studio/games/{game_id}`
 - `GET /v1/analysis/studio/runs`
 - `GET /v1/analysis/studio/runs/{run_id}`
 - `POST /v1/analysis/studio/runs`

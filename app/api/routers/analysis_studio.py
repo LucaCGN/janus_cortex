@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
@@ -34,6 +35,51 @@ ANALYSIS_STUDIO_STATIC_ROOT = ANALYSIS_STUDIO_ROOT / "static"
 ANALYSIS_STUDIO_INDEX_PATH = ANALYSIS_STUDIO_ROOT / "index.html"
 VALIDATION_ROOT_SUFFIX = Path("archives") / "output" / "nba_analysis_validation"
 STUDIO_RUN_ROOT_SUFFIX = Path("archives") / "output" / "nba_analysis_studio_runs"
+
+GAME_EXPLORER_PROFILE_COLUMNS = [
+    "game_id",
+    "team_side",
+    "team_slug",
+    "opponent_team_slug",
+    "season",
+    "season_phase",
+    "analysis_version",
+    "game_date",
+    "game_start_time",
+    "coverage_status",
+    "research_ready_flag",
+    "price_path_reconciled_flag",
+    "final_winner_flag",
+    "opening_price",
+    "closing_price",
+    "opening_band",
+    "total_swing",
+    "inversion_count",
+    "max_favorable_excursion",
+    "max_adverse_excursion",
+    "winner_stable_80_clock_elapsed_seconds",
+]
+GAME_EXPLORER_STATE_COLUMNS = [
+    "game_id",
+    "team_side",
+    "team_slug",
+    "opponent_team_slug",
+    "state_index",
+    "event_at",
+    "period",
+    "clock",
+    "score_for",
+    "score_against",
+    "score_diff",
+    "context_bucket",
+    "team_price",
+    "price_delta_from_open",
+    "mfe_from_state",
+    "mae_from_state",
+    "large_swing_next_12_states_flag",
+    "crossed_50c_next_12_states_flag",
+    "winner_stable_80_after_state_flag",
+]
 
 _RUN_LOCK = threading.Lock()
 _RUN_REGISTRY: dict[str, dict[str, Any]] = {}
@@ -82,6 +128,32 @@ def _resolve_validation_root() -> Path:
 
 def _resolve_studio_run_root() -> Path:
     return _ensure_directory(_resolve_local_root() / STUDIO_RUN_ROOT_SUFFIX)
+
+
+def _resolve_analysis_output_base(output_root: str | None) -> Path:
+    return Path(output_root) if output_root else resolve_default_output_root()
+
+
+def _resolve_analysis_output_dir(
+    *,
+    season: str,
+    season_phase: str,
+    analysis_version: str | None,
+    output_root: str | None,
+) -> tuple[Path, str]:
+    base = _resolve_analysis_output_base(output_root)
+    if analysis_version:
+        resolved_version = analysis_version
+    else:
+        versions = list_available_analysis_versions(
+            season=season,
+            season_phase=season_phase,
+            output_root=str(base),
+        )
+        if not versions:
+            raise FileNotFoundError(f"No analysis output versions found for {season} {season_phase}")
+        resolved_version = versions[-1]
+    return base / season / season_phase / resolved_version, resolved_version
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -201,6 +273,224 @@ def _resolve_run_command(request: AnalysisStudioRunRequest, run_root: Path) -> t
     if request.action == "build_analysis_mart" and request.rebuild:
         args.append("--rebuild")
     return "python", args, output_root
+
+
+def _read_analysis_frame(
+    output_dir: Path,
+    stem: str,
+    *,
+    columns: list[str] | None = None,
+    filters: list[tuple[str, str, Any]] | None = None,
+) -> pd.DataFrame:
+    parquet_path = output_dir / f"{stem}.parquet"
+    if parquet_path.exists():
+        try:
+            return pd.read_parquet(parquet_path, columns=columns, filters=filters)
+        except Exception:
+            pass
+
+    csv_path = output_dir / f"{stem}.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(f"Required analysis artifact not found: {parquet_path} or {csv_path}")
+    frame = pd.read_csv(csv_path, usecols=columns)
+    if filters:
+        for column, operator, value in filters:
+            if operator != "==":
+                continue
+            frame = frame[frame[column].astype(str) == str(value)]
+    return frame
+
+
+def _clean_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return {key: _clean_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clean_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_clean_value(item) for item in value]
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    except ValueError:
+        pass
+    if hasattr(value, "item") and not isinstance(value, (str, bytes, dict, list, tuple, set)):
+        try:
+            value = value.item()
+        except Exception:
+            pass
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, (datetime, pd.Timestamp)):
+        return value.isoformat()
+    return value
+
+
+def _clean_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {key: _clean_value(value) for key, value in record.items()}
+
+
+def _boolish(value: Any) -> bool:
+    cleaned = _clean_value(value)
+    if isinstance(cleaned, bool):
+        return cleaned
+    if isinstance(cleaned, str):
+        return cleaned.strip().lower() in {"1", "true", "t", "yes", "y"}
+    if cleaned is None:
+        return False
+    return bool(cleaned)
+
+
+def _profile_summary(profile: dict[str, Any] | None) -> dict[str, Any] | None:
+    if profile is None:
+        return None
+    return _clean_record(
+        {
+        "team_side": profile.get("team_side"),
+        "team_slug": profile.get("team_slug"),
+        "opponent_team_slug": profile.get("opponent_team_slug"),
+        "coverage_status": profile.get("coverage_status"),
+        "research_ready_flag": _boolish(profile.get("research_ready_flag")),
+        "price_path_reconciled_flag": _boolish(profile.get("price_path_reconciled_flag")),
+        "final_winner_flag": _boolish(profile.get("final_winner_flag")),
+        "opening_price": profile.get("opening_price"),
+        "closing_price": profile.get("closing_price"),
+        "opening_band": profile.get("opening_band"),
+        "total_swing": profile.get("total_swing"),
+        "inversion_count": profile.get("inversion_count"),
+        "max_favorable_excursion": profile.get("max_favorable_excursion"),
+        "max_adverse_excursion": profile.get("max_adverse_excursion"),
+        "winner_stable_80_clock_elapsed_seconds": profile.get("winner_stable_80_clock_elapsed_seconds"),
+        }
+    )
+
+
+def _game_explorer_rows(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    work = frame.copy()
+    for column in (
+        "game_date",
+        "game_start_time",
+        "opening_price",
+        "closing_price",
+        "total_swing",
+        "inversion_count",
+    ):
+        if column in work.columns:
+            work[column] = work[column]
+    items: list[dict[str, Any]] = []
+    for game_id, group in work.groupby("game_id", sort=False):
+        side_lookup = {
+            str(row.get("team_side")): row.to_dict()
+            for _, row in group.iterrows()
+        }
+        home = side_lookup.get("home")
+        away = side_lookup.get("away")
+        anchor = home or away or {}
+        coverage_values = sorted({str(value) for value in group["coverage_status"].dropna().tolist()})
+        winner_team_slug = None
+        for candidate in (home, away):
+            if candidate and _boolish(candidate.get("final_winner_flag")):
+                winner_team_slug = candidate.get("team_slug")
+                break
+        items.append(
+            _clean_record(
+                {
+                "game_id": str(game_id),
+                "season": anchor.get("season"),
+                "season_phase": anchor.get("season_phase"),
+                "analysis_version": anchor.get("analysis_version"),
+                "game_date": anchor.get("game_date"),
+                "game_start_time": anchor.get("game_start_time"),
+                "matchup": f"{away.get('team_slug') if away else 'UNK'} @ {home.get('team_slug') if home else 'UNK'}",
+                "research_ready_game_flag": bool(group["research_ready_flag"].map(_boolish).all()),
+                "coverage_statuses": coverage_values,
+                "winner_team_slug": winner_team_slug,
+                "home": _profile_summary(home),
+                "away": _profile_summary(away),
+                }
+            )
+        )
+    return items
+
+
+def _state_summary(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty:
+        return {
+            "state_count": 0,
+            "latest_state_index": None,
+            "price_min": None,
+            "price_max": None,
+            "top_context_buckets": [],
+        }
+    price_series = pd.to_numeric(frame["team_price"], errors="coerce")
+    context_counts = [
+        {"context_bucket": key, "state_count": int(value)}
+        for key, value in frame["context_bucket"].fillna("unknown").astype(str).value_counts().head(8).items()
+    ]
+    latest_state_index = pd.to_numeric(frame["state_index"], errors="coerce").max()
+    return _clean_record(
+        {
+        "state_count": int(len(frame)),
+        "latest_state_index": int(latest_state_index) if pd.notna(latest_state_index) else None,
+        "price_min": float(price_series.min()) if price_series.notna().any() else None,
+        "price_max": float(price_series.max()) if price_series.notna().any() else None,
+        "top_context_buckets": context_counts,
+        }
+    )
+
+
+def _select_state_rows(frame: pd.DataFrame, *, limit: int) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    ordered = frame.sort_values("state_index", ascending=True)
+    if len(ordered) > limit:
+        head_count = min(8, max(4, limit // 3))
+        tail_count = max(limit - head_count, 1)
+        ordered = (
+            pd.concat([ordered.head(head_count), ordered.tail(tail_count)], axis=0)
+            .drop_duplicates(subset=["state_index"], keep="first")
+            .sort_values("state_index", ascending=True)
+        )
+    rows: list[dict[str, Any]] = []
+    for _, row in ordered.iterrows():
+        rows.append(
+            _clean_record(
+                {
+                    "state_index": row.get("state_index"),
+                    "event_at": row.get("event_at"),
+                    "period": row.get("period"),
+                    "clock": row.get("clock"),
+                    "score_for": row.get("score_for"),
+                    "score_against": row.get("score_against"),
+                    "score_diff": row.get("score_diff"),
+                    "context_bucket": row.get("context_bucket"),
+                    "team_price": row.get("team_price"),
+                    "price_delta_from_open": row.get("price_delta_from_open"),
+                    "mfe_from_state": row.get("mfe_from_state"),
+                    "mae_from_state": row.get("mae_from_state"),
+                    "large_swing_next_12_states_flag": _boolish(row.get("large_swing_next_12_states_flag")),
+                    "crossed_50c_next_12_states_flag": _boolish(row.get("crossed_50c_next_12_states_flag")),
+                    "winner_stable_80_after_state_flag": _boolish(row.get("winner_stable_80_after_state_flag")),
+                }
+            )
+        )
+    return rows
+
+
+def _build_state_panel_payload(frame: pd.DataFrame, *, side: str, limit: int) -> dict[str, Any]:
+    if frame.empty:
+        side_frame = frame
+    else:
+        side_frame = frame[frame["team_side"].astype(str) == side].copy()
+    return {
+        "summary": _state_summary(side_frame),
+        "rows": _select_state_rows(side_frame, limit=limit),
+    }
 
 
 def _finalize_run_record(run_id: str, return_code: int, output_root: Path) -> None:
@@ -351,6 +641,136 @@ def get_analysis_studio_control(
         "latest_validation": validations[0] if validations else None,
         "recent_validations": validations,
         "recent_runs": _list_run_records(),
+    }
+
+
+@router.get("/v1/analysis/studio/games")
+def list_analysis_studio_games(
+    season: str = Query(default=DEFAULT_SEASON),
+    season_phase: str = Query(default=DEFAULT_SEASON_PHASE),
+    analysis_version: str | None = Query(default=None),
+    output_root: str | None = Query(default=None),
+    team_slug: str | None = Query(default=None),
+    coverage_status: str | None = Query(default=None),
+    game_date: str | None = Query(default=None),
+    limit: int = Query(default=24, ge=1, le=200),
+) -> dict[str, Any]:
+    try:
+        output_dir, resolved_version = _resolve_analysis_output_dir(
+            season=season,
+            season_phase=season_phase,
+            analysis_version=analysis_version,
+            output_root=output_root,
+        )
+        frame = _read_analysis_frame(
+            output_dir,
+            "nba_analysis_game_team_profiles",
+            columns=GAME_EXPLORER_PROFILE_COLUMNS,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    work = frame.copy()
+    if game_date:
+        work = work[work["game_date"].astype(str) == game_date]
+    if team_slug:
+        team_token = team_slug.strip().upper()
+        matching_game_ids = set(
+            work.loc[
+                work["team_slug"].astype(str).str.upper().eq(team_token)
+                | work["opponent_team_slug"].astype(str).str.upper().eq(team_token),
+                "game_id",
+            ].astype(str)
+        )
+        work = work[work["game_id"].astype(str).isin(matching_game_ids)]
+    if coverage_status:
+        matching_game_ids = set(
+            work.loc[work["coverage_status"].astype(str) == coverage_status, "game_id"].astype(str)
+        )
+        work = work[work["game_id"].astype(str).isin(matching_game_ids)]
+
+    if not work.empty:
+        work = work.sort_values(
+            by=["game_date", "game_start_time", "game_id", "team_side"],
+            ascending=[False, False, False, True],
+        )
+    items = _game_explorer_rows(work)
+    limited_items = items[:limit]
+    return {
+        "season": season,
+        "season_phase": season_phase,
+        "analysis_version": resolved_version,
+        "output_dir": str(output_dir),
+        "total_games": len(items),
+        "returned_games": len(limited_items),
+        "filters": {
+            "team_slug": team_slug,
+            "coverage_status": coverage_status,
+            "game_date": game_date,
+            "limit": limit,
+        },
+        "items": limited_items,
+    }
+
+
+@router.get("/v1/analysis/studio/games/{game_id}")
+def get_analysis_studio_game(
+    game_id: str,
+    season: str = Query(default=DEFAULT_SEASON),
+    season_phase: str = Query(default=DEFAULT_SEASON_PHASE),
+    analysis_version: str | None = Query(default=None),
+    output_root: str | None = Query(default=None),
+    state_limit: int = Query(default=24, ge=6, le=160),
+) -> dict[str, Any]:
+    try:
+        output_dir, resolved_version = _resolve_analysis_output_dir(
+            season=season,
+            season_phase=season_phase,
+            analysis_version=analysis_version,
+            output_root=output_root,
+        )
+        profiles = _read_analysis_frame(
+            output_dir,
+            "nba_analysis_game_team_profiles",
+            columns=GAME_EXPLORER_PROFILE_COLUMNS,
+            filters=[("game_id", "==", game_id)],
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    if profiles.empty:
+        raise HTTPException(status_code=404, detail=f"analysis game not found for game_id={game_id}")
+
+    try:
+        state_frame = _read_analysis_frame(
+            output_dir,
+            "nba_analysis_state_panel",
+            columns=GAME_EXPLORER_STATE_COLUMNS,
+            filters=[("game_id", "==", game_id)],
+        )
+    except FileNotFoundError:
+        state_frame = pd.DataFrame(columns=GAME_EXPLORER_STATE_COLUMNS)
+
+    profiles = profiles.sort_values(by=["team_side"], ascending=True)
+    game_payload = _game_explorer_rows(profiles)[0]
+    profile_lookup = {
+        str(row.get("team_side")): row.to_dict()
+        for _, row in profiles.iterrows()
+    }
+    return {
+        "season": season,
+        "season_phase": season_phase,
+        "analysis_version": resolved_version,
+        "output_dir": str(output_dir),
+        "game": game_payload,
+        "profiles": {
+            "home": _profile_summary(profile_lookup.get("home")),
+            "away": _profile_summary(profile_lookup.get("away")),
+        },
+        "state_panel": {
+            "home": _build_state_panel_payload(state_frame, side="home", limit=state_limit),
+            "away": _build_state_panel_payload(state_frame, side="away", limit=state_limit),
+        },
     }
 
 

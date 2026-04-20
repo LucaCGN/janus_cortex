@@ -11,6 +11,7 @@ This document is reference, not planning. It describes what the frontend is allo
 - `F1` does not introduce a Node or separate JS build toolchain because the repository does not currently own one
 - the frontend consumes the analysis consumer snapshot contract instead of loading raw artifact JSONs independently
 - local operator run control also stays in the existing FastAPI runtime for now, but it is limited to whitelisted commands and local workspace paths
+- `F3` adds a mart-backed game explorer through thin read-only API routes, so the frontend still does not parse analysis artifacts directly
 
 ## Stable Read Surface
 - page route:
@@ -19,6 +20,9 @@ This document is reference, not planning. It describes what the frontend is allo
   - `GET /v1/analysis/studio/snapshot`
 - control-plane route:
   - `GET /v1/analysis/studio/control`
+- game explorer routes:
+  - `GET /v1/analysis/studio/games`
+  - `GET /v1/analysis/studio/games/{game_id}`
 - run-registry routes:
   - `GET /v1/analysis/studio/runs`
   - `GET /v1/analysis/studio/runs/{run_id}`
@@ -37,10 +41,12 @@ The frontend should read:
 - `load_analysis_consumer_snapshot`
 - `AnalysisConsumerRequest`
 - static report and benchmark information already normalized by the adapter layer
+- the studio game explorer routes for finished-game profile and state-panel inspection
 
 The frontend should not read:
 - raw ingest tables
 - report, backtest, or model JSON files directly
+- `nba_analysis_game_team_profiles` or `nba_analysis_state_panel` files directly from the browser
 - mutable sync endpoints as its primary offline analysis source
 - arbitrary shell commands or arbitrary filesystem paths through the studio run controls
 
@@ -55,15 +61,22 @@ The frontend should not read:
 - validation history is discovered from `JANUS_LOCAL_ROOT\archives\output\nba_analysis_validation\...`
 - available analysis versions are resolved from the dynamic default analysis root, not hard-coded into the frontend
 
+## Current Explorer Rules
+- the game explorer is read-only and bounded
+- game index rows come from existing `nba_analysis_game_team_profiles` outputs
+- game detail state windows come from existing `nba_analysis_state_panel` outputs
+- the backend may read CSV or parquet artifacts, but the browser only depends on the normalized route payloads
+
 ## Current Module Layout
 - `frontend/analysis_studio/index.html`
 - `frontend/analysis_studio/static/analysis_studio.css`
 - `frontend/analysis_studio/static/analysis_studio.js`
 - `app/api/routers/analysis_studio.py`
 
-## Intent For Later Frontend Subphases
+## Later Frontend Subphases
+- current completed slice:
+  - `F3a` mart-backed game explorer routes plus frontend game index/detail panels
 - `F2` adds run control and operator workflow state
-- `F3` adds game and state context exploration
 - `F4` adds deeper strategy comparison and trade-trace views
 - `F5` hardens operator UX for repeated research work
 

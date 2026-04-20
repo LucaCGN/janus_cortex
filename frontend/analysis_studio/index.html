@@ -13,16 +13,17 @@
       <h1>Offline NBA research, strategy, model, and operator state in one local-first surface.</h1>
       <p class="hero-copy">
         The studio still reads the consumer snapshot contract for analysis results, but it now
-        also tracks local validation history and guarded operator runs under `JANUS_LOCAL_ROOT`.
+        also tracks local validation history, guarded operator runs, and artifact-backed game
+        explorer views under `JANUS_LOCAL_ROOT`.
       </p>
       <div class="hero-grid">
         <div class="hero-card">
           <span class="hero-label">Current lane</span>
-          <strong>F2 Run Control Surface</strong>
+          <strong>F3 Game Context Explorer</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Backend contract</span>
-          <strong>`load_analysis_consumer_snapshot` plus studio control routes</strong>
+          <strong>`load_analysis_consumer_snapshot` plus studio control and game explorer routes</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Scope rule</span>
@@ -132,6 +133,59 @@
           <h2>Coverage and readiness summary</h2>
         </div>
         <div id="universe-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Game Explorer</p>
+          <h2>Inspect finished games and bounded state windows</h2>
+        </div>
+        <form id="explorer-form" class="control-grid">
+          <label>
+            <span>Team Slug</span>
+            <input id="explorer_team_slug" name="team_slug" placeholder="optional, for example ATL">
+          </label>
+          <label>
+            <span>Coverage Status</span>
+            <input
+              id="explorer_coverage_status"
+              name="coverage_status"
+              placeholder="optional status filter"
+              list="explorer-coverage-options"
+            >
+            <datalist id="explorer-coverage-options">
+              <option value="covered_pre_and_ingame"></option>
+              <option value="covered_partial"></option>
+              <option value="pregame_only"></option>
+              <option value="no_matching_event"></option>
+              <option value="no_history"></option>
+            </datalist>
+          </label>
+          <label>
+            <span>Game Date</span>
+            <input id="explorer_game_date" name="game_date" type="date">
+          </label>
+          <div class="actions">
+            <button id="explorer-button" type="submit">Load games</button>
+            <p id="explorer-status-line" class="status-line">Load a snapshot or apply a filter to inspect finished games.</p>
+          </div>
+        </form>
+        <div class="explorer-layout">
+          <div>
+            <div class="panel-header compact">
+              <p class="panel-kicker">Game Index</p>
+              <h2>Latest finished-game rows</h2>
+            </div>
+            <div id="game-list" class="stack-list empty-state">Load a snapshot to inspect finished games.</div>
+          </div>
+          <div>
+            <div class="panel-header compact">
+              <p class="panel-kicker">Game Detail</p>
+              <h2>Profiles and state-panel windows</h2>
+            </div>
+            <div id="game-detail" class="stack-list empty-state">Choose a game to inspect home and away profiles.</div>
+          </div>
+        </div>
       </section>
 
       <section class="panel">

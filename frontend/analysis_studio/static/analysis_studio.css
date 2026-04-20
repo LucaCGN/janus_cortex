@@ -309,6 +309,21 @@ button[disabled] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.explorer-layout,
+.detail-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.explorer-layout {
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr);
+  margin-top: 18px;
+}
+
+.detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .stack-list {
   display: grid;
   gap: 12px;
@@ -318,6 +333,30 @@ button[disabled] {
   display: block;
   font-size: 1rem;
   margin-bottom: 6px;
+}
+
+.game-item.selected,
+.detail-card {
+  border-color: rgba(52, 93, 79, 0.22);
+  box-shadow: inset 0 0 0 1px rgba(52, 93, 79, 0.08);
+}
+
+.item-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.ghost-button {
+  background: rgba(52, 93, 79, 0.1);
+  border: 1px solid rgba(52, 93, 79, 0.18);
+  color: var(--accent-strong);
+  min-height: 40px;
+  padding: 0 16px;
+}
+
+.ghost-button[disabled] {
+  cursor: wait;
 }
 
 .tag-row {
@@ -364,6 +403,12 @@ th {
   text-transform: uppercase;
 }
 
+.dense-table th,
+.dense-table td {
+  font-size: 0.84rem;
+  padding: 10px 8px;
+}
+
 td strong {
   display: block;
 }
@@ -387,6 +432,8 @@ td strong {
   .metric-grid,
   .artifact-grid,
   .dual-panel,
+  .detail-grid,
+  .explorer-layout,
   .control-grid {
     grid-template-columns: 1fr;
   }
