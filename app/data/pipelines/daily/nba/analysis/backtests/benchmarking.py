@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -18,17 +18,25 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     write_backtest_artifacts,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
+    COMBINED_KEEP_FAMILIES_PORTFOLIO,
     PORTFOLIO_CANDIDATE_FREEZE_COLUMNS,
     PORTFOLIO_SUMMARY_COLUMNS,
+    PORTFOLIO_SCOPE_SINGLE_FAMILY,
+    build_combined_portfolio_benchmark_frames,
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
     normalize_portfolio_game_limit,
     normalize_portfolio_initial_bankroll,
     normalize_portfolio_position_size_fraction,
+    simulate_trade_portfolio,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, BenchmarkRunResult, StrategyDefinition
-from app.data.pipelines.daily.nba.analysis.contracts import BACKTEST_BENCHMARK_CONTRACT_VERSION, BacktestRunRequest
+from app.data.pipelines.daily.nba.analysis.contracts import (
+    BACKTEST_BENCHMARK_CONTRACT_VERSION,
+    DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
+    BacktestRunRequest,
+)
 from app.data.pipelines.daily.nba.analysis.models.features import resolve_train_cutoff, split_frame_by_cutoff
 
 
@@ -117,6 +125,41 @@ BENCHMARK_CANDIDATE_FREEZE_COLUMNS = (
     "full_delta_vs_winner_prediction_hold_to_end",
 )
 
+PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS = (
+    "sample_name",
+    "strategy_family",
+    "portfolio_scope",
+    "holdout_seed",
+    "holdout_ratio",
+    "selection_rule",
+    "state_rows_considered",
+    "games_considered",
+    "trade_count_considered",
+    "executed_trade_count",
+    "ending_bankroll",
+    "compounded_return",
+    "max_drawdown_pct",
+    "positive_bankroll_flag",
+)
+
+PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS = (
+    "strategy_family",
+    "seed_count",
+    "positive_seed_count",
+    "positive_seed_rate",
+    "min_ending_bankroll",
+    "median_ending_bankroll",
+    "max_ending_bankroll",
+    "min_compounded_return",
+    "median_compounded_return",
+    "max_compounded_return",
+    "worst_max_drawdown_pct",
+    "min_executed_trade_count",
+    "max_executed_trade_count",
+    "robustness_label",
+    "robustness_reason",
+)
+
 _SPLIT_ORDER = (
     "full_sample",
     "time_train",
@@ -169,6 +212,33 @@ def _normalize_holdout_ratio(holdout_ratio: float) -> float:
     if ratio is None:
         return 0.10
     return max(0.0, min(0.50, ratio))
+
+
+def _normalize_robustness_seeds(value: Any, *, fallback_seed: int) -> tuple[int, ...]:
+    if value is None:
+        seeds = DEFAULT_BACKTEST_ROBUSTNESS_SEEDS
+    elif isinstance(value, str):
+        seeds = tuple(
+            int(chunk.strip())
+            for chunk in value.split(",")
+            if chunk.strip() and chunk.strip().lstrip("-").isdigit()
+        )
+    else:
+        try:
+            seeds = tuple(int(seed) for seed in value)
+        except TypeError:
+            seeds = ()
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for seed in seeds:
+        resolved = int(seed)
+        if resolved in seen:
+            continue
+        normalized.append(resolved)
+        seen.add(resolved)
+    if not normalized:
+        return (int(fallback_seed),)
+    return tuple(normalized)
 
 
 def _summarize_return_frame(frame: pd.DataFrame) -> dict[str, Any]:
@@ -600,6 +670,108 @@ def _build_candidate_freeze_frame(
     return pd.DataFrame(rows, columns=BENCHMARK_CANDIDATE_FREEZE_COLUMNS)
 
 
+def _portfolio_robustness_label(positive_seed_count: int, seed_count: int) -> tuple[str, str]:
+    if seed_count <= 0:
+        return "not_run", "no_robustness_seeds"
+    if positive_seed_count == seed_count:
+        return "stable_positive", "positive_on_all_seed_runs"
+    if positive_seed_count == 0:
+        return "stable_negative", "non_positive_on_all_seed_runs"
+    return "mixed", "positive_only_on_subset_of_seed_runs"
+
+
+def _build_portfolio_robustness_frames(
+    state_df: pd.DataFrame,
+    request: BacktestRunRequest,
+    *,
+    strategy_families: tuple[str, ...],
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if state_df.empty or not strategy_families:
+        return (
+            pd.DataFrame(columns=PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS),
+            pd.DataFrame(columns=PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS),
+        )
+
+    detail_rows: list[dict[str, Any]] = []
+    seeds = _normalize_robustness_seeds(request.robustness_seeds, fallback_seed=request.holdout_seed)
+    for seed in seeds:
+        _, holdout_df, holdout_meta = _build_random_holdout_frames(
+            state_df,
+            holdout_ratio=request.holdout_ratio,
+            holdout_seed=seed,
+        )
+        selection_rule = f"{holdout_meta.get('selection_rule')}; ratio={_normalize_holdout_ratio(request.holdout_ratio):.2f}"
+        for family in strategy_families:
+            family_request = replace(request, strategy_family=family, holdout_seed=int(seed))
+            split_result = build_backtest_result(holdout_df, family_request)
+            trades_df = split_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+            summary, _ = simulate_trade_portfolio(
+                trades_df,
+                sample_name="random_holdout_seed",
+                strategy_family=family,
+                portfolio_scope=PORTFOLIO_SCOPE_SINGLE_FAMILY,
+                strategy_family_members=(family,),
+                initial_bankroll=request.portfolio_initial_bankroll,
+                position_size_fraction=request.portfolio_position_size_fraction,
+                game_limit=request.portfolio_game_limit,
+            )
+            ending_bankroll = _safe_float(summary.get("ending_bankroll"))
+            starting_bankroll = normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll)
+            detail_rows.append(
+                {
+                    "sample_name": summary.get("sample_name"),
+                    "strategy_family": family,
+                    "portfolio_scope": summary.get("portfolio_scope"),
+                    "holdout_seed": int(seed),
+                    "holdout_ratio": _normalize_holdout_ratio(request.holdout_ratio),
+                    "selection_rule": selection_rule,
+                    "state_rows_considered": int(len(holdout_df)),
+                    "games_considered": int(split_result.payload.get("games_considered") or 0),
+                    "trade_count_considered": int(summary.get("trade_count_considered") or 0),
+                    "executed_trade_count": int(summary.get("executed_trade_count") or 0),
+                    "ending_bankroll": ending_bankroll,
+                    "compounded_return": _safe_float(summary.get("compounded_return")),
+                    "max_drawdown_pct": _safe_float(summary.get("max_drawdown_pct")),
+                    "positive_bankroll_flag": bool(ending_bankroll is not None and ending_bankroll > starting_bankroll),
+                }
+            )
+
+    detail_df = pd.DataFrame(detail_rows, columns=PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS)
+    if detail_df.empty:
+        return detail_df, pd.DataFrame(columns=PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS)
+
+    summary_rows: list[dict[str, Any]] = []
+    for family, family_df in detail_df.groupby("strategy_family", sort=True):
+        seed_count = int(len(family_df))
+        positive_seed_count = int(family_df["positive_bankroll_flag"].sum())
+        robustness_label, robustness_reason = _portfolio_robustness_label(positive_seed_count, seed_count)
+        ending = pd.to_numeric(family_df["ending_bankroll"], errors="coerce")
+        compounded = pd.to_numeric(family_df["compounded_return"], errors="coerce")
+        drawdown = pd.to_numeric(family_df["max_drawdown_pct"], errors="coerce")
+        executed = pd.to_numeric(family_df["executed_trade_count"], errors="coerce")
+        summary_rows.append(
+            {
+                "strategy_family": family,
+                "seed_count": seed_count,
+                "positive_seed_count": positive_seed_count,
+                "positive_seed_rate": positive_seed_count / seed_count if seed_count > 0 else None,
+                "min_ending_bankroll": float(ending.min()) if not ending.dropna().empty else None,
+                "median_ending_bankroll": float(ending.median()) if not ending.dropna().empty else None,
+                "max_ending_bankroll": float(ending.max()) if not ending.dropna().empty else None,
+                "min_compounded_return": float(compounded.min()) if not compounded.dropna().empty else None,
+                "median_compounded_return": float(compounded.median()) if not compounded.dropna().empty else None,
+                "max_compounded_return": float(compounded.max()) if not compounded.dropna().empty else None,
+                "worst_max_drawdown_pct": float(drawdown.max()) if not drawdown.dropna().empty else None,
+                "min_executed_trade_count": int(executed.min()) if not executed.dropna().empty else 0,
+                "max_executed_trade_count": int(executed.max()) if not executed.dropna().empty else 0,
+                "robustness_label": robustness_label,
+                "robustness_reason": robustness_reason,
+            }
+        )
+    summary_df = pd.DataFrame(summary_rows, columns=PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS)
+    return detail_df, summary_df
+
+
 def _build_experiment_id(request: BacktestRunRequest, registry: dict[str, StrategyDefinition]) -> str:
     payload = {
         "request": asdict(request),
@@ -682,6 +854,31 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         starting_bankroll=request.portfolio_initial_bankroll,
         min_trade_count=request.min_trade_count,
     )
+    keep_families = tuple(
+        sorted(
+            row["strategy_family"]
+            for row in portfolio_candidate_freeze_df.to_dict(orient="records")
+            if row.get("candidate_label") == "keep"
+        )
+    )
+    combined_portfolio_summary_df, combined_portfolio_steps_df = build_combined_portfolio_benchmark_frames(
+        split_results,
+        strategy_families=keep_families,
+        initial_bankroll=request.portfolio_initial_bankroll,
+        position_size_fraction=request.portfolio_position_size_fraction,
+        game_limit=request.portfolio_game_limit,
+        split_order=_SPLIT_ORDER,
+        combined_family_name=COMBINED_KEEP_FAMILIES_PORTFOLIO,
+    )
+    if not combined_portfolio_summary_df.empty:
+        portfolio_summary_df = pd.concat([portfolio_summary_df, combined_portfolio_summary_df], ignore_index=True)
+    if not combined_portfolio_steps_df.empty:
+        portfolio_steps_df = pd.concat([portfolio_steps_df, combined_portfolio_steps_df], ignore_index=True)
+    portfolio_robustness_detail_df, portfolio_robustness_summary_df = _build_portfolio_robustness_frames(
+        work,
+        request,
+        strategy_families=keep_families,
+    )
 
     payload = full_result.payload
     payload["benchmark"] = {
@@ -701,12 +898,15 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "time_validation_cutoff": time_cutoff.isoformat() if time_cutoff is not None else None,
         "random_holdout_ratio": _normalize_holdout_ratio(request.holdout_ratio),
         "random_holdout_seed": int(request.holdout_seed),
+        "robustness_seeds": list(_normalize_robustness_seeds(request.robustness_seeds, fallback_seed=request.holdout_seed)),
         "split_unit": "game_id",
         "portfolio_config": {
             "initial_bankroll": normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll),
             "position_size_fraction": normalize_portfolio_position_size_fraction(request.portfolio_position_size_fraction),
             "game_limit": normalize_portfolio_game_limit(request.portfolio_game_limit),
         },
+        "portfolio_keep_families": list(keep_families),
+        "portfolio_combined_family_name": COMBINED_KEEP_FAMILIES_PORTFOLIO if len(keep_families) >= 2 else None,
         "portfolio_metric_columns": [
             "ending_bankroll",
             "total_pnl_amount",
@@ -725,6 +925,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "candidate_freeze": to_jsonable(candidate_freeze_df.to_dict(orient="records")),
         "portfolio_summary": to_jsonable(portfolio_summary_df.to_dict(orient="records")),
         "portfolio_candidate_freeze": to_jsonable(portfolio_candidate_freeze_df.to_dict(orient="records")),
+        "portfolio_robustness_detail": to_jsonable(portfolio_robustness_detail_df.to_dict(orient="records")),
+        "portfolio_robustness_summary": to_jsonable(portfolio_robustness_summary_df.to_dict(orient="records")),
     }
     payload["experiment"] = {
         "experiment_id": _build_experiment_id(request, registry),
@@ -744,6 +946,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_summary": portfolio_summary_df,
         "portfolio_steps": portfolio_steps_df,
         "portfolio_candidate_freeze": portfolio_candidate_freeze_df,
+        "portfolio_robustness_detail": portfolio_robustness_detail_df,
+        "portfolio_robustness_summary": portfolio_robustness_summary_df,
     }
     return BenchmarkRunResult(
         payload=payload,
@@ -757,6 +961,7 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
     benchmark = payload.get("benchmark") or {}
     freeze_rows = benchmark.get("candidate_freeze") or []
     portfolio_freeze_rows = benchmark.get("portfolio_candidate_freeze") or []
+    portfolio_robustness_rows = benchmark.get("portfolio_robustness_summary") or []
     portfolio_full_rows = [row for row in (benchmark.get("portfolio_summary") or []) if row.get("sample_name") == "full_sample"]
     portfolio_full_rows = sorted(
         portfolio_full_rows,
@@ -765,6 +970,14 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
             _safe_float(row.get("ending_bankroll")) or float("-inf"),
         ),
         reverse=True,
+    )
+    combined_full_row = next(
+        (
+            row
+            for row in portfolio_full_rows
+            if row.get("strategy_family") == benchmark.get("portfolio_combined_family_name")
+        ),
+        None,
     )
     full_rows = [row for row in (benchmark.get("family_summary") or []) if row.get("sample_name") == "full_sample"]
     full_rows = sorted(
@@ -787,6 +1000,7 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
         f"- Time validation cutoff: `{benchmark.get('time_validation_cutoff')}`",
         f"- Random holdout ratio: `{_format_num(benchmark.get('random_holdout_ratio'))}`",
         f"- Random holdout seed: `{benchmark.get('random_holdout_seed')}`",
+        f"- Robustness seeds: `{', '.join(str(seed) for seed in (benchmark.get('robustness_seeds') or []))}`",
         f"- Portfolio initial bankroll: `{_format_num((benchmark.get('portfolio_config') or {}).get('initial_bankroll'))}`",
         f"- Portfolio position fraction: `{_format_num((benchmark.get('portfolio_config') or {}).get('position_size_fraction'))}`",
         f"- Portfolio game limit: `{_format_num((benchmark.get('portfolio_config') or {}).get('game_limit'))}`",
@@ -811,6 +1025,31 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
         for row in portfolio_freeze_rows:
             lines.append(
                 f"- {row.get('strategy_family')}: `{row.get('candidate_label')}` because `{row.get('label_reason')}`"
+            )
+        lines.append("")
+    lines.extend(["## Combined Keep-Family Sleeve", ""])
+    if combined_full_row is None:
+        lines.append("- No combined keep-family sleeve was produced.")
+        lines.append("")
+    else:
+        lines.append(
+            f"- {combined_full_row.get('strategy_family')}: members `{combined_full_row.get('strategy_family_members')}`,"
+            f" ending bankroll `{_format_num(combined_full_row.get('ending_bankroll'))}`,"
+            f" compounded return `{_format_num(combined_full_row.get('compounded_return'))}`,"
+            f" max drawdown `{_format_num(combined_full_row.get('max_drawdown_pct'))}`"
+        )
+        lines.append("")
+    lines.extend(["## Repeated-Seed Robustness", ""])
+    if not portfolio_robustness_rows:
+        lines.append("- No repeated-seed robustness rows were produced.")
+        lines.append("")
+    else:
+        for row in portfolio_robustness_rows:
+            lines.append(
+                f"- {row.get('strategy_family')}: `{row.get('robustness_label')}` because `{row.get('robustness_reason')}`;"
+                f" positive seeds `{row.get('positive_seed_count')}/{row.get('seed_count')}`,"
+                f" median bankroll `{_format_num(row.get('median_ending_bankroll'))}`,"
+                f" worst drawdown `{_format_num(row.get('worst_max_drawdown_pct'))}`"
             )
         lines.append("")
     lines.extend(["## Sequential Portfolio Ranking", ""])
@@ -856,6 +1095,8 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "portfolio_summary": "benchmark_portfolio_summary",
         "portfolio_steps": "benchmark_portfolio_steps",
         "portfolio_candidate_freeze": "benchmark_portfolio_candidate_freeze",
+        "portfolio_robustness_detail": "benchmark_portfolio_robustness_detail",
+        "portfolio_robustness_summary": "benchmark_portfolio_robustness_summary",
     }
     for frame_name, frame in result.benchmark_frames.items():
         stem = artifact_stems.get(frame_name)
@@ -880,6 +1121,8 @@ __all__ = [
     "BENCHMARK_CONTEXT_RANK_COLUMNS",
     "BENCHMARK_FAMILY_SUMMARY_COLUMNS",
     "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",
+    "PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS",
+    "PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS",
     "PORTFOLIO_SUMMARY_COLUMNS",
     "BENCHMARK_SAMPLE_VS_FULL_COLUMNS",
     "BENCHMARK_SPLIT_SUMMARY_COLUMNS",

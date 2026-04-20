@@ -5,8 +5,8 @@
 
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
-- status: validated branch state now extends through post-baseline safety, validation, strategy, benchmarking, and read-only consumer-adapter lanes
-- current active analysis planning lane: sequential portfolio benchmarking and strategy refinement
+- status: validated branch state now extends through post-baseline safety, validation, strategy, benchmarking, read-only consumer adapters, studio alpha, and the sequential portfolio robustness follow-on
+- current active analysis planning lane: portfolio allocation and visualization follow-on after the robustness and combined-sleeve pass
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -24,6 +24,8 @@ Completed implementation wave:
 - `v1.2.0` stable read-only consumer adapters
 - `v1.3.0` permanent analysis studio alpha
 - `v1.3.1` read-only family comparison follow-on lane
+- `v1.4.0` sequential portfolio benchmark
+- `v1.4.1` repeated-seed robustness and combined keep-family sleeve
 
 ## Current CLI Surface
 - `build_analysis_mart`
@@ -88,21 +90,40 @@ Historical note:
   - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
 
 ## Current Sequential Portfolio Snapshot
-- benchmark contract version: `v2`
+- benchmark contract version: `v3`
 - active bankroll contract:
   - starting bankroll `10.0`
   - position size fraction `1.0`
   - game limit `100`
   - one-position-at-a-time overlap handling
+- repeated-seed robustness set:
+  - `1107`
+  - `2113`
+  - `3251`
+  - `4421`
+  - `5573`
 - current validated active families:
   - `inversion`
     - full-sample ending bankroll `790514.77`
     - random-holdout ending bankroll `377435.94`
     - random-holdout max drawdown `30.94%`
+    - repeated-seed status `stable_positive`
+    - repeated-seed median bankroll `377435.94`
+    - repeated-seed worst drawdown `46.69%`
   - `winner_definition`
     - full-sample ending bankroll `2359.91`
     - random-holdout ending bankroll `213303.89`
     - random-holdout max drawdown `29.81%`
+    - repeated-seed status `stable_positive`
+    - repeated-seed median bankroll `102762.64`
+    - repeated-seed worst drawdown `37.71%`
+- current combined keep-family sleeve:
+  - `combined_keep_families`
+    - members `inversion,winner_definition`
+    - full-sample ending bankroll `17867.59`
+    - full-sample max drawdown `25.36%`
+    - random-holdout ending bankroll `28604419.86`
+    - interpretation: lower drawdown than pure `inversion`, but lower full-sample terminal bankroll because overlap collisions skip many inversion entries
 - current dropped families under the sequential lens:
   - `reversion`
   - `comeback_reversion`
@@ -134,9 +155,9 @@ Historical note:
   - read-only family comparison index and bounded per-family detail backed by the analysis consumer adapter layer
 
 ## Current Gaps
-- repeated-seed robustness for the sequential bankroll lens is still pending
-- combined multi-family portfolio construction is still pending
-- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is optional follow-up work, not the immediate frontend dependency
+- repeated-seed robustness for the combined keep-family sleeve itself is still pending
+- explicit weight sizing and priority rules inside the combined sleeve are still pending
+- richer comparison UX such as charts, cross-family overlays, seed-robustness tables, and multi-family side-by-side views is the next optional frontend dependency
 - richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - operator hardening beyond the current run-control surface is still pending

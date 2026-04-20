@@ -13,9 +13,16 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
 )
 
 
+PORTFOLIO_SCOPE_SINGLE_FAMILY = "single_family"
+PORTFOLIO_SCOPE_COMBINED = "combined_family_set"
+COMBINED_KEEP_FAMILIES_PORTFOLIO = "combined_keep_families"
+
 PORTFOLIO_SUMMARY_COLUMNS = (
     "sample_name",
     "strategy_family",
+    "portfolio_scope",
+    "strategy_family_members",
+    "strategy_family_count",
     "starting_bankroll",
     "ending_bankroll",
     "total_pnl_amount",
@@ -39,6 +46,9 @@ PORTFOLIO_SUMMARY_COLUMNS = (
 PORTFOLIO_STEP_COLUMNS = (
     "sample_name",
     "strategy_family",
+    "portfolio_scope",
+    "strategy_family_members",
+    "source_strategy_family",
     "trade_sequence",
     "game_sequence",
     "game_id",
@@ -98,6 +108,22 @@ def _serialise_scalar(value: Any) -> Any:
     return value
 
 
+def _normalize_family_members(
+    strategy_family: str,
+    family_members: tuple[str, ...] | list[str] | None,
+) -> tuple[str, ...]:
+    values = family_members if family_members else (strategy_family,)
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        resolved = str(value).strip()
+        if not resolved or resolved in seen:
+            continue
+        normalized.append(resolved)
+        seen.add(resolved)
+    return tuple(normalized) if normalized else (strategy_family,)
+
+
 def normalize_portfolio_initial_bankroll(value: float | None) -> float:
     bankroll = _safe_float(value)
     if bankroll is None:
@@ -144,7 +170,15 @@ def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
             work[column] = pd.to_numeric(work[column], errors="coerce")
     sort_columns = [
         column
-        for column in ("entry_at", "exit_at", "game_id", "team_side", "entry_state_index", "exit_state_index")
+        for column in (
+            "entry_at",
+            "exit_at",
+            "game_id",
+            "team_side",
+            "source_strategy_family",
+            "entry_state_index",
+            "exit_state_index",
+        )
         if column in work.columns
     ]
     if sort_columns:
@@ -180,6 +214,8 @@ def simulate_trade_portfolio(
     *,
     sample_name: str,
     strategy_family: str,
+    portfolio_scope: str = PORTFOLIO_SCOPE_SINGLE_FAMILY,
+    strategy_family_members: tuple[str, ...] | list[str] | None = None,
     initial_bankroll: float,
     position_size_fraction: float,
     game_limit: int | None,
@@ -187,6 +223,8 @@ def simulate_trade_portfolio(
     bankroll = normalize_portfolio_initial_bankroll(initial_bankroll)
     fraction = normalize_portfolio_position_size_fraction(position_size_fraction)
     resolved_game_limit = normalize_portfolio_game_limit(game_limit)
+    resolved_family_members = _normalize_family_members(strategy_family, strategy_family_members)
+    serialized_family_members = ",".join(resolved_family_members)
     work = _prepare_trade_frame(trades_df)
     limited, game_order = _apply_game_limit(work, game_limit=resolved_game_limit)
 
@@ -238,6 +276,9 @@ def simulate_trade_portfolio(
             {
                 "sample_name": sample_name,
                 "strategy_family": strategy_family,
+                "portfolio_scope": portfolio_scope,
+                "strategy_family_members": serialized_family_members,
+                "source_strategy_family": row.get("source_strategy_family") or strategy_family,
                 "trade_sequence": trade_sequence,
                 "game_sequence": row.get("game_sequence"),
                 "game_id": row.get("game_id"),
@@ -262,6 +303,9 @@ def simulate_trade_portfolio(
     summary = {
         "sample_name": sample_name,
         "strategy_family": strategy_family,
+        "portfolio_scope": portfolio_scope,
+        "strategy_family_members": serialized_family_members,
+        "strategy_family_count": int(len(resolved_family_members)),
         "starting_bankroll": normalize_portfolio_initial_bankroll(initial_bankroll),
         "ending_bankroll": bankroll,
         "total_pnl_amount": bankroll - normalize_portfolio_initial_bankroll(initial_bankroll),
@@ -307,6 +351,8 @@ def build_portfolio_benchmark_frames(
                 trades_df,
                 sample_name=sample_name,
                 strategy_family=family,
+                portfolio_scope=PORTFOLIO_SCOPE_SINGLE_FAMILY,
+                strategy_family_members=(family,),
                 initial_bankroll=initial_bankroll,
                 position_size_fraction=position_size_fraction,
                 game_limit=game_limit,
@@ -314,6 +360,59 @@ def build_portfolio_benchmark_frames(
             summary_rows.append(summary)
             if not steps_df.empty:
                 step_frames.append(steps_df)
+    summary_df = pd.DataFrame(summary_rows, columns=PORTFOLIO_SUMMARY_COLUMNS)
+    steps_df = pd.concat(step_frames, ignore_index=True) if step_frames else pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS)
+    return summary_df, steps_df
+
+
+def build_combined_portfolio_benchmark_frames(
+    split_results: dict[str, BacktestResult],
+    *,
+    strategy_families: tuple[str, ...] | list[str],
+    initial_bankroll: float,
+    position_size_fraction: float,
+    game_limit: int | None,
+    split_order: tuple[str, ...],
+    combined_family_name: str = COMBINED_KEEP_FAMILIES_PORTFOLIO,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    combined_members = _normalize_family_members(combined_family_name, strategy_families)
+    if len(combined_members) < 2:
+        return pd.DataFrame(columns=PORTFOLIO_SUMMARY_COLUMNS), pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS)
+
+    summary_rows: list[dict[str, Any]] = []
+    step_frames: list[pd.DataFrame] = []
+    empty_columns = [*BACKTEST_TRADE_COLUMNS, "source_strategy_family"]
+    for sample_name in split_order:
+        split_result = split_results.get(sample_name)
+        if split_result is None:
+            continue
+        trade_frames: list[pd.DataFrame] = []
+        for family in combined_members:
+            trades_df = split_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+            if trades_df.empty:
+                continue
+            family_frame = trades_df.copy()
+            family_frame["source_strategy_family"] = family
+            trade_frames.append(family_frame)
+        combined_trades_df = (
+            pd.concat(trade_frames, ignore_index=True)
+            if trade_frames
+            else pd.DataFrame(columns=empty_columns)
+        )
+        summary, steps_df = simulate_trade_portfolio(
+            combined_trades_df,
+            sample_name=sample_name,
+            strategy_family=combined_family_name,
+            portfolio_scope=PORTFOLIO_SCOPE_COMBINED,
+            strategy_family_members=combined_members,
+            initial_bankroll=initial_bankroll,
+            position_size_fraction=position_size_fraction,
+            game_limit=game_limit,
+        )
+        summary_rows.append(summary)
+        if not steps_df.empty:
+            step_frames.append(steps_df)
+
     summary_df = pd.DataFrame(summary_rows, columns=PORTFOLIO_SUMMARY_COLUMNS)
     steps_df = pd.concat(step_frames, ignore_index=True) if step_frames else pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS)
     return summary_df, steps_df
@@ -401,9 +500,13 @@ def build_portfolio_candidate_freeze_frame(
 
 
 __all__ = [
+    "COMBINED_KEEP_FAMILIES_PORTFOLIO",
     "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",
+    "PORTFOLIO_SCOPE_COMBINED",
+    "PORTFOLIO_SCOPE_SINGLE_FAMILY",
     "PORTFOLIO_STEP_COLUMNS",
     "PORTFOLIO_SUMMARY_COLUMNS",
+    "build_combined_portfolio_benchmark_frames",
     "build_portfolio_benchmark_frames",
     "build_portfolio_candidate_freeze_frame",
     "normalize_portfolio_game_limit",

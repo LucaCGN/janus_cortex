@@ -4,9 +4,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from app.data.pipelines.daily.nba.analysis.backtests import engine
-from app.data.pipelines.daily.nba.analysis.backtests.portfolio import simulate_trade_portfolio
+from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
+    build_combined_portfolio_benchmark_frames,
+    simulate_trade_portfolio,
+)
+from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult
 from app.data.pipelines.daily.nba.analysis.contracts import ANALYSIS_VERSION, BacktestRunRequest
 
 
@@ -523,6 +528,98 @@ def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
     assert list(steps_df["skip_reason"]) == [None, "overlap", None]
 
 
+def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> None:
+    inversion_trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G1",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "opponent_team_slug": "LAL",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.50,
+            },
+            {
+                "game_id": "G3",
+                "team_side": "home",
+                "team_slug": "DEN",
+                "opponent_team_slug": "UTA",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 40, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 0.20,
+            },
+        ]
+    )
+    winner_definition_trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G2",
+                "team_side": "away",
+                "team_slug": "NYK",
+                "opponent_team_slug": "MIA",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 15, tzinfo=timezone.utc),
+                "gross_return_with_slippage": 1.00,
+            },
+            {
+                "game_id": "G4",
+                "team_side": "away",
+                "team_slug": "ATL",
+                "opponent_team_slug": "CLE",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 50, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
+                "gross_return_with_slippage": -0.10,
+            },
+        ]
+    )
+    split_results = {
+        "full_sample": BacktestResult(
+            payload={},
+            trade_frames={
+                "inversion": inversion_trades_df,
+                "winner_definition": winner_definition_trades_df,
+            },
+            state_df=pd.DataFrame(),
+            strategy_registry={},
+        )
+    }
+
+    summary_df, steps_df = build_combined_portfolio_benchmark_frames(
+        split_results,
+        strategy_families=("inversion", "winner_definition"),
+        initial_bankroll=10.0,
+        position_size_fraction=1.0,
+        game_limit=4,
+        split_order=("full_sample",),
+    )
+
+    assert len(summary_df) == 1
+    summary = summary_df.iloc[0]
+    assert summary["strategy_family"] == "combined_keep_families"
+    assert summary["portfolio_scope"] == "combined_family_set"
+    assert summary["strategy_family_members"] == "inversion,winner_definition"
+    assert summary["strategy_family_count"] == 2
+    assert summary["executed_trade_count"] == 3
+    assert summary["skipped_overlap_count"] == 1
+    assert summary["ending_bankroll"] == pytest.approx(16.2)
+    assert list(steps_df["source_strategy_family"]) == [
+        "inversion",
+        "winner_definition",
+        "inversion",
+        "winner_definition",
+    ]
+    assert list(steps_df["portfolio_action"]) == ["executed", "skipped", "executed", "executed"]
+
+
 def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None:
     frame = _build_benchmark_state_frame()
     request = BacktestRunRequest(
@@ -532,6 +629,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
         slippage_cents=1,
         holdout_ratio=0.4,
         holdout_seed=7,
+        robustness_seeds=(7, 11, 13),
         min_trade_count=1,
         portfolio_initial_bankroll=10.0,
         portfolio_position_size_fraction=1.0,
@@ -542,18 +640,40 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v2"
+    assert first.payload["benchmark"]["contract_version"] == "v3"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
     assert first.benchmark_frames["split_summary"].equals(second.benchmark_frames["split_summary"])
     assert first.benchmark_frames["portfolio_summary"].equals(second.benchmark_frames["portfolio_summary"])
+    assert first.benchmark_frames["portfolio_robustness_detail"].equals(second.benchmark_frames["portfolio_robustness_detail"])
+    assert first.benchmark_frames["portfolio_robustness_summary"].equals(second.benchmark_frames["portfolio_robustness_summary"])
     assert set(first.benchmark_frames["comparator_summary"]["comparator_name"]) == {
         "no_trade",
         "winner_prediction_hold_to_end",
     }
     assert set(first.benchmark_frames["candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
     assert set(first.benchmark_frames["portfolio_candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
+    keep_families = tuple(first.payload["benchmark"]["portfolio_keep_families"])
+    robustness_detail_df = first.benchmark_frames["portfolio_robustness_detail"]
+    robustness_summary_df = first.benchmark_frames["portfolio_robustness_summary"]
+    if keep_families:
+        assert set(robustness_detail_df["strategy_family"]) == set(keep_families)
+        assert set(robustness_detail_df["holdout_seed"]) == {7, 11, 13}
+        assert set(robustness_summary_df["robustness_label"]).issubset(
+            {"stable_positive", "stable_negative", "mixed", "not_run"}
+        )
+    else:
+        assert robustness_detail_df.empty
+        assert robustness_summary_df.empty
+    combined_rows = first.benchmark_frames["portfolio_summary"][
+        first.benchmark_frames["portfolio_summary"]["strategy_family"] == "combined_keep_families"
+    ]
+    if len(keep_families) >= 2:
+        assert not combined_rows.empty
+        assert set(combined_rows["strategy_family_members"]) == {",".join(keep_families)}
+    else:
+        assert combined_rows.empty
 
     payload = engine.write_benchmark_artifacts(first, tmp_path / "benchmark")
     assert Path(payload["artifacts"]["benchmark_split_summary_csv"]).exists()
@@ -565,4 +685,6 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["benchmark_portfolio_summary_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_steps_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_candidate_freeze_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_portfolio_robustness_detail_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_portfolio_robustness_summary_csv"]).exists()
     assert Path(payload["artifacts"]["experiment_registry_json"]).exists()
