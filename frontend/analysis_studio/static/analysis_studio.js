@@ -1,12 +1,15 @@
 const form = document.getElementById("snapshot-form");
 const runForm = document.getElementById("run-form");
 const explorerForm = document.getElementById("explorer-form");
+const comparisonForm = document.getElementById("comparison-form");
 const loadButton = document.getElementById("load-button");
 const runButton = document.getElementById("run-button");
 const explorerButton = document.getElementById("explorer-button");
+const comparisonButton = document.getElementById("comparison-button");
 const statusLine = document.getElementById("status-line");
 const runStatusLine = document.getElementById("run-status-line");
 const explorerStatusLine = document.getElementById("explorer-status-line");
+const comparisonStatusLine = document.getElementById("comparison-status-line");
 const errorLine = document.getElementById("error-line");
 const metadataGrid = document.getElementById("metadata-grid");
 const universeGrid = document.getElementById("universe-grid");
@@ -21,9 +24,15 @@ const runList = document.getElementById("run-list");
 const versionOptions = document.getElementById("analysis-version-options");
 const gameList = document.getElementById("game-list");
 const gameDetail = document.getElementById("game-detail");
+const comparisonFamilySelect = document.getElementById("comparison_family");
+const comparisonIndex = document.getElementById("comparison-index");
+const comparisonDetail = document.getElementById("comparison-detail");
 
 let selectedGameId = null;
+let selectedStrategyFamily = null;
 let latestGameListPayload = { items: [] };
+let latestStrategyRankings = [];
+let latestBacktestIndexPayload = { families: [] };
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -60,6 +69,13 @@ function setExplorerState(isLoading, message) {
   explorerButton.disabled = isLoading;
   explorerButton.textContent = isLoading ? "Loading..." : "Load games";
   explorerStatusLine.textContent = message;
+}
+
+function setComparisonState(isLoading, message) {
+  comparisonButton.disabled = isLoading;
+  comparisonButton.textContent = isLoading ? "Loading..." : "Load family detail";
+  comparisonFamilySelect.disabled = isLoading || !(latestBacktestIndexPayload.families || []).length;
+  comparisonStatusLine.textContent = message;
 }
 
 function clearError() {
@@ -105,6 +121,20 @@ function currentExplorerFilters() {
   };
 }
 
+function normalizeLimit(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function currentComparisonOptions() {
+  return {
+    strategy_family: comparisonFamilySelect.value.trim(),
+    trade_limit: normalizeLimit(document.getElementById("comparison_trade_limit").value, 5),
+    context_limit: normalizeLimit(document.getElementById("comparison_context_limit").value, 10),
+    trace_limit: normalizeLimit(document.getElementById("comparison_trace_limit").value, 3),
+  };
+}
+
 function buildQueryParams(context) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(context)) {
@@ -136,8 +166,41 @@ function renderUniverse(snapshot) {
   ].join("");
 }
 
-function renderStrategies(snapshot) {
-  const rows = snapshot.benchmark?.strategy_rankings || [];
+function syncComparisonFamilySelect(families) {
+  if (!families.length) {
+    comparisonFamilySelect.innerHTML = '<option value="">load a snapshot first</option>';
+    comparisonFamilySelect.disabled = true;
+    return;
+  }
+
+  const options = families
+    .map(
+      (family) => `
+        <option value="${escapeHtml(family.strategy_family)}">
+          ${escapeHtml(family.strategy_family)}
+        </option>
+      `,
+    )
+    .join("");
+  comparisonFamilySelect.innerHTML = options;
+  comparisonFamilySelect.disabled = false;
+
+  const preferredFamily = families.some((family) => family.strategy_family === selectedStrategyFamily)
+    ? selectedStrategyFamily
+    : families[0].strategy_family;
+  comparisonFamilySelect.value = preferredFamily;
+  selectedStrategyFamily = preferredFamily;
+}
+
+function bindStrategyFamilyButtons(container) {
+  Array.from(container.querySelectorAll("[data-strategy-family]")).forEach((button) => {
+    button.addEventListener("click", () => {
+      loadBacktestDetail(button.getAttribute("data-strategy-family")).catch(() => {});
+    });
+  });
+}
+
+function renderStrategies(rows = latestStrategyRankings) {
   if (!rows.length) {
     strategyTable.className = "table-wrap empty-state";
     strategyTable.textContent = "No ranked strategies are available in this snapshot.";
@@ -153,29 +216,42 @@ function renderStrategies(snapshot) {
           <th>Family</th>
           <th>Return With Slippage</th>
           <th>Trades</th>
+          <th>Win Rate</th>
           <th>Label</th>
-          <th>Rule</th>
+          <th>Inspect</th>
         </tr>
       </thead>
       <tbody>
         ${rows
           .slice(0, 8)
-          .map(
-            (row) => `
-              <tr>
+          .map((row) => {
+            const isSelected = row.strategy_family === selectedStrategyFamily;
+            return `
+              <tr class="${isSelected ? "selected-row" : ""}">
                 <td>${escapeHtml(row.rank)}</td>
                 <td><strong>${escapeHtml(row.strategy_family)}</strong></td>
                 <td>${escapeHtml(row.avg_gross_return_with_slippage ?? "n/a")}</td>
                 <td>${escapeHtml(row.trade_count ?? "n/a")}</td>
+                <td>${escapeHtml(formatValue(row.win_rate))}</td>
                 <td>${escapeHtml(row.candidate_label ?? "n/a")}</td>
-                <td>${escapeHtml(row.entry_rule ?? "n/a")}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    data-strategy-family="${escapeHtml(row.strategy_family)}"
+                  >
+                    Inspect
+                  </button>
+                </td>
               </tr>
-            `,
-          )
+            `;
+          })
           .join("")}
       </tbody>
     </table>
   `;
+
+  bindStrategyFamilyButtons(strategyTable);
 }
 
 function renderModels(snapshot) {
@@ -238,6 +314,218 @@ function renderArtifacts(snapshot) {
   `);
   artifactGrid.className = cards.length ? "artifact-grid" : "artifact-grid empty-state";
   artifactGrid.innerHTML = cards.length ? cards.join("") : "No normalized artifact paths are available.";
+}
+
+function orderedColumns(rows, preferredColumns = []) {
+  if (!rows.length) {
+    return [];
+  }
+  const availableColumns = Object.keys(rows[0] || {});
+  const preferred = preferredColumns.filter((column) => availableColumns.includes(column));
+  const extras = availableColumns
+    .filter((column) => !preferred.includes(column))
+    .slice(0, Math.max(0, 7 - preferred.length));
+  return preferred.concat(extras);
+}
+
+function renderRecordTable(title, rows, preferredColumns, emptyMessage) {
+  if (!rows.length) {
+    return `
+      <article class="stack-item">
+        <strong>${escapeHtml(title)}</strong>
+        <span class="meta">${escapeHtml(emptyMessage)}</span>
+      </article>
+    `;
+  }
+
+  const columns = orderedColumns(rows, preferredColumns);
+  return `
+    <article class="stack-item">
+      <strong>${escapeHtml(title)}</strong>
+      <div class="table-wrap">
+        <table class="dense-table">
+          <thead>
+            <tr>
+              ${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) => `
+                  <tr>
+                    ${columns.map((column) => `<td>${escapeHtml(formatValue(row[column]))}</td>`).join("")}
+                  </tr>
+                `,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </article>
+  `;
+}
+
+function renderTradeTraces(traces) {
+  if (!traces.length) {
+    return `
+      <article class="stack-item">
+        <strong>Trade traces</strong>
+        <span class="meta">No bounded trade traces are available for this family.</span>
+      </article>
+    `;
+  }
+
+  return `
+    <article class="stack-item">
+      <strong>Trade traces</strong>
+      <div class="stack-list">
+        ${traces
+          .map((trace) => {
+            const states = Array.isArray(trace.states) ? trace.states : [];
+            return `
+              <article class="stack-item detail-card">
+                <strong>${escapeHtml(trace.game_id || "trace")}</strong>
+                <span class="meta">${escapeHtml(trace.team_slug || "n/a")} / ${escapeHtml(trace.entry_context_bucket || "n/a")}</span>
+                <div class="tag-row">
+                  ${tag(`entry_price: ${formatValue(trace.entry_price)}`)}
+                  ${tag(`exit_price: ${formatValue(trace.exit_price)}`)}
+                  ${tag(`return: ${formatValue(trace.gross_return_with_slippage)}`)}
+                  ${tag(`states: ${formatValue(states.length, 0)}`)}
+                </div>
+                ${
+                  states.length
+                    ? `
+                      <div class="table-wrap">
+                        <table class="dense-table">
+                          <thead>
+                            <tr>
+                              <th>Period</th>
+                              <th>Clock</th>
+                              <th>Price</th>
+                              <th>Diff</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${states
+                              .slice(0, 6)
+                              .map(
+                                (state) => `
+                                  <tr>
+                                    <td>${escapeHtml(formatValue(state.period, 0))}</td>
+                                    <td>${escapeHtml(state.clock || "n/a")}</td>
+                                    <td>${escapeHtml(formatValue(state.team_price))}</td>
+                                    <td>${escapeHtml(formatValue(state.score_diff, 0))}</td>
+                                  </tr>
+                                `,
+                              )
+                              .join("")}
+                          </tbody>
+                        </table>
+                      </div>
+                    `
+                    : ""
+                }
+              </article>
+            `;
+          })
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
+function renderBacktestIndex(payload) {
+  const families = payload.families || [];
+  latestBacktestIndexPayload = payload;
+  syncComparisonFamilySelect(families);
+
+  if (!families.length) {
+    comparisonIndex.className = "stack-list empty-state";
+    comparisonIndex.textContent = "No strategy families are available in the current backtest snapshot.";
+    return;
+  }
+
+  comparisonIndex.className = "stack-list";
+  comparisonIndex.innerHTML = families
+    .map((family) => {
+      const summary = family.summary || {};
+      const isSelected = family.strategy_family === selectedStrategyFamily;
+      return `
+        <article class="stack-item game-item${isSelected ? " selected" : ""}">
+          <strong>${escapeHtml(family.strategy_family)}</strong>
+          <span class="meta">${escapeHtml(summary.label_reason || "No candidate rationale available.")}</span>
+          <div class="tag-row">
+            ${tag(`trades: ${formatValue(summary.trade_count, 0)}`)}
+            ${tag(`win_rate: ${formatValue(summary.win_rate)}`)}
+            ${tag(`return: ${formatValue(summary.avg_gross_return_with_slippage)}`)}
+            ${tag(`label: ${summary.candidate_label || "n/a"}`, summary.candidate_label !== "keep")}
+          </div>
+          <div class="item-actions">
+            <button
+              type="button"
+              class="ghost-button"
+              data-strategy-family="${escapeHtml(family.strategy_family)}"
+            >
+              Inspect
+            </button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+
+  bindStrategyFamilyButtons(comparisonIndex);
+}
+
+function renderBacktestDetail(payload) {
+  if (!payload || !payload.strategy_family) {
+    comparisonDetail.className = "stack-list empty-state";
+    comparisonDetail.textContent = "Choose a strategy family to inspect its bounded detail preview.";
+    return;
+  }
+
+  const summary = payload.summary || {};
+  const candidateFreeze = payload.candidate_freeze || {};
+  comparisonDetail.className = "stack-list";
+  comparisonDetail.innerHTML = `
+    <div class="metric-grid comparison-metrics">
+      ${metricCard("Family", payload.strategy_family)}
+      ${metricCard("Trades", formatValue(summary.trade_count, 0))}
+      ${metricCard("Return With Slippage", formatValue(summary.avg_gross_return_with_slippage))}
+      ${metricCard("Win Rate", formatValue(summary.win_rate))}
+    </div>
+    <article class="stack-item">
+      <strong>${escapeHtml(payload.strategy_family)} summary</strong>
+      <span class="meta">${escapeHtml(candidateFreeze.label_reason || summary.label_reason || "No candidate-freeze rationale is available.")}</span>
+      <div class="tag-row">
+        ${tag(`candidate: ${candidateFreeze.candidate_label || summary.candidate_label || "n/a"}`, (candidateFreeze.candidate_label || summary.candidate_label) !== "keep")}
+        ${tag(`entry_rule: ${summary.entry_rule || "n/a"}`)}
+        ${tag(`hold_time: ${formatValue(summary.avg_hold_time_seconds, 0)}`)}
+        ${tag(`mfe: ${formatValue(summary.avg_mfe_after_entry)}`)}
+        ${tag(`mae: ${formatValue(summary.avg_mae_after_entry)}`)}
+      </div>
+    </article>
+    ${renderRecordTable(
+      "Best trades",
+      payload.best_trades || [],
+      ["game_id", "team_slug", "entry_price", "exit_price", "gross_return_with_slippage", "hold_time_seconds"],
+      "No bounded best-trade preview is available.",
+    )}
+    ${renderRecordTable(
+      "Worst trades",
+      payload.worst_trades || [],
+      ["game_id", "team_slug", "entry_price", "exit_price", "gross_return_with_slippage", "hold_time_seconds"],
+      "No bounded worst-trade preview is available.",
+    )}
+    ${renderRecordTable(
+      "Context summary",
+      payload.context_summary || [],
+      ["context_bucket", "trade_count", "win_rate", "avg_gross_return_with_slippage"],
+      "No bounded context summary is available.",
+    )}
+    ${renderTradeTraces(payload.trade_traces || [])}
+  `;
 }
 
 function renderControlPlane(payload) {
@@ -500,6 +788,108 @@ async function loadControlPlane() {
   renderControlPlane(payload);
 }
 
+async function loadBacktestDetail(strategyFamily, options = {}) {
+  const { silent = false } = options;
+  const loaderContext = currentLoaderContext();
+  const comparisonOptions = currentComparisonOptions();
+  const resolvedFamily = String(strategyFamily || comparisonOptions.strategy_family || "").trim();
+  if (!resolvedFamily) {
+    renderBacktestDetail(null);
+    setComparisonState(false, "Select a strategy family first.");
+    return null;
+  }
+
+  const params = buildQueryParams({
+    season: loaderContext.season || "2025-26",
+    season_phase: loaderContext.season_phase || "regular_season",
+    analysis_version: loaderContext.analysis_version,
+    backtest_experiment_id: loaderContext.backtest_experiment_id,
+    output_root: loaderContext.output_root,
+    trade_limit: comparisonOptions.trade_limit,
+    context_limit: comparisonOptions.context_limit,
+    trace_limit: comparisonOptions.trace_limit,
+  });
+
+  if (!silent) {
+    clearError();
+    setComparisonState(true, `Loading ${resolvedFamily} detail...`);
+  }
+  try {
+    const response = await fetch(
+      `/v1/analysis/studio/backtests/${encodeURIComponent(resolvedFamily)}?${params.toString()}`,
+    );
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message || payload.detail || "The backtest family detail request failed.");
+    }
+    selectedStrategyFamily = resolvedFamily;
+    if (comparisonFamilySelect.options.length) {
+      comparisonFamilySelect.value = resolvedFamily;
+    }
+    renderStrategies();
+    renderBacktestIndex(latestBacktestIndexPayload);
+    renderBacktestDetail(payload);
+    if (!silent) {
+      setComparisonState(false, `Loaded ${resolvedFamily} trade, context, and trace previews.`);
+    }
+    return payload;
+  } catch (error) {
+    if (!silent) {
+      showError(error.message || "The backtest family detail request failed.");
+      setComparisonState(false, "Backtest family detail load failed. Check the error banner.");
+    }
+    throw error;
+  }
+}
+
+async function loadBacktestIndex(preferredStrategyFamily = selectedStrategyFamily) {
+  const loaderContext = currentLoaderContext();
+  const params = buildQueryParams({
+    season: loaderContext.season || "2025-26",
+    season_phase: loaderContext.season_phase || "regular_season",
+    analysis_version: loaderContext.analysis_version,
+    backtest_experiment_id: loaderContext.backtest_experiment_id,
+    output_root: loaderContext.output_root,
+  });
+
+  clearError();
+  setComparisonState(true, "Loading ranked backtest families...");
+  try {
+    const response = await fetch(`/v1/analysis/studio/backtests?${params.toString()}`);
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error?.message || payload.detail || "The backtest family index request failed.");
+    }
+
+    latestBacktestIndexPayload = payload;
+    latestStrategyRankings = payload.benchmark?.strategy_rankings || latestStrategyRankings;
+    renderStrategies();
+    renderBacktestIndex(payload);
+
+    const families = payload.families || [];
+    if (!families.length) {
+      selectedStrategyFamily = null;
+      renderBacktestDetail(null);
+      setComparisonState(false, "No strategy families were found in this backtest snapshot.");
+      return payload;
+    }
+
+    const nextFamily = families.some((family) => family.strategy_family === preferredStrategyFamily)
+      ? preferredStrategyFamily
+      : families[0].strategy_family;
+    selectedStrategyFamily = nextFamily;
+    await loadBacktestDetail(nextFamily, { silent: true });
+    renderStrategies();
+    renderBacktestIndex(payload);
+    setComparisonState(false, `Loaded ${families.length} ranked strategy families from ${payload.analysis_version}.`);
+    return payload;
+  } catch (error) {
+    showError(error.message || "The backtest family index request failed.");
+    setComparisonState(false, "Backtest family index load failed. Check the error banner.");
+    throw error;
+  }
+}
+
 async function loadGameDetail(gameId, options = {}) {
   const { silent = false } = options;
   const loaderContext = currentLoaderContext();
@@ -596,14 +986,20 @@ async function loadSnapshot() {
     if (!response.ok) {
       throw new Error(payload.error?.message || payload.detail || "The snapshot request failed.");
     }
+    latestStrategyRankings = payload.benchmark?.strategy_rankings || [];
     renderMetadata(payload);
     renderUniverse(payload);
-    renderStrategies(payload);
+    renderStrategies();
     renderModels(payload);
     renderReportSections(payload);
     renderArtifacts(payload);
     setLoadingState(false, `Loaded ${payload.analysis_version} from ${payload.output_dir}`);
     await loadControlPlane();
+    try {
+      await loadBacktestIndex(selectedStrategyFamily);
+    } catch (_) {
+      // Keep the snapshot visible even if the comparison panel fails independently.
+    }
     await loadGameExplorer(selectedGameId);
   } catch (error) {
     showError(error.message || "The snapshot request failed.");
@@ -655,6 +1051,11 @@ runForm.addEventListener("submit", (event) => {
 explorerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   loadGameExplorer();
+});
+
+comparisonForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  loadBacktestDetail(currentComparisonOptions().strategy_family).catch(() => {});
 });
 
 loadControlPlane()

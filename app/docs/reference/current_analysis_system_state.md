@@ -21,6 +21,8 @@ Completed implementation wave:
 - `v1.0.4` five-family strategy lab
 - `v1.1.0` benchmarked multi-algorithm backtest workflow
 - `v1.2.0` stable read-only consumer adapters
+- `v1.3.0` permanent analysis studio alpha
+- `v1.3.1` read-only family comparison follow-on lane
 
 ## Current CLI Surface
 - `build_analysis_mart`
@@ -35,10 +37,13 @@ Completed implementation wave:
 - `load_analysis_consumer_bundle`
 - `build_analysis_consumer_snapshot`
 - `load_analysis_consumer_snapshot`
+- `load_analysis_backtest_index`
+- `load_analysis_backtest_family_detail`
 
 Consumer contract notes:
 - downstream consumers load versioned report, backtest, and model artifacts through one adapter layer
 - the consumer snapshot includes normalized report sections, benchmark leaderboards, candidate-freeze labels, model track summaries, and artifact links
+- the backtest detail contract exposes per-family index and bounded detail reads for comparison views
 - validation now captures a consumer snapshot in the disposable non-live sweep
 
 ## Corpus Snapshot
@@ -67,18 +72,20 @@ Historical note:
 ## Validation Snapshot
 - analysis pytest sweep:
   - branch-local critical-path sweep includes consumer adapter tests
-  - frontend studio router and static asset coverage now includes the F3 game explorer routes
+  - frontend studio router and static asset coverage now includes the F3 game explorer routes plus F4a backtest comparison routes
 - skipped checks are Postgres-gated integration validations behind `JANUS_RUN_DB_TESTS=1`
 - CLI smoke passed:
   - `python -m app.data.pipelines.daily.nba.analysis_module -h`
 - disposable non-live validation runner passed with consumer snapshot capture:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_083426`
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_111338`
 
 ## Current Frontend Surface
 - permanent frontend branch uses the existing FastAPI runtime and static assets
 - current routes:
   - `GET /analysis-studio`
   - `GET /v1/analysis/studio/snapshot`
+  - `GET /v1/analysis/studio/backtests`
+  - `GET /v1/analysis/studio/backtests/{strategy_family}`
   - `GET /v1/analysis/studio/control`
   - `GET /v1/analysis/studio/games`
   - `GET /v1/analysis/studio/games/{game_id}`
@@ -92,10 +99,10 @@ Historical note:
   - in-memory local run registry with stdout/stderr and output-root tracking
   - finished-game explorer rows backed by `nba_analysis_game_team_profiles`
   - bounded home/away state-panel detail backed by `nba_analysis_state_panel`
+  - read-only family comparison index and bounded per-family detail backed by the analysis consumer adapter layer
 
 ## Current Gaps
-- a separate read-only comparison-detail contract for per-family backtest artifacts is still pending
-- deeper frontend strategy comparison views depend on that contract and are not part of the current studio alpha branch
+- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is still pending
 - richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - operator hardening beyond the current run-control surface is still pending

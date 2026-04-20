@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict
 
 from app.data.pipelines.daily.nba.analysis.consumer_adapters import (
     list_available_analysis_versions,
+    load_analysis_backtest_family_detail,
+    load_analysis_backtest_index,
     load_analysis_consumer_snapshot,
 )
 from app.data.pipelines.daily.nba.analysis.contracts import (
@@ -154,6 +156,23 @@ def _resolve_analysis_output_dir(
             raise FileNotFoundError(f"No analysis output versions found for {season} {season_phase}")
         resolved_version = versions[-1]
     return base / season / season_phase / resolved_version, resolved_version
+
+
+def _build_consumer_request(
+    *,
+    season: str,
+    season_phase: str,
+    analysis_version: str | None,
+    backtest_experiment_id: str | None,
+    output_root: str | None,
+) -> AnalysisConsumerRequest:
+    return AnalysisConsumerRequest(
+        season=season,
+        season_phase=season_phase,
+        analysis_version=analysis_version,
+        backtest_experiment_id=backtest_experiment_id,
+        output_root=output_root,
+    )
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -601,7 +620,7 @@ def get_analysis_studio_snapshot(
     backtest_experiment_id: str | None = Query(default=None),
     output_root: str | None = Query(default=None),
 ) -> dict[str, Any]:
-    request = AnalysisConsumerRequest(
+    request = _build_consumer_request(
         season=season,
         season_phase=season_phase,
         analysis_version=analysis_version,
@@ -614,6 +633,63 @@ def get_analysis_studio_snapshot(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/v1/analysis/studio/backtests")
+def get_analysis_studio_backtests(
+    season: str = Query(...),
+    season_phase: str = Query(...),
+    analysis_version: str | None = Query(default=None),
+    backtest_experiment_id: str | None = Query(default=None),
+    output_root: str | None = Query(default=None),
+) -> dict[str, Any]:
+    request = _build_consumer_request(
+        season=season,
+        season_phase=season_phase,
+        analysis_version=analysis_version,
+        backtest_experiment_id=backtest_experiment_id,
+        output_root=output_root,
+    )
+    try:
+        return load_analysis_backtest_index(request)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/v1/analysis/studio/backtests/{strategy_family}")
+def get_analysis_studio_backtest_family(
+    strategy_family: str,
+    season: str = Query(...),
+    season_phase: str = Query(...),
+    analysis_version: str | None = Query(default=None),
+    backtest_experiment_id: str | None = Query(default=None),
+    output_root: str | None = Query(default=None),
+    trade_limit: int = Query(default=5, ge=1, le=20),
+    context_limit: int = Query(default=10, ge=1, le=40),
+    trace_limit: int = Query(default=3, ge=1, le=12),
+) -> dict[str, Any]:
+    request = _build_consumer_request(
+        season=season,
+        season_phase=season_phase,
+        analysis_version=analysis_version,
+        backtest_experiment_id=backtest_experiment_id,
+        output_root=output_root,
+    )
+    try:
+        return load_analysis_backtest_family_detail(
+            request,
+            strategy_family=strategy_family,
+            trade_limit=trade_limit,
+            context_limit=context_limit,
+            trace_limit=trace_limit,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        status_code = 404 if "Unknown strategy_family" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 @router.get("/v1/analysis/studio/control")

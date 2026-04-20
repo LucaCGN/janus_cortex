@@ -310,6 +310,7 @@ button[disabled] {
 }
 
 .explorer-layout,
+.comparison-layout,
 .detail-grid {
   display: grid;
   gap: 18px;
@@ -317,6 +318,11 @@ button[disabled] {
 
 .explorer-layout {
   grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.1fr);
+  margin-top: 18px;
+}
+
+.comparison-layout {
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
   margin-top: 18px;
 }
 
@@ -357,6 +363,14 @@ button[disabled] {
 
 .ghost-button[disabled] {
   cursor: wait;
+}
+
+tr.selected-row {
+  background: rgba(52, 93, 79, 0.08);
+}
+
+.comparison-metrics {
+  margin-bottom: 12px;
 }
 
 .tag-row {
@@ -434,6 +448,7 @@ td strong {
   .dual-panel,
   .detail-grid,
   .explorer-layout,
+  .comparison-layout,
   .control-grid {
     grid-template-columns: 1fr;
   }

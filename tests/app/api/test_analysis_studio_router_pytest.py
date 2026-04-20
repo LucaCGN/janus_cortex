@@ -15,6 +15,11 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
+def _write_json_list(path: Path, payload: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
 def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(rows[0].keys())
@@ -27,6 +32,7 @@ def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
 def _write_consumer_fixture(root: Path) -> None:
     version = "v1_2_0"
     version_dir = root / "2025-26" / "regular_season" / version
+    backtests_dir = version_dir / "backtests"
     _write_json(
         version_dir / "analysis_report.json",
         {
@@ -54,7 +60,7 @@ def _write_consumer_fixture(root: Path) -> None:
         },
     )
     _write_json(
-        version_dir / "backtests" / "run_analysis_backtests.json",
+        backtests_dir / "run_analysis_backtests.json",
         {
             "season": "2025-26",
             "season_phase": "regular_season",
@@ -69,7 +75,12 @@ def _write_consumer_fixture(root: Path) -> None:
                         "strategy_family": "reversion",
                         "entry_rule": "favorite_drawdown_buy_10c",
                         "trade_count": 60,
+                        "win_rate": 0.61,
+                        "avg_gross_return": 0.094,
                         "avg_gross_return_with_slippage": 0.081,
+                        "avg_hold_time_seconds": 420,
+                        "avg_mfe_after_entry": 0.137,
+                        "avg_mae_after_entry": -0.071,
                     }
                 ],
                 "candidate_freeze": [
@@ -81,10 +92,29 @@ def _write_consumer_fixture(root: Path) -> None:
                 ],
                 "split_summary": [{"sample_name": "full_sample", "games_considered": 1224}],
                 "comparators": [],
-                "comparator_summary": [],
-                "context_rankings": [],
+                "comparator_summary": [
+                    {
+                        "strategy_family": "reversion",
+                        "comparator_family": "favorite_hold",
+                        "avg_gross_return_with_slippage_diff": 0.017,
+                    }
+                ],
+                "context_rankings": [
+                    {
+                        "strategy_family": "reversion",
+                        "context_bucket": "Q2|trail_1_4",
+                        "trade_count": 11,
+                        "avg_gross_return_with_slippage": 0.129,
+                    }
+                ],
             },
-            "artifacts": {"json": str(version_dir / "backtests" / "run_analysis_backtests.json")},
+            "artifacts": {
+                "json": str(backtests_dir / "run_analysis_backtests.json"),
+                "reversion_best_trades_csv": str(backtests_dir / "reversion_best_trades.csv"),
+                "reversion_worst_trades_csv": str(backtests_dir / "reversion_worst_trades.csv"),
+                "reversion_context_summary_csv": str(backtests_dir / "reversion_context_summary.csv"),
+                "reversion_trade_traces_json": str(backtests_dir / "reversion_trade_traces.json"),
+            },
         },
     )
     _write_json(
@@ -113,6 +143,74 @@ def _write_consumer_fixture(root: Path) -> None:
             },
             "artifacts": {"json": str(version_dir / "models" / "train_analysis_baselines.json")},
         },
+    )
+    _write_csv(
+        backtests_dir / "reversion_best_trades.csv",
+        [
+            {
+                "game_id": "game_001",
+                "team_slug": "ATL",
+                "entry_price": 0.33,
+                "exit_price": 0.48,
+                "gross_return_with_slippage": 0.143,
+                "hold_time_seconds": 510,
+            },
+            {
+                "game_id": "game_003",
+                "team_slug": "LAL",
+                "entry_price": 0.26,
+                "exit_price": 0.38,
+                "gross_return_with_slippage": 0.112,
+                "hold_time_seconds": 430,
+            },
+        ],
+    )
+    _write_csv(
+        backtests_dir / "reversion_worst_trades.csv",
+        [
+            {
+                "game_id": "game_002",
+                "team_slug": "MIA",
+                "entry_price": 0.42,
+                "exit_price": 0.34,
+                "gross_return_with_slippage": -0.082,
+                "hold_time_seconds": 390,
+            }
+        ],
+    )
+    _write_csv(
+        backtests_dir / "reversion_context_summary.csv",
+        [
+            {
+                "context_bucket": "Q2|trail_1_4",
+                "trade_count": 11,
+                "win_rate": 0.73,
+                "avg_gross_return_with_slippage": 0.129,
+            },
+            {
+                "context_bucket": "Q3|coin_flip",
+                "trade_count": 8,
+                "win_rate": 0.5,
+                "avg_gross_return_with_slippage": 0.042,
+            },
+        ],
+    )
+    _write_json_list(
+        backtests_dir / "reversion_trade_traces.json",
+        [
+            {
+                "game_id": "game_001",
+                "team_slug": "ATL",
+                "entry_context_bucket": "Q2|trail_1_4",
+                "entry_price": 0.33,
+                "exit_price": 0.48,
+                "gross_return_with_slippage": 0.143,
+                "states": [
+                    {"period": 2, "clock": "04:40", "team_price": 0.58, "score_diff": -2},
+                    {"period": 3, "clock": "08:05", "team_price": 0.51, "score_diff": -1},
+                ],
+            }
+        ],
     )
     _write_csv(
         version_dir / "nba_analysis_game_team_profiles.csv",
@@ -476,6 +574,7 @@ def test_analysis_studio_index_route_serves_html_pytest() -> None:
     assert "Janus Cortex Analysis Studio" in response.text
     assert "Launch guarded local analysis commands" in response.text
     assert "Inspect finished games and bounded state windows" in response.text
+    assert "Inspect one strategy family with bounded trade and context previews" in response.text
     assert "/analysis-studio/static/analysis_studio.js" in response.text
 
 
@@ -483,6 +582,7 @@ def test_analysis_studio_static_asset_route_serves_javascript_pytest() -> None:
     client = TestClient(create_app())
     response = client.get("/analysis-studio/static/analysis_studio.js")
     assert response.status_code == 200
+    assert "loadBacktestIndex" in response.text
     assert "loadGameExplorer" in response.text
 
 
@@ -504,6 +604,72 @@ def test_analysis_studio_snapshot_route_loads_consumer_snapshot_pytest(tmp_path:
     assert payload["analysis_version"] == "v1_2_0"
     assert payload["benchmark"]["strategy_rankings"][0]["strategy_family"] == "reversion"
     assert payload["report"]["sections"][0]["key"] == "teams_against_expectation"
+
+
+def test_analysis_studio_backtests_route_lists_strategy_families_pytest(tmp_path: Path) -> None:
+    _write_consumer_fixture(tmp_path)
+    client = TestClient(create_app())
+
+    response = client.get(
+        "/v1/analysis/studio/backtests",
+        params={
+            "season": "2025-26",
+            "season_phase": "regular_season",
+            "output_root": str(tmp_path),
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["analysis_version"] == "v1_2_0"
+    assert payload["families"][0]["strategy_family"] == "reversion"
+    assert payload["families"][0]["summary"]["candidate_label"] == "keep"
+    assert payload["families"][0]["artifact_paths"]["trade_traces_json"].endswith("reversion_trade_traces.json")
+
+
+def test_analysis_studio_backtest_family_route_returns_bounded_detail_pytest(tmp_path: Path) -> None:
+    _write_consumer_fixture(tmp_path)
+    client = TestClient(create_app())
+
+    response = client.get(
+        "/v1/analysis/studio/backtests/reversion",
+        params={
+            "season": "2025-26",
+            "season_phase": "regular_season",
+            "output_root": str(tmp_path),
+            "trade_limit": 1,
+            "context_limit": 1,
+            "trace_limit": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["strategy_family"] == "reversion"
+    assert payload["summary"]["candidate_label"] == "keep"
+    assert len(payload["best_trades"]) == 1
+    assert payload["best_trades"][0]["game_id"] == "game_001"
+    assert len(payload["worst_trades"]) == 1
+    assert payload["context_summary"][0]["context_bucket"] == "Q2|trail_1_4"
+    assert len(payload["trade_traces"]) == 1
+    assert payload["trade_traces"][0]["states"][0]["team_price"] == 0.58
+
+
+def test_analysis_studio_backtest_family_route_maps_unknown_family_to_404_pytest(tmp_path: Path) -> None:
+    _write_consumer_fixture(tmp_path)
+    client = TestClient(create_app())
+
+    response = client.get(
+        "/v1/analysis/studio/backtests/volatility_scalp",
+        params={
+            "season": "2025-26",
+            "season_phase": "regular_season",
+            "output_root": str(tmp_path),
+        },
+    )
+
+    assert response.status_code == 404
+    assert "Unknown strategy_family" in response.json()["error"]["message"]
 
 
 def test_analysis_studio_snapshot_route_maps_missing_snapshot_to_404_pytest(tmp_path: Path) -> None:
