@@ -640,7 +640,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v3"
+    assert first.payload["benchmark"]["contract_version"] == "v4"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
@@ -654,18 +654,17 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     }
     assert set(first.benchmark_frames["candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
     assert set(first.benchmark_frames["portfolio_candidate_freeze"]["candidate_label"]).issubset({"keep", "drop", "experimental"})
+    registry_families = tuple(first.payload["experiment"]["strategy_families"])
     keep_families = tuple(first.payload["benchmark"]["portfolio_keep_families"])
     robustness_detail_df = first.benchmark_frames["portfolio_robustness_detail"]
     robustness_summary_df = first.benchmark_frames["portfolio_robustness_summary"]
-    if keep_families:
-        assert set(robustness_detail_df["strategy_family"]) == set(keep_families)
-        assert set(robustness_detail_df["holdout_seed"]) == {7, 11, 13}
-        assert set(robustness_summary_df["robustness_label"]).issubset(
-            {"stable_positive", "stable_negative", "mixed", "not_run"}
-        )
-    else:
-        assert robustness_detail_df.empty
-        assert robustness_summary_df.empty
+    assert set(robustness_detail_df["strategy_family"]) == set(registry_families)
+    assert set(robustness_summary_df["strategy_family"]) == set(registry_families)
+    assert set(robustness_detail_df["holdout_seed"]) == {7, 11, 13}
+    assert len(robustness_detail_df) == len(registry_families) * 3
+    assert set(robustness_summary_df["robustness_label"]).issubset(
+        {"stable_positive", "stable_negative", "mixed", "not_run"}
+    )
     combined_rows = first.benchmark_frames["portfolio_summary"][
         first.benchmark_frames["portfolio_summary"]["strategy_family"] == "combined_keep_families"
     ]

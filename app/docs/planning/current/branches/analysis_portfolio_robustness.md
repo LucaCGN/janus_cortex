@@ -10,7 +10,7 @@ Follow-on analysis branch for repeated-seed robustness and the first combined ke
 - `codex/analysis-sequential-portfolio-benchmarking`
 
 ## Owns
-- repeated-seed robustness on the current sequential `keep` families
+- repeated-seed robustness on the current sequential five-family benchmark set
 - deterministic combined-sleeve construction from the `keep` set
 - benchmark artifact and markdown updates needed to expose both outputs
 - reference and planning updates that freeze the robustness results
@@ -24,10 +24,11 @@ Follow-on analysis branch for repeated-seed robustness and the first combined ke
 
 ## Current Status
 - `R1` complete:
-  - benchmark contract moved to `v3`
-  - repeated-seed robustness artifacts now exist
+  - benchmark contract moved to `v4`
+  - repeated-seed robustness artifacts now exist across the full five-family set
 - `R2` complete:
-  - the surviving families `inversion` and `winner_definition` are both `stable_positive` across the five-seed sweep
+  - the surviving families `inversion` and `winner_definition` are both `stable_positive` across the 10-seed sweep
+  - the non-surviving families now freeze as `stable_negative` or `mixed`, rather than being left outside the robustness lens
 - `R3` complete:
   - the first combined sleeve `combined_keep_families` now replays `inversion,winner_definition` through one shared bankroll path
 - `R4` complete:
@@ -39,11 +40,11 @@ Follow-on analysis branch for repeated-seed robustness and the first combined ke
 
 ### `R1` Repeated-Seed Robustness
 Objective:
-- prove the single-seed holdout result was not a one-off artifact for the current `keep` set
+- prove the single-seed holdout result was not a one-off artifact for the current benchmark family set
 
 Deliverables:
 - deterministic seed list
-- per-seed bankroll detail for each surviving family
+- per-seed bankroll detail for each strategy family
 - aggregated robustness label and dispersion summary
 
 Validation:

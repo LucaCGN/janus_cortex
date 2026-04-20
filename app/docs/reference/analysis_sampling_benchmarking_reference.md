@@ -18,7 +18,7 @@ This reference covers:
 - random-train sample
 - random-holdout sample
 
-The benchmark contract version is now `v3`.
+The benchmark contract version is now `v4`.
 
 ## Shared Metrics
 Every strategy family is scored with the same metric set:
@@ -93,6 +93,7 @@ The first benchmark labels are intentionally conservative:
 This benchmark lane still does not pick a live strategy. It now produces:
 - the family-level benchmark surface
 - the sequential bankroll surface
-- repeated-seed robustness evidence on the surviving families
+- repeated-seed robustness evidence across the full family set
+- the first combined keep-family sleeve on top of the surviving single-family set
 
 The next decision layer should stay statistical for allocation and promotion. Any later LLM usage should be interpretive only and should consume these benchmark artifacts rather than replacing them.
