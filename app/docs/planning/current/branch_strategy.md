@@ -24,12 +24,14 @@
 - keep local-only branch registers, outputs, and active notes under `JANUS_LOCAL_ROOT`
 
 ## Parallel Work Method
-1. create every branch from clean `main`
-2. run `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
-3. keep one branch focused on one category and one narrow write scope
-4. if two branches need the same file, split the work differently before coding
-5. merge one lane at a time back into `main`
-6. after merge, push `main`, remove the worktree, delete the branch, and archive any local-only notes or outputs
+1. create independent branches from clean `main`
+2. create a stacked follow-on branch only when a branch plan explicitly depends on an unmerged branch
+3. document the stacked base branch in the branch plan and PR body before coding
+4. run `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
+5. keep one branch focused on one category and one narrow write scope
+6. if two branches need the same file, split the work differently before coding
+7. merge one lane at a time back into `main`
+8. after merge, push `main`, remove the worktree, delete the branch, and archive any local-only notes or outputs
 
 ## Integration Rule
 - avoid long-lived integration branches unless multiple already-finished lanes must be tested together
@@ -48,10 +50,14 @@
 5. `codex/analysis-a8-consumer-adapters`
    - expose stable read-only contracts for downstream consumers
 6. `codex/frontend-analysis-studio`
-   - build the dedicated frontend module on top of stable read-only contracts
-7. `codex/season-playoffs-preseason`
+   - build the dedicated frontend studio alpha through run control and game explorer
+7. `codex/analysis-backtest-detail-contract`
+   - expose per-family backtest comparison detail through a read-only analysis contract
+8. stacked frontend comparison branch
+   - consume the detail contract in the permanent studio without widening the alpha branch PR
+9. `codex/season-playoffs-preseason`
    - prepare season-scope structures for play-in, playoffs, and preseason
-8. `codex/season-wnba-bootstrap`
+10. `codex/season-wnba-bootstrap`
    - prepare WNBA carry-over and offseason continuity work
 
 Detailed subphase plans live under:
@@ -59,5 +65,6 @@ Detailed subphase plans live under:
 
 ## Branch Launch Guidance
 - do not launch frontend before read-only consumer contracts stabilize
+- do not widen a validated frontend alpha PR with comparison-contract work; split the read-only detail contract first
 - do not launch season-expansion branches before dev-db safety and validation hardening are in place
 - do not launch strategy-comparison branches before the current offline stack has a clean validation report

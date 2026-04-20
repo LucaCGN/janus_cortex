@@ -67,16 +67,38 @@ Historical note:
 ## Validation Snapshot
 - analysis pytest sweep:
   - branch-local critical-path sweep includes consumer adapter tests
+  - frontend studio router and static asset coverage now includes the F3 game explorer routes
 - skipped checks are Postgres-gated integration validations behind `JANUS_RUN_DB_TESTS=1`
 - CLI smoke passed:
   - `python -m app.data.pipelines.daily.nba.analysis_module -h`
 - disposable non-live validation runner passed with consumer snapshot capture:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_011800`
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_083426`
+
+## Current Frontend Surface
+- permanent frontend branch uses the existing FastAPI runtime and static assets
+- current routes:
+  - `GET /analysis-studio`
+  - `GET /v1/analysis/studio/snapshot`
+  - `GET /v1/analysis/studio/control`
+  - `GET /v1/analysis/studio/games`
+  - `GET /v1/analysis/studio/games/{game_id}`
+  - `GET /v1/analysis/studio/runs`
+  - `GET /v1/analysis/studio/runs/{run_id}`
+  - `POST /v1/analysis/studio/runs`
+- current frontend scope is read-only for analysis consumption plus guarded local run control
+- studio now surfaces:
+  - latest validation summary under `JANUS_LOCAL_ROOT`
+  - available analysis versions under the default output root
+  - in-memory local run registry with stdout/stderr and output-root tracking
+  - finished-game explorer rows backed by `nba_analysis_game_team_profiles`
+  - bounded home/away state-panel detail backed by `nba_analysis_state_panel`
 
 ## Current Gaps
-- permanent frontend module does not exist yet
+- a separate read-only comparison-detail contract for per-family backtest artifacts is still pending
+- deeper frontend strategy comparison views depend on that contract and are not part of the current studio alpha branch
+- richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
-- consumer adapters are read-only; no UI or serving runtime exists yet
+- operator hardening beyond the current run-control surface is still pending
 
 ## Output Root Convention
 - default analysis artifact root on this machine resolves to:

@@ -4,9 +4,12 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import RequestContextMiddleware, install_exception_handlers
+from app.api.routers.analysis_studio import ANALYSIS_STUDIO_STATIC_ROOT
 from app.api.routers import (
+    analysis_studio_router,
     catalog_router,
     market_data_router,
     nba_read_router,
@@ -30,6 +33,14 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     install_exception_handlers(app)
 
+    if ANALYSIS_STUDIO_STATIC_ROOT.exists():
+        app.mount(
+            "/analysis-studio/static",
+            StaticFiles(directory=str(ANALYSIS_STUDIO_STATIC_ROOT)),
+            name="analysis-studio-static",
+        )
+
+    app.include_router(analysis_studio_router)
     app.include_router(system_registry_router)
     app.include_router(catalog_router)
     app.include_router(market_data_router)

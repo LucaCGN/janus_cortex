@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Janus Cortex Analysis Studio</title>
+  <link rel="stylesheet" href="/analysis-studio/static/analysis_studio.css">
+</head>
+<body>
+  <div class="shell">
+    <header class="hero">
+      <p class="eyebrow">Janus Cortex / Analysis Studio</p>
+      <h1>Offline NBA research, strategy, model, and operator state in one local-first surface.</h1>
+      <p class="hero-copy">
+        The studio still reads the consumer snapshot contract for analysis results, but it now
+        also tracks local validation history, guarded operator runs, and artifact-backed game
+        explorer views under `JANUS_LOCAL_ROOT`.
+      </p>
+      <div class="hero-grid">
+        <div class="hero-card">
+          <span class="hero-label">Current lane</span>
+          <strong>F3 Game Context Explorer</strong>
+        </div>
+        <div class="hero-card">
+          <span class="hero-label">Backend contract</span>
+          <strong>`load_analysis_consumer_snapshot` plus studio control and game explorer routes</strong>
+        </div>
+        <div class="hero-card">
+          <span class="hero-label">Scope rule</span>
+          <strong>Whitelisted local commands only, always writing under the local workspace root</strong>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="panel control-panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Snapshot Loader</p>
+          <h2>Choose the analysis output to inspect</h2>
+        </div>
+        <form id="snapshot-form" class="control-grid">
+          <label>
+            <span>Season</span>
+            <input id="season" name="season" value="2025-26" required>
+          </label>
+          <label>
+            <span>Phase</span>
+            <input id="season_phase" name="season_phase" value="regular_season" required>
+          </label>
+          <label>
+            <span>Analysis Version</span>
+            <input id="analysis_version" name="analysis_version" placeholder="latest if blank" list="analysis-version-options">
+            <datalist id="analysis-version-options"></datalist>
+          </label>
+          <label>
+            <span>Backtest Experiment</span>
+            <input id="backtest_experiment_id" name="backtest_experiment_id" placeholder="optional guard">
+          </label>
+          <label class="control-span">
+            <span>Artifact Root Override</span>
+            <input id="output_root" name="output_root" placeholder="optional local override for validation">
+          </label>
+          <div class="actions">
+            <button id="load-button" type="submit">Load snapshot</button>
+            <p id="status-line" class="status-line">Waiting for the first snapshot request.</p>
+          </div>
+        </form>
+        <p id="error-line" class="error-line" hidden></p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Operator Surface</p>
+          <h2>Local workspace and artifact status</h2>
+        </div>
+        <div id="control-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Run Control</p>
+            <h2>Launch guarded local analysis commands</h2>
+          </div>
+          <form id="run-form" class="control-grid">
+            <label>
+              <span>Action</span>
+              <select id="run_action" name="action">
+                <option value="run_analysis_validation">Full validation sweep</option>
+                <option value="build_analysis_mart">Build analysis mart</option>
+                <option value="build_analysis_report">Build analysis report</option>
+                <option value="run_analysis_backtests">Run analysis backtests</option>
+                <option value="train_analysis_baselines">Train analysis baselines</option>
+              </select>
+            </label>
+            <label>
+              <span>Validation Target</span>
+              <select id="validation_target" name="validation_target">
+                <option value="disposable">disposable</option>
+                <option value="dev_clone">dev_clone</option>
+              </select>
+            </label>
+            <label class="control-span checkbox-row">
+              <input id="rebuild" name="rebuild" type="checkbox">
+              <span>Force mart rebuild when the selected action supports it</span>
+            </label>
+            <div class="actions">
+              <button id="run-button" type="submit">Start run</button>
+              <p id="run-status-line" class="status-line">Runs use the season, phase, and version from the snapshot loader above.</p>
+            </div>
+          </form>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Latest Validation</p>
+            <h2>Most recent non-live sweep</h2>
+          </div>
+          <div id="latest-validation" class="stack-list empty-state">No validation summary found yet.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Resolved Output</p>
+          <h2>Snapshot metadata</h2>
+        </div>
+        <div id="metadata-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Research Universe</p>
+          <h2>Coverage and readiness summary</h2>
+        </div>
+        <div id="universe-grid" class="metric-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Game Explorer</p>
+          <h2>Inspect finished games and bounded state windows</h2>
+        </div>
+        <form id="explorer-form" class="control-grid">
+          <label>
+            <span>Team Slug</span>
+            <input id="explorer_team_slug" name="team_slug" placeholder="optional, for example ATL">
+          </label>
+          <label>
+            <span>Coverage Status</span>
+            <input
+              id="explorer_coverage_status"
+              name="coverage_status"
+              placeholder="optional status filter"
+              list="explorer-coverage-options"
+            >
+            <datalist id="explorer-coverage-options">
+              <option value="covered_pre_and_ingame"></option>
+              <option value="covered_partial"></option>
+              <option value="pregame_only"></option>
+              <option value="no_matching_event"></option>
+              <option value="no_history"></option>
+            </datalist>
+          </label>
+          <label>
+            <span>Game Date</span>
+            <input id="explorer_game_date" name="game_date" type="date">
+          </label>
+          <div class="actions">
+            <button id="explorer-button" type="submit">Load games</button>
+            <p id="explorer-status-line" class="status-line">Load a snapshot or apply a filter to inspect finished games.</p>
+          </div>
+        </form>
+        <div class="explorer-layout">
+          <div>
+            <div class="panel-header compact">
+              <p class="panel-kicker">Game Index</p>
+              <h2>Latest finished-game rows</h2>
+            </div>
+            <div id="game-list" class="stack-list empty-state">Load a snapshot to inspect finished games.</div>
+          </div>
+          <div>
+            <div class="panel-header compact">
+              <p class="panel-kicker">Game Detail</p>
+              <h2>Profiles and state-panel windows</h2>
+            </div>
+            <div id="game-detail" class="stack-list empty-state">Choose a game to inspect home and away profiles.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Benchmark</p>
+          <h2>Strategy rankings</h2>
+        </div>
+        <div id="strategy-table" class="table-wrap empty-state">Load a snapshot to inspect ranked strategy families.</div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Models</p>
+            <h2>Track summary</h2>
+          </div>
+          <div id="model-list" class="stack-list empty-state">No model tracks loaded yet.</div>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Report Pack</p>
+            <h2>Section inventory</h2>
+          </div>
+          <div id="report-sections" class="stack-list empty-state">No report sections loaded yet.</div>
+        </div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Recent Runs</p>
+            <h2>Studio command registry</h2>
+          </div>
+          <div id="run-list" class="stack-list empty-state">No studio runs launched yet.</div>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Recent Validations</p>
+            <h2>History under JANUS_LOCAL_ROOT</h2>
+          </div>
+          <div id="recent-validations" class="stack-list empty-state">No validation history found.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Artifacts</p>
+          <h2>Normalized output paths</h2>
+        </div>
+        <div id="artifact-grid" class="artifact-grid empty-state">No artifacts loaded yet.</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/analysis-studio/static/analysis_studio.js"></script>
+</body>
+</html>
