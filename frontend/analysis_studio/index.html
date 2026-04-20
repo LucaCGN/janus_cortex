@@ -19,11 +19,11 @@
       <div class="hero-grid">
         <div class="hero-card">
           <span class="hero-label">Current lane</span>
-          <strong>F3 Game Context Explorer</strong>
+          <strong>F4a Strategy Family Comparison</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Backend contract</span>
-          <strong>`load_analysis_consumer_snapshot` plus studio control and game explorer routes</strong>
+          <strong>`load_analysis_consumer_snapshot` plus read-only studio backtest comparison routes</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Scope rule</span>
@@ -191,9 +191,56 @@
       <section class="panel">
         <div class="panel-header">
           <p class="panel-kicker">Benchmark</p>
-          <h2>Strategy rankings</h2>
+          <h2>Strategy ranking table</h2>
         </div>
         <div id="strategy-table" class="table-wrap empty-state">Load a snapshot to inspect ranked strategy families.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Backtest Comparison</p>
+          <h2>Inspect one strategy family with bounded trade and context previews</h2>
+        </div>
+        <form id="comparison-form" class="control-grid">
+          <label>
+            <span>Strategy Family</span>
+            <select id="comparison_family" name="comparison_family" disabled>
+              <option value="">load a snapshot first</option>
+            </select>
+          </label>
+          <label>
+            <span>Trade Preview Limit</span>
+            <input id="comparison_trade_limit" name="trade_limit" type="number" min="1" max="20" value="5">
+          </label>
+          <label>
+            <span>Context Preview Limit</span>
+            <input id="comparison_context_limit" name="context_limit" type="number" min="1" max="40" value="10">
+          </label>
+          <label>
+            <span>Trace Preview Limit</span>
+            <input id="comparison_trace_limit" name="trace_limit" type="number" min="1" max="12" value="3">
+          </label>
+          <div class="actions">
+            <button id="comparison-button" type="submit">Load family detail</button>
+            <p id="comparison-status-line" class="status-line">Load a snapshot to inspect backtest families.</p>
+          </div>
+        </form>
+        <div class="comparison-layout">
+          <div>
+            <div class="panel-header compact">
+              <p class="panel-kicker">Family Index</p>
+              <h2>Ranked families and artifact coverage</h2>
+            </div>
+            <div id="comparison-index" class="stack-list empty-state">No strategy families loaded yet.</div>
+          </div>
+          <div>
+            <div class="panel-header compact">
+              <p class="panel-kicker">Family Detail</p>
+              <h2>Best trades, worst trades, contexts, and traces</h2>
+            </div>
+            <div id="comparison-detail" class="stack-list empty-state">Choose a strategy family to inspect its bounded detail preview.</div>
+          </div>
+        </div>
       </section>
 
       <section class="panel dual-panel">

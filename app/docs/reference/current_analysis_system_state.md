@@ -72,18 +72,20 @@ Historical note:
 ## Validation Snapshot
 - analysis pytest sweep:
   - branch-local critical-path sweep includes consumer adapter tests
-  - frontend studio router and static asset coverage now includes the F3 game explorer routes
+  - frontend studio router and static asset coverage now includes the F3 game explorer routes plus F4a backtest comparison routes
 - skipped checks are Postgres-gated integration validations behind `JANUS_RUN_DB_TESTS=1`
 - CLI smoke passed:
   - `python -m app.data.pipelines.daily.nba.analysis_module -h`
 - disposable non-live validation runner passed with consumer snapshot capture:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_083426`
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_111338`
 
 ## Current Frontend Surface
 - permanent frontend branch uses the existing FastAPI runtime and static assets
 - current routes:
   - `GET /analysis-studio`
   - `GET /v1/analysis/studio/snapshot`
+  - `GET /v1/analysis/studio/backtests`
+  - `GET /v1/analysis/studio/backtests/{strategy_family}`
   - `GET /v1/analysis/studio/control`
   - `GET /v1/analysis/studio/games`
   - `GET /v1/analysis/studio/games/{game_id}`
@@ -97,11 +99,10 @@ Historical note:
   - in-memory local run registry with stdout/stderr and output-root tracking
   - finished-game explorer rows backed by `nba_analysis_game_team_profiles`
   - bounded home/away state-panel detail backed by `nba_analysis_state_panel`
-  - read-only family comparison data is available through the analysis consumer adapter layer, but the comparison UI is a follow-on lane rather than part of the alpha surface
+  - read-only family comparison index and bounded per-family detail backed by the analysis consumer adapter layer
 
 ## Current Gaps
-- the dedicated family comparison UI is still pending as a follow-on lane
-- the studio alpha does not yet expose the comparison surface in the main UI
+- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is still pending
 - richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - operator hardening beyond the current run-control surface is still pending
