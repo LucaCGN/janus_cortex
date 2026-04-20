@@ -125,7 +125,7 @@ try {
     }
 
     $commands.Add((Invoke-LoggedCommand -Name 'describe_target' -FilePath 'python' -CommandArgs @('-m', 'app.data.databases.migrate', '--describe-target')))
-    $commands.Add((Invoke-LoggedCommand -Name 'analysis_pytest_sweep' -FilePath 'python' -CommandArgs @('-m', 'pytest', '-q', 'tests/app/data/pipelines/daily/nba/test_analysis_universe_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_mart_game_profiles_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_module_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_models_pytest.py')))
+    $commands.Add((Invoke-LoggedCommand -Name 'analysis_pytest_sweep' -FilePath 'python' -CommandArgs @('-m', 'pytest', '-q', 'tests/app/data/pipelines/daily/nba/test_analysis_universe_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_mart_game_profiles_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_module_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_models_pytest.py', 'tests/app/data/pipelines/daily/nba/test_analysis_consumer_adapters_pytest.py')))
 
     $martArgs = @('-m', 'app.data.pipelines.daily.nba.analysis_module', 'build_analysis_mart', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion, '--output-root', $OutputRoot)
     if ($RebuildMart -or $Target -eq 'disposable') {
@@ -135,7 +135,7 @@ try {
     $commands.Add((Invoke-LoggedCommand -Name 'build_analysis_report' -FilePath 'python' -CommandArgs @('-m', 'app.data.pipelines.daily.nba.analysis_module', 'build_analysis_report', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion, '--output-root', $OutputRoot)))
     $commands.Add((Invoke-LoggedCommand -Name 'run_analysis_backtests' -FilePath 'python' -CommandArgs @('-m', 'app.data.pipelines.daily.nba.analysis_module', 'run_analysis_backtests', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion, '--output-root', $OutputRoot)))
     $commands.Add((Invoke-LoggedCommand -Name 'train_analysis_baselines' -FilePath 'python' -CommandArgs @('-m', 'app.data.pipelines.daily.nba.analysis_module', 'train_analysis_baselines', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion, '--output-root', $OutputRoot)))
-    $commands.Add((Invoke-LoggedCommand -Name 'collect_validation_snapshot' -FilePath 'python' -CommandArgs @('.\tools\collect_analysis_validation_snapshot.py', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion)))
+    $commands.Add((Invoke-LoggedCommand -Name 'collect_validation_snapshot' -FilePath 'python' -CommandArgs @('.\tools\collect_analysis_validation_snapshot.py', '--season', $Season, '--season-phase', $SeasonPhase, '--analysis-version', $AnalysisVersion, '--output-root', $OutputRoot)))
 
     $parsedOutputs = @{}
     foreach ($command in $commands) {
@@ -186,6 +186,16 @@ try {
         $lines += "- Research-ready games: $($snapshot.universe.research_ready_games)"
         $lines += "- Descriptive-only games: $($snapshot.universe.descriptive_only_games)"
         $lines += "- Excluded games: $($snapshot.universe.excluded_games)"
+        if ($null -ne $snapshot.consumer_snapshot) {
+            $lines += ''
+            $lines += '## Consumer Snapshot'
+            $lines += ''
+            $lines += "- Output dir: $($snapshot.consumer_snapshot.output_dir)"
+            $lines += "- Benchmark contract version: $($snapshot.consumer_snapshot.benchmark_contract_version)"
+            $lines += "- Benchmark experiment id: $($snapshot.consumer_snapshot.benchmark_experiment_id)"
+            $lines += "- Report sections: $($snapshot.consumer_snapshot.report_section_count)"
+            $lines += "- Model tracks: $($snapshot.consumer_snapshot.model_track_count)"
+        }
     }
     $markdownPath = Join-Path $OutputRoot 'validation_summary.md'
     $lines | Set-Content -Encoding utf8 -Path $markdownPath

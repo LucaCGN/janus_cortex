@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -326,6 +327,9 @@ def test_build_analysis_mart_and_reports_pytest(tmp_path: Path) -> None:
     assert "teams_against_expectation" in report_summary
     assert Path(report_summary["artifacts"]["json"]).exists()
     assert Path(report_summary["artifacts"]["markdown"]).exists()
+    report_json_payload = json.loads(Path(report_summary["artifacts"]["json"]).read_text(encoding="utf-8"))
+    assert report_json_payload["artifacts"]["json"] == report_summary["artifacts"]["json"]
+    assert "sections" in report_json_payload["artifacts"]
 
     backtest_summary = mod.run_analysis_backtests(
         mod.BacktestRunRequest(

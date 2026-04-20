@@ -64,6 +64,13 @@ Optional sixth family if evidence supports it:
 5. [branches/analysis_consumer_adapters.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_consumer_adapters.md)
 6. [branches/frontend_analysis_studio.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_studio.md)
 
+## Current Critical Path After `v1.2.0`
+1. frontend analysis studio on top of the adapter contract
+2. season-continuity branches in parallel where safe
+
+Current stable backend read surface:
+- [app/docs/reference/analysis_consumer_adapters_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_consumer_adapters_reference.md)
+
 ### Parallel Or Secondary Tracks
 - [branches/season_playoffs_preseason.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_playoffs_preseason.md)
 - [branches/season_wnba_bootstrap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_wnba_bootstrap.md)

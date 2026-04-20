@@ -26,7 +26,8 @@ This file is the shortest path to safe multi-agent coordination.
 - current reality:
   - the offline analysis package exists
   - the next work is not another foundational split
-  - the next work is safe validation, strategy expansion, benchmarking, and then consumers
+  - safety, validation, strategy expansion, benchmarking, and read-only consumer contracts are now in place
+  - the next critical-path branch is the permanent frontend module
 
 ## Master Dependency Graph
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -288,6 +289,9 @@ def test_train_analysis_baselines_end_to_end_pytest(tmp_path: Path, monkeypatch:
     markdown_text = Path(payload["artifacts"]["markdown"]).read_text(encoding="utf-8")
     assert "mfe_from_state rmse" in markdown_text
     assert "mae_from_state rmse" in markdown_text
+    json_payload = json.loads(Path(payload["artifacts"]["json"]).read_text(encoding="utf-8"))
+    assert json_payload["artifacts"]["json"] == payload["artifacts"]["json"]
+    assert "tracks" in json_payload["artifacts"]
 
     track_artifacts = payload["artifacts"]["tracks"]
     assert Path(track_artifacts["volatility_inversion"]["coefficients_csv"]).exists()

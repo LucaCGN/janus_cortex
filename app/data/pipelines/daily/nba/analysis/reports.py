@@ -456,7 +456,7 @@ def render_analysis_report_markdown(payload: dict[str, Any]) -> str:
 
 def write_descriptive_report_artifacts(output_dir: Path, payload: dict[str, Any]) -> dict[str, Any]:
     artifacts: dict[str, Any] = {
-        "json": write_json(output_dir / "analysis_report.json", payload),
+        "json": str(output_dir / "analysis_report.json"),
         "markdown": write_markdown(output_dir / "analysis_report.md", render_analysis_report_markdown(payload)),
         "sections": {},
         "qa": {},
@@ -508,6 +508,7 @@ def build_analysis_report(
         analysis_version=analysis_version,
     )
     payload["artifacts"] = write_descriptive_report_artifacts(output_dir, payload)
+    write_json(Path(payload["artifacts"]["json"]), payload)
     return to_jsonable(payload)
 
 

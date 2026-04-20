@@ -50,3 +50,13 @@ Objective:
 - permanent frontend module exists
 - frontend reads only stable read-only contracts
 - operators can visually compare strategy families
+
+## Consumer Contract To Use
+Frontend should treat the A8 adapter layer as the only supported backend surface for offline analysis reads:
+- `load_analysis_consumer_snapshot`
+- `AnalysisConsumerRequest`
+
+Frontend should not:
+- guess version directories manually
+- parse nested benchmark/report/model JSONs independently
+- read raw ingest tables directly
