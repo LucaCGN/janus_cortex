@@ -31,8 +31,17 @@ class BacktestResult:
     strategy_registry: dict[str, StrategyDefinition]
 
 
+@dataclass(slots=True)
+class BenchmarkRunResult:
+    payload: dict[str, Any]
+    full_result: BacktestResult
+    split_results: dict[str, BacktestResult]
+    benchmark_frames: dict[str, pd.DataFrame]
+
+
 __all__ = [
     "BacktestResult",
+    "BenchmarkRunResult",
     "StrategyDefinition",
     "TradeSelection",
 ]
