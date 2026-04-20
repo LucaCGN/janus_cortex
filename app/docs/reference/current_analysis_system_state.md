@@ -90,7 +90,7 @@ Historical note:
   - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
 
 ## Current Sequential Portfolio Snapshot
-- benchmark contract version: `v3`
+- benchmark contract version: `v4`
 - active bankroll contract:
   - starting bankroll `10.0`
   - position size fraction `1.0`
@@ -102,21 +102,39 @@ Historical note:
   - `3251`
   - `4421`
   - `5573`
+  - `6659`
+  - `7873`
+  - `9011`
+  - `10243`
+  - `11519`
 - current validated active families:
   - `inversion`
     - full-sample ending bankroll `790514.77`
     - random-holdout ending bankroll `377435.94`
     - random-holdout max drawdown `30.94%`
     - repeated-seed status `stable_positive`
-    - repeated-seed median bankroll `377435.94`
-    - repeated-seed worst drawdown `46.69%`
+    - repeated-seed median bankroll `306157.58`
+    - repeated-seed worst drawdown `52.35%`
   - `winner_definition`
     - full-sample ending bankroll `2359.91`
     - random-holdout ending bankroll `213303.89`
     - random-holdout max drawdown `29.81%`
     - repeated-seed status `stable_positive`
-    - repeated-seed median bankroll `102762.64`
+    - repeated-seed median bankroll `120694.72`
     - repeated-seed worst drawdown `37.71%`
+- current non-surviving families under the 10-seed lens:
+  - `reversion`
+    - repeated-seed status `stable_negative`
+    - median bankroll effectively `0`
+    - worst drawdown `100.00%`
+  - `comeback_reversion`
+    - repeated-seed status `mixed`
+    - positive seeds `1/10`
+    - median bankroll `0.65`
+  - `volatility_scalp`
+    - repeated-seed status `mixed`
+    - positive seeds `1/10`
+    - median bankroll `2.62`
 - current combined keep-family sleeve:
   - `combined_keep_families`
     - members `inversion,winner_definition`
@@ -131,6 +149,8 @@ Historical note:
 - tested and rejected threshold variants:
   - `inversion 52c/48c`
   - `winner_definition 82c/77c`
+- tested and rejected final-pass trigger variant:
+  - `winner_definition` two-state `80c` confirmation
 
 ## Current Frontend Surface
 - permanent frontend branch uses the existing FastAPI runtime and static assets

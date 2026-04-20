@@ -3,11 +3,11 @@
 ## Purpose
 Define the canonical bankroll-simulation contract for the NBA analysis module and record the current validated outcomes for:
 - single-family sequential replay
-- repeated-seed robustness on surviving families
+- repeated-seed robustness across the full five-family set
 - the first combined keep-family sleeve
 
 ## Canonical Contract
-Sequential portfolio benchmarking now extends `run_analysis_backtests` under benchmark contract `v3`.
+Sequential portfolio benchmarking now extends `run_analysis_backtests` under benchmark contract `v4`.
 
 Active defaults:
 - starting bankroll: `10.0`
@@ -20,12 +20,18 @@ Active defaults:
   - `time_validation`
   - `random_train`
   - `random_holdout`
-- repeated-seed robustness set:
-  - `1107`
-  - `2113`
-  - `3251`
-  - `4421`
-  - `5573`
+
+Final validation sweep for this pass used the explicit robustness seeds:
+- `1107`
+- `2113`
+- `3251`
+- `4421`
+- `5573`
+- `6659`
+- `7873`
+- `9011`
+- `10243`
+- `11519`
 
 Determinism rules:
 - trade order is sorted by `entry_at`, then stable game, side, family, and state-index tie-breakers
@@ -33,7 +39,7 @@ Determinism rules:
 - the same sample and seed produce the same bankroll path
 
 ## Portfolio Artifacts
-Each benchmarked backtest run now emits:
+Each benchmarked backtest run emits:
 - `benchmark_portfolio_summary`
 - `benchmark_portfolio_steps`
 - `benchmark_portfolio_candidate_freeze`
@@ -51,50 +57,81 @@ Key portfolio metrics:
 - `skipped_bankroll_count`
 
 ## Current Validated Family Status
-Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, with random-holdout seed `1107`.
+Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, with a `$10.00` starting bankroll and `1.0` position fraction.
 
 ### `inversion`
-- active rules:
-  - entry: `first_cross_above_50c`
-  - exit: `break_back_below_50c_or_end`
-- status: `keep`
-- current sequential result:
-  - full-sample ending bankroll: `790514.77`
-  - full-sample max drawdown: `41.12%`
-  - random-holdout ending bankroll: `377435.94`
-  - random-holdout max drawdown: `30.94%`
+- how it works:
+  - buy the underdog once its in-game price first crosses above `50c`
+  - exit if it breaks back below `50c` or the game ends
+- full-sample result:
+  - ending bankroll: `790514.77`
+  - max drawdown: `41.12%`
+  - executed trades: `62`
+- 10-seed robustness:
+  - label: `stable_positive`
+  - positive seeds: `10 / 10`
+  - ending bankroll range: `1964.71` to `143771145.05`
+  - median ending bankroll: `306157.58`
+  - worst drawdown: `52.35%`
 
 ### `winner_definition`
-- active rules:
-  - entry: `reach_80c`
-  - exit: `break_75c_or_end`
-- status: `keep`
-- current sequential result:
-  - full-sample ending bankroll: `2359.91`
-  - full-sample max drawdown: `24.49%`
-  - random-holdout ending bankroll: `213303.89`
-  - random-holdout max drawdown: `29.81%`
+- how it works:
+  - buy once the market reaches `80c`
+  - exit if it breaks below `75c` or the game ends
+- full-sample result:
+  - ending bankroll: `2359.91`
+  - max drawdown: `24.49%`
+  - executed trades: `50`
+- 10-seed robustness:
+  - label: `stable_positive`
+  - positive seeds: `10 / 10`
+  - ending bankroll range: `46877.16` to `1822024.11`
+  - median ending bankroll: `120694.72`
+  - worst drawdown: `37.71%`
 
 ### `reversion`
-- active rules unchanged
-- status: `drop`
-- reason:
-  - tail losses dominate compounding despite the high hit rate
+- how it works:
+  - buy a strong favorite after a `10c` drawdown from the opening price
+  - exit on reclaim to `open - 2c` or the end of game
+- full-sample result:
+  - ending bankroll effectively goes to zero
+  - max drawdown: `100.00%`
+- 10-seed robustness:
+  - label: `stable_negative`
+  - positive seeds: `0 / 10`
+  - median ending bankroll: effectively `0`
+  - worst drawdown: `100.00%`
 
 ### `comeback_reversion`
-- active rules unchanged
-- status: `drop`
-- reason:
-  - the family does not survive bankroll carry-forward and needs a redesign, not micro-tuning
+- how it works:
+  - buy an underdog in `Q2` or `Q3` when it trails by `5+`, still trades in the `15c-40c` band, and recent scoring momentum turns positive
+  - exit at `+8c`, `-6c`, or the end of game
+- full-sample result:
+  - ending bankroll: `0.0187`
+  - max drawdown: `99.84%`
+- 10-seed robustness:
+  - label: `mixed`
+  - positive seeds: `1 / 10`
+  - ending bankroll range: `0.0006` to `26.37`
+  - median ending bankroll: `0.6487`
+  - worst drawdown: `99.99%`
 
 ### `volatility_scalp`
-- active rules unchanged
-- status: `drop`
-- reason:
-  - narrow scalp behavior does not produce a durable portfolio sleeve
+- how it works:
+  - buy a mid-band team in `Q1` after a `12c` drop from the opening price
+  - exit on a partial reclaim, a `-5c` stop, or the end of game
+- full-sample result:
+  - ending bankroll: `0.0034`
+  - max drawdown: `99.97%`
+- 10-seed robustness:
+  - label: `mixed`
+  - positive seeds: `1 / 10`
+  - ending bankroll range: `1.19` to `11.34`
+  - median ending bankroll: `2.62`
+  - worst drawdown: `88.14%`
 
 ## Combined Keep-Family Sleeve
-The first combined sleeve now merges the two surviving single-family candidates:
+The first combined sleeve merges the two surviving single-family candidates:
 - members: `inversion,winner_definition`
 - combined family label: `combined_keep_families`
 
@@ -113,31 +150,21 @@ Interpretation:
 - it does not beat pure `inversion` on full-sample terminal bankroll because family collisions remove many `inversion` entries
 - the next statistical question is allocation and priority, not whether the sleeve exists at all
 
-## Repeated-Seed Robustness
-Repeated-seed robustness currently runs only on the single-family `keep` set.
+## Final Improvement Pass
+The retained improvement from this pass is methodological, not a live strategy-math change:
+- repeated-seed robustness now covers all five families instead of only the keep set
+- the final evidence set is a 10-seed bankroll sweep on the same `$10` portfolio contract
 
-### `inversion`
-- robustness label: `stable_positive`
-- positive seeds: `5 / 5`
-- ending bankroll range: `1964.71` to `11870707.53`
-- median ending bankroll: `377435.94`
-- executed-trade range: `46` to `62`
-- worst max drawdown: `46.69%`
+Tested and rejected during this pass:
+- `winner_definition`
+  - tested variant: require a two-state confirmation after `80c`
+  - result: lower terminal bankroll than the original `reach_80c` rule on the full sample and on every tested holdout seed
 
-### `winner_definition`
-- robustness label: `stable_positive`
-- positive seeds: `5 / 5`
-- ending bankroll range: `55976.44` to `213303.89`
-- median ending bankroll: `102762.64`
-- executed-trade range: `90` to `103`
-- worst max drawdown: `37.71%`
+Decision:
+- keep the older `winner_definition` rule as the active production family definition
+- treat later trigger refinements as explicit experiments, not silent default replacements
 
-Interpretation:
-- both surviving families remain profitable across every tested seed
-- `inversion` has much wider dispersion and higher upside, but also the higher worst-seed drawdown
-- `winner_definition` remains the steadier sleeve under repeated holdout reshuffles
-
-## Rejected Threshold Experiment
+## Historical Rejected Threshold Experiment
 Tested and rejected on `2026-04-20`:
 - `inversion`
   - tested variant: `52c` entry / `48c` exit
@@ -145,10 +172,6 @@ Tested and rejected on `2026-04-20`:
 - `winner_definition`
   - tested variant: `82c` entry / `77c` exit
   - result: worse sequential compounding than the original `80c/75c` rules
-
-Decision:
-- keep the older defaults as the active production family definitions
-- treat later threshold work as explicit experiments, not silent default replacements
 
 ## Promotion Rule
 Per-trade average return is not enough to promote a family.

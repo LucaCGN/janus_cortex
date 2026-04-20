@@ -874,10 +874,11 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         portfolio_summary_df = pd.concat([portfolio_summary_df, combined_portfolio_summary_df], ignore_index=True)
     if not combined_portfolio_steps_df.empty:
         portfolio_steps_df = pd.concat([portfolio_steps_df, combined_portfolio_steps_df], ignore_index=True)
+    robustness_families = tuple(sorted(registry.keys()))
     portfolio_robustness_detail_df, portfolio_robustness_summary_df = _build_portfolio_robustness_frames(
         work,
         request,
-        strategy_families=keep_families,
+        strategy_families=robustness_families,
     )
 
     payload = full_result.payload
@@ -906,6 +907,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
             "game_limit": normalize_portfolio_game_limit(request.portfolio_game_limit),
         },
         "portfolio_keep_families": list(keep_families),
+        "portfolio_robustness_families": list(robustness_families),
         "portfolio_combined_family_name": COMBINED_KEEP_FAMILIES_PORTFOLIO if len(keep_families) >= 2 else None,
         "portfolio_metric_columns": [
             "ending_bankroll",
