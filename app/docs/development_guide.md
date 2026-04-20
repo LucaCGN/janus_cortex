@@ -229,9 +229,11 @@ Before closing any session:
 - open reference index: `Get-Content app/docs/reference/README.md`
 - open master dependency graph: `Get-Content app/docs/reference/master_execution_dependency_graph.md`
 - open DB safety workflow: `Get-Content app/docs/reference/database_safety_workflow.md`
+- open analysis validation workflow: `Get-Content app/docs/reference/offline_analysis_validation_workflow.md`
 - show local workspace status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status`
 - ensure local workspace layout: `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 ensure`
 - show disposable DB status: `powershell -ExecutionPolicy Bypass -File .\tools\janus_db.ps1 status`
+- run disposable analysis validation: `powershell -ExecutionPolicy Bypass -File .\tools\run_analysis_validation.ps1 -Target disposable`
 - open current planning index: `Get-Content app/docs/planning/README.md`
 - open current roadmap: `Get-Content app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
 - list node files: `rg --files app/data/nodes`

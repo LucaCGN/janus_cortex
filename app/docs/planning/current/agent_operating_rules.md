@@ -25,6 +25,7 @@
 - run migration tests on a disposable Postgres database before a dev-clone validation
 - keep a rollback or restore note in the branch plan before any shared-db apply
 - if a migration affects large existing tables, validate runtime on a dev clone before merge approval
+- after DB safety is green, use `powershell -ExecutionPolicy Bypass -File .\tools\run_analysis_validation.ps1 -Target disposable` as the default non-live validation sweep
 
 ## Analysis Research Rules
 - reports, backtests, and models consume mart outputs only

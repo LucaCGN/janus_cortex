@@ -22,6 +22,7 @@ Use planning docs for:
 
 ### Execution Safety
 - [database_safety_workflow.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/database_safety_workflow.md)
+- [offline_analysis_validation_workflow.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/offline_analysis_validation_workflow.md)
 
 ### Mission And Research Intent
 - [analysis_mission_and_trading_hypotheses.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_mission_and_trading_hypotheses.md)
