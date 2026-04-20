@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 
 from app.data.pipelines.daily.nba.analysis.consumer_adapters import (
+    build_analysis_backtest_family_detail,
+    build_analysis_backtest_index,
     build_analysis_consumer_snapshot,
+    load_analysis_backtest_family_detail,
+    load_analysis_backtest_index,
     load_analysis_consumer_bundle,
     load_analysis_consumer_snapshot,
     resolve_analysis_consumer_paths,
@@ -16,6 +21,20 @@ from app.data.pipelines.daily.nba.analysis.reports import REPORT_SECTION_SPECS
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _write_json_list(path: Path, payload: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(rows[0].keys())
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def _build_report_payload(*, version: str, json_path: Path) -> dict[str, object]:
@@ -49,6 +68,7 @@ def _build_report_payload(*, version: str, json_path: Path) -> dict[str, object]
 
 
 def _build_backtest_payload(*, version: str, json_path: Path, experiment_id: str) -> dict[str, object]:
+    backtests_dir = json_path.parent
     return {
         "season": "2025-26",
         "season_phase": "regular_season",
@@ -137,6 +157,15 @@ def _build_backtest_payload(*, version: str, json_path: Path, experiment_id: str
             "json": str(json_path),
             "markdown": str(json_path.with_suffix(".md")),
             "benchmark_family_summary_csv": str(json_path.parent / "benchmark_family_summary.csv"),
+            "reversion_csv": str(backtests_dir / "reversion_trades.csv"),
+            "reversion_parquet": str(backtests_dir / "reversion_trades.parquet"),
+            "reversion_best_trades_csv": str(backtests_dir / "reversion_best_trades.csv"),
+            "reversion_best_trades_parquet": str(backtests_dir / "reversion_best_trades.parquet"),
+            "reversion_worst_trades_csv": str(backtests_dir / "reversion_worst_trades.csv"),
+            "reversion_worst_trades_parquet": str(backtests_dir / "reversion_worst_trades.parquet"),
+            "reversion_context_summary_csv": str(backtests_dir / "reversion_context_summary.csv"),
+            "reversion_context_summary_parquet": str(backtests_dir / "reversion_context_summary.parquet"),
+            "reversion_trade_traces_json": str(backtests_dir / "reversion_trade_traces.json"),
         },
     }
 
@@ -189,6 +218,140 @@ def _write_consumer_fixture(root: Path, *, version: str, experiment_id: str = "e
     _write_json(report_json, _build_report_payload(version=version, json_path=report_json))
     _write_json(backtest_json, _build_backtest_payload(version=version, json_path=backtest_json, experiment_id=experiment_id))
     _write_json(model_json, _build_model_payload(version=version, json_path=model_json))
+    backtests_dir = backtest_json.parent
+    _write_csv(
+        backtests_dir / "reversion_best_trades.csv",
+        [
+            {
+                "season": "2025-26",
+                "season_phase": "regular_season",
+                "analysis_version": version,
+                "strategy_family": "reversion",
+                "entry_rule": "favorite_drawdown_buy_10c",
+                "exit_rule": "reclaim_open_minus_2c_or_end",
+                "game_id": "002TEST0001",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "opponent_team_slug": "LAL",
+                "opening_band": "70-80",
+                "period_label": "Q1",
+                "score_diff_bucket": "trail_1_4",
+                "context_bucket": "Q1|trail_1_4",
+                "entry_state_index": 0,
+                "exit_state_index": 2,
+                "entry_at": "2026-02-22T20:01:00+00:00",
+                "exit_at": "2026-02-22T20:03:00+00:00",
+                "entry_price": 0.58,
+                "exit_price": 0.8,
+                "gross_return": 0.37931034482758635,
+                "gross_return_with_slippage": 0.37931034482758635,
+                "max_favorable_excursion_after_entry": 0.38,
+                "max_adverse_excursion_after_entry": 0.0,
+                "hold_time_seconds": 120.0,
+                "slippage_cents": 0,
+            }
+        ],
+    )
+    _write_csv(
+        backtests_dir / "reversion_worst_trades.csv",
+        [
+            {
+                "season": "2025-26",
+                "season_phase": "regular_season",
+                "analysis_version": version,
+                "strategy_family": "reversion",
+                "entry_rule": "favorite_drawdown_buy_10c",
+                "exit_rule": "reclaim_open_minus_2c_or_end",
+                "game_id": "002TEST0002",
+                "team_side": "away",
+                "team_slug": "ATL",
+                "opponent_team_slug": "NYK",
+                "opening_band": "60-70",
+                "period_label": "Q3",
+                "score_diff_bucket": "trail_5_9",
+                "context_bucket": "Q3|trail_5_9",
+                "entry_state_index": 5,
+                "exit_state_index": 9,
+                "entry_at": "2026-02-24T21:15:00+00:00",
+                "exit_at": "2026-02-24T21:19:00+00:00",
+                "entry_price": 0.44,
+                "exit_price": 0.39,
+                "gross_return": -0.11363636363636365,
+                "gross_return_with_slippage": -0.11363636363636365,
+                "max_favorable_excursion_after_entry": 0.03,
+                "max_adverse_excursion_after_entry": -0.12,
+                "hold_time_seconds": 240.0,
+                "slippage_cents": 0,
+            }
+        ],
+    )
+    _write_csv(
+        backtests_dir / "reversion_context_summary.csv",
+        [
+            {
+                "strategy_family": "reversion",
+                "period_label": "Q1",
+                "opening_band": "70-80",
+                "context_bucket": "Q1|trail_1_4",
+                "trade_count": 12,
+                "win_rate": 0.67,
+                "avg_gross_return_with_slippage": 0.11,
+                "avg_hold_time_seconds": 390.0,
+            },
+            {
+                "strategy_family": "reversion",
+                "period_label": "Q4",
+                "opening_band": "70-80",
+                "context_bucket": "Q4|trail_1_4",
+                "trade_count": 8,
+                "win_rate": 0.62,
+                "avg_gross_return_with_slippage": 0.09,
+                "avg_hold_time_seconds": 410.0,
+            },
+        ],
+    )
+    _write_json_list(
+        backtests_dir / "reversion_trade_traces.json",
+        [
+            {
+                "strategy_family": "reversion",
+                "game_id": "002TEST0001",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "entry_state_index": 0,
+                "exit_state_index": 2,
+                "entry_at": "2026-02-22T20:01:00+00:00",
+                "exit_at": "2026-02-22T20:03:00+00:00",
+                "gross_return_with_slippage": 0.37931034482758635,
+                "states": [
+                    {
+                        "state_index": 0,
+                        "event_at": "2026-02-22T20:01:00+00:00",
+                        "period_label": "Q1",
+                        "score_diff_bucket": "trail_1_4",
+                        "context_bucket": "Q1|trail_1_4",
+                        "team_price": 0.58,
+                    },
+                    {
+                        "state_index": 1,
+                        "event_at": "2026-02-22T20:02:00+00:00",
+                        "period_label": "Q1",
+                        "score_diff_bucket": "lead_1_4",
+                        "context_bucket": "Q1|lead_1_4",
+                        "team_price": 0.64,
+                    },
+                    {
+                        "state_index": 2,
+                        "event_at": "2026-02-22T20:03:00+00:00",
+                        "period_label": "Q2",
+                        "score_diff_bucket": "lead_1_4",
+                        "context_bucket": "Q2|lead_1_4",
+                        "team_price": 0.8,
+                    },
+                ],
+            }
+        ],
+    )
 
 
 def test_consumer_adapter_resolves_latest_version_and_builds_snapshot_pytest(tmp_path: Path) -> None:
@@ -234,3 +397,79 @@ def test_consumer_adapter_load_snapshot_rejects_experiment_mismatch_pytest(tmp_p
         assert "Backtest experiment mismatch" in str(exc)
     else:
         raise AssertionError("Expected ValueError for mismatched experiment id")
+
+
+def test_consumer_adapter_builds_backtest_index_pytest(tmp_path: Path) -> None:
+    _write_consumer_fixture(tmp_path, version="v1_2_0", experiment_id="exp-index")
+    request = AnalysisConsumerRequest(
+        season="2025-26",
+        season_phase="regular_season",
+        analysis_version="v1_2_0",
+        output_root=str(tmp_path),
+    )
+
+    bundle = load_analysis_consumer_bundle(request)
+    payload = build_analysis_backtest_index(bundle)
+
+    assert payload["analysis_version"] == "v1_2_0"
+    assert payload["benchmark"]["experiment"]["experiment_id"] == "exp-index"
+    assert payload["families"][0]["strategy_family"] == "reversion"
+    assert payload["families"][0]["artifact_paths"]["trade_traces_json"].endswith("reversion_trade_traces.json")
+
+    loaded = load_analysis_backtest_index(request)
+    assert loaded["families"][1]["strategy_family"] == "inversion"
+
+
+def test_consumer_adapter_builds_backtest_family_detail_pytest(tmp_path: Path) -> None:
+    _write_consumer_fixture(tmp_path, version="v1_2_0", experiment_id="exp-detail")
+    request = AnalysisConsumerRequest(
+        season="2025-26",
+        season_phase="regular_season",
+        analysis_version="v1_2_0",
+        output_root=str(tmp_path),
+    )
+
+    bundle = load_analysis_consumer_bundle(request)
+    payload = build_analysis_backtest_family_detail(
+        bundle,
+        strategy_family="reversion",
+        trade_limit=2,
+        context_limit=1,
+        trace_limit=1,
+    )
+
+    assert payload["strategy_family"] == "reversion"
+    assert payload["summary"]["candidate_label"] == "keep"
+    assert payload["candidate_freeze"]["label_reason"] == "positive_on_full_time_and_holdout"
+    assert len(payload["best_trades"]) == 1
+    assert payload["best_trades"][0]["game_id"] == "002TEST0001"
+    assert len(payload["worst_trades"]) == 1
+    assert payload["context_summary"][0]["context_bucket"] == "Q1|trail_1_4"
+    assert len(payload["trade_traces"]) == 1
+    assert payload["trade_traces"][0]["states"][0]["team_price"] == 0.58
+
+    loaded = load_analysis_backtest_family_detail(
+        request,
+        strategy_family="reversion",
+        trade_limit=1,
+        context_limit=1,
+        trace_limit=1,
+    )
+    assert loaded["artifact_paths"]["best_trades_csv"].endswith("reversion_best_trades.csv")
+
+
+def test_consumer_adapter_backtest_family_detail_rejects_unknown_family_pytest(tmp_path: Path) -> None:
+    _write_consumer_fixture(tmp_path, version="v1_2_0", experiment_id="exp-detail")
+    request = AnalysisConsumerRequest(
+        season="2025-26",
+        season_phase="regular_season",
+        analysis_version="v1_2_0",
+        output_root=str(tmp_path),
+    )
+
+    try:
+        load_analysis_backtest_family_detail(request, strategy_family="volatility_scalp")
+    except ValueError as exc:
+        assert "Unknown strategy_family" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unknown strategy family")

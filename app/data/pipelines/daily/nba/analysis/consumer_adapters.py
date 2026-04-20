@@ -6,12 +6,25 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from app.api.db import to_jsonable
 from app.data.pipelines.daily.nba.analysis.contracts import AnalysisConsumerRequest, DEFAULT_OUTPUT_ROOT
 from app.data.pipelines.daily.nba.analysis.reports import REPORT_SECTION_SPECS
 
 
 _VERSION_TOKEN_PATTERN = re.compile(r"\d+")
+_FAMILY_ARTIFACT_KEY_MAP = {
+    "trades_csv": "{family}_csv",
+    "trades_parquet": "{family}_parquet",
+    "best_trades_csv": "{family}_best_trades_csv",
+    "best_trades_parquet": "{family}_best_trades_parquet",
+    "worst_trades_csv": "{family}_worst_trades_csv",
+    "worst_trades_parquet": "{family}_worst_trades_parquet",
+    "context_summary_csv": "{family}_context_summary_csv",
+    "context_summary_parquet": "{family}_context_summary_parquet",
+    "trade_traces_json": "{family}_trade_traces_json",
+}
 
 
 @dataclass(slots=True)
@@ -129,6 +142,65 @@ def _normalized_artifacts(
         "backtests": to_jsonable(backtest_artifacts),
         "models": to_jsonable(model_artifacts),
     }
+
+
+def _read_table_artifact(
+    *,
+    artifacts: dict[str, Any],
+    csv_key: str,
+    parquet_key: str,
+) -> pd.DataFrame:
+    parquet_path = artifacts.get(parquet_key)
+    if parquet_path:
+        path = Path(str(parquet_path))
+        if path.exists():
+            try:
+                return pd.read_parquet(path)
+            except Exception:
+                pass
+
+    csv_path = artifacts.get(csv_key)
+    if csv_path:
+        path = Path(str(csv_path))
+        if path.exists():
+            return pd.read_csv(path)
+    return pd.DataFrame()
+
+
+def _read_json_list(path_value: Any) -> list[dict[str, Any]]:
+    if not path_value:
+        return []
+    path = Path(str(path_value))
+    if not path.exists():
+        return []
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        return []
+    return [row for row in payload if isinstance(row, dict)]
+
+
+def _bounded_records(frame: pd.DataFrame, *, limit: int | None = None) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    records = frame.to_dict(orient="records")
+    if limit is not None:
+        records = records[:limit]
+    return list(to_jsonable(records))
+
+
+def _family_rows(payload_rows: list[dict[str, Any]], *, strategy_family: str) -> list[dict[str, Any]]:
+    token = str(strategy_family)
+    return [row for row in payload_rows if str(row.get("strategy_family")) == token]
+
+
+def _family_artifact_paths(backtest_artifacts: dict[str, Any], *, strategy_family: str) -> dict[str, str]:
+    result: dict[str, str] = {}
+    for public_key, template in _FAMILY_ARTIFACT_KEY_MAP.items():
+        artifact_key = template.format(family=strategy_family)
+        artifact_path = backtest_artifacts.get(artifact_key)
+        if artifact_path:
+            result[public_key] = str(artifact_path)
+    return result
 
 
 def load_analysis_consumer_bundle(request: AnalysisConsumerRequest) -> AnalysisConsumerBundle:
@@ -294,14 +366,159 @@ def build_analysis_consumer_snapshot(bundle: AnalysisConsumerBundle) -> dict[str
     return to_jsonable(snapshot)
 
 
+def build_analysis_backtest_index(bundle: AnalysisConsumerBundle) -> dict[str, Any]:
+    snapshot = build_analysis_consumer_snapshot(bundle)
+    backtest_artifacts = dict((snapshot.get("artifacts") or {}).get("backtests") or {})
+    rankings = list((snapshot.get("benchmark") or {}).get("strategy_rankings") or [])
+    families: list[dict[str, Any]] = []
+    for row in rankings:
+        strategy_family = str(row.get("strategy_family"))
+        families.append(
+            {
+                "strategy_family": strategy_family,
+                "summary": {
+                    "trade_count": row.get("trade_count"),
+                    "win_rate": row.get("win_rate"),
+                    "avg_gross_return": row.get("avg_gross_return"),
+                    "avg_gross_return_with_slippage": row.get("avg_gross_return_with_slippage"),
+                    "avg_hold_time_seconds": row.get("avg_hold_time_seconds"),
+                    "avg_mfe_after_entry": row.get("avg_mfe_after_entry"),
+                    "avg_mae_after_entry": row.get("avg_mae_after_entry"),
+                    "candidate_label": row.get("candidate_label"),
+                    "label_reason": row.get("label_reason"),
+                },
+                "artifact_paths": _family_artifact_paths(backtest_artifacts, strategy_family=strategy_family),
+            }
+        )
+
+    payload = {
+        "season": bundle.season,
+        "season_phase": bundle.season_phase,
+        "analysis_version": bundle.analysis_version,
+        "output_dir": str(bundle.output_dir),
+        "benchmark": snapshot.get("benchmark") or {},
+        "families": families,
+    }
+    return to_jsonable(payload)
+
+
+def build_analysis_backtest_family_detail(
+    bundle: AnalysisConsumerBundle,
+    *,
+    strategy_family: str,
+    trade_limit: int = 5,
+    context_limit: int = 10,
+    trace_limit: int = 3,
+) -> dict[str, Any]:
+    snapshot = build_analysis_consumer_snapshot(bundle)
+    backtest_payload = bundle.backtest_payload
+    benchmark = backtest_payload.get("benchmark") or {}
+    strategy_family_text = str(strategy_family)
+
+    sample_summaries = _family_rows(list(benchmark.get("family_summary") or []), strategy_family=strategy_family_text)
+    summary_lookup = {
+        str(row.get("strategy_family")): row for row in (snapshot.get("benchmark") or {}).get("strategy_rankings") or []
+    }
+    summary = summary_lookup.get(strategy_family_text)
+    if summary is None and not sample_summaries:
+        raise ValueError(f"Unknown strategy_family for analysis backtest detail: {strategy_family_text}")
+
+    candidate_freeze = next(
+        (row for row in (snapshot.get("benchmark") or {}).get("candidate_freeze") or [] if str(row.get("strategy_family")) == strategy_family_text),
+        None,
+    )
+    comparator_summary = _family_rows(
+        list((snapshot.get("benchmark") or {}).get("comparator_summary") or []),
+        strategy_family=strategy_family_text,
+    )
+    context_rankings = _family_rows(
+        list((snapshot.get("benchmark") or {}).get("context_rankings") or []),
+        strategy_family=strategy_family_text,
+    )
+
+    backtest_artifacts = dict((snapshot.get("artifacts") or {}).get("backtests") or {})
+    artifact_paths = _family_artifact_paths(backtest_artifacts, strategy_family=strategy_family_text)
+    best_trades = _bounded_records(
+        _read_table_artifact(
+            artifacts=backtest_artifacts,
+            csv_key=f"{strategy_family_text}_best_trades_csv",
+            parquet_key=f"{strategy_family_text}_best_trades_parquet",
+        ),
+        limit=trade_limit,
+    )
+    worst_trades = _bounded_records(
+        _read_table_artifact(
+            artifacts=backtest_artifacts,
+            csv_key=f"{strategy_family_text}_worst_trades_csv",
+            parquet_key=f"{strategy_family_text}_worst_trades_parquet",
+        ),
+        limit=trade_limit,
+    )
+    context_summary = _bounded_records(
+        _read_table_artifact(
+            artifacts=backtest_artifacts,
+            csv_key=f"{strategy_family_text}_context_summary_csv",
+            parquet_key=f"{strategy_family_text}_context_summary_parquet",
+        ),
+        limit=context_limit,
+    )
+    trade_traces = _read_json_list(backtest_artifacts.get(f"{strategy_family_text}_trade_traces_json"))
+    if trace_limit is not None:
+        trade_traces = trade_traces[:trace_limit]
+
+    payload = {
+        "season": bundle.season,
+        "season_phase": bundle.season_phase,
+        "analysis_version": bundle.analysis_version,
+        "output_dir": str(bundle.output_dir),
+        "strategy_family": strategy_family_text,
+        "summary": summary or to_jsonable(sample_summaries[0]),
+        "sample_summaries": sample_summaries,
+        "candidate_freeze": candidate_freeze,
+        "comparator_summary": comparator_summary,
+        "context_rankings": context_rankings,
+        "artifact_paths": artifact_paths,
+        "best_trades": best_trades,
+        "worst_trades": worst_trades,
+        "context_summary": context_summary,
+        "trade_traces": to_jsonable(trade_traces),
+    }
+    return to_jsonable(payload)
+
+
 def load_analysis_consumer_snapshot(request: AnalysisConsumerRequest) -> dict[str, Any]:
     return build_analysis_consumer_snapshot(load_analysis_consumer_bundle(request))
 
 
+def load_analysis_backtest_index(request: AnalysisConsumerRequest) -> dict[str, Any]:
+    return build_analysis_backtest_index(load_analysis_consumer_bundle(request))
+
+
+def load_analysis_backtest_family_detail(
+    request: AnalysisConsumerRequest,
+    *,
+    strategy_family: str,
+    trade_limit: int = 5,
+    context_limit: int = 10,
+    trace_limit: int = 3,
+) -> dict[str, Any]:
+    return build_analysis_backtest_family_detail(
+        load_analysis_consumer_bundle(request),
+        strategy_family=strategy_family,
+        trade_limit=trade_limit,
+        context_limit=context_limit,
+        trace_limit=trace_limit,
+    )
+
+
 __all__ = [
     "AnalysisConsumerBundle",
+    "build_analysis_backtest_family_detail",
+    "build_analysis_backtest_index",
     "build_analysis_consumer_snapshot",
     "list_available_analysis_versions",
+    "load_analysis_backtest_family_detail",
+    "load_analysis_backtest_index",
     "load_analysis_consumer_bundle",
     "load_analysis_consumer_snapshot",
     "resolve_analysis_consumer_paths",
