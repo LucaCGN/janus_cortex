@@ -21,6 +21,8 @@ Completed implementation wave:
 - `v1.0.4` five-family strategy lab
 - `v1.1.0` benchmarked multi-algorithm backtest workflow
 - `v1.2.0` stable read-only consumer adapters
+- `v1.3.0` permanent analysis studio alpha
+- `v1.3.1` read-only family comparison follow-on lane
 
 ## Current CLI Surface
 - `build_analysis_mart`
@@ -35,10 +37,13 @@ Completed implementation wave:
 - `load_analysis_consumer_bundle`
 - `build_analysis_consumer_snapshot`
 - `load_analysis_consumer_snapshot`
+- `load_analysis_backtest_index`
+- `load_analysis_backtest_family_detail`
 
 Consumer contract notes:
 - downstream consumers load versioned report, backtest, and model artifacts through one adapter layer
 - the consumer snapshot includes normalized report sections, benchmark leaderboards, candidate-freeze labels, model track summaries, and artifact links
+- the backtest detail contract exposes per-family index and bounded detail reads for comparison views
 - validation now captures a consumer snapshot in the disposable non-live sweep
 
 ## Corpus Snapshot
@@ -92,10 +97,11 @@ Historical note:
   - in-memory local run registry with stdout/stderr and output-root tracking
   - finished-game explorer rows backed by `nba_analysis_game_team_profiles`
   - bounded home/away state-panel detail backed by `nba_analysis_state_panel`
+  - read-only family comparison data is available through the analysis consumer adapter layer, but the comparison UI is a follow-on lane rather than part of the alpha surface
 
 ## Current Gaps
-- a separate read-only comparison-detail contract for per-family backtest artifacts is still pending
-- deeper frontend strategy comparison views depend on that contract and are not part of the current studio alpha branch
+- the dedicated family comparison UI is still pending as a follow-on lane
+- the studio alpha does not yet expose the comparison surface in the main UI
 - richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - operator hardening beyond the current run-control surface is still pending

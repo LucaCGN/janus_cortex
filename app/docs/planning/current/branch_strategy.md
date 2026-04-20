@@ -53,7 +53,7 @@
    - build the dedicated frontend studio alpha through run control and game explorer
 7. `codex/analysis-backtest-detail-contract`
    - expose per-family backtest comparison detail through a read-only analysis contract
-8. stacked frontend comparison branch
+8. `codex/frontend-analysis-comparison`
    - consume the detail contract in the permanent studio without widening the alpha branch PR
 9. `codex/season-playoffs-preseason`
    - prepare season-scope structures for play-in, playoffs, and preseason
@@ -66,5 +66,6 @@ Detailed subphase plans live under:
 ## Branch Launch Guidance
 - do not launch frontend before read-only consumer contracts stabilize
 - do not widen a validated frontend alpha PR with comparison-contract work; split the read-only detail contract first
+- do not launch the frontend comparison lane until both the studio alpha and the backtest detail contract are merged to `main`
 - do not launch season-expansion branches before dev-db safety and validation hardening are in place
 - do not launch strategy-comparison branches before the current offline stack has a clean validation report
