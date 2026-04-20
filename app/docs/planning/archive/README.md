@@ -4,6 +4,9 @@
 Keep a stable record of completed or superseded execution waves so future agents can understand why current code and docs look the way they do.
 
 ## Current Archive Catalog
+- [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/README.md)
+  - catalog of completed branch plans that have already merged to `main`
+  - keeps the finished analysis, consumer, frontend, and validation branches readable as historical rationale
 - [app/docs/nba_analysis_parallel_workstreams.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_parallel_workstreams.md)
   - historical execution packet for the `A0-A7` analysis split
   - explains how the monolithic analysis module was broken into contracts, universe, marts, reports, backtests, models, and player-impact lanes

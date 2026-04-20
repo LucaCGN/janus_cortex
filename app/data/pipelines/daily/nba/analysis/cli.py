@@ -9,6 +9,9 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_HOLDOUT_RATIO,
     DEFAULT_BACKTEST_HOLDOUT_SEED,
     DEFAULT_BACKTEST_MIN_TRADE_COUNT,
+    DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT,
+    DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL,
+    DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
     DEFAULT_SEASON,
     DEFAULT_SEASON_PHASE,
     AnalysisMartBuildRequest,
@@ -47,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--holdout-ratio", type=float, default=DEFAULT_BACKTEST_HOLDOUT_RATIO)
     backtest_parser.add_argument("--holdout-seed", type=int, default=DEFAULT_BACKTEST_HOLDOUT_SEED)
     backtest_parser.add_argument("--min-trade-count", type=int, default=DEFAULT_BACKTEST_MIN_TRADE_COUNT)
+    backtest_parser.add_argument("--portfolio-initial-bankroll", type=float, default=DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL)
+    backtest_parser.add_argument(
+        "--portfolio-position-size-fraction",
+        type=float,
+        default=DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
+    )
+    backtest_parser.add_argument("--portfolio-game-limit", type=int, default=DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT)
     backtest_parser.add_argument("--output-root", default=None)
 
     model_parser = subparsers.add_parser("train_analysis_baselines")
@@ -100,6 +110,9 @@ def dispatch_command(
                 holdout_ratio=args.holdout_ratio,
                 holdout_seed=args.holdout_seed,
                 min_trade_count=args.min_trade_count,
+                portfolio_initial_bankroll=args.portfolio_initial_bankroll,
+                portfolio_position_size_fraction=args.portfolio_position_size_fraction,
+                portfolio_game_limit=args.portfolio_game_limit,
                 analysis_version=args.analysis_version,
                 output_root=args.output_root,
             )

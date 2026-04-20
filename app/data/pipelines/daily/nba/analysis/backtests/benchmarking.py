@@ -17,6 +17,15 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     build_backtest_result,
     write_backtest_artifacts,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
+    PORTFOLIO_CANDIDATE_FREEZE_COLUMNS,
+    PORTFOLIO_SUMMARY_COLUMNS,
+    build_portfolio_benchmark_frames,
+    build_portfolio_candidate_freeze_frame,
+    normalize_portfolio_game_limit,
+    normalize_portfolio_initial_bankroll,
+    normalize_portfolio_position_size_fraction,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, BenchmarkRunResult, StrategyDefinition
 from app.data.pipelines.daily.nba.analysis.contracts import BACKTEST_BENCHMARK_CONTRACT_VERSION, BacktestRunRequest
@@ -659,6 +668,20 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
     sample_vs_full_df = _build_sample_vs_full_frame(family_summary_df)
     context_rankings_df = _build_context_rankings_frame(split_results, registry)
     candidate_freeze_df = _build_candidate_freeze_frame(family_summary_df, registry, min_trade_count=request.min_trade_count)
+    portfolio_summary_df, portfolio_steps_df = build_portfolio_benchmark_frames(
+        split_results,
+        registry,
+        initial_bankroll=request.portfolio_initial_bankroll,
+        position_size_fraction=request.portfolio_position_size_fraction,
+        game_limit=request.portfolio_game_limit,
+        split_order=_SPLIT_ORDER,
+    )
+    portfolio_candidate_freeze_df = build_portfolio_candidate_freeze_frame(
+        portfolio_summary_df,
+        registry,
+        starting_bankroll=request.portfolio_initial_bankroll,
+        min_trade_count=request.min_trade_count,
+    )
 
     payload = full_result.payload
     payload["benchmark"] = {
@@ -679,12 +702,29 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "random_holdout_ratio": _normalize_holdout_ratio(request.holdout_ratio),
         "random_holdout_seed": int(request.holdout_seed),
         "split_unit": "game_id",
+        "portfolio_config": {
+            "initial_bankroll": normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll),
+            "position_size_fraction": normalize_portfolio_position_size_fraction(request.portfolio_position_size_fraction),
+            "game_limit": normalize_portfolio_game_limit(request.portfolio_game_limit),
+        },
+        "portfolio_metric_columns": [
+            "ending_bankroll",
+            "total_pnl_amount",
+            "compounded_return",
+            "max_drawdown_amount",
+            "max_drawdown_pct",
+            "executed_trade_count",
+            "skipped_overlap_count",
+            "skipped_bankroll_count",
+        ],
         "split_summary": to_jsonable(split_summary_df.to_dict(orient="records")),
         "family_summary": to_jsonable(family_summary_df.to_dict(orient="records")),
         "comparator_summary": to_jsonable(comparator_summary_df.to_dict(orient="records")),
         "sample_vs_full": to_jsonable(sample_vs_full_df.to_dict(orient="records")),
         "context_rankings": to_jsonable(context_rankings_df.to_dict(orient="records")),
         "candidate_freeze": to_jsonable(candidate_freeze_df.to_dict(orient="records")),
+        "portfolio_summary": to_jsonable(portfolio_summary_df.to_dict(orient="records")),
+        "portfolio_candidate_freeze": to_jsonable(portfolio_candidate_freeze_df.to_dict(orient="records")),
     }
     payload["experiment"] = {
         "experiment_id": _build_experiment_id(request, registry),
@@ -701,6 +741,9 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "sample_vs_full": sample_vs_full_df,
         "context_rankings": context_rankings_df,
         "candidate_freeze": candidate_freeze_df,
+        "portfolio_summary": portfolio_summary_df,
+        "portfolio_steps": portfolio_steps_df,
+        "portfolio_candidate_freeze": portfolio_candidate_freeze_df,
     }
     return BenchmarkRunResult(
         payload=payload,
@@ -713,6 +756,16 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
 def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
     benchmark = payload.get("benchmark") or {}
     freeze_rows = benchmark.get("candidate_freeze") or []
+    portfolio_freeze_rows = benchmark.get("portfolio_candidate_freeze") or []
+    portfolio_full_rows = [row for row in (benchmark.get("portfolio_summary") or []) if row.get("sample_name") == "full_sample"]
+    portfolio_full_rows = sorted(
+        portfolio_full_rows,
+        key=lambda row: (
+            _safe_float(row.get("ending_bankroll")) is not None,
+            _safe_float(row.get("ending_bankroll")) or float("-inf"),
+        ),
+        reverse=True,
+    )
     full_rows = [row for row in (benchmark.get("family_summary") or []) if row.get("sample_name") == "full_sample"]
     full_rows = sorted(
         full_rows,
@@ -734,6 +787,9 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
         f"- Time validation cutoff: `{benchmark.get('time_validation_cutoff')}`",
         f"- Random holdout ratio: `{_format_num(benchmark.get('random_holdout_ratio'))}`",
         f"- Random holdout seed: `{benchmark.get('random_holdout_seed')}`",
+        f"- Portfolio initial bankroll: `{_format_num((benchmark.get('portfolio_config') or {}).get('initial_bankroll'))}`",
+        f"- Portfolio position fraction: `{_format_num((benchmark.get('portfolio_config') or {}).get('position_size_fraction'))}`",
+        f"- Portfolio game limit: `{_format_num((benchmark.get('portfolio_config') or {}).get('game_limit'))}`",
         "",
         "## Candidate Freeze",
         "",
@@ -745,6 +801,28 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
         for row in freeze_rows:
             lines.append(
                 f"- {row.get('strategy_family')}: `{row.get('candidate_label')}` because `{row.get('label_reason')}`"
+            )
+        lines.append("")
+    lines.extend(["## Sequential Portfolio Candidate Freeze", ""])
+    if not portfolio_freeze_rows:
+        lines.append("- No sequential portfolio candidate-freeze rows were produced.")
+        lines.append("")
+    else:
+        for row in portfolio_freeze_rows:
+            lines.append(
+                f"- {row.get('strategy_family')}: `{row.get('candidate_label')}` because `{row.get('label_reason')}`"
+            )
+        lines.append("")
+    lines.extend(["## Sequential Portfolio Ranking", ""])
+    if not portfolio_full_rows:
+        lines.append("- No full-sample sequential portfolio rows were produced.")
+        lines.append("")
+    else:
+        for row in portfolio_full_rows:
+            lines.append(
+                f"- {row.get('strategy_family')}: ending bankroll `{_format_num(row.get('ending_bankroll'))}`,"
+                f" compounded return `{_format_num(row.get('compounded_return'))}`,"
+                f" max drawdown `{_format_num(row.get('max_drawdown_pct'))}`"
             )
         lines.append("")
     lines.extend(["## Full Sample Ranking", ""])
@@ -775,6 +853,9 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "sample_vs_full": "benchmark_sample_vs_full",
         "context_rankings": "benchmark_context_rankings",
         "candidate_freeze": "benchmark_candidate_freeze",
+        "portfolio_summary": "benchmark_portfolio_summary",
+        "portfolio_steps": "benchmark_portfolio_steps",
+        "portfolio_candidate_freeze": "benchmark_portfolio_candidate_freeze",
     }
     for frame_name, frame in result.benchmark_frames.items():
         stem = artifact_stems.get(frame_name)
@@ -798,6 +879,8 @@ __all__ = [
     "BENCHMARK_COMPARATOR_COLUMNS",
     "BENCHMARK_CONTEXT_RANK_COLUMNS",
     "BENCHMARK_FAMILY_SUMMARY_COLUMNS",
+    "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",
+    "PORTFOLIO_SUMMARY_COLUMNS",
     "BENCHMARK_SAMPLE_VS_FULL_COLUMNS",
     "BENCHMARK_SPLIT_SUMMARY_COLUMNS",
     "build_benchmark_run_result",

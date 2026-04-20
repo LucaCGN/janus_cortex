@@ -1,7 +1,7 @@
 # Analysis Studio Frontend Reference
 
 ## Purpose
-Define the stable architecture for the permanent analysis frontend while the branch is still in its early scaffold phase.
+Define the stable architecture for the permanent analysis frontend.
 
 This document is reference, not planning. It describes what the frontend is allowed to depend on and which runtime choices are currently true.
 
@@ -12,7 +12,7 @@ This document is reference, not planning. It describes what the frontend is allo
 - the frontend consumes the analysis consumer snapshot contract instead of loading raw artifact JSONs independently
 - local operator run control also stays in the existing FastAPI runtime for now, but it is limited to whitelisted commands and local workspace paths
 - `F3a` adds a mart-backed game explorer through thin read-only API routes, so the frontend still does not parse analysis artifacts directly
-- deeper per-family benchmark comparison is not part of the current branch boundary; it depends on a separate downstream read-only comparison contract
+- `F4a` adds a read-only family comparison surface, and the studio now consumes a separate backtest detail contract for that view
 
 ## Stable Read Surface
 - page route:
@@ -29,6 +29,9 @@ This document is reference, not planning. It describes what the frontend is allo
   - `GET /v1/analysis/studio/runs/{run_id}`
 - local run-launch route:
   - `POST /v1/analysis/studio/runs`
+- backtest comparison routes:
+  - `GET /v1/analysis/studio/backtests`
+  - `GET /v1/analysis/studio/backtests/{strategy_family}`
 
 Query parameters for the snapshot route align with `AnalysisConsumerRequest`:
 - `season`
@@ -43,6 +46,7 @@ The frontend should read:
 - `AnalysisConsumerRequest`
 - static report and benchmark information already normalized by the adapter layer
 - the studio game explorer routes for finished-game profile and state-panel inspection
+- the studio backtest comparison routes for family index and bounded detail reads
 
 The frontend should not read:
 - raw ingest tables
@@ -79,9 +83,10 @@ The frontend should not read:
   - `F1` scaffolded the permanent frontend module
   - `F2` added run control, validation visibility, and local operator state
   - `F3a` added mart-backed game explorer routes plus frontend game index/detail panels
+  - `F4a` added read-only family comparison routes and studio views
 - deferred:
   - `F3b` richer overlays only if the current explorer proves insufficient
-  - `F4` strategy comparison and trade-trace views after a separate read-only comparison contract branch exists
+  - `F4b` richer comparison UX refinements, if needed, after the read-only comparison contract is stable
   - `F5` operator hardening after the comparison surface settles
 
 ## Constraint

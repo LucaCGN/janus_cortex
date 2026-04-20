@@ -6,6 +6,7 @@
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
 - status: validated branch state now extends through post-baseline safety, validation, strategy, benchmarking, and read-only consumer-adapter lanes
+- current active analysis planning lane: sequential portfolio benchmarking and strategy refinement
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -29,6 +30,11 @@ Completed implementation wave:
 - `build_analysis_report`
 - `run_analysis_backtests`
 - `train_analysis_baselines`
+
+Backtest CLI now also accepts optional sequential-portfolio controls:
+- `--portfolio-initial-bankroll`
+- `--portfolio-position-size-fraction`
+- `--portfolio-game-limit`
 
 ## Current Read-Only Consumer Surface
 - `AnalysisConsumerRequest`
@@ -78,6 +84,32 @@ Historical note:
   - `python -m app.data.pipelines.daily.nba.analysis_module -h`
 - disposable non-live validation runner passed with consumer snapshot capture:
   - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_validation\20260420_111338`
+- focused sequential-portfolio pytest sweep passed:
+  - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
+
+## Current Sequential Portfolio Snapshot
+- benchmark contract version: `v2`
+- active bankroll contract:
+  - starting bankroll `10.0`
+  - position size fraction `1.0`
+  - game limit `100`
+  - one-position-at-a-time overlap handling
+- current validated active families:
+  - `inversion`
+    - full-sample ending bankroll `790514.77`
+    - random-holdout ending bankroll `377435.94`
+    - random-holdout max drawdown `30.94%`
+  - `winner_definition`
+    - full-sample ending bankroll `2359.91`
+    - random-holdout ending bankroll `213303.89`
+    - random-holdout max drawdown `29.81%`
+- current dropped families under the sequential lens:
+  - `reversion`
+  - `comeback_reversion`
+  - `volatility_scalp`
+- tested and rejected threshold variants:
+  - `inversion 52c/48c`
+  - `winner_definition 82c/77c`
 
 ## Current Frontend Surface
 - permanent frontend branch uses the existing FastAPI runtime and static assets
@@ -102,7 +134,9 @@ Historical note:
   - read-only family comparison index and bounded per-family detail backed by the analysis consumer adapter layer
 
 ## Current Gaps
-- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is still pending
+- repeated-seed robustness for the sequential bankroll lens is still pending
+- combined multi-family portfolio construction is still pending
+- richer comparison UX such as charts, cross-family overlays, and multi-family side-by-side views is optional follow-up work, not the immediate frontend dependency
 - richer game-context overlays beyond the mart-backed explorer are optional follow-up work, not the immediate frontend dependency
 - season-continuity branches for playoffs/preseason and WNBA are still pending
 - operator hardening beyond the current run-control surface is still pending
@@ -117,3 +151,4 @@ Historical note:
 - [app/docs/nba_analysis_data_products.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_data_products.md)
 - [app/docs/nba_analysis_modeling_and_backtesting.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_modeling_and_backtesting.md)
 - [app/docs/planning/current/roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
+- [app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md)
