@@ -28,11 +28,18 @@ def _select_comeback_entry(group: pd.DataFrame) -> TradeSelection | None:
 
     entry_index = int(trigger[trigger].index[0])
     entry_price = float(prices.iloc[entry_index])
+    entry_row = group.iloc[entry_index]
+    signal_strength = (
+        ((0.40 - entry_price) * 100.0)
+        + max(0.0, float(entry_row["net_points_last_5_events"]))
+        + max(0.0, -float(entry_row["score_diff"]) - 4.0)
+    )
     return TradeSelection(
         entry_index=entry_index,
         metadata={
             "target_exit_price": min(0.5, entry_price + 0.08),
             "stop_price": max(0.05, entry_price - 0.06),
+            "signal_strength": signal_strength,
         },
     )
 

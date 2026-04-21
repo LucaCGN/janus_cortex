@@ -28,8 +28,12 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
     build_routed_portfolio_benchmark_frames,
+    normalize_portfolio_concurrency_mode,
     normalize_portfolio_game_limit,
     normalize_portfolio_initial_bankroll,
+    normalize_portfolio_max_concurrent_positions,
+    normalize_portfolio_min_order_dollars,
+    normalize_portfolio_min_shares,
     normalize_portfolio_position_size_fraction,
     simulate_trade_portfolio,
 )
@@ -138,6 +142,37 @@ BENCHMARK_ROUTE_SUMMARY_COLUMNS = (
     "selected_avg_gross_return_with_slippage",
     "positive_family_count",
     "family_count_considered",
+)
+
+BENCHMARK_GAME_STRATEGY_CLASSIFICATION_COLUMNS = (
+    "sample_name",
+    "game_id",
+    "game_date",
+    "best_strategy_family",
+    "best_team_side",
+    "best_team_slug",
+    "best_opponent_team_slug",
+    "opening_band",
+    "entry_period_label",
+    "entry_context_bucket",
+    "best_gross_return_with_slippage",
+    "best_signal_strength",
+    "triggered_family_count",
+    "triggered_families_json",
+    "entry_at",
+)
+
+BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS = (
+    "sample_name",
+    "strategy_family",
+    "portfolio_scope",
+    "strategy_family_members",
+    "path_day_index",
+    "path_date",
+    "settled_trade_count_to_date",
+    "ending_bankroll",
+    "daily_pnl_amount",
+    "compounded_return",
 )
 
 PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS = (
@@ -760,6 +795,193 @@ def _build_opening_band_route_summary_frame(
     return route_summary_df, route_map
 
 
+def _build_game_strategy_classification_frame(
+    split_results: dict[str, BacktestResult],
+    registry: dict[str, StrategyDefinition],
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for sample_name in _SPLIT_ORDER:
+        split_result = split_results.get(sample_name)
+        if split_result is None:
+            continue
+        trade_frames: list[pd.DataFrame] = []
+        for family in registry:
+            trades_df = split_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+            if trades_df.empty:
+                continue
+            family_frame = trades_df.copy()
+            family_frame["source_strategy_family"] = family
+            trade_frames.append(family_frame)
+        if not trade_frames:
+            continue
+        combined = pd.concat(trade_frames, ignore_index=True)
+        if combined.empty:
+            continue
+        combined["entry_at"] = pd.to_datetime(combined["entry_at"], errors="coerce", utc=True)
+        combined["game_date"] = pd.to_datetime(combined["entry_at"], errors="coerce", utc=True).dt.date
+        combined["gross_return_with_slippage"] = pd.to_numeric(combined["gross_return_with_slippage"], errors="coerce")
+        combined["signal_strength"] = pd.to_numeric(combined.get("signal_strength"), errors="coerce")
+        for game_id, game_df in combined.groupby("game_id", sort=True):
+            ranked = game_df.sort_values(
+                ["gross_return_with_slippage", "signal_strength", "source_strategy_family", "team_side"],
+                ascending=[False, False, True, True],
+                kind="mergesort",
+                na_position="last",
+            ).reset_index(drop=True)
+            best = ranked.iloc[0]
+            rows.append(
+                {
+                    "sample_name": sample_name,
+                    "game_id": game_id,
+                    "game_date": _serialise_scalar(best.get("game_date")),
+                    "best_strategy_family": best.get("source_strategy_family"),
+                    "best_team_side": best.get("team_side"),
+                    "best_team_slug": best.get("team_slug"),
+                    "best_opponent_team_slug": best.get("opponent_team_slug"),
+                    "opening_band": best.get("opening_band"),
+                    "entry_period_label": best.get("period_label"),
+                    "entry_context_bucket": best.get("context_bucket"),
+                    "best_gross_return_with_slippage": best.get("gross_return_with_slippage"),
+                    "best_signal_strength": best.get("signal_strength"),
+                    "triggered_family_count": int(ranked["source_strategy_family"].nunique()),
+                    "triggered_families_json": sorted(ranked["source_strategy_family"].dropna().astype(str).unique().tolist()),
+                    "entry_at": _serialise_scalar(best.get("entry_at")),
+                }
+            )
+    return pd.DataFrame(rows, columns=BENCHMARK_GAME_STRATEGY_CLASSIFICATION_COLUMNS)
+
+
+def _build_portfolio_daily_path_frame(
+    portfolio_summary_df: pd.DataFrame,
+    portfolio_steps_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if portfolio_summary_df.empty:
+        return pd.DataFrame(columns=BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS)
+
+    step_work = portfolio_steps_df.copy() if not portfolio_steps_df.empty else pd.DataFrame(columns=portfolio_steps_df.columns)
+    if not step_work.empty:
+        step_work["settled_at"] = pd.to_datetime(step_work["settled_at"], errors="coerce", utc=True)
+        step_work["entry_at"] = pd.to_datetime(step_work["entry_at"], errors="coerce", utc=True)
+        step_work["bankroll_after"] = pd.to_numeric(step_work["bankroll_after"], errors="coerce")
+        step_work["trade_sequence"] = pd.to_numeric(step_work["trade_sequence"], errors="coerce")
+
+    rows: list[dict[str, Any]] = []
+    for summary in portfolio_summary_df.to_dict(orient="records"):
+        key_mask = (
+            (step_work["sample_name"] == summary.get("sample_name"))
+            & (step_work["strategy_family"] == summary.get("strategy_family"))
+            & (step_work["portfolio_scope"] == summary.get("portfolio_scope"))
+        ) if not step_work.empty else None
+        strategy_steps = step_work[key_mask].copy() if key_mask is not None else pd.DataFrame(columns=step_work.columns)
+        strategy_steps = strategy_steps[
+            (strategy_steps["portfolio_action"] == "executed") & strategy_steps["settled_at"].notna()
+        ].copy() if not strategy_steps.empty else strategy_steps
+        starting_bankroll = normalize_portfolio_initial_bankroll(summary.get("starting_bankroll"))
+        first_entry_at = pd.to_datetime(summary.get("first_entry_at"), errors="coerce", utc=True)
+        if pd.notna(first_entry_at):
+            rows.append(
+                {
+                    "sample_name": summary.get("sample_name"),
+                    "strategy_family": summary.get("strategy_family"),
+                    "portfolio_scope": summary.get("portfolio_scope"),
+                    "strategy_family_members": summary.get("strategy_family_members"),
+                    "path_day_index": 0,
+                    "path_date": _serialise_scalar(first_entry_at.date()),
+                    "settled_trade_count_to_date": 0,
+                    "ending_bankroll": starting_bankroll,
+                    "daily_pnl_amount": 0.0,
+                    "compounded_return": 0.0,
+                }
+            )
+        if strategy_steps.empty:
+            continue
+        strategy_steps["path_date"] = strategy_steps["settled_at"].dt.date
+        daily = (
+            strategy_steps.sort_values(["settled_at", "trade_sequence"], kind="mergesort")
+            .groupby("path_date", sort=True)
+            .agg(
+                settled_trade_count_to_date=("trade_sequence", "count"),
+                ending_bankroll=("bankroll_after", "last"),
+            )
+            .reset_index()
+        )
+        previous_bankroll = starting_bankroll
+        cumulative_settled = 0
+        for index, day_row in enumerate(daily.to_dict(orient="records"), start=1):
+            cumulative_settled += int(day_row.get("settled_trade_count_to_date") or 0)
+            ending_bankroll = _safe_float(day_row.get("ending_bankroll")) or previous_bankroll
+            rows.append(
+                {
+                    "sample_name": summary.get("sample_name"),
+                    "strategy_family": summary.get("strategy_family"),
+                    "portfolio_scope": summary.get("portfolio_scope"),
+                    "strategy_family_members": summary.get("strategy_family_members"),
+                    "path_day_index": index,
+                    "path_date": _serialise_scalar(day_row.get("path_date")),
+                    "settled_trade_count_to_date": cumulative_settled,
+                    "ending_bankroll": ending_bankroll,
+                    "daily_pnl_amount": ending_bankroll - previous_bankroll,
+                    "compounded_return": (ending_bankroll / starting_bankroll) - 1.0 if starting_bankroll > 0 else None,
+                }
+            )
+            previous_bankroll = ending_bankroll
+    return pd.DataFrame(rows, columns=BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS)
+
+
+def _svg_polyline_points(values: list[float], *, width: int, height: int, padding: int) -> str:
+    if not values:
+        return ""
+    min_value = min(values)
+    max_value = max(values)
+    if max_value <= min_value:
+        max_value = min_value + 1.0
+    usable_width = max(1, width - (padding * 2))
+    usable_height = max(1, height - (padding * 2))
+    points: list[str] = []
+    count = max(1, len(values) - 1)
+    for index, value in enumerate(values):
+        x = padding + ((usable_width * index) / count)
+        y_ratio = (value - min_value) / (max_value - min_value)
+        y = (height - padding) - (y_ratio * usable_height)
+        points.append(f"{x:.1f},{y:.1f}")
+    return " ".join(points)
+
+
+def _render_portfolio_path_svg(path_df: pd.DataFrame, *, title: str) -> str:
+    width = 960
+    height = 360
+    padding = 44
+    if path_df.empty:
+        return (
+            f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>"
+            "<rect width='100%' height='100%' fill='#ffffff'/>"
+            f"<text x='{padding}' y='56' font-family='Arial, sans-serif' font-size='22' fill='#111111'>{title}</text>"
+            f"<text x='{padding}' y='96' font-family='Arial, sans-serif' font-size='14' fill='#666666'>No path data available.</text>"
+            "</svg>"
+        )
+    values = [float(value) for value in path_df["ending_bankroll"].tolist()]
+    dates = [str(value) for value in path_df["path_date"].tolist()]
+    polyline = _svg_polyline_points(values, width=width, height=height, padding=padding)
+    min_value = min(values)
+    max_value = max(values)
+    start_value = values[0]
+    end_value = values[-1]
+    return "\n".join(
+        [
+            f"<svg xmlns='http://www.w3.org/2000/svg' width='{width}' height='{height}' viewBox='0 0 {width} {height}'>",
+            "<rect width='100%' height='100%' fill='#ffffff'/>",
+            f"<text x='{padding}' y='40' font-family='Arial, sans-serif' font-size='22' font-weight='700' fill='#111111'>{title}</text>",
+            f"<text x='{padding}' y='66' font-family='Arial, sans-serif' font-size='14' fill='#555555'>Start ${start_value:,.2f} | End ${end_value:,.2f} | Min ${min_value:,.2f} | Max ${max_value:,.2f}</text>",
+            f"<line x1='{padding}' y1='{height - padding}' x2='{width - padding}' y2='{height - padding}' stroke='#c7c7c7' stroke-width='1'/>",
+            f"<line x1='{padding}' y1='{padding}' x2='{padding}' y2='{height - padding}' stroke='#c7c7c7' stroke-width='1'/>",
+            f"<polyline fill='none' stroke='#0b6cff' stroke-width='3' points='{polyline}'/>",
+            f"<text x='{padding}' y='{height - 12}' font-family='Arial, sans-serif' font-size='12' fill='#666666'>{dates[0]}</text>",
+            f"<text x='{width - padding - 88}' y='{height - 12}' font-family='Arial, sans-serif' font-size='12' fill='#666666'>{dates[-1]}</text>",
+            "</svg>",
+        ]
+    )
+
+
 def _portfolio_robustness_label(positive_seed_count: int, seed_count: int) -> tuple[str, str]:
     if seed_count <= 0:
         return "not_run", "no_robustness_seeds"
@@ -804,6 +1026,10 @@ def _build_portfolio_robustness_frames(
                 initial_bankroll=request.portfolio_initial_bankroll,
                 position_size_fraction=request.portfolio_position_size_fraction,
                 game_limit=request.portfolio_game_limit,
+                min_order_dollars=request.portfolio_min_order_dollars,
+                min_shares=request.portfolio_min_shares,
+                max_concurrent_positions=request.portfolio_max_concurrent_positions,
+                concurrency_mode=request.portfolio_concurrency_mode,
             )
             ending_bankroll = _safe_float(summary.get("ending_bankroll"))
             starting_bankroll = normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll)
@@ -938,6 +1164,10 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         initial_bankroll=request.portfolio_initial_bankroll,
         position_size_fraction=request.portfolio_position_size_fraction,
         game_limit=request.portfolio_game_limit,
+        min_order_dollars=request.portfolio_min_order_dollars,
+        min_shares=request.portfolio_min_shares,
+        max_concurrent_positions=request.portfolio_max_concurrent_positions,
+        concurrency_mode=request.portfolio_concurrency_mode,
         split_order=_SPLIT_ORDER,
     )
     portfolio_candidate_freeze_df = build_portfolio_candidate_freeze_frame(
@@ -977,6 +1207,10 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         initial_bankroll=request.portfolio_initial_bankroll,
         position_size_fraction=request.portfolio_position_size_fraction,
         game_limit=request.portfolio_game_limit,
+        min_order_dollars=request.portfolio_min_order_dollars,
+        min_shares=request.portfolio_min_shares,
+        max_concurrent_positions=request.portfolio_max_concurrent_positions,
+        concurrency_mode=request.portfolio_concurrency_mode,
         split_order=_SPLIT_ORDER,
         combined_family_name=COMBINED_KEEP_FAMILIES_PORTFOLIO,
     )
@@ -991,6 +1225,10 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         initial_bankroll=request.portfolio_initial_bankroll,
         position_size_fraction=request.portfolio_position_size_fraction,
         game_limit=request.portfolio_game_limit,
+        min_order_dollars=request.portfolio_min_order_dollars,
+        min_shares=request.portfolio_min_shares,
+        max_concurrent_positions=request.portfolio_max_concurrent_positions,
+        concurrency_mode=request.portfolio_concurrency_mode,
         split_order=_SPLIT_ORDER,
         routed_family_name=STATISTICAL_ROUTING_PORTFOLIO,
     )
@@ -1004,6 +1242,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         request,
         strategy_families=robustness_families,
     )
+    game_strategy_classification_df = _build_game_strategy_classification_frame(split_results, registry)
+    portfolio_daily_paths_df = _build_portfolio_daily_path_frame(portfolio_summary_df, portfolio_steps_df)
 
     payload = full_result.payload
     payload["benchmark"] = {
@@ -1029,6 +1269,10 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
             "initial_bankroll": normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll),
             "position_size_fraction": normalize_portfolio_position_size_fraction(request.portfolio_position_size_fraction),
             "game_limit": normalize_portfolio_game_limit(request.portfolio_game_limit),
+            "min_order_dollars": normalize_portfolio_min_order_dollars(request.portfolio_min_order_dollars),
+            "min_shares": normalize_portfolio_min_shares(request.portfolio_min_shares),
+            "max_concurrent_positions": normalize_portfolio_max_concurrent_positions(request.portfolio_max_concurrent_positions),
+            "concurrency_mode": normalize_portfolio_concurrency_mode(request.portfolio_concurrency_mode),
         },
         "portfolio_keep_families": list(keep_families),
         "portfolio_robustness_families": list(robustness_families),
@@ -1043,8 +1287,10 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
             "max_drawdown_amount",
             "max_drawdown_pct",
             "executed_trade_count",
-            "skipped_overlap_count",
             "skipped_bankroll_count",
+            "skipped_concurrency_count",
+            "skipped_min_order_count",
+            "max_concurrent_positions_observed",
         ],
         "split_summary": to_jsonable(split_summary_df.to_dict(orient="records")),
         "family_summary": to_jsonable(family_summary_df.to_dict(orient="records")),
@@ -1054,9 +1300,11 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "candidate_freeze": to_jsonable(candidate_freeze_df.to_dict(orient="records")),
         "route_summary": to_jsonable(route_summary_df.to_dict(orient="records")),
         "portfolio_summary": to_jsonable(portfolio_summary_df.to_dict(orient="records")),
+        "portfolio_daily_paths": to_jsonable(portfolio_daily_paths_df.to_dict(orient="records")),
         "portfolio_candidate_freeze": to_jsonable(portfolio_candidate_freeze_df.to_dict(orient="records")),
         "portfolio_robustness_detail": to_jsonable(portfolio_robustness_detail_df.to_dict(orient="records")),
         "portfolio_robustness_summary": to_jsonable(portfolio_robustness_summary_df.to_dict(orient="records")),
+        "game_strategy_classification": to_jsonable(game_strategy_classification_df.to_dict(orient="records")),
     }
     payload["experiment"] = {
         "experiment_id": _build_experiment_id(request, registry),
@@ -1076,9 +1324,11 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "route_summary": route_summary_df,
         "portfolio_summary": portfolio_summary_df,
         "portfolio_steps": portfolio_steps_df,
+        "portfolio_daily_paths": portfolio_daily_paths_df,
         "portfolio_candidate_freeze": portfolio_candidate_freeze_df,
         "portfolio_robustness_detail": portfolio_robustness_detail_df,
         "portfolio_robustness_summary": portfolio_robustness_summary_df,
+        "game_strategy_classification": game_strategy_classification_df,
     }
     return BenchmarkRunResult(
         payload=payload,
@@ -1136,6 +1386,10 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
         f"- Portfolio initial bankroll: `{_format_num((benchmark.get('portfolio_config') or {}).get('initial_bankroll'))}`",
         f"- Portfolio position fraction: `{_format_num((benchmark.get('portfolio_config') or {}).get('position_size_fraction'))}`",
         f"- Portfolio game limit: `{_format_num((benchmark.get('portfolio_config') or {}).get('game_limit'))}`",
+        f"- Portfolio min order dollars: `{_format_num((benchmark.get('portfolio_config') or {}).get('min_order_dollars'))}`",
+        f"- Portfolio min shares: `{_format_num((benchmark.get('portfolio_config') or {}).get('min_shares'))}`",
+        f"- Portfolio max concurrent positions: `{_format_num((benchmark.get('portfolio_config') or {}).get('max_concurrent_positions'))}`",
+        f"- Portfolio concurrency mode: `{(benchmark.get('portfolio_config') or {}).get('concurrency_mode')}`",
         "",
         "## Candidate Freeze",
         "",
@@ -1239,8 +1493,10 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "context_rankings": "benchmark_context_rankings",
         "candidate_freeze": "benchmark_candidate_freeze",
         "route_summary": "benchmark_route_summary",
+        "game_strategy_classification": "benchmark_game_strategy_classification",
         "portfolio_summary": "benchmark_portfolio_summary",
         "portfolio_steps": "benchmark_portfolio_steps",
+        "portfolio_daily_paths": "benchmark_portfolio_daily_paths",
         "portfolio_candidate_freeze": "benchmark_portfolio_candidate_freeze",
         "portfolio_robustness_detail": "benchmark_portfolio_robustness_detail",
         "portfolio_robustness_summary": "benchmark_portfolio_robustness_summary",
@@ -1252,6 +1508,17 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         payload["artifacts"].update(
             {f"benchmark_{frame_name}_{key}": value for key, value in write_frame(output_dir / stem, frame).items()}
         )
+
+    daily_paths_df = result.benchmark_frames.get("portfolio_daily_paths", pd.DataFrame(columns=BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS))
+    if not daily_paths_df.empty:
+        chart_dir = output_dir / "portfolio_charts"
+        chart_dir.mkdir(parents=True, exist_ok=True)
+        full_sample_daily_paths = daily_paths_df[daily_paths_df["sample_name"] == "full_sample"].copy()
+        for strategy_family, strategy_df in full_sample_daily_paths.groupby("strategy_family", sort=True):
+            chart_body = _render_portfolio_path_svg(strategy_df.sort_values("path_day_index", kind="mergesort"), title=f"{strategy_family} 100-game bankroll path")
+            chart_path = chart_dir / f"{strategy_family}_bankroll_path.svg"
+            chart_path.write_text(chart_body, encoding="utf-8")
+            payload["artifacts"][f"benchmark_portfolio_chart_{strategy_family}_svg"] = str(chart_path)
 
     payload["artifacts"]["experiment_registry_json"] = write_json(output_dir / "benchmark_experiment_registry.json", payload["experiment"])
     payload["artifacts"]["json"] = write_json(output_dir / "run_analysis_backtests.json", payload)
@@ -1267,6 +1534,8 @@ __all__ = [
     "BENCHMARK_COMPARATOR_COLUMNS",
     "BENCHMARK_CONTEXT_RANK_COLUMNS",
     "BENCHMARK_FAMILY_SUMMARY_COLUMNS",
+    "BENCHMARK_GAME_STRATEGY_CLASSIFICATION_COLUMNS",
+    "BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS",
     "BENCHMARK_ROUTE_SUMMARY_COLUMNS",
     "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",
     "PORTFOLIO_ROBUSTNESS_DETAIL_COLUMNS",

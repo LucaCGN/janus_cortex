@@ -35,6 +35,7 @@ def _build_state_row(
     context_bucket: str = "Q1|lead_1_4",
     net_points_last_5_events: float | None = None,
     seconds_to_game_end: float | None = None,
+    lead_changes_so_far: int = 0,
 ) -> dict[str, object]:
     resolved_score_for = score_for if score_for is not None else 10 + state_index
     resolved_score_against = score_against if score_against is not None else 8 + state_index
@@ -80,7 +81,7 @@ def _build_state_row(
         "points_scored": 2,
         "delta_for": 2,
         "delta_against": 0,
-        "lead_changes_so_far": 0,
+        "lead_changes_so_far": lead_changes_so_far,
         "team_points_last_5_events": max(0.0, resolved_net_points),
         "opponent_points_last_5_events": 0,
         "net_points_last_5_events": resolved_net_points,
@@ -434,6 +435,158 @@ def _build_state_frame() -> pd.DataFrame:
             net_points_last_5_events=6,
             seconds_to_game_end=1620.0,
         ),
+        _build_state_row(
+            game_id="002A5Q1RUN",
+            team_slug="DAL",
+            opponent_team_slug="HOU",
+            opening_price=0.46,
+            state_index=0,
+            team_price=0.46,
+            event_at=base + timedelta(minutes=60),
+            opening_band="40-50",
+            period=1,
+            period_label="Q1",
+            score_for=10,
+            score_against=10,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q1|tied",
+            net_points_last_5_events=0,
+        ),
+        _build_state_row(
+            game_id="002A5Q1RUN",
+            team_slug="DAL",
+            opponent_team_slug="HOU",
+            opening_price=0.46,
+            state_index=1,
+            team_price=0.52,
+            event_at=base + timedelta(minutes=61),
+            opening_band="40-50",
+            period=1,
+            period_label="Q1",
+            score_for=14,
+            score_against=13,
+            score_diff=1,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q1|lead_1_4",
+            net_points_last_5_events=2,
+        ),
+        _build_state_row(
+            game_id="002A5Q1RUN",
+            team_slug="DAL",
+            opponent_team_slug="HOU",
+            opening_price=0.46,
+            state_index=2,
+            team_price=0.56,
+            event_at=base + timedelta(minutes=62),
+            opening_band="40-50",
+            period=1,
+            period_label="Q1",
+            score_for=18,
+            score_against=14,
+            score_diff=4,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q1|lead_1_4",
+            net_points_last_5_events=5,
+        ),
+        _build_state_row(
+            game_id="002A5Q1RUN",
+            team_slug="DAL",
+            opponent_team_slug="HOU",
+            opening_price=0.46,
+            state_index=3,
+            team_price=0.64,
+            event_at=base + timedelta(minutes=63),
+            opening_band="40-50",
+            period=1,
+            period_label="Q1",
+            score_for=22,
+            score_against=16,
+            score_diff=6,
+            score_diff_bucket="lead_5_9",
+            context_bucket="Q1|lead_5_9",
+            net_points_last_5_events=7,
+        ),
+        _build_state_row(
+            game_id="002A5CLUTCH",
+            team_slug="IND",
+            opponent_team_slug="MIL",
+            opening_price=0.48,
+            state_index=0,
+            team_price=0.49,
+            event_at=base + timedelta(minutes=70),
+            opening_band="40-50",
+            period=4,
+            period_label="Q4",
+            score_for=92,
+            score_against=92,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q4|tied",
+            net_points_last_5_events=1,
+            seconds_to_game_end=300.0,
+            lead_changes_so_far=2,
+        ),
+        _build_state_row(
+            game_id="002A5CLUTCH",
+            team_slug="IND",
+            opponent_team_slug="MIL",
+            opening_price=0.48,
+            state_index=1,
+            team_price=0.54,
+            event_at=base + timedelta(minutes=71),
+            opening_band="40-50",
+            period=4,
+            period_label="Q4",
+            score_for=96,
+            score_against=95,
+            score_diff=1,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q4|lead_1_4",
+            net_points_last_5_events=2,
+            seconds_to_game_end=260.0,
+            lead_changes_so_far=3,
+        ),
+        _build_state_row(
+            game_id="002A5CLUTCH",
+            team_slug="IND",
+            opponent_team_slug="MIL",
+            opening_price=0.48,
+            state_index=2,
+            team_price=0.58,
+            event_at=base + timedelta(minutes=72),
+            opening_band="40-50",
+            period=4,
+            period_label="Q4",
+            score_for=100,
+            score_against=98,
+            score_diff=2,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q4|lead_1_4",
+            net_points_last_5_events=4,
+            seconds_to_game_end=220.0,
+            lead_changes_so_far=4,
+        ),
+        _build_state_row(
+            game_id="002A5CLUTCH",
+            team_slug="IND",
+            opponent_team_slug="MIL",
+            opening_price=0.48,
+            state_index=3,
+            team_price=0.73,
+            event_at=base + timedelta(minutes=73),
+            opening_band="40-50",
+            period=4,
+            period_label="Q4",
+            score_for=106,
+            score_against=101,
+            score_diff=5,
+            score_diff_bucket="lead_5_9",
+            context_bucket="Q4|lead_5_9",
+            net_points_last_5_events=6,
+            seconds_to_game_end=140.0,
+            lead_changes_so_far=4,
+        ),
     ]
     return pd.DataFrame(rows)
 
@@ -447,6 +600,8 @@ def _build_benchmark_state_frame() -> pd.DataFrame:
         "002A5CBK": datetime(2026, 3, 3, 20, 0, tzinfo=timezone.utc),
         "002A5SCALP": datetime(2026, 3, 6, 20, 0, tzinfo=timezone.utc),
         "002A5LIFT": datetime(2026, 3, 9, 20, 0, tzinfo=timezone.utc),
+        "002A5Q1RUN": datetime(2026, 3, 12, 20, 0, tzinfo=timezone.utc),
+        "002A5CLUTCH": datetime(2026, 3, 15, 20, 0, tzinfo=timezone.utc),
     }
     for game_id, base in game_bases.items():
         mask = frame["game_id"] == game_id
@@ -468,7 +623,7 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     result = engine.build_backtest_result(frame, request)
 
     assert result.payload["state_rows_considered"] == len(frame)
-    assert result.payload["games_considered"] == 6
+    assert result.payload["games_considered"] == 8
     assert set(result.payload["registry"].keys()) == {
         "reversion",
         "inversion",
@@ -476,13 +631,17 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
         "underdog_liftoff",
         "comeback_reversion",
         "volatility_scalp",
+        "q1_repricing",
+        "q4_clutch",
     }
     assert result.payload["families"]["reversion"]["trade_count"] == 1
-    assert result.payload["families"]["inversion"]["trade_count"] == 1
+    assert result.payload["families"]["inversion"]["trade_count"] == 3
     assert result.payload["families"]["winner_definition"]["trade_count"] == 1
     assert result.payload["families"]["underdog_liftoff"]["trade_count"] == 1
     assert result.payload["families"]["comeback_reversion"]["trade_count"] == 1
     assert result.payload["families"]["volatility_scalp"]["trade_count"] == 1
+    assert result.payload["families"]["q1_repricing"]["trade_count"] == 2
+    assert result.payload["families"]["q4_clutch"]["trade_count"] == 1
 
     for family, trades_df in result.trade_frames.items():
         assert not trades_df.empty
@@ -503,6 +662,8 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["underdog_liftoff_csv"]).exists()
     assert Path(payload["artifacts"]["comeback_reversion_csv"]).exists()
     assert Path(payload["artifacts"]["volatility_scalp_csv"]).exists()
+    assert Path(payload["artifacts"]["q1_repricing_csv"]).exists()
+    assert Path(payload["artifacts"]["q4_clutch_csv"]).exists()
     assert Path(payload["artifacts"]["reversion_best_trades_csv"]).exists()
     assert Path(payload["artifacts"]["reversion_worst_trades_csv"]).exists()
     assert Path(payload["artifacts"]["reversion_context_summary_csv"]).exists()
@@ -532,15 +693,25 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
         ),
     )
 
-    for family in ("reversion", "inversion", "winner_definition", "underdog_liftoff", "comeback_reversion", "volatility_scalp"):
+    for family in (
+        "reversion",
+        "inversion",
+        "winner_definition",
+        "underdog_liftoff",
+        "comeback_reversion",
+        "volatility_scalp",
+        "q1_repricing",
+        "q4_clutch",
+    ):
         zero_df = zero.trade_frames[family].sort_values(["game_id", "entry_state_index"]).reset_index(drop=True)
         one_df = one.trade_frames[family].sort_values(["game_id", "entry_state_index"]).reset_index(drop=True)
-        assert len(zero_df) == len(one_df) == 1
+        assert len(zero_df) == len(one_df) == int(zero.payload["families"][family]["trade_count"])
+        assert len(zero_df) >= 1
         assert (one_df["gross_return_with_slippage"] <= zero_df["gross_return_with_slippage"]).all()
-        assert float(zero_df.iloc[0]["gross_return_with_slippage"]) > float(one_df.iloc[0]["gross_return_with_slippage"])
+        assert (zero_df["gross_return_with_slippage"] > one_df["gross_return_with_slippage"]).all()
 
 
-def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
+def test_trade_portfolio_respects_concurrency_game_limit_and_compounding() -> None:
     trades_df = pd.DataFrame(
         [
             {
@@ -552,6 +723,7 @@ def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
                 "exit_state_index": 2,
                 "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
                 "exit_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                "entry_price": 0.40,
                 "gross_return_with_slippage": 0.50,
             },
             {
@@ -563,6 +735,7 @@ def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
                 "exit_state_index": 2,
                 "entry_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
                 "exit_at": datetime(2026, 2, 22, 20, 15, tzinfo=timezone.utc),
+                "entry_price": 0.35,
                 "gross_return_with_slippage": 1.00,
             },
             {
@@ -574,6 +747,7 @@ def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
                 "exit_state_index": 2,
                 "entry_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
                 "exit_at": datetime(2026, 2, 22, 20, 45, tzinfo=timezone.utc),
+                "entry_price": 0.25,
                 "gross_return_with_slippage": -0.25,
             },
             {
@@ -585,6 +759,7 @@ def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
                 "exit_state_index": 2,
                 "entry_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
                 "exit_at": datetime(2026, 2, 22, 21, 10, tzinfo=timezone.utc),
+                "entry_price": 0.10,
                 "gross_return_with_slippage": 0.20,
             },
         ]
@@ -597,18 +772,62 @@ def test_trade_portfolio_respects_overlap_game_limit_and_compounding() -> None:
         initial_bankroll=10.0,
         position_size_fraction=1.0,
         game_limit=3,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=1,
+        concurrency_mode="shared_cash_equal_split",
     )
 
     assert summary["games_considered"] == 3
     assert summary["trade_count_considered"] == 3
     assert summary["executed_trade_count"] == 2
-    assert summary["skipped_overlap_count"] == 1
+    assert summary["skipped_overlap_count"] == 0
     assert summary["skipped_bankroll_count"] == 0
+    assert summary["skipped_concurrency_count"] == 1
+    assert summary["skipped_min_order_count"] == 0
     assert summary["ending_bankroll"] == 11.25
     assert summary["compounded_return"] == 0.125
     assert summary["max_drawdown_pct"] == 0.25
     assert list(steps_df["portfolio_action"]) == ["executed", "skipped", "executed"]
-    assert list(steps_df["skip_reason"]) == [None, "overlap", None]
+    assert list(steps_df["skip_reason"]) == [None, "concurrency", None]
+
+
+def test_trade_portfolio_respects_polymarket_minimum_order_floor() -> None:
+    trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G1",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "opponent_team_slug": "LAL",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                "entry_price": 0.30,
+                "gross_return_with_slippage": 0.50,
+            }
+        ]
+    )
+
+    summary, steps_df = simulate_trade_portfolio(
+        trades_df,
+        sample_name="full_sample",
+        strategy_family="winner_definition",
+        initial_bankroll=1.20,
+        position_size_fraction=1.0,
+        game_limit=1,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=1,
+        concurrency_mode="shared_cash_equal_split",
+    )
+
+    assert summary["executed_trade_count"] == 0
+    assert summary["skipped_min_order_count"] == 1
+    assert summary["ending_bankroll"] == pytest.approx(1.2)
+    assert list(steps_df["skip_reason"]) == ["min_order"]
+    assert float(steps_df.iloc[0]["minimum_required_stake"]) == pytest.approx(1.5)
 
 
 def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> None:
@@ -682,6 +901,10 @@ def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> 
         initial_bankroll=10.0,
         position_size_fraction=1.0,
         game_limit=4,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=1,
+        concurrency_mode="shared_cash_equal_split",
         split_order=("full_sample",),
     )
 
@@ -692,7 +915,7 @@ def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> 
     assert summary["strategy_family_members"] == "inversion,winner_definition"
     assert summary["strategy_family_count"] == 2
     assert summary["executed_trade_count"] == 3
-    assert summary["skipped_overlap_count"] == 1
+    assert summary["skipped_concurrency_count"] == 1
     assert summary["ending_bankroll"] == pytest.approx(16.2)
     assert list(steps_df["source_strategy_family"]) == [
         "inversion",
@@ -776,6 +999,10 @@ def test_routed_portfolio_lane_selects_family_by_opening_band() -> None:
         initial_bankroll=10.0,
         position_size_fraction=1.0,
         game_limit=3,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=1,
+        concurrency_mode="shared_cash_equal_split",
         split_order=("full_sample",),
     )
 
@@ -806,18 +1033,23 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
         portfolio_initial_bankroll=10.0,
         portfolio_position_size_fraction=1.0,
         portfolio_game_limit=100,
+        portfolio_min_order_dollars=1.0,
+        portfolio_min_shares=5.0,
+        portfolio_max_concurrent_positions=3,
+        portfolio_concurrency_mode="shared_cash_equal_split",
         output_root=str(tmp_path),
     )
 
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v6"
+    assert first.payload["benchmark"]["contract_version"] == "v7"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
     assert first.benchmark_frames["split_summary"].equals(second.benchmark_frames["split_summary"])
     assert first.benchmark_frames["portfolio_summary"].equals(second.benchmark_frames["portfolio_summary"])
+    assert first.benchmark_frames["portfolio_daily_paths"].equals(second.benchmark_frames["portfolio_daily_paths"])
     assert first.benchmark_frames["portfolio_robustness_detail"].equals(second.benchmark_frames["portfolio_robustness_detail"])
     assert first.benchmark_frames["portfolio_robustness_summary"].equals(second.benchmark_frames["portfolio_robustness_summary"])
     assert set(first.benchmark_frames["comparator_summary"]["comparator_name"]) == {
@@ -840,6 +1072,8 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     )
     assert "mean_ending_bankroll" in robustness_summary_df.columns
     assert "mean_compounded_return" in robustness_summary_df.columns
+    assert not first.benchmark_frames["game_strategy_classification"].empty
+    assert not first.benchmark_frames["portfolio_daily_paths"].empty
     combined_rows = first.benchmark_frames["portfolio_summary"][
         first.benchmark_frames["portfolio_summary"]["strategy_family"] == "combined_keep_families"
     ]
@@ -857,9 +1091,12 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["benchmark_context_rankings_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_candidate_freeze_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_route_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_game_strategy_classification_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_summary_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_steps_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_portfolio_daily_paths_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_candidate_freeze_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_robustness_detail_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_robustness_summary_csv"]).exists()
     assert Path(payload["artifacts"]["experiment_registry_json"]).exists()
+    assert any(key.startswith("benchmark_portfolio_chart_") for key in payload["artifacts"])

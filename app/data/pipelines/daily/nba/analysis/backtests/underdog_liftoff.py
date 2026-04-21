@@ -48,6 +48,11 @@ def _select_underdog_liftoff_entry(group: pd.DataFrame) -> TradeSelection | None
             if float(row["seconds_to_game_end"]) < DEFAULT_UNDERDOG_LIFTOFF_MIN_SECONDS_LEFT:
                 previous_price = resolved_price
                 continue
+            signal_strength = (
+                ((resolved_price - DEFAULT_UNDERDOG_LIFTOFF_ENTRY_THRESHOLD) * 100.0)
+                + max(0.0, float(row["net_points_last_5_events"]))
+                + max(0.0, float(row["score_diff"]) - DEFAULT_UNDERDOG_LIFTOFF_MIN_SCORE_DIFF) * 0.5
+            )
             return TradeSelection(
                 entry_index=index,
                 metadata={
@@ -57,6 +62,7 @@ def _select_underdog_liftoff_entry(group: pd.DataFrame) -> TradeSelection | None
                     "entry_momentum_min": DEFAULT_UNDERDOG_LIFTOFF_MIN_MOMENTUM,
                     "entry_score_diff_min": DEFAULT_UNDERDOG_LIFTOFF_MIN_SCORE_DIFF,
                     "min_seconds_left": DEFAULT_UNDERDOG_LIFTOFF_MIN_SECONDS_LEFT,
+                    "signal_strength": signal_strength,
                 },
             )
         previous_price = resolved_price

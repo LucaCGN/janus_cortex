@@ -22,6 +22,7 @@ Define the critical path from the current `v1_0_1` offline analysis baseline to 
 | `v1.4.0` | sequential portfolio benchmark | completed | archived |
 | `v1.4.1` | repeated-seed robustness and combined keep-family sleeve | completed | archived |
 | `v1.4.2` | final strategy refinement and first statistical routing lane | completed | now on active branch state |
+| `v1.4.3` | realistic execution replay, quarter-specific families, and richer benchmark artifacts | completed | current frozen baseline |
 | `v1.5.0` | deterministic routing and allocation freeze | next critical path | `codex/analysis-routing-allocation` |
 | `v1.5.1` | context-model baselines around promoted families | next after routing baseline | `codex/analysis-context-models` |
 | `v1.5.2` | read-only portfolio visualization | parallel after routing freeze | `codex/frontend-analysis-portfolio-viz` |
@@ -32,6 +33,8 @@ The promoted deterministic family set is now:
 - `inversion`
 - `winner_definition`
 - `underdog_liftoff`
+- `q1_repricing`
+- `q4_clutch`
 
 The current rejected family set is:
 - `reversion`
@@ -40,9 +43,10 @@ The current rejected family set is:
 
 ## Critical Path From Here
 1. freeze a better deterministic routed or priority portfolio
-2. quantify overlap cost and family blocking
-3. build statistical context models against that deterministic control
-4. surface the resulting portfolio and robustness outputs in read-only UI
+2. quantify overlap cost, family blocking, and actual concurrent-position pressure under the `v7` replay contract
+3. turn the new per-game strategy-classification artifact into a deterministic routing or ranking control
+4. build statistical context models against that deterministic control
+5. surface the resulting portfolio and robustness outputs in read-only UI
 
 ## What Counts As "Several Backtestable Algos"
 The target is no longer just several independent family rules. The target is:
@@ -65,7 +69,7 @@ The target is no longer just several independent family rules. The target is:
 
 | Branch | Milestone | Depends On | Can Run In Parallel With | Blocks | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `codex/analysis-routing-allocation` | `v1.5.0` | frozen `v1.4.2` keep families | season branches | context models and final portfolio visualization | next critical branch |
+| `codex/analysis-routing-allocation` | `v1.5.0` | frozen `v1.4.3` keep families and `v7` replay contract | season branches | context models and final portfolio visualization | next critical branch |
 | `codex/analysis-context-models` | `v1.5.1` | `codex/analysis-routing-allocation` | frontend visualization prep, season branches | later structured-tag or richer modeling work | model work needs a deterministic control |
 | `codex/frontend-analysis-portfolio-viz` | `v1.5.2` | `codex/analysis-routing-allocation` | `codex/analysis-context-models`, season branches | no critical-path branch | read-only consumer lane |
 | `codex/season-playoffs-preseason` | `v1.5.x` | safety workflow already merged | routing/allocation, context models, WNBA | no critical-path branch | secondary lane |

@@ -7,8 +7,12 @@ import pandas as pd
 from app.data.pipelines.daily.nba.analysis.backtests.engine import BACKTEST_TRADE_COLUMNS
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, StrategyDefinition
 from app.data.pipelines.daily.nba.analysis.contracts import (
+    DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
     DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT,
     DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL,
+    DEFAULT_BACKTEST_PORTFOLIO_MAX_CONCURRENT_POSITIONS,
+    DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS,
+    DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
 )
 
@@ -40,9 +44,17 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "games_considered",
     "position_size_fraction",
     "game_limit",
+    "portfolio_min_order_dollars",
+    "portfolio_min_shares",
+    "portfolio_max_concurrent_positions",
+    "portfolio_concurrency_mode",
+    "max_concurrent_positions_observed",
     "avg_executed_trade_return_with_slippage",
+    "avg_executed_share_count",
     "first_entry_at",
     "last_exit_at",
+    "skipped_concurrency_count",
+    "skipped_min_order_count",
 )
 
 PORTFOLIO_STEP_COLUMNS = (
@@ -59,16 +71,27 @@ PORTFOLIO_STEP_COLUMNS = (
     "opponent_team_slug",
     "entry_at",
     "exit_at",
+    "settled_at",
+    "settlement_sequence",
+    "signal_strength",
+    "candidate_batch_size",
+    "strategy_selection_rank",
     "gross_return_with_slippage",
     "portfolio_action",
     "skip_reason",
     "bankroll_before",
+    "cash_before",
+    "cash_after_entry",
     "stake_amount",
+    "minimum_required_stake",
+    "share_count",
     "profit_loss_amount",
     "bankroll_after",
     "peak_bankroll_after_step",
     "drawdown_amount_after_step",
     "drawdown_pct_after_step",
+    "open_positions_before",
+    "open_positions_after",
 )
 
 PORTFOLIO_CANDIDATE_FREEZE_COLUMNS = (
@@ -152,6 +175,37 @@ def normalize_portfolio_game_limit(value: int | None) -> int | None:
     return resolved
 
 
+def normalize_portfolio_min_order_dollars(value: float | None) -> float:
+    minimum = _safe_float(value)
+    if minimum is None:
+        return DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS
+    return max(0.01, minimum)
+
+
+def normalize_portfolio_min_shares(value: float | None) -> float:
+    minimum = _safe_float(value)
+    if minimum is None:
+        return DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES
+    return max(0.0, minimum)
+
+
+def normalize_portfolio_max_concurrent_positions(value: int | None) -> int:
+    if value is None:
+        return DEFAULT_BACKTEST_PORTFOLIO_MAX_CONCURRENT_POSITIONS
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_BACKTEST_PORTFOLIO_MAX_CONCURRENT_POSITIONS
+    return max(1, resolved)
+
+
+def normalize_portfolio_concurrency_mode(value: str | None) -> str:
+    resolved = str(value or "").strip().lower()
+    if resolved == "shared_cash_equal_split":
+        return resolved
+    return DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE
+
+
 def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
     if trades_df.empty:
         return pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS)
@@ -167,6 +221,8 @@ def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
         "gross_return",
         "gross_return_with_slippage",
         "hold_time_seconds",
+        "entry_price",
+        "signal_strength",
     ):
         if column in work.columns:
             work[column] = pd.to_numeric(work[column], errors="coerce")
@@ -186,6 +242,17 @@ def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
     if sort_columns:
         work = work.sort_values(sort_columns, kind="mergesort", na_position="last").reset_index(drop=True)
     return work
+
+
+def _portfolio_equity(cash_balance: float, open_positions: list[dict[str, Any]]) -> float:
+    reserved_capital = sum(float(position.get("stake_amount") or 0.0) for position in open_positions)
+    return cash_balance + reserved_capital
+
+
+def _minimum_required_stake(entry_price: float | None, *, min_order_dollars: float, min_shares: float) -> float:
+    resolved_price = max(0.0, _safe_float(entry_price) or 0.0)
+    share_floor = resolved_price * max(0.0, min_shares)
+    return max(min_order_dollars, share_floor)
 
 
 def _apply_game_limit(trades_df: pd.DataFrame, *, game_limit: int | None) -> tuple[pd.DataFrame, dict[str, int]]:
@@ -221,86 +288,250 @@ def simulate_trade_portfolio(
     initial_bankroll: float,
     position_size_fraction: float,
     game_limit: int | None,
+    min_order_dollars: float | None = None,
+    min_shares: float | None = None,
+    max_concurrent_positions: int | None = None,
+    concurrency_mode: str | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
-    bankroll = normalize_portfolio_initial_bankroll(initial_bankroll)
+    cash_balance = normalize_portfolio_initial_bankroll(initial_bankroll)
     fraction = normalize_portfolio_position_size_fraction(position_size_fraction)
     resolved_game_limit = normalize_portfolio_game_limit(game_limit)
+    resolved_min_order_dollars = normalize_portfolio_min_order_dollars(min_order_dollars)
+    resolved_min_shares = normalize_portfolio_min_shares(min_shares)
+    resolved_max_concurrent_positions = normalize_portfolio_max_concurrent_positions(max_concurrent_positions)
+    resolved_concurrency_mode = normalize_portfolio_concurrency_mode(concurrency_mode)
     resolved_family_members = _normalize_family_members(strategy_family, strategy_family_members)
     serialized_family_members = ",".join(resolved_family_members)
     work = _prepare_trade_frame(trades_df)
     limited, game_order = _apply_game_limit(work, game_limit=resolved_game_limit)
 
+    bankroll = cash_balance
     peak_bankroll = bankroll
     min_bankroll = bankroll
     max_drawdown_amount = 0.0
     max_drawdown_pct = 0.0
     executed_trade_returns: list[float] = []
+    executed_share_counts: list[float] = []
     step_rows: list[dict[str, Any]] = []
-    last_exit_at = pd.NaT
+    open_positions: list[dict[str, Any]] = []
     executed_trade_count = 0
     skipped_overlap_count = 0
     skipped_bankroll_count = 0
+    skipped_concurrency_count = 0
+    skipped_min_order_count = 0
+    max_concurrent_positions_observed = 0
+    settlement_sequence = 0
 
-    for trade_sequence, row in enumerate(limited.to_dict(orient="records"), start=1):
-        bankroll_before = bankroll
+    def settle_until(timestamp: pd.Timestamp | None) -> None:
+        nonlocal cash_balance
+        nonlocal bankroll
+        nonlocal peak_bankroll
+        nonlocal min_bankroll
+        nonlocal max_drawdown_amount
+        nonlocal max_drawdown_pct
+        nonlocal settlement_sequence
+        if not open_positions:
+            return
+        remaining: list[dict[str, Any]] = []
+        to_settle: list[dict[str, Any]] = []
+        for position in sorted(
+            open_positions,
+            key=lambda item: (
+                pd.to_datetime(item.get("exit_at"), errors="coerce", utc=True),
+                int(item.get("trade_sequence") or 0),
+            ),
+        ):
+            exit_at = pd.to_datetime(position.get("exit_at"), errors="coerce", utc=True)
+            if timestamp is None or (pd.notna(exit_at) and exit_at <= timestamp):
+                to_settle.append(position)
+            else:
+                remaining.append(position)
+        if not to_settle:
+            return
+        open_positions.clear()
+        open_positions.extend(remaining)
+        for position in to_settle:
+            cash_balance += float(position.get("stake_amount") or 0.0) + float(position.get("profit_loss_amount") or 0.0)
+            bankroll = _portfolio_equity(cash_balance, open_positions)
+            peak_bankroll = max(peak_bankroll, bankroll)
+            min_bankroll = min(min_bankroll, bankroll)
+            drawdown_amount = max(0.0, peak_bankroll - bankroll)
+            drawdown_pct = drawdown_amount / peak_bankroll if peak_bankroll > 0 else 0.0
+            max_drawdown_amount = max(max_drawdown_amount, drawdown_amount)
+            max_drawdown_pct = max(max_drawdown_pct, drawdown_pct)
+            settlement_sequence += 1
+            step_rows[position["step_index"]].update(
+                {
+                    "settled_at": _serialise_scalar(position.get("exit_at")),
+                    "settlement_sequence": settlement_sequence,
+                    "bankroll_after": bankroll,
+                    "peak_bankroll_after_step": peak_bankroll,
+                    "drawdown_amount_after_step": drawdown_amount,
+                    "drawdown_pct_after_step": drawdown_pct,
+                    "open_positions_after": len(open_positions),
+                }
+            )
+
+    limited_records = limited.to_dict(orient="records")
+    trade_sequence = 0
+    index = 0
+    while index < len(limited_records):
+        row = limited_records[index]
         entry_at = pd.to_datetime(row.get("entry_at"), errors="coerce", utc=True)
-        exit_at = pd.to_datetime(row.get("exit_at"), errors="coerce", utc=True)
-        trade_return = _safe_float(row.get("gross_return_with_slippage")) or 0.0
-        action = "executed"
-        skip_reason = None
-        stake_amount = 0.0
-        profit_loss_amount = 0.0
+        batch_records: list[dict[str, Any]] = []
+        while index < len(limited_records):
+            candidate = limited_records[index]
+            candidate_entry_at = pd.to_datetime(candidate.get("entry_at"), errors="coerce", utc=True)
+            if (
+                (pd.isna(entry_at) and pd.isna(candidate_entry_at))
+                or (pd.notna(entry_at) and pd.notna(candidate_entry_at) and candidate_entry_at == entry_at)
+            ):
+                batch_records.append(candidate)
+                index += 1
+                continue
+            break
 
-        if pd.notna(last_exit_at) and pd.notna(entry_at) and entry_at < last_exit_at:
-            action = "skipped"
-            skip_reason = "overlap"
-            skipped_overlap_count += 1
-        elif bankroll_before <= 0 or fraction <= 0:
-            action = "skipped"
-            skip_reason = "bankroll"
-            skipped_bankroll_count += 1
-        else:
-            stake_amount = bankroll_before * fraction
-            profit_loss_amount = stake_amount * trade_return
-            bankroll = max(0.0, bankroll_before + profit_loss_amount)
-            executed_trade_count += 1
-            executed_trade_returns.append(trade_return)
-            last_exit_at = exit_at if pd.notna(exit_at) else entry_at
-
-        peak_bankroll = max(peak_bankroll, bankroll)
-        min_bankroll = min(min_bankroll, bankroll)
-        drawdown_amount = max(0.0, peak_bankroll - bankroll)
-        drawdown_pct = drawdown_amount / peak_bankroll if peak_bankroll > 0 else 0.0
-        max_drawdown_amount = max(max_drawdown_amount, drawdown_amount)
-        max_drawdown_pct = max(max_drawdown_pct, drawdown_pct)
-
-        step_rows.append(
-            {
-                "sample_name": sample_name,
-                "strategy_family": strategy_family,
-                "portfolio_scope": portfolio_scope,
-                "strategy_family_members": serialized_family_members,
-                "source_strategy_family": row.get("source_strategy_family") or strategy_family,
-                "trade_sequence": trade_sequence,
-                "game_sequence": row.get("game_sequence"),
-                "game_id": row.get("game_id"),
-                "team_side": row.get("team_side"),
-                "team_slug": row.get("team_slug"),
-                "opponent_team_slug": row.get("opponent_team_slug"),
-                "entry_at": _serialise_scalar(entry_at),
-                "exit_at": _serialise_scalar(exit_at),
-                "gross_return_with_slippage": trade_return,
-                "portfolio_action": action,
-                "skip_reason": skip_reason,
-                "bankroll_before": bankroll_before,
-                "stake_amount": stake_amount,
-                "profit_loss_amount": profit_loss_amount,
-                "bankroll_after": bankroll,
-                "peak_bankroll_after_step": peak_bankroll,
-                "drawdown_amount_after_step": drawdown_amount,
-                "drawdown_pct_after_step": drawdown_pct,
-            }
+        settle_until(entry_at)
+        equity_before_batch = _portfolio_equity(cash_balance, open_positions)
+        open_positions_before = len(open_positions)
+        available_slots = max(0, resolved_max_concurrent_positions - open_positions_before)
+        ranked_batch = sorted(
+            batch_records,
+            key=lambda item: (
+                _safe_float(item.get("signal_strength")) is not None,
+                _safe_float(item.get("signal_strength")) or float("-inf"),
+                _safe_float(item.get("gross_return_with_slippage")) or float("-inf"),
+                str(item.get("source_strategy_family") or strategy_family),
+                str(item.get("game_id") or ""),
+                str(item.get("team_side") or ""),
+            ),
+            reverse=True,
         )
+        selected_records = ranked_batch[:available_slots] if available_slots > 0 else []
+        selected_count = len(selected_records)
+        stake_pool = cash_balance * fraction if fraction > 0 else 0.0
+        per_trade_budget = (
+            (stake_pool / selected_count)
+            if selected_count > 0 and resolved_concurrency_mode == "shared_cash_equal_split"
+            else 0.0
+        )
+        selected_keys = {id(record): rank for rank, record in enumerate(selected_records, start=1)}
+
+        for batch_rank, record in enumerate(ranked_batch, start=1):
+            trade_sequence += 1
+            exit_at = pd.to_datetime(record.get("exit_at"), errors="coerce", utc=True)
+            trade_return = _safe_float(record.get("gross_return_with_slippage")) or 0.0
+            signal_strength = _safe_float(record.get("signal_strength"))
+            step_index = len(step_rows)
+            equity_before = _portfolio_equity(cash_balance, open_positions)
+            cash_before = cash_balance
+            open_positions_before_current = len(open_positions)
+            minimum_required_stake = _minimum_required_stake(
+                _safe_float(record.get("entry_price")),
+                min_order_dollars=resolved_min_order_dollars,
+                min_shares=resolved_min_shares,
+            )
+            action = "skipped"
+            skip_reason: str | None = None
+            stake_amount = 0.0
+            share_count = 0.0
+            profit_loss_amount = 0.0
+            cash_after_entry = cash_before
+            bankroll_after = equity_before
+            peak_after = peak_bankroll
+            drawdown_amount_after = max(0.0, peak_bankroll - bankroll_after)
+            drawdown_pct_after = drawdown_amount_after / peak_bankroll if peak_bankroll > 0 else 0.0
+            open_positions_after = len(open_positions)
+            settlement_value: Any = _serialise_scalar(entry_at)
+            settlement_value_sequence: int | None = None
+
+            if id(record) not in selected_keys:
+                skip_reason = "concurrency"
+                skipped_concurrency_count += 1
+            elif equity_before <= 0 or cash_before <= 0 or fraction <= 0:
+                skip_reason = "bankroll"
+                skipped_bankroll_count += 1
+            else:
+                target_stake = max(per_trade_budget, minimum_required_stake)
+                if target_stake > cash_before + 1e-9:
+                    skip_reason = "min_order"
+                    skipped_min_order_count += 1
+                else:
+                    stake_amount = target_stake
+                    share_count = stake_amount / max(_safe_float(record.get("entry_price")) or 1.0, 1e-6)
+                    profit_loss_amount = stake_amount * trade_return
+                    cash_balance = max(0.0, cash_before - stake_amount)
+                    cash_after_entry = cash_balance
+                    action = "executed"
+                    executed_trade_count += 1
+                    executed_trade_returns.append(trade_return)
+                    executed_share_counts.append(share_count)
+                    open_positions.append(
+                        {
+                            "step_index": step_index,
+                            "trade_sequence": trade_sequence,
+                            "entry_at": entry_at,
+                            "exit_at": exit_at if pd.notna(exit_at) else entry_at,
+                            "stake_amount": stake_amount,
+                            "profit_loss_amount": profit_loss_amount,
+                        }
+                    )
+                    max_concurrent_positions_observed = max(max_concurrent_positions_observed, len(open_positions))
+                    open_positions_after = len(open_positions)
+                    bankroll_after = _portfolio_equity(cash_balance, open_positions)
+                    settlement_value = None
+            if action == "skipped":
+                bankroll = _portfolio_equity(cash_balance, open_positions)
+                peak_bankroll = max(peak_bankroll, bankroll)
+                min_bankroll = min(min_bankroll, bankroll)
+                drawdown_amount_after = max(0.0, peak_bankroll - bankroll)
+                drawdown_pct_after = drawdown_amount_after / peak_bankroll if peak_bankroll > 0 else 0.0
+                max_drawdown_amount = max(max_drawdown_amount, drawdown_amount_after)
+                max_drawdown_pct = max(max_drawdown_pct, drawdown_pct_after)
+                bankroll_after = bankroll
+                peak_after = peak_bankroll
+
+            step_rows.append(
+                {
+                    "sample_name": sample_name,
+                    "strategy_family": strategy_family,
+                    "portfolio_scope": portfolio_scope,
+                    "strategy_family_members": serialized_family_members,
+                    "source_strategy_family": record.get("source_strategy_family") or strategy_family,
+                    "trade_sequence": trade_sequence,
+                    "game_sequence": record.get("game_sequence"),
+                    "game_id": record.get("game_id"),
+                    "team_side": record.get("team_side"),
+                    "team_slug": record.get("team_slug"),
+                    "opponent_team_slug": record.get("opponent_team_slug"),
+                    "entry_at": _serialise_scalar(entry_at),
+                    "exit_at": _serialise_scalar(exit_at),
+                    "settled_at": settlement_value,
+                    "settlement_sequence": settlement_value_sequence,
+                    "signal_strength": signal_strength,
+                    "candidate_batch_size": len(batch_records),
+                    "strategy_selection_rank": selected_keys.get(id(record), batch_rank),
+                    "gross_return_with_slippage": trade_return,
+                    "portfolio_action": action,
+                    "skip_reason": skip_reason,
+                    "bankroll_before": equity_before,
+                    "cash_before": cash_before,
+                    "cash_after_entry": cash_after_entry,
+                    "stake_amount": stake_amount,
+                    "minimum_required_stake": minimum_required_stake,
+                    "share_count": share_count,
+                    "profit_loss_amount": profit_loss_amount,
+                    "bankroll_after": bankroll_after,
+                    "peak_bankroll_after_step": peak_after,
+                    "drawdown_amount_after_step": drawdown_amount_after,
+                    "drawdown_pct_after_step": drawdown_pct_after,
+                    "open_positions_before": open_positions_before_current,
+                    "open_positions_after": open_positions_after,
+                }
+            )
+
+    settle_until(None)
+    bankroll = _portfolio_equity(cash_balance, open_positions)
 
     summary = {
         "sample_name": sample_name,
@@ -320,11 +551,21 @@ def simulate_trade_portfolio(
         "executed_trade_count": executed_trade_count,
         "skipped_overlap_count": skipped_overlap_count,
         "skipped_bankroll_count": skipped_bankroll_count,
+        "skipped_concurrency_count": skipped_concurrency_count,
+        "skipped_min_order_count": skipped_min_order_count,
         "games_considered": int(len(game_order)),
         "position_size_fraction": fraction,
         "game_limit": resolved_game_limit,
+        "portfolio_min_order_dollars": resolved_min_order_dollars,
+        "portfolio_min_shares": resolved_min_shares,
+        "portfolio_max_concurrent_positions": resolved_max_concurrent_positions,
+        "portfolio_concurrency_mode": resolved_concurrency_mode,
+        "max_concurrent_positions_observed": max_concurrent_positions_observed,
         "avg_executed_trade_return_with_slippage": (
             sum(executed_trade_returns) / len(executed_trade_returns) if executed_trade_returns else None
+        ),
+        "avg_executed_share_count": (
+            sum(executed_share_counts) / len(executed_share_counts) if executed_share_counts else None
         ),
         "first_entry_at": _serialise_scalar(limited["entry_at"].min()) if not limited.empty else None,
         "last_exit_at": _serialise_scalar(limited["exit_at"].max()) if not limited.empty else None,
@@ -339,6 +580,10 @@ def build_portfolio_benchmark_frames(
     initial_bankroll: float,
     position_size_fraction: float,
     game_limit: int | None,
+    min_order_dollars: float | None,
+    min_shares: float | None,
+    max_concurrent_positions: int | None,
+    concurrency_mode: str | None,
     split_order: tuple[str, ...],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     summary_rows: list[dict[str, Any]] = []
@@ -358,6 +603,10 @@ def build_portfolio_benchmark_frames(
                 initial_bankroll=initial_bankroll,
                 position_size_fraction=position_size_fraction,
                 game_limit=game_limit,
+                min_order_dollars=min_order_dollars,
+                min_shares=min_shares,
+                max_concurrent_positions=max_concurrent_positions,
+                concurrency_mode=concurrency_mode,
             )
             summary_rows.append(summary)
             if not steps_df.empty:
@@ -374,6 +623,10 @@ def build_combined_portfolio_benchmark_frames(
     initial_bankroll: float,
     position_size_fraction: float,
     game_limit: int | None,
+    min_order_dollars: float | None,
+    min_shares: float | None,
+    max_concurrent_positions: int | None,
+    concurrency_mode: str | None,
     split_order: tuple[str, ...],
     combined_family_name: str = COMBINED_KEEP_FAMILIES_PORTFOLIO,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -410,6 +663,10 @@ def build_combined_portfolio_benchmark_frames(
             initial_bankroll=initial_bankroll,
             position_size_fraction=position_size_fraction,
             game_limit=game_limit,
+            min_order_dollars=min_order_dollars,
+            min_shares=min_shares,
+            max_concurrent_positions=max_concurrent_positions,
+            concurrency_mode=concurrency_mode,
         )
         summary_rows.append(summary)
         if not steps_df.empty:
@@ -428,6 +685,10 @@ def build_routed_portfolio_benchmark_frames(
     initial_bankroll: float,
     position_size_fraction: float,
     game_limit: int | None,
+    min_order_dollars: float | None,
+    min_shares: float | None,
+    max_concurrent_positions: int | None,
+    concurrency_mode: str | None,
     split_order: tuple[str, ...],
     routed_family_name: str = STATISTICAL_ROUTING_PORTFOLIO,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -472,6 +733,10 @@ def build_routed_portfolio_benchmark_frames(
             initial_bankroll=initial_bankroll,
             position_size_fraction=position_size_fraction,
             game_limit=game_limit,
+            min_order_dollars=min_order_dollars,
+            min_shares=min_shares,
+            max_concurrent_positions=max_concurrent_positions,
+            concurrency_mode=concurrency_mode,
         )
         summary_rows.append(summary)
         if not steps_df.empty:
@@ -575,8 +840,12 @@ __all__ = [
     "build_portfolio_benchmark_frames",
     "build_portfolio_candidate_freeze_frame",
     "build_routed_portfolio_benchmark_frames",
+    "normalize_portfolio_concurrency_mode",
     "normalize_portfolio_game_limit",
     "normalize_portfolio_initial_bankroll",
+    "normalize_portfolio_max_concurrent_positions",
+    "normalize_portfolio_min_order_dollars",
+    "normalize_portfolio_min_shares",
     "normalize_portfolio_position_size_fraction",
     "simulate_trade_portfolio",
     "STATISTICAL_ROUTING_PORTFOLIO",
