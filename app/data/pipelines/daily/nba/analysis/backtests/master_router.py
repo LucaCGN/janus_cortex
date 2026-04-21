@@ -21,7 +21,6 @@ DEFAULT_MASTER_ROUTER_CORE_FAMILIES = (
 DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES = (
     "q1_repricing",
     "halftime_q3_repricing_v1",
-    "comeback_reversion_v2",
     "q4_clutch",
 )
 

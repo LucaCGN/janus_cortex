@@ -7,14 +7,35 @@ import pandas as pd
 import pytest
 
 from app.data.pipelines.daily.nba.analysis.backtests import engine
+from app.data.pipelines.daily.nba.analysis.backtests.benchmarking import (
+    BACKTEST_BENCHMARK_CONTRACT_VERSION,
+    _normalize_robustness_seeds,
+)
+from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import (
+    _build_context_lookup,
+    _clean_trades_df,
+    _safe_float,
+    _serialise_scalar,
+    _LLM_MODEL_CACHED_INPUT_PRICE_PER_1M,
+    _LLM_MODEL_INPUT_PRICE_PER_1M,
+    _LLM_MODEL_OUTPUT_PRICE_PER_1M,
+    build_llm_iteration_plan,
+    estimate_llm_usage_cost,
+    normalize_llm_selected_candidate_ids,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
+    _normalize_family_members,
     build_combined_portfolio_benchmark_frames,
     build_master_router_portfolio_benchmark_frames,
     simulate_trade_portfolio,
     build_routed_portfolio_benchmark_frames,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult
-from app.data.pipelines.daily.nba.analysis.contracts import ANALYSIS_VERSION, BacktestRunRequest
+from app.data.pipelines.daily.nba.analysis.contracts import (
+    ANALYSIS_VERSION,
+    BacktestRunRequest,
+    DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
+)
 
 
 def _build_state_row(
@@ -1540,7 +1561,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v8"
+    assert first.payload["benchmark"]["contract_version"] == BACKTEST_BENCHMARK_CONTRACT_VERSION
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
@@ -1599,3 +1620,171 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["benchmark_portfolio_robustness_summary_csv"]).exists()
     assert Path(payload["artifacts"]["experiment_registry_json"]).exists()
     assert any(key.startswith("benchmark_portfolio_chart_") for key in payload["artifacts"])
+
+
+def test_llm_experiment_scalar_and_cost_helper_contracts() -> None:
+    assert _safe_float(None) is None
+    assert _safe_float("") is None
+    assert _safe_float("bad") is None
+    assert _safe_float("2.5") == pytest.approx(2.5)
+    assert _safe_float(3) == pytest.approx(3.0)
+
+    ts = pd.Timestamp("2026-04-21T12:34:56Z")
+    assert _serialise_scalar(ts) == "2026-04-21T12:34:56+00:00"
+    assert _serialise_scalar(7) == 7
+    assert _serialise_scalar(float("nan")) is None
+
+    estimated_cost = (
+        (1_200 - 100) * _LLM_MODEL_INPUT_PRICE_PER_1M
+        + 100 * _LLM_MODEL_CACHED_INPUT_PRICE_PER_1M
+        + 250 * _LLM_MODEL_OUTPUT_PRICE_PER_1M
+    ) / 1_000_000
+    assert estimated_cost == pytest.approx(0.0019575)
+
+
+def test_llm_experiment_trade_frame_and_context_lookup_are_deterministic() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "game_id": "g1",
+                "opening_band": "40-50",
+                "period_label": "Q1",
+                "context_bucket": "Q1|trail_1_4",
+                "gross_return_with_slippage": -0.10,
+                "entry_at": "2026-04-21T12:00:00Z",
+                "exit_at": "2026-04-21T12:05:00Z",
+                "signal_strength": "0.4",
+                "entry_price": "0.42",
+                "exit_price": "0.38",
+                "entry_state_index": "2",
+            },
+            {
+                "game_id": "g2",
+                "opening_band": "40-50",
+                "period_label": "Q1",
+                "context_bucket": "Q1|trail_1_4",
+                "gross_return_with_slippage": 0.20,
+                "entry_at": "2026-04-21T12:02:00Z",
+                "exit_at": "2026-04-21T12:06:00Z",
+                "signal_strength": "0.7",
+                "entry_price": "0.43",
+                "exit_price": "0.51",
+                "entry_state_index": "1",
+            },
+            {
+                "game_id": "g3",
+                "opening_band": "70-80",
+                "period_label": "Q2",
+                "context_bucket": "Q2|lead_1_4",
+                "gross_return_with_slippage": 0.05,
+                "entry_at": "2026-04-21T12:10:00Z",
+                "exit_at": "2026-04-21T12:18:00Z",
+                "signal_strength": "0.5",
+                "entry_price": "0.78",
+                "exit_price": "0.81",
+                "entry_state_index": "3",
+            },
+        ]
+    )
+
+    cleaned = _clean_trades_df(frame)
+    assert cleaned["entry_at"].dtype.kind == "M"
+    assert cleaned["exit_at"].dtype.kind == "M"
+    assert cleaned["signal_strength"].dtype.kind in {"f", "i"}
+    assert cleaned["entry_price"].dtype.kind in {"f", "i"}
+    assert cleaned["exit_price"].dtype.kind in {"f", "i"}
+    assert cleaned["entry_state_index"].dtype.kind in {"f", "i"}
+
+    exact_lookup, band_period_lookup, overall, context_rows = _build_context_lookup(cleaned)
+    assert exact_lookup[("40-50", "Q1", "Q1|trail_1_4")]["trade_count"] == 2
+    assert band_period_lookup[("40-50", "Q1")]["trade_count"] == 2
+    assert overall["trade_count"] == 3
+    assert overall["win_rate"] == pytest.approx(2 / 3)
+    assert [row["context_bucket"] for row in context_rows] == ["Q1|trail_1_4", "Q2|lead_1_4"]
+    assert context_rows[0]["avg_return"] == pytest.approx(0.05)
+
+
+def test_llm_experiment_iteration_seed_and_family_normalization() -> None:
+    assert _normalize_robustness_seeds(None, fallback_seed=19) == DEFAULT_BACKTEST_ROBUSTNESS_SEEDS
+    assert _normalize_robustness_seeds("13, 7, 7, bad, 11", fallback_seed=19) == (13, 7, 11)
+    assert _normalize_robustness_seeds([], fallback_seed=19) == (19,)
+
+    assert _normalize_family_members("llm_hybrid_restrained_v1", ["  b_only  ", "c_only", "b_only", ""]) == (
+        "b_only",
+        "c_only",
+    )
+    assert _normalize_family_members("llm_hybrid_freedom_v1", None) == ("llm_hybrid_freedom_v1",)
+
+
+def test_llm_experiment_public_cost_and_sampling_helpers() -> None:
+    assert estimate_llm_usage_cost(input_tokens=1_200, cached_input_tokens=100, output_tokens=250) == pytest.approx(0.0019575)
+
+    state_df = _build_benchmark_state_frame()
+    trade_frames = {
+        "winner_definition": pd.DataFrame(
+            [
+                {
+                    "game_id": "002A5REV",
+                    "entry_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
+                },
+                {
+                    "game_id": "002A5WIN",
+                    "entry_at": datetime(2026, 2, 23, 20, 5, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 23, 21, 0, tzinfo=timezone.utc),
+                },
+                {
+                    "game_id": "002A5DOG",
+                    "entry_at": datetime(2026, 2, 24, 20, 5, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 24, 21, 0, tzinfo=timezone.utc),
+                },
+            ]
+        )
+    }
+    result = BacktestResult(payload={}, trade_frames=trade_frames, state_df=state_df, strategy_registry={})
+    plan = build_llm_iteration_plan(
+        result,
+        strategy_families=("winner_definition",),
+        iteration_count=2,
+        games_per_iteration=2,
+        seeds=(7, 11),
+        fallback_seed=19,
+    )
+    assert len(plan) == 2
+    assert plan[0]["iteration_seed"] == 7
+    assert plan[0]["sample_game_count"] == 2
+    assert len(plan[0]["sampled_game_ids"]) == 2
+    rerun = build_llm_iteration_plan(
+        result,
+        strategy_families=("winner_definition",),
+        iteration_count=2,
+        games_per_iteration=2,
+        seeds=(7, 11),
+        fallback_seed=19,
+    )
+    assert plan == rerun
+    assert set(plan[0]["sampled_game_ids"]).issubset({"002A5REV", "002A5WIN", "002A5DOG"})
+
+
+def test_llm_selected_candidate_normalization_respects_role_and_side_rules() -> None:
+    candidates = [
+        {"candidate_id": "core-home-1", "candidate_role": "core", "team_side": "home"},
+        {"candidate_id": "extra-home-1", "candidate_role": "extra", "team_side": "home"},
+        {"candidate_id": "extra-away-1", "candidate_role": "extra", "team_side": "away"},
+        {"candidate_id": "core-home-2", "candidate_role": "core", "team_side": "home"},
+    ]
+    restrained = normalize_llm_selected_candidate_ids(
+        ["core-home-2", "extra-away-1", "extra-home-1", "core-home-1"],
+        candidates,
+        lane_mode="llm_restrained",
+        allowed_roles=("core", "extra"),
+    )
+    assert restrained == ["core-home-2", "extra-home-1"]
+
+    freedom = normalize_llm_selected_candidate_ids(
+        ["core-home-2", "extra-away-1", "extra-home-1", "core-home-1"],
+        candidates,
+        lane_mode="llm_freedom",
+        allowed_roles=("core", "extra"),
+    )
+    assert freedom == ["core-home-2", "extra-home-1", "core-home-1"]

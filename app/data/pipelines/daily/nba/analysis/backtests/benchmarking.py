@@ -17,6 +17,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     build_backtest_result,
     write_backtest_artifacts,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import build_llm_experiment_frames
 from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
     DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
     DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES,
@@ -1283,6 +1284,13 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
     )
     game_strategy_classification_df = _build_game_strategy_classification_frame(split_results, registry)
     portfolio_daily_paths_df = _build_portfolio_daily_path_frame(portfolio_summary_df, portfolio_steps_df)
+    llm_experiment_payload, llm_experiment_frames = build_llm_experiment_frames(
+        split_results,
+        request,
+        registry=registry,
+        core_strategy_families=master_router_core_families,
+        extra_strategy_families=master_router_extra_families,
+    )
 
     payload = full_result.payload
     payload["benchmark"] = {
@@ -1349,6 +1357,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_robustness_summary": to_jsonable(portfolio_robustness_summary_df.to_dict(orient="records")),
         "game_strategy_classification": to_jsonable(game_strategy_classification_df.to_dict(orient="records")),
         "master_router_decisions": to_jsonable(master_router_decisions_df.to_dict(orient="records")),
+        "llm_experiment": to_jsonable(llm_experiment_payload),
     }
     payload["experiment"] = {
         "experiment_id": _build_experiment_id(request, registry),
@@ -1374,6 +1383,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_robustness_summary": portfolio_robustness_summary_df,
         "game_strategy_classification": game_strategy_classification_df,
         "master_router_decisions": master_router_decisions_df,
+        **llm_experiment_frames,
     }
     return BenchmarkRunResult(
         payload=payload,
@@ -1389,6 +1399,8 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
     route_rows = benchmark.get("route_summary") or []
     portfolio_freeze_rows = benchmark.get("portfolio_candidate_freeze") or []
     portfolio_robustness_rows = benchmark.get("portfolio_robustness_summary") or []
+    llm_experiment = benchmark.get("llm_experiment") or {}
+    llm_lane_rows = llm_experiment.get("lane_summary") or []
     portfolio_full_rows = [row for row in (benchmark.get("portfolio_summary") or []) if row.get("sample_name") == "full_sample"]
     portfolio_full_rows = sorted(
         portfolio_full_rows,
@@ -1497,6 +1509,23 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
                 f" worst drawdown `{_format_num(row.get('worst_max_drawdown_pct'))}`"
             )
         lines.append("")
+    lines.extend(["## LLM Experiment", ""])
+    if not llm_lane_rows:
+        lines.append("- No LLM experiment rows were produced.")
+        lines.append("")
+    else:
+        lines.append(
+            f"- Model: `{llm_experiment.get('model')}` across `{llm_experiment.get('iteration_count')}` iterations of `{llm_experiment.get('iteration_game_count')}` games"
+            f"; total estimated cost `{_format_num(llm_experiment.get('total_cost_usd'))}`"
+        )
+        for row in llm_lane_rows:
+            lines.append(
+                f"- {row.get('lane_name')}: mean bankroll `{_format_num(row.get('mean_ending_bankroll'))}`,"
+                f" positive iterations `{_format_num(row.get('positive_iteration_rate'))}`,"
+                f" mean drawdown `{_format_num(row.get('mean_max_drawdown_pct'))}`,"
+                f" total cost `{_format_num(row.get('total_llm_estimated_cost_usd'))}`"
+            )
+        lines.append("")
     lines.extend(["## Sequential Portfolio Ranking", ""])
     if not portfolio_full_rows:
         lines.append("- No full-sample sequential portfolio rows were produced.")
@@ -1546,6 +1575,10 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "portfolio_candidate_freeze": "benchmark_portfolio_candidate_freeze",
         "portfolio_robustness_detail": "benchmark_portfolio_robustness_detail",
         "portfolio_robustness_summary": "benchmark_portfolio_robustness_summary",
+        "llm_experiment_iterations": "benchmark_llm_experiment_iterations",
+        "llm_experiment_summary": "benchmark_llm_experiment_summary",
+        "llm_experiment_lane_summary": "benchmark_llm_experiment_lane_summary",
+        "llm_experiment_decisions": "benchmark_llm_experiment_decisions",
     }
     for frame_name, frame in result.benchmark_frames.items():
         stem = artifact_stems.get(frame_name)

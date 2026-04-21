@@ -9,6 +9,10 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_HOLDOUT_RATIO,
     DEFAULT_BACKTEST_HOLDOUT_SEED,
     DEFAULT_BACKTEST_MIN_TRADE_COUNT,
+    DEFAULT_BACKTEST_LLM_ITERATION_COUNT,
+    DEFAULT_BACKTEST_LLM_ITERATION_GAMES,
+    DEFAULT_BACKTEST_LLM_MAX_BUDGET_USD,
+    DEFAULT_BACKTEST_LLM_MODEL,
     DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
     DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT,
     DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL,
@@ -92,6 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--portfolio-concurrency-mode",
         default=DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
     )
+    backtest_parser.add_argument("--llm-enable", action="store_true")
+    backtest_parser.add_argument("--llm-model", default=DEFAULT_BACKTEST_LLM_MODEL)
+    backtest_parser.add_argument("--llm-iteration-games", type=int, default=DEFAULT_BACKTEST_LLM_ITERATION_GAMES)
+    backtest_parser.add_argument("--llm-iteration-count", type=int, default=DEFAULT_BACKTEST_LLM_ITERATION_COUNT)
+    backtest_parser.add_argument("--llm-max-budget-usd", type=float, default=DEFAULT_BACKTEST_LLM_MAX_BUDGET_USD)
     backtest_parser.add_argument("--output-root", default=None)
 
     model_parser = subparsers.add_parser("train_analysis_baselines")
@@ -156,6 +165,11 @@ def dispatch_command(
                 portfolio_min_shares=args.portfolio_min_shares,
                 portfolio_max_concurrent_positions=args.portfolio_max_concurrent_positions,
                 portfolio_concurrency_mode=args.portfolio_concurrency_mode,
+                llm_enable=bool(args.llm_enable),
+                llm_model=args.llm_model,
+                llm_iteration_games=args.llm_iteration_games,
+                llm_iteration_count=args.llm_iteration_count,
+                llm_max_budget_usd=args.llm_max_budget_usd,
                 analysis_version=args.analysis_version,
                 output_root=args.output_root,
             )
