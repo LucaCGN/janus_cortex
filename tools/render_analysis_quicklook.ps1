@@ -12,6 +12,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$localRoot = "C:\code-personal\janus-local\janus_cortex"
+$defaultSourceDir = Join-Path $localRoot ("archives\output\nba_analysis\{0}\{1}\{2}\backtests" -f $Season, $SeasonPhase, $AnalysisVersion)
+$defaultRenderDir = Join-Path $defaultSourceDir "quicklook_png"
 Push-Location $repoRoot
 try {
     $pythonArgs = @(
@@ -23,12 +26,10 @@ try {
     if (-not [string]::IsNullOrWhiteSpace($OutputRoot)) {
         $pythonArgs += @("--output-root", $OutputRoot)
     }
-    if (-not [string]::IsNullOrWhiteSpace($SourceDir)) {
-        $pythonArgs += @("--source-dir", $SourceDir)
-    }
-    if (-not [string]::IsNullOrWhiteSpace($RenderDir)) {
-        $pythonArgs += @("--render-dir", $RenderDir)
-    }
+    $resolvedSourceDir = if (-not [string]::IsNullOrWhiteSpace($SourceDir)) { $SourceDir } else { $defaultSourceDir }
+    $resolvedRenderDir = if (-not [string]::IsNullOrWhiteSpace($RenderDir)) { $RenderDir } else { $defaultRenderDir }
+    $pythonArgs += @("--source-dir", $resolvedSourceDir)
+    $pythonArgs += @("--render-dir", $resolvedRenderDir)
     python @pythonArgs
 }
 finally {

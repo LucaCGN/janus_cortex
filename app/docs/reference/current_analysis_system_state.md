@@ -185,8 +185,12 @@ Validated on `2026-04-21`:
 
 ## Current Frontend Surface
 - permanent studio routes remain read-only
-- current focus is not new frontend math
-- next frontend step is portfolio and robustness visualization against frozen artifact contracts
+- `frontend/analysis_studio` now exposes:
+  - individual-strategy ranking with robustness fields
+  - portfolio-lane ranking
+  - master-router composition and sample comparison
+  - opening-band routing reference versus master-router selection counts
+- current focus is still read-only visualization against frozen artifact contracts, not new frontend math
 
 ## Current Gaps
 - master-router repeated-seed robustness is not yet a frozen artifact
