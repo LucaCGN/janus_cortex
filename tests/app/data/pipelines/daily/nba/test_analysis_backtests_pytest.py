@@ -9,6 +9,7 @@ import pytest
 from app.data.pipelines.daily.nba.analysis.backtests import engine
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     build_combined_portfolio_benchmark_frames,
+    build_master_router_portfolio_benchmark_frames,
     simulate_trade_portfolio,
     build_routed_portfolio_benchmark_frames,
 )
@@ -587,6 +588,234 @@ def _build_state_frame() -> pd.DataFrame:
             seconds_to_game_end=140.0,
             lead_changes_so_far=4,
         ),
+        _build_state_row(
+            game_id="002A5PANIC",
+            team_slug="BOS",
+            opponent_team_slug="CHI",
+            opening_price=0.69,
+            state_index=0,
+            team_price=0.69,
+            event_at=base + timedelta(minutes=80),
+            opening_band="60-70",
+            period=1,
+            period_label="Q1",
+            score_for=18,
+            score_against=16,
+            score_diff=2,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q1|lead_1_4",
+            net_points_last_5_events=1,
+            seconds_to_game_end=2400.0,
+        ),
+        _build_state_row(
+            game_id="002A5PANIC",
+            team_slug="BOS",
+            opponent_team_slug="CHI",
+            opening_price=0.69,
+            state_index=1,
+            team_price=0.48,
+            event_at=base + timedelta(minutes=81),
+            opening_band="60-70",
+            period=2,
+            period_label="Q2",
+            score_for=32,
+            score_against=34,
+            score_diff=-2,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q2|trail_1_4",
+            net_points_last_5_events=-3,
+            seconds_to_game_end=1680.0,
+        ),
+        _build_state_row(
+            game_id="002A5PANIC",
+            team_slug="BOS",
+            opponent_team_slug="CHI",
+            opening_price=0.69,
+            state_index=2,
+            team_price=0.53,
+            event_at=base + timedelta(minutes=82),
+            opening_band="60-70",
+            period=3,
+            period_label="Q3",
+            score_for=48,
+            score_against=50,
+            score_diff=-2,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q3|trail_1_4",
+            net_points_last_5_events=3,
+            seconds_to_game_end=1320.0,
+        ),
+        _build_state_row(
+            game_id="002A5PANIC",
+            team_slug="BOS",
+            opponent_team_slug="CHI",
+            opening_price=0.69,
+            state_index=3,
+            team_price=0.64,
+            event_at=base + timedelta(minutes=83),
+            opening_band="60-70",
+            period=3,
+            period_label="Q3",
+            score_for=56,
+            score_against=54,
+            score_diff=2,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q3|lead_1_4",
+            net_points_last_5_events=6,
+            seconds_to_game_end=1260.0,
+        ),
+        _build_state_row(
+            game_id="002A5HALF",
+            team_slug="PHI",
+            opponent_team_slug="TOR",
+            opening_price=0.44,
+            state_index=0,
+            team_price=0.44,
+            event_at=base + timedelta(minutes=90),
+            opening_band="40-50",
+            period=2,
+            period_label="Q2",
+            score_for=42,
+            score_against=42,
+            score_diff=0,
+            score_diff_bucket="tied",
+            context_bucket="Q2|tied",
+            net_points_last_5_events=0,
+            seconds_to_game_end=1500.0,
+        ),
+        _build_state_row(
+            game_id="002A5HALF",
+            team_slug="PHI",
+            opponent_team_slug="TOR",
+            opening_price=0.44,
+            state_index=1,
+            team_price=0.54,
+            event_at=base + timedelta(minutes=91),
+            opening_band="40-50",
+            period=3,
+            period_label="Q3",
+            score_for=48,
+            score_against=47,
+            score_diff=1,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q3|lead_1_4",
+            net_points_last_5_events=2,
+            seconds_to_game_end=1380.0,
+        ),
+        _build_state_row(
+            game_id="002A5HALF",
+            team_slug="PHI",
+            opponent_team_slug="TOR",
+            opening_price=0.44,
+            state_index=2,
+            team_price=0.57,
+            event_at=base + timedelta(minutes=92),
+            opening_band="40-50",
+            period=3,
+            period_label="Q3",
+            score_for=54,
+            score_against=51,
+            score_diff=3,
+            score_diff_bucket="lead_1_4",
+            context_bucket="Q3|lead_1_4",
+            net_points_last_5_events=4,
+            seconds_to_game_end=1320.0,
+        ),
+        _build_state_row(
+            game_id="002A5HALF",
+            team_slug="PHI",
+            opponent_team_slug="TOR",
+            opening_price=0.44,
+            state_index=3,
+            team_price=0.66,
+            event_at=base + timedelta(minutes=93),
+            opening_band="40-50",
+            period=3,
+            period_label="Q3",
+            score_for=60,
+            score_against=54,
+            score_diff=6,
+            score_diff_bucket="lead_5_9",
+            context_bucket="Q3|lead_5_9",
+            net_points_last_5_events=6,
+            seconds_to_game_end=1200.0,
+        ),
+        _build_state_row(
+            game_id="002A5CBK2",
+            team_slug="BKN",
+            opponent_team_slug="MIA",
+            opening_price=0.32,
+            state_index=0,
+            team_price=0.20,
+            event_at=base + timedelta(minutes=100),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_for=38,
+            score_against=48,
+            score_diff=-10,
+            score_diff_bucket="trail_10_14",
+            context_bucket="Q2|trail_10_14",
+            net_points_last_5_events=1,
+            seconds_to_game_end=1620.0,
+        ),
+        _build_state_row(
+            game_id="002A5CBK2",
+            team_slug="BKN",
+            opponent_team_slug="MIA",
+            opening_price=0.32,
+            state_index=1,
+            team_price=0.22,
+            event_at=base + timedelta(minutes=101),
+            opening_band="30-40",
+            period=3,
+            period_label="Q3",
+            score_for=46,
+            score_against=56,
+            score_diff=-10,
+            score_diff_bucket="trail_10_14",
+            context_bucket="Q3|trail_10_14",
+            net_points_last_5_events=5,
+            seconds_to_game_end=1320.0,
+        ),
+        _build_state_row(
+            game_id="002A5CBK2",
+            team_slug="BKN",
+            opponent_team_slug="MIA",
+            opening_price=0.32,
+            state_index=2,
+            team_price=0.27,
+            event_at=base + timedelta(minutes=102),
+            opening_band="30-40",
+            period=3,
+            period_label="Q3",
+            score_for=52,
+            score_against=59,
+            score_diff=-7,
+            score_diff_bucket="trail_5_9",
+            context_bucket="Q3|trail_5_9",
+            net_points_last_5_events=7,
+            seconds_to_game_end=1260.0,
+        ),
+        _build_state_row(
+            game_id="002A5CBK2",
+            team_slug="BKN",
+            opponent_team_slug="MIA",
+            opening_price=0.32,
+            state_index=3,
+            team_price=0.38,
+            event_at=base + timedelta(minutes=103),
+            opening_band="30-40",
+            period=3,
+            period_label="Q3",
+            score_for=58,
+            score_against=62,
+            score_diff=-4,
+            score_diff_bucket="trail_1_4",
+            context_bucket="Q3|trail_1_4",
+            net_points_last_5_events=9,
+            seconds_to_game_end=1200.0,
+        ),
     ]
     return pd.DataFrame(rows)
 
@@ -602,6 +831,9 @@ def _build_benchmark_state_frame() -> pd.DataFrame:
         "002A5LIFT": datetime(2026, 3, 9, 20, 0, tzinfo=timezone.utc),
         "002A5Q1RUN": datetime(2026, 3, 12, 20, 0, tzinfo=timezone.utc),
         "002A5CLUTCH": datetime(2026, 3, 15, 20, 0, tzinfo=timezone.utc),
+        "002A5PANIC": datetime(2026, 3, 18, 20, 0, tzinfo=timezone.utc),
+        "002A5HALF": datetime(2026, 3, 21, 20, 0, tzinfo=timezone.utc),
+        "002A5CBK2": datetime(2026, 3, 24, 20, 0, tzinfo=timezone.utc),
     }
     for game_id, base in game_bases.items():
         mask = frame["game_id"] == game_id
@@ -623,22 +855,28 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     result = engine.build_backtest_result(frame, request)
 
     assert result.payload["state_rows_considered"] == len(frame)
-    assert result.payload["games_considered"] == 8
+    assert result.payload["games_considered"] == 11
     assert set(result.payload["registry"].keys()) == {
         "reversion",
         "inversion",
         "winner_definition",
         "underdog_liftoff",
         "comeback_reversion",
+        "comeback_reversion_v2",
+        "favorite_panic_fade_v1",
+        "halftime_q3_repricing_v1",
         "volatility_scalp",
         "q1_repricing",
         "q4_clutch",
     }
     assert result.payload["families"]["reversion"]["trade_count"] == 1
-    assert result.payload["families"]["inversion"]["trade_count"] == 3
+    assert result.payload["families"]["inversion"]["trade_count"] == 4
     assert result.payload["families"]["winner_definition"]["trade_count"] == 1
     assert result.payload["families"]["underdog_liftoff"]["trade_count"] == 1
-    assert result.payload["families"]["comeback_reversion"]["trade_count"] == 1
+    assert result.payload["families"]["comeback_reversion"]["trade_count"] == 2
+    assert result.payload["families"]["comeback_reversion_v2"]["trade_count"] == 1
+    assert result.payload["families"]["favorite_panic_fade_v1"]["trade_count"] == 1
+    assert result.payload["families"]["halftime_q3_repricing_v1"]["trade_count"] == 1
     assert result.payload["families"]["volatility_scalp"]["trade_count"] == 1
     assert result.payload["families"]["q1_repricing"]["trade_count"] == 2
     assert result.payload["families"]["q4_clutch"]["trade_count"] == 1
@@ -661,6 +899,9 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["winner_definition_csv"]).exists()
     assert Path(payload["artifacts"]["underdog_liftoff_csv"]).exists()
     assert Path(payload["artifacts"]["comeback_reversion_csv"]).exists()
+    assert Path(payload["artifacts"]["comeback_reversion_v2_csv"]).exists()
+    assert Path(payload["artifacts"]["favorite_panic_fade_v1_csv"]).exists()
+    assert Path(payload["artifacts"]["halftime_q3_repricing_v1_csv"]).exists()
     assert Path(payload["artifacts"]["volatility_scalp_csv"]).exists()
     assert Path(payload["artifacts"]["q1_repricing_csv"]).exists()
     assert Path(payload["artifacts"]["q4_clutch_csv"]).exists()
@@ -699,6 +940,9 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
         "winner_definition",
         "underdog_liftoff",
         "comeback_reversion",
+        "comeback_reversion_v2",
+        "favorite_panic_fade_v1",
+        "halftime_q3_repricing_v1",
         "volatility_scalp",
         "q1_repricing",
         "q4_clutch",
@@ -1019,6 +1263,259 @@ def test_routed_portfolio_lane_selects_family_by_opening_band() -> None:
     ]
 
 
+def test_master_router_lane_selects_highest_confidence_core_family_and_keeps_extra_sleeves() -> None:
+    time_train_trade_frames = {
+        "winner_definition": pd.DataFrame(
+            [
+                {
+                    "game_id": "T-WIN",
+                    "team_side": "home",
+                    "team_slug": "OKC",
+                    "opponent_team_slug": "HOU",
+                    "opening_band": "60-70",
+                    "period_label": "Q4",
+                    "context_bucket": "Q4|lead_5_9",
+                    "signal_strength": 4.0,
+                    "entry_price": 0.80,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.10,
+                }
+            ]
+        ),
+        "inversion": pd.DataFrame(
+            [
+                {
+                    "game_id": "T-INV",
+                    "team_side": "away",
+                    "team_slug": "UTA",
+                    "opponent_team_slug": "DEN",
+                    "opening_band": "40-50",
+                    "period_label": "Q2",
+                    "context_bucket": "Q2|lead_1_4",
+                    "signal_strength": 6.0,
+                    "entry_price": 0.50,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 20, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.20,
+                }
+            ]
+        ),
+        "underdog_liftoff": pd.DataFrame(
+            [
+                {
+                    "game_id": "T-LIFT",
+                    "team_side": "home",
+                    "team_slug": "ATL",
+                    "opponent_team_slug": "BOS",
+                    "opening_band": "20-30",
+                    "period_label": "Q2",
+                    "context_bucket": "Q2|lead_1_4",
+                    "signal_strength": 3.0,
+                    "entry_price": 0.36,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 40, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 50, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.12,
+                }
+            ]
+        ),
+        "favorite_panic_fade_v1": pd.DataFrame(
+            [
+                {
+                    "game_id": "T-PANIC",
+                    "team_side": "home",
+                    "team_slug": "BOS",
+                    "opponent_team_slug": "CHI",
+                    "opening_band": "70-80",
+                    "period_label": "Q3",
+                    "context_bucket": "Q3|trail_1_4",
+                    "signal_strength": 7.0,
+                    "entry_price": 0.53,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 21, 10, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.22,
+                }
+            ]
+        ),
+        "q1_repricing": pd.DataFrame(
+            [
+                {
+                    "game_id": "G1",
+                    "team_side": "home",
+                    "team_slug": "DAL",
+                    "opponent_team_slug": "HOU",
+                    "opening_band": "40-50",
+                    "period_label": "Q1",
+                    "context_bucket": "Q1|lead_1_4",
+                    "signal_strength": 5.0,
+                    "entry_price": 0.55,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 19, 50, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.08,
+                }
+            ]
+        ),
+    }
+    full_sample_trade_frames = {
+        "winner_definition": pd.DataFrame(
+            [
+                {
+                    "game_id": "G1",
+                    "team_side": "away",
+                    "team_slug": "NYK",
+                    "opponent_team_slug": "MIA",
+                    "opening_band": "60-70",
+                    "period_label": "Q4",
+                    "context_bucket": "Q4|lead_5_9",
+                    "signal_strength": 4.0,
+                    "entry_price": 0.80,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 40, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.09,
+                }
+            ]
+        ),
+        "inversion": pd.DataFrame(
+            [
+                {
+                    "game_id": "G1",
+                    "team_side": "home",
+                    "team_slug": "UTA",
+                    "opponent_team_slug": "DEN",
+                    "opening_band": "40-50",
+                    "period_label": "Q2",
+                    "context_bucket": "Q2|lead_1_4",
+                    "signal_strength": 5.0,
+                    "entry_price": 0.50,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 15, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 25, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.18,
+                }
+            ]
+        ),
+        "underdog_liftoff": pd.DataFrame(
+            [
+                {
+                    "game_id": "G1",
+                    "team_side": "home",
+                    "team_slug": "ATL",
+                    "opponent_team_slug": "BOS",
+                    "opening_band": "20-30",
+                    "period_label": "Q2",
+                    "context_bucket": "Q2|lead_1_4",
+                    "signal_strength": 3.0,
+                    "entry_price": 0.36,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 20, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.11,
+                }
+            ]
+        ),
+        "favorite_panic_fade_v1": pd.DataFrame(
+            [
+                {
+                    "game_id": "G1",
+                    "team_side": "home",
+                    "team_slug": "BOS",
+                    "opponent_team_slug": "CHI",
+                    "opening_band": "70-80",
+                    "period_label": "Q3",
+                    "context_bucket": "Q3|trail_1_4",
+                    "signal_strength": 7.0,
+                    "entry_price": 0.53,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 20, 35, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 45, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.21,
+                }
+            ]
+        ),
+        "q1_repricing": pd.DataFrame(
+            [
+                {
+                    "game_id": "G1",
+                    "team_side": "home",
+                    "team_slug": "DAL",
+                    "opponent_team_slug": "HOU",
+                    "opening_band": "40-50",
+                    "period_label": "Q1",
+                    "context_bucket": "Q1|lead_1_4",
+                    "signal_strength": 5.0,
+                    "entry_price": 0.55,
+                    "entry_state_index": 1,
+                    "exit_state_index": 2,
+                    "entry_at": datetime(2026, 2, 22, 19, 50, tzinfo=timezone.utc),
+                    "exit_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                    "gross_return_with_slippage": 0.08,
+                }
+            ]
+        ),
+    }
+    split_results = {
+        "time_train": BacktestResult(
+            payload={},
+            trade_frames=time_train_trade_frames,
+            state_df=pd.DataFrame(),
+            strategy_registry={},
+        ),
+        "full_sample": BacktestResult(
+            payload={},
+            trade_frames=full_sample_trade_frames,
+            state_df=pd.DataFrame(),
+            strategy_registry={},
+        ),
+    }
+
+    summary_df, steps_df, decisions_df = build_master_router_portfolio_benchmark_frames(
+        split_results,
+        initial_bankroll=10.0,
+        position_size_fraction=1.0,
+        game_limit=3,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=2,
+        concurrency_mode="shared_cash_equal_split",
+        split_order=("full_sample",),
+        selection_sample_name="time_train",
+        core_strategy_families=("winner_definition", "inversion", "underdog_liftoff", "favorite_panic_fade_v1"),
+        extra_strategy_families=("q1_repricing",),
+    )
+
+    assert len(summary_df) == 1
+    summary = summary_df.iloc[0]
+    assert summary["strategy_family"] == "master_strategy_router_v1"
+    assert summary["portfolio_scope"] == "routed_family_set"
+    assert summary["strategy_family_members"] == "winner_definition,inversion,underdog_liftoff,favorite_panic_fade_v1,q1_repricing"
+    assert summary["executed_trade_count"] == 2
+    assert list(steps_df["source_strategy_family"]) == [
+        "q1_repricing",
+        "favorite_panic_fade_v1",
+    ]
+    assert list(steps_df["portfolio_action"]) == ["executed", "executed"]
+    assert len(decisions_df) == 1
+    decision = decisions_df.iloc[0]
+    assert decision["selected_core_family"] == "favorite_panic_fade_v1"
+    assert decision["triggered_core_family_count"] == 4
+    assert decision["triggered_extra_family_count"] == 1
+
+
 def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None:
     frame = _build_benchmark_state_frame()
     request = BacktestRunRequest(
@@ -1043,7 +1540,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v7"
+    assert first.payload["benchmark"]["contract_version"] == "v8"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
@@ -1073,6 +1570,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert "mean_ending_bankroll" in robustness_summary_df.columns
     assert "mean_compounded_return" in robustness_summary_df.columns
     assert not first.benchmark_frames["game_strategy_classification"].empty
+    assert not first.benchmark_frames["master_router_decisions"].empty
     assert not first.benchmark_frames["portfolio_daily_paths"].empty
     combined_rows = first.benchmark_frames["portfolio_summary"][
         first.benchmark_frames["portfolio_summary"]["strategy_family"] == "combined_keep_families"
@@ -1092,6 +1590,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["benchmark_candidate_freeze_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_route_summary_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_game_strategy_classification_csv"]).exists()
+    assert Path(payload["artifacts"]["benchmark_master_router_decisions_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_summary_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_steps_csv"]).exists()
     assert Path(payload["artifacts"]["benchmark_portfolio_daily_paths_csv"]).exists()

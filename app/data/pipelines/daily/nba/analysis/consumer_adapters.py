@@ -301,6 +301,204 @@ def _build_strategy_rankings(backtest_payload: dict[str, Any]) -> list[dict[str,
     return results
 
 
+def _portfolio_rows_for_sample(backtest_payload: dict[str, Any], *, sample_name: str) -> list[dict[str, Any]]:
+    benchmark = backtest_payload.get("benchmark") or {}
+    return [
+        row
+        for row in (benchmark.get("portfolio_summary") or [])
+        if str(row.get("sample_name")) == str(sample_name)
+    ]
+
+
+def _build_individual_strategy_rankings(backtest_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    benchmark = backtest_payload.get("benchmark") or {}
+    rankings_lookup = {
+        str(row.get("strategy_family")): row
+        for row in _build_strategy_rankings(backtest_payload)
+    }
+    robustness_lookup = {
+        str(row.get("strategy_family")): row
+        for row in (benchmark.get("portfolio_robustness_summary") or [])
+    }
+    candidate_lookup = {
+        str(row.get("strategy_family")): row
+        for row in (benchmark.get("candidate_freeze") or [])
+    }
+    rows = [
+        row
+        for row in _portfolio_rows_for_sample(backtest_payload, sample_name="full_sample")
+        if str(row.get("portfolio_scope")) == "single_family"
+    ]
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            row.get("ending_bankroll") is not None,
+            float(row.get("ending_bankroll") or float("-inf")),
+            float(row.get("avg_executed_trade_return_with_slippage") or float("-inf")),
+            int(row.get("executed_trade_count") or 0),
+        ),
+        reverse=True,
+    )
+    results: list[dict[str, Any]] = []
+    for rank, row in enumerate(ranked, start=1):
+        strategy_family = str(row.get("strategy_family"))
+        strategy_summary = rankings_lookup.get(strategy_family) or {}
+        robustness = robustness_lookup.get(strategy_family) or {}
+        candidate = candidate_lookup.get(strategy_family) or {}
+        results.append(
+            {
+                "rank": rank,
+                "strategy_family": strategy_family,
+                "portfolio_scope": row.get("portfolio_scope"),
+                "ending_bankroll": row.get("ending_bankroll"),
+                "compounded_return": row.get("compounded_return"),
+                "max_drawdown_pct": row.get("max_drawdown_pct"),
+                "executed_trade_count": row.get("executed_trade_count"),
+                "avg_executed_trade_return_with_slippage": row.get("avg_executed_trade_return_with_slippage"),
+                "mean_ending_bankroll": robustness.get("mean_ending_bankroll"),
+                "median_ending_bankroll": robustness.get("median_ending_bankroll"),
+                "positive_seed_rate": robustness.get("positive_seed_rate"),
+                "worst_max_drawdown_pct": robustness.get("worst_max_drawdown_pct"),
+                "robustness_label": robustness.get("robustness_label"),
+                "candidate_label": candidate.get("candidate_label"),
+                "label_reason": candidate.get("label_reason"),
+                "trade_count": strategy_summary.get("trade_count"),
+                "win_rate": strategy_summary.get("win_rate"),
+                "avg_gross_return_with_slippage": strategy_summary.get("avg_gross_return_with_slippage"),
+                "entry_rule": strategy_summary.get("entry_rule"),
+                "exit_rule": strategy_summary.get("exit_rule"),
+            }
+        )
+    return results
+
+
+def _build_portfolio_rankings(backtest_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    benchmark = backtest_payload.get("benchmark") or {}
+    robustness_lookup = {
+        str(row.get("strategy_family")): row
+        for row in (benchmark.get("portfolio_robustness_summary") or [])
+    }
+    family_set = set(str(row.get("strategy_family")) for row in _build_individual_strategy_rankings(backtest_payload))
+    rows = _portfolio_rows_for_sample(backtest_payload, sample_name="full_sample")
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            row.get("ending_bankroll") is not None,
+            float(row.get("ending_bankroll") or float("-inf")),
+            float(row.get("avg_executed_trade_return_with_slippage") or float("-inf")),
+            int(row.get("executed_trade_count") or 0),
+        ),
+        reverse=True,
+    )
+    results: list[dict[str, Any]] = []
+    for rank, row in enumerate(ranked, start=1):
+        strategy_family = str(row.get("strategy_family"))
+        robustness = robustness_lookup.get(strategy_family) or {}
+        results.append(
+            {
+                "rank": rank,
+                "strategy_family": strategy_family,
+                "portfolio_scope": row.get("portfolio_scope"),
+                "strategy_family_members": row.get("strategy_family_members"),
+                "family_type": "individual_strategy" if strategy_family in family_set else "portfolio_lane",
+                "ending_bankroll": row.get("ending_bankroll"),
+                "compounded_return": row.get("compounded_return"),
+                "max_drawdown_pct": row.get("max_drawdown_pct"),
+                "executed_trade_count": row.get("executed_trade_count"),
+                "avg_executed_trade_return_with_slippage": row.get("avg_executed_trade_return_with_slippage"),
+                "mean_ending_bankroll": robustness.get("mean_ending_bankroll"),
+                "positive_seed_rate": robustness.get("positive_seed_rate"),
+                "robustness_label": robustness.get("robustness_label"),
+            }
+        )
+    return results
+
+
+def _build_master_router_summary(backtest_payload: dict[str, Any]) -> dict[str, Any]:
+    benchmark = backtest_payload.get("benchmark") or {}
+    master_router_family = str(benchmark.get("master_router_family_name") or "")
+    if not master_router_family:
+        return {}
+
+    summary_lookup = {
+        (str(row.get("sample_name")), str(row.get("strategy_family"))): row
+        for row in (benchmark.get("portfolio_summary") or [])
+    }
+    comparison_families = [
+        master_router_family,
+        str(benchmark.get("portfolio_routing_family_name") or ""),
+        str(benchmark.get("portfolio_combined_family_name") or ""),
+        "winner_definition",
+        "inversion",
+        "underdog_liftoff",
+        "favorite_panic_fade_v1",
+        "q1_repricing",
+        "halftime_q3_repricing_v1",
+        "q4_clutch",
+    ]
+    comparison_rows: list[dict[str, Any]] = []
+    for sample_name in ("full_sample", "time_validation", "random_holdout"):
+        for strategy_family in comparison_families:
+            if not strategy_family:
+                continue
+            row = summary_lookup.get((sample_name, strategy_family))
+            if row is None:
+                continue
+            comparison_rows.append(
+                {
+                    "sample_name": sample_name,
+                    "strategy_family": strategy_family,
+                    "portfolio_scope": row.get("portfolio_scope"),
+                    "ending_bankroll": row.get("ending_bankroll"),
+                    "compounded_return": row.get("compounded_return"),
+                    "max_drawdown_pct": row.get("max_drawdown_pct"),
+                    "executed_trade_count": row.get("executed_trade_count"),
+                    "avg_executed_trade_return_with_slippage": row.get("avg_executed_trade_return_with_slippage"),
+                }
+            )
+
+    decision_frame = pd.DataFrame(list(benchmark.get("master_router_decisions") or []))
+    selection_counts: list[dict[str, Any]] = []
+    band_counts: list[dict[str, Any]] = []
+    if not decision_frame.empty:
+        decision_frame["selected_confidence"] = pd.to_numeric(decision_frame["selected_confidence"], errors="coerce")
+        selection_counts = list(
+            to_jsonable(
+                decision_frame.groupby(["sample_name", "selected_core_family"], dropna=False)
+                .agg(
+                    selection_count=("game_id", "count"),
+                    mean_confidence=("selected_confidence", "mean"),
+                    median_confidence=("selected_confidence", "median"),
+                )
+                .reset_index()
+                .sort_values(["sample_name", "selection_count", "selected_core_family"], ascending=[True, False, True])
+                .to_dict(orient="records")
+            )
+        )
+        band_counts = list(
+            to_jsonable(
+                decision_frame[decision_frame["sample_name"].astype(str) == "full_sample"]
+                .groupby(["opening_band", "selected_core_family"], dropna=False)
+                .agg(selection_count=("game_id", "count"))
+                .reset_index()
+                .sort_values(["opening_band", "selection_count"], ascending=[True, False])
+                .to_dict(orient="records")
+            )
+        )
+
+    route_summary = list(to_jsonable((benchmark.get("route_summary") or [])))
+    return {
+        "family_name": master_router_family,
+        "selection_sample_name": benchmark.get("master_router_selection_sample_name"),
+        "core_families": list(benchmark.get("master_router_core_families") or []),
+        "extra_families": list(benchmark.get("master_router_extra_families") or []),
+        "comparison_rows": comparison_rows,
+        "selection_counts": selection_counts,
+        "band_counts": band_counts,
+        "route_summary": route_summary,
+    }
+
+
 def _build_model_tracks(model_payload: dict[str, Any]) -> list[dict[str, Any]]:
     tracks: list[dict[str, Any]] = []
     for track_name, track_payload in sorted((model_payload.get("tracks") or {}).items()):
@@ -350,11 +548,18 @@ def build_analysis_consumer_snapshot(bundle: AnalysisConsumerBundle) -> dict[str
             "minimum_trade_count": benchmark.get("minimum_trade_count"),
             "experiment": backtest_payload.get("experiment") or {},
             "strategy_rankings": _build_strategy_rankings(backtest_payload),
+            "individual_strategy_rankings": _build_individual_strategy_rankings(backtest_payload),
+            "portfolio_rankings": _build_portfolio_rankings(backtest_payload),
+            "master_router": _build_master_router_summary(backtest_payload),
             "candidate_freeze": list(benchmark.get("candidate_freeze") or []),
+            "portfolio_candidate_freeze": list(benchmark.get("portfolio_candidate_freeze") or []),
             "split_summary": list(benchmark.get("split_summary") or []),
+            "portfolio_summary": list(benchmark.get("portfolio_summary") or []),
+            "portfolio_robustness_summary": list(benchmark.get("portfolio_robustness_summary") or []),
             "comparators": list(benchmark.get("comparators") or []),
             "comparator_summary": list(benchmark.get("comparator_summary") or []),
             "context_rankings": list(benchmark.get("context_rankings") or []),
+            "game_strategy_classification": list(benchmark.get("game_strategy_classification") or []),
         },
         "models": {
             "feature_set_version": model_payload.get("feature_set_version"),
@@ -369,10 +574,16 @@ def build_analysis_consumer_snapshot(bundle: AnalysisConsumerBundle) -> dict[str
 def build_analysis_backtest_index(bundle: AnalysisConsumerBundle) -> dict[str, Any]:
     snapshot = build_analysis_consumer_snapshot(bundle)
     backtest_artifacts = dict((snapshot.get("artifacts") or {}).get("backtests") or {})
-    rankings = list((snapshot.get("benchmark") or {}).get("strategy_rankings") or [])
+    benchmark = snapshot.get("benchmark") or {}
+    rankings = list(benchmark.get("strategy_rankings") or [])
+    portfolio_lookup = {
+        str(row.get("strategy_family")): row
+        for row in (benchmark.get("individual_strategy_rankings") or [])
+    }
     families: list[dict[str, Any]] = []
     for row in rankings:
         strategy_family = str(row.get("strategy_family"))
+        portfolio_row = portfolio_lookup.get(strategy_family) or {}
         families.append(
             {
                 "strategy_family": strategy_family,
@@ -384,6 +595,11 @@ def build_analysis_backtest_index(bundle: AnalysisConsumerBundle) -> dict[str, A
                     "avg_hold_time_seconds": row.get("avg_hold_time_seconds"),
                     "avg_mfe_after_entry": row.get("avg_mfe_after_entry"),
                     "avg_mae_after_entry": row.get("avg_mae_after_entry"),
+                    "ending_bankroll": portfolio_row.get("ending_bankroll"),
+                    "max_drawdown_pct": portfolio_row.get("max_drawdown_pct"),
+                    "mean_ending_bankroll": portfolio_row.get("mean_ending_bankroll"),
+                    "positive_seed_rate": portfolio_row.get("positive_seed_rate"),
+                    "robustness_label": portfolio_row.get("robustness_label"),
                     "candidate_label": row.get("candidate_label"),
                     "label_reason": row.get("label_reason"),
                 },
@@ -425,6 +641,14 @@ def build_analysis_backtest_family_detail(
 
     candidate_freeze = next(
         (row for row in (snapshot.get("benchmark") or {}).get("candidate_freeze") or [] if str(row.get("strategy_family")) == strategy_family_text),
+        None,
+    )
+    individual_ranking = next(
+        (
+            row
+            for row in (snapshot.get("benchmark") or {}).get("individual_strategy_rankings") or []
+            if str(row.get("strategy_family")) == strategy_family_text
+        ),
         None,
     )
     comparator_summary = _family_rows(
@@ -475,6 +699,7 @@ def build_analysis_backtest_family_detail(
         "summary": summary or to_jsonable(sample_summaries[0]),
         "sample_summaries": sample_summaries,
         "candidate_freeze": candidate_freeze,
+        "individual_ranking": individual_ranking,
         "comparator_summary": comparator_summary,
         "context_rankings": context_rankings,
         "artifact_paths": artifact_paths,

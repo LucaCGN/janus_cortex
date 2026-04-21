@@ -19,7 +19,7 @@
       <div class="hero-grid">
         <div class="hero-card">
           <span class="hero-label">Current lane</span>
-          <strong>F4a Strategy Family Comparison</strong>
+          <strong>F5 Router Benchmark And Studio Refresh</strong>
         </div>
         <div class="hero-card">
           <span class="hero-label">Backend contract</span>
@@ -191,9 +191,42 @@
       <section class="panel">
         <div class="panel-header">
           <p class="panel-kicker">Benchmark</p>
-          <h2>Strategy ranking table</h2>
+          <h2>Individual strategy ranking table</h2>
         </div>
         <div id="strategy-table" class="table-wrap empty-state">Load a snapshot to inspect ranked strategy families.</div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Portfolio Lanes</p>
+          <h2>Full-sample lane ranking and bankroll surface</h2>
+        </div>
+        <div id="portfolio-table" class="table-wrap empty-state">Load a snapshot to inspect combined, routed, and master-controller lanes.</div>
+      </section>
+
+      <section class="panel dual-panel">
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Master Router</p>
+            <h2>Controller composition and sample comparison</h2>
+          </div>
+          <div id="master-router-summary" class="stack-list empty-state">Load a snapshot to inspect the confidence-routed controller.</div>
+        </div>
+        <div>
+          <div class="panel-header compact">
+            <p class="panel-kicker">Selection Counts</p>
+            <h2>Which core family the router actually selects</h2>
+          </div>
+          <div id="master-router-selection" class="stack-list empty-state">Load a snapshot to inspect router selection counts.</div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <p class="panel-kicker">Opening Bands</p>
+          <h2>Master-router and route-map band reference</h2>
+        </div>
+        <div id="route-band-table" class="table-wrap empty-state">Load a snapshot to inspect opening-band routing and router coverage.</div>
       </section>
 
       <section class="panel">

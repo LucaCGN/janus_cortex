@@ -15,6 +15,10 @@ const metadataGrid = document.getElementById("metadata-grid");
 const universeGrid = document.getElementById("universe-grid");
 const controlGrid = document.getElementById("control-grid");
 const strategyTable = document.getElementById("strategy-table");
+const portfolioTable = document.getElementById("portfolio-table");
+const masterRouterSummary = document.getElementById("master-router-summary");
+const masterRouterSelection = document.getElementById("master-router-selection");
+const routeBandTable = document.getElementById("route-band-table");
 const modelList = document.getElementById("model-list");
 const reportSections = document.getElementById("report-sections");
 const artifactGrid = document.getElementById("artifact-grid");
@@ -32,6 +36,9 @@ let selectedGameId = null;
 let selectedStrategyFamily = null;
 let latestGameListPayload = { items: [] };
 let latestStrategyRankings = [];
+let latestIndividualStrategyRankings = [];
+let latestPortfolioRankings = [];
+let latestMasterRouter = {};
 let latestBacktestIndexPayload = { families: [] };
 
 function escapeHtml(value) {
@@ -51,6 +58,48 @@ function formatValue(value, digits = 3) {
     return Number.isInteger(value) ? String(value) : value.toFixed(digits);
   }
   return String(value);
+}
+
+function formatPercent(value, digits = 1) {
+  if (value === null || value === undefined || value === "") {
+    return "n/a";
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "n/a";
+  }
+  return `${(numeric * 100).toFixed(digits)}%`;
+}
+
+function formatCurrency(value, digits = 2) {
+  if (value === null || value === undefined || value === "") {
+    return "n/a";
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "n/a";
+  }
+  return `$${numeric.toLocaleString(undefined, {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
+}
+
+function formatCurrencyCompact(value) {
+  if (value === null || value === undefined || value === "") {
+    return "n/a";
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return "n/a";
+  }
+  if (Math.abs(numeric) >= 1_000_000) {
+    return `$${(numeric / 1_000_000).toFixed(1)}M`;
+  }
+  if (Math.abs(numeric) >= 1_000) {
+    return `$${(numeric / 1_000).toFixed(1)}K`;
+  }
+  return `$${numeric.toFixed(0)}`;
 }
 
 function setLoadingState(isLoading, message) {
@@ -200,7 +249,7 @@ function bindStrategyFamilyButtons(container) {
   });
 }
 
-function renderStrategies(rows = latestStrategyRankings) {
+function renderStrategies(rows = latestIndividualStrategyRankings) {
   if (!rows.length) {
     strategyTable.className = "table-wrap empty-state";
     strategyTable.textContent = "No ranked strategies are available in this snapshot.";
@@ -214,9 +263,12 @@ function renderStrategies(rows = latestStrategyRankings) {
         <tr>
           <th>Rank</th>
           <th>Family</th>
-          <th>Return With Slippage</th>
+          <th>Ending Bankroll</th>
+          <th>10-seed Mean</th>
+          <th>Positive Seeds</th>
+          <th>Avg Trade Return</th>
           <th>Trades</th>
-          <th>Win Rate</th>
+          <th>Drawdown</th>
           <th>Label</th>
           <th>Inspect</th>
         </tr>
@@ -230,9 +282,12 @@ function renderStrategies(rows = latestStrategyRankings) {
               <tr class="${isSelected ? "selected-row" : ""}">
                 <td>${escapeHtml(row.rank)}</td>
                 <td><strong>${escapeHtml(row.strategy_family)}</strong></td>
-                <td>${escapeHtml(row.avg_gross_return_with_slippage ?? "n/a")}</td>
-                <td>${escapeHtml(row.trade_count ?? "n/a")}</td>
-                <td>${escapeHtml(formatValue(row.win_rate))}</td>
+                <td>${escapeHtml(formatCurrencyCompact(row.ending_bankroll))}</td>
+                <td>${escapeHtml(formatCurrencyCompact(row.mean_ending_bankroll))}</td>
+                <td>${escapeHtml(formatPercent(row.positive_seed_rate, 0))}</td>
+                <td>${escapeHtml(formatValue(row.avg_executed_trade_return_with_slippage))}</td>
+                <td>${escapeHtml(row.executed_trade_count ?? row.trade_count ?? "n/a")}</td>
+                <td>${escapeHtml(formatPercent(row.max_drawdown_pct))}</td>
                 <td>${escapeHtml(row.candidate_label ?? "n/a")}</td>
                 <td>
                   <button
@@ -252,6 +307,205 @@ function renderStrategies(rows = latestStrategyRankings) {
   `;
 
   bindStrategyFamilyButtons(strategyTable);
+}
+
+function renderPortfolioLanes(rows = latestPortfolioRankings) {
+  if (!rows.length) {
+    portfolioTable.className = "table-wrap empty-state";
+    portfolioTable.textContent = "No portfolio lanes are available in this snapshot.";
+    return;
+  }
+
+  portfolioTable.className = "table-wrap";
+  portfolioTable.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Lane</th>
+          <th>Scope</th>
+          <th>Ending Bankroll</th>
+          <th>Avg Trade Return</th>
+          <th>Trades</th>
+          <th>Drawdown</th>
+          <th>Robustness</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map(
+            (row) => `
+              <tr class="${row.strategy_family === "master_strategy_router_v1" ? "selected-row" : ""}">
+                <td>${escapeHtml(row.rank)}</td>
+                <td><strong>${escapeHtml(row.strategy_family)}</strong></td>
+                <td>${escapeHtml(row.portfolio_scope || "n/a")}</td>
+                <td>${escapeHtml(formatCurrencyCompact(row.ending_bankroll))}</td>
+                <td>${escapeHtml(formatValue(row.avg_executed_trade_return_with_slippage))}</td>
+                <td>${escapeHtml(row.executed_trade_count ?? "n/a")}</td>
+                <td>${escapeHtml(formatPercent(row.max_drawdown_pct))}</td>
+                <td>${escapeHtml(row.robustness_label || "n/a")}</td>
+              </tr>
+            `,
+          )
+          .join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderMasterRouter(payload = latestMasterRouter) {
+  if (!payload || !payload.family_name) {
+    masterRouterSummary.className = "stack-list empty-state";
+    masterRouterSummary.textContent = "No master-router benchmark is available in this snapshot.";
+    masterRouterSelection.className = "stack-list empty-state";
+    masterRouterSelection.textContent = "No router selection counts are available in this snapshot.";
+    routeBandTable.className = "table-wrap empty-state";
+    routeBandTable.textContent = "No opening-band routing diagnostics are available in this snapshot.";
+    return;
+  }
+
+  const comparisonRows = payload.comparison_rows || [];
+  const groupedBySample = {};
+  for (const row of comparisonRows) {
+    const sample = row.sample_name || "unknown";
+    if (!groupedBySample[sample]) {
+      groupedBySample[sample] = [];
+    }
+    groupedBySample[sample].push(row);
+  }
+
+  masterRouterSummary.className = "stack-list";
+  masterRouterSummary.innerHTML = `
+    <article class="stack-item">
+      <strong>${escapeHtml(payload.family_name)}</strong>
+      <span class="meta">selection sample: ${escapeHtml(payload.selection_sample_name || "n/a")}</span>
+      <div class="tag-row">
+        ${(payload.core_families || []).map((family) => tag(`core: ${family}`)).join("")}
+      </div>
+      <div class="tag-row">
+        ${(payload.extra_families || []).map((family) => tag(`extra: ${family}`)).join("")}
+      </div>
+    </article>
+    ${Object.entries(groupedBySample)
+      .map(([sampleName, rowsForSample]) => {
+        const ordered = rowsForSample
+          .slice()
+          .sort((left, right) => Number(right.ending_bankroll || 0) - Number(left.ending_bankroll || 0));
+        return `
+          <article class="stack-item">
+            <strong>${escapeHtml(sampleName)}</strong>
+            <div class="table-wrap">
+              <table class="dense-table">
+                <thead>
+                  <tr>
+                    <th>Family</th>
+                    <th>End</th>
+                    <th>Trades</th>
+                    <th>Drawdown</th>
+                    <th>Avg Return</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${ordered
+                    .map(
+                      (row) => `
+                        <tr class="${row.strategy_family === payload.family_name ? "selected-row" : ""}">
+                          <td>${escapeHtml(row.strategy_family)}</td>
+                          <td>${escapeHtml(formatCurrencyCompact(row.ending_bankroll))}</td>
+                          <td>${escapeHtml(row.executed_trade_count ?? "n/a")}</td>
+                          <td>${escapeHtml(formatPercent(row.max_drawdown_pct))}</td>
+                          <td>${escapeHtml(formatValue(row.avg_executed_trade_return_with_slippage))}</td>
+                        </tr>
+                      `,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </article>
+        `;
+      })
+      .join("")}
+  `;
+
+  const selectionCounts = payload.selection_counts || [];
+  const selectionGroups = {};
+  for (const row of selectionCounts) {
+    const sample = row.sample_name || "unknown";
+    if (!selectionGroups[sample]) {
+      selectionGroups[sample] = [];
+    }
+    selectionGroups[sample].push(row);
+  }
+
+  masterRouterSelection.className = "stack-list";
+  masterRouterSelection.innerHTML = Object.entries(selectionGroups)
+    .map(([sampleName, rowsForSample]) => `
+      <article class="stack-item">
+        <strong>${escapeHtml(sampleName)}</strong>
+        <div class="tag-row">
+          ${rowsForSample
+            .map(
+              (row) => tag(
+                `${row.selected_core_family}: ${row.selection_count} @ ${formatPercent(row.mean_confidence)}`,
+                row.selected_core_family !== "winner_definition",
+              ),
+            )
+            .join("")}
+        </div>
+      </article>
+    `)
+    .join("");
+
+  const routeRows = payload.route_summary || [];
+  const bandCounts = payload.band_counts || [];
+  const topBandLookup = {};
+  for (const row of bandCounts) {
+    const band = row.opening_band || "n/a";
+    if (!topBandLookup[band]) {
+      topBandLookup[band] = [];
+    }
+    topBandLookup[band].push(row);
+  }
+  for (const band of Object.keys(topBandLookup)) {
+    topBandLookup[band] = topBandLookup[band]
+      .slice()
+      .sort((left, right) => Number(right.selection_count || 0) - Number(left.selection_count || 0));
+  }
+
+  routeBandTable.className = "table-wrap";
+  routeBandTable.innerHTML = `
+    <table>
+      <thead>
+        <tr>
+          <th>Opening Band</th>
+          <th>Routing Baseline</th>
+          <th>Baseline Avg Return</th>
+          <th>Baseline Trades</th>
+          <th>Master Router Top Core</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${routeRows
+          .map((row) => {
+            const topBand = (topBandLookup[row.opening_band] || [])[0] || {};
+            const topLabel = topBand.selected_core_family
+              ? `${topBand.selected_core_family} (${topBand.selection_count})`
+              : "n/a";
+            return `
+              <tr>
+                <td>${escapeHtml(row.opening_band)}</td>
+                <td>${escapeHtml(row.selected_family || "n/a")}</td>
+                <td>${escapeHtml(formatValue(row.selected_avg_gross_return_with_slippage))}</td>
+                <td>${escapeHtml(row.selected_trade_count ?? "n/a")}</td>
+                <td>${escapeHtml(topLabel)}</td>
+              </tr>
+            `;
+          })
+          .join("")}
+      </tbody>
+    </table>
+  `;
 }
 
 function renderModels(snapshot) {
@@ -456,9 +710,11 @@ function renderBacktestIndex(payload) {
           <strong>${escapeHtml(family.strategy_family)}</strong>
           <span class="meta">${escapeHtml(summary.label_reason || "No candidate rationale available.")}</span>
           <div class="tag-row">
-            ${tag(`trades: ${formatValue(summary.trade_count, 0)}`)}
-            ${tag(`win_rate: ${formatValue(summary.win_rate)}`)}
+            ${tag(`end: ${formatCurrencyCompact(summary.ending_bankroll)}`)}
+            ${tag(`mean: ${formatCurrencyCompact(summary.mean_ending_bankroll)}`)}
+            ${tag(`positive: ${formatPercent(summary.positive_seed_rate, 0)}`)}
             ${tag(`return: ${formatValue(summary.avg_gross_return_with_slippage)}`)}
+            ${tag(`trades: ${formatValue(summary.trade_count, 0)}`)}
             ${tag(`label: ${summary.candidate_label || "n/a"}`, summary.candidate_label !== "keep")}
           </div>
           <div class="item-actions">
@@ -487,13 +743,14 @@ function renderBacktestDetail(payload) {
 
   const summary = payload.summary || {};
   const candidateFreeze = payload.candidate_freeze || {};
+  const individualRanking = payload.individual_ranking || {};
   comparisonDetail.className = "stack-list";
   comparisonDetail.innerHTML = `
     <div class="metric-grid comparison-metrics">
       ${metricCard("Family", payload.strategy_family)}
       ${metricCard("Trades", formatValue(summary.trade_count, 0))}
       ${metricCard("Return With Slippage", formatValue(summary.avg_gross_return_with_slippage))}
-      ${metricCard("Win Rate", formatValue(summary.win_rate))}
+      ${metricCard("10-seed Mean", formatCurrencyCompact(individualRanking.mean_ending_bankroll))}
     </div>
     <article class="stack-item">
       <strong>${escapeHtml(payload.strategy_family)} summary</strong>
@@ -501,6 +758,9 @@ function renderBacktestDetail(payload) {
       <div class="tag-row">
         ${tag(`candidate: ${candidateFreeze.candidate_label || summary.candidate_label || "n/a"}`, (candidateFreeze.candidate_label || summary.candidate_label) !== "keep")}
         ${tag(`entry_rule: ${summary.entry_rule || "n/a"}`)}
+        ${tag(`end: ${formatCurrencyCompact(individualRanking.ending_bankroll)}`)}
+        ${tag(`positive_seeds: ${formatPercent(individualRanking.positive_seed_rate, 0)}`)}
+        ${tag(`drawdown: ${formatPercent(individualRanking.max_drawdown_pct)}`)}
         ${tag(`hold_time: ${formatValue(summary.avg_hold_time_seconds, 0)}`)}
         ${tag(`mfe: ${formatValue(summary.avg_mfe_after_entry)}`)}
         ${tag(`mae: ${formatValue(summary.avg_mae_after_entry)}`)}
@@ -863,7 +1123,12 @@ async function loadBacktestIndex(preferredStrategyFamily = selectedStrategyFamil
 
     latestBacktestIndexPayload = payload;
     latestStrategyRankings = payload.benchmark?.strategy_rankings || latestStrategyRankings;
+    latestIndividualStrategyRankings = payload.benchmark?.individual_strategy_rankings || latestIndividualStrategyRankings;
+    latestPortfolioRankings = payload.benchmark?.portfolio_rankings || latestPortfolioRankings;
+    latestMasterRouter = payload.benchmark?.master_router || latestMasterRouter;
     renderStrategies();
+    renderPortfolioLanes();
+    renderMasterRouter();
     renderBacktestIndex(payload);
 
     const families = payload.families || [];
@@ -987,9 +1252,14 @@ async function loadSnapshot() {
       throw new Error(payload.error?.message || payload.detail || "The snapshot request failed.");
     }
     latestStrategyRankings = payload.benchmark?.strategy_rankings || [];
+    latestIndividualStrategyRankings = payload.benchmark?.individual_strategy_rankings || [];
+    latestPortfolioRankings = payload.benchmark?.portfolio_rankings || [];
+    latestMasterRouter = payload.benchmark?.master_router || {};
     renderMetadata(payload);
     renderUniverse(payload);
     renderStrategies();
+    renderPortfolioLanes();
+    renderMasterRouter();
     renderModels(payload);
     renderReportSections(payload);
     renderArtifacts(payload);

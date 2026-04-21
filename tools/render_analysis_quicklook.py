@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable
 
 import pandas as pd
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFont
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +36,16 @@ PRIMARY = "#2563eb"
 PRIMARY_FILL = "#93c5fd"
 POSITIVE = "#16a34a"
 NEGATIVE = "#dc2626"
+MASTER = "#f59e0b"
+MASTER_FILL = "#fde68a"
+ROUTER = "#7c3aed"
+ROUTER_FILL = "#ddd6fe"
+BLOCK = "#0f766e"
+BLOCK_FILL = "#ccfbf1"
+NEUTRAL_FILL = "#e5e7eb"
+SOFT_GOOD = "#dcfce7"
+SOFT_BAD = "#fee2e2"
+SOFT_INFO = "#dbeafe"
 
 
 def _load_font(size: int, *, bold: bool = False) -> ImageFont.ImageFont:
@@ -55,6 +65,7 @@ TITLE_FONT = _load_font(34, bold=True)
 SUBTITLE_FONT = _load_font(20)
 LABEL_FONT = _load_font(18)
 SMALL_FONT = _load_font(16)
+BOLD_LABEL_FONT = _load_font(18, bold=True)
 
 
 def _format_currency(value: float | int | None) -> str:
@@ -160,6 +171,52 @@ def _save(image: Image.Image, path: Path) -> Path:
     return path
 
 
+def _mix_colors(start: str, end: str, ratio: float) -> tuple[int, int, int]:
+    ratio = min(max(ratio, 0.0), 1.0)
+    start_rgb = ImageColor.getrgb(start)
+    end_rgb = ImageColor.getrgb(end)
+    return tuple(
+        int(start_rgb[index] + ((end_rgb[index] - start_rgb[index]) * ratio))
+        for index in range(3)
+    )
+
+
+def _safe_numeric(series: pd.Series) -> pd.Series:
+    return pd.to_numeric(series, errors="coerce")
+
+
+def _strategy_label(strategy_family: str, portfolio_scope: str | None = None) -> str:
+    short_names = {
+        "master_strategy_router_v1": "master_router",
+        "statistical_routing_v1": "stat_routing",
+        "combined_keep_families": "combined_keep",
+    }
+    label = short_names.get(strategy_family, strategy_family)
+    if portfolio_scope and portfolio_scope not in {"single_family"}:
+        label = f"{label}\n{portfolio_scope}"
+    return label
+
+
+def _family_priority(strategy_family: str) -> int:
+    priority = {
+        "master_strategy_router_v1": 0,
+        "statistical_routing_v1": 1,
+        "combined_keep_families": 2,
+        "winner_definition": 3,
+        "inversion": 4,
+        "underdog_liftoff": 5,
+        "favorite_panic_fade_v1": 6,
+        "q4_clutch": 7,
+        "q1_repricing": 8,
+        "halftime_q3_repricing_v1": 9,
+        "comeback_reversion_v2": 10,
+        "comeback_reversion": 11,
+        "volatility_scalp": 12,
+        "reversion": 13,
+    }
+    return priority.get(strategy_family, 99)
+
+
 def render_strategy_daily_paths(render_dir: Path, daily_paths: pd.DataFrame, *, sample_name: str) -> list[Path]:
     output_paths: list[Path] = []
     full_sample = daily_paths[daily_paths["sample_name"] == sample_name].copy()
@@ -222,6 +279,305 @@ def render_strategy_daily_paths(render_dir: Path, daily_paths: pd.DataFrame, *, 
 
         output_paths.append(_save(image, render_dir / f"{strategy_family}_daily_path.png"))
     return output_paths
+
+
+def render_strategy_metric_rankings(render_dir: Path, portfolio_summary: pd.DataFrame, *, sample_name: str) -> Path | None:
+    work = portfolio_summary[portfolio_summary["sample_name"] == sample_name].copy()
+    if work.empty:
+        return None
+    work = work.dropna(subset=["strategy_family"]).copy()
+    work = work.sort_values(
+        ["strategy_family", "portfolio_scope", "ending_bankroll"],
+        kind="mergesort",
+        ascending=[True, True, False],
+    ).drop_duplicates(subset=["strategy_family", "portfolio_scope"], keep="first")
+    if work.empty:
+        return None
+
+    metric_defs = [
+        ("ending_bankroll", "Ending bankroll", True),
+        ("compounded_return", "Compounded return", True),
+        ("max_drawdown_pct", "Drawdown", False),
+        ("avg_executed_trade_return_with_slippage", "Avg trade return", True),
+        ("executed_trade_count", "Trade count", True),
+    ]
+    for metric, _, _ in metric_defs:
+        work[metric] = _safe_numeric(work[metric])
+        work[f"{metric}_rank"] = work[metric].rank(method="min", ascending=metric == "max_drawdown_pct")
+    rank_columns = [f"{metric}_rank" for metric, _, _ in metric_defs]
+    work["composite_rank"] = work[rank_columns].mean(axis=1)
+    work = work.sort_values(["composite_rank", "ending_bankroll"], ascending=[True, False], kind="mergesort").reset_index(drop=True)
+
+    label_width = 380
+    metric_width = 170
+    row_height = 48
+    top_padding = 170
+    bottom_padding = 80
+    image_width = max(CANVAS_WIDTH, LEFT_MARGIN + label_width + (metric_width * (len(metric_defs) + 1)) + RIGHT_MARGIN)
+    image_height = max(CANVAS_HEIGHT, top_padding + (row_height * len(work)) + bottom_padding)
+    image = Image.new("RGB", (image_width, image_height), BACKGROUND)
+    draw = ImageDraw.Draw(image)
+    draw.text((LEFT_MARGIN, 34), "Multi-metric strategy ranking", fill=TEXT, font=TITLE_FONT)
+    draw.text(
+        (LEFT_MARGIN, 78),
+        f"{sample_name} | ranks are best-to-worst within the current benchmark set | master router highlighted",
+        fill=SUBTLE,
+        font=SUBTITLE_FONT,
+    )
+
+    origin_x = LEFT_MARGIN
+    origin_y = top_padding
+    headers = [metric_name for _, metric_name, _ in metric_defs] + ["Composite"]
+    draw.text((origin_x, origin_y - 34), "Strategy", fill=TEXT, font=LABEL_FONT)
+    for index, header in enumerate(headers):
+        x = origin_x + label_width + (index * metric_width)
+        draw.text((x + 10, origin_y - 34), header, fill=TEXT, font=LABEL_FONT)
+
+    total_rows = max(len(work) - 1, 1)
+    for row_index, row in enumerate(work.to_dict(orient="records")):
+        y = origin_y + (row_index * row_height)
+        family = str(row["strategy_family"])
+        portfolio_scope = str(row.get("portfolio_scope") or "")
+        label = _strategy_label(family, portfolio_scope)
+        ending_bankroll = row.get("ending_bankroll")
+        drawdown = row.get("max_drawdown_pct")
+        subtitle = f"{_format_compact_currency(ending_bankroll)} | DD {drawdown * 100:.1f}%" if pd.notna(drawdown) else _format_compact_currency(ending_bankroll)
+        family_font = BOLD_LABEL_FONT if family in {"master_strategy_router_v1", "statistical_routing_v1", "combined_keep_families"} else LABEL_FONT
+        draw.rectangle(
+            (origin_x - 8, y - 2, image_width - RIGHT_MARGIN, y + row_height - 8),
+            outline=GRID if family not in {"master_strategy_router_v1", "statistical_routing_v1"} else MASTER,
+            width=2 if family in {"master_strategy_router_v1", "statistical_routing_v1"} else 1,
+        )
+        draw.text((origin_x, y + 2), label, fill=TEXT, font=family_font)
+        draw.text((origin_x, y + 24), subtitle, fill=SUBTLE, font=SMALL_FONT)
+
+        for metric_index, (metric, _, higher_better) in enumerate(metric_defs):
+            rank_value = float(row[f"{metric}_rank"])
+            ratio = 0.0 if len(work) == 1 else (rank_value - 1.0) / float(len(work) - 1)
+            fill = _mix_colors(SOFT_GOOD, SOFT_BAD, ratio)
+            if not higher_better:
+                fill = _mix_colors(SOFT_BAD, SOFT_GOOD, ratio)
+            x = origin_x + label_width + (metric_index * metric_width)
+            draw.rectangle((x, y, x + metric_width - 12, y + row_height - 10), fill=fill, outline=GRID, width=1)
+            value = int(round(rank_value))
+            value_width = draw.textlength(str(value), font=LABEL_FONT)
+            draw.text((x + ((metric_width - 12 - value_width) / 2), y + 12), str(value), fill=TEXT, font=LABEL_FONT)
+
+        composite_x = origin_x + label_width + (len(metric_defs) * metric_width)
+        composite_fill = MASTER_FILL if family == "master_strategy_router_v1" else ROUTER_FILL if family == "statistical_routing_v1" else BLOCK_FILL if family in {"winner_definition", "inversion", "underdog_liftoff", "favorite_panic_fade_v1"} else NEUTRAL_FILL
+        draw.rectangle((composite_x, y, composite_x + metric_width - 12, y + row_height - 10), fill=composite_fill, outline=GRID, width=1)
+        composite_value = float(row["composite_rank"])
+        composite_text = f"{composite_value:.1f}"
+        composite_width = draw.textlength(composite_text, font=LABEL_FONT)
+        draw.text((composite_x + ((metric_width - 12 - composite_width) / 2), y + 12), composite_text, fill=TEXT, font=LABEL_FONT)
+
+    path = render_dir / "strategy_multi_metric_rankings.png"
+    return _save(image, path)
+
+
+def render_master_router_position_scatter(render_dir: Path, portfolio_summary: pd.DataFrame, *, sample_name: str) -> Path | None:
+    work = portfolio_summary[portfolio_summary["sample_name"] == sample_name].copy()
+    if work.empty:
+        return None
+    work = work.dropna(subset=["strategy_family", "ending_bankroll", "max_drawdown_pct"]).copy()
+    if work.empty:
+        return None
+    work["ending_bankroll"] = _safe_numeric(work["ending_bankroll"])
+    work["max_drawdown_pct"] = _safe_numeric(work["max_drawdown_pct"])
+    work["executed_trade_count"] = _safe_numeric(work.get("executed_trade_count", pd.Series(dtype=float)))
+    work = work.sort_values(["portfolio_scope", "strategy_family"], kind="mergesort").drop_duplicates(subset=["strategy_family", "portfolio_scope"], keep="first")
+
+    x_values = [float(value) for value in work["ending_bankroll"].tolist() if value and value > 0]
+    y_values = [float(value) for value in work["max_drawdown_pct"].tolist() if pd.notna(value)]
+    if not x_values or not y_values:
+        return None
+
+    left, top, right, bottom = _chart_bounds()
+    image = Image.new("RGB", (CANVAS_WIDTH, CANVAS_HEIGHT), BACKGROUND)
+    draw = ImageDraw.Draw(image)
+    draw.text((LEFT_MARGIN, 34), "Master router vs. individual strategies", fill=TEXT, font=TITLE_FONT)
+    draw.text(
+        (LEFT_MARGIN, 78),
+        f"{sample_name} | x = ending bankroll (log), y = max drawdown | router and master highlighted against building blocks",
+        fill=SUBTLE,
+        font=SUBTITLE_FONT,
+    )
+
+    x_ticks = _value_ticks(x_values, log_scale=True)
+    y_ticks = _value_ticks(y_values, log_scale=False)
+    min_x = min(x_values)
+    max_x = max(x_values)
+    min_y = 0.0
+    max_y = max(1.0, max(y_values))
+
+    def map_x(value: float) -> float:
+        clipped = max(value, 1e-6)
+        min_log = math.log10(max(min_x, 1e-6))
+        max_log = math.log10(max(max_x, 1e-6))
+        if math.isclose(min_log, max_log):
+            return float(left)
+        ratio = (math.log10(clipped) - min_log) / (max_log - min_log)
+        return left + (ratio * (right - left))
+
+    for tick in x_ticks:
+        x = map_x(tick)
+        draw.line((x, top, x, bottom), fill=GRID, width=1)
+        tick_label = _format_compact_currency(tick)
+        label_width = draw.textlength(tick_label, font=SMALL_FONT)
+        draw.text((x - (label_width / 2), bottom + 18), tick_label, fill=SUBTLE, font=SMALL_FONT)
+
+    for tick in y_ticks:
+        y = _map_y(tick, min_value=min_y, max_value=max_y, top=top, bottom=bottom, log_scale=False)
+        draw.line((left, y, right, y), fill=GRID, width=1)
+        draw.text((20, y - 10), f"{tick * 100:.0f}%", fill=SUBTLE, font=SMALL_FONT)
+
+    legend_x = right - 390
+    legend_y = top - 48
+    legend_items = [
+        ("master router", MASTER, MASTER_FILL),
+        ("stat routing", ROUTER, ROUTER_FILL),
+        ("building blocks", BLOCK, BLOCK_FILL),
+        ("other strategies", PRIMARY, PRIMARY_FILL),
+    ]
+    for index, (label, outline, fill) in enumerate(legend_items):
+        x = legend_x + (index * 95)
+        draw.rectangle((x, legend_y, x + 14, legend_y + 14), fill=fill, outline=outline, width=2)
+        draw.text((x + 20, legend_y - 1), label, fill=TEXT, font=SMALL_FONT)
+
+    prominent_families = {
+        "master_strategy_router_v1",
+        "statistical_routing_v1",
+        "combined_keep_families",
+        "winner_definition",
+        "inversion",
+        "underdog_liftoff",
+        "favorite_panic_fade_v1",
+        "q1_repricing",
+        "q4_clutch",
+        "halftime_q3_repricing_v1",
+    }
+    short_names = {
+        "master_strategy_router_v1": "master_router",
+        "statistical_routing_v1": "stat_routing",
+        "combined_keep_families": "combined_keep",
+        "favorite_panic_fade_v1": "favorite_panic",
+        "halftime_q3_repricing_v1": "halftime_q3",
+        "comeback_reversion_v2": "comeback_v2",
+    }
+    for row in work.to_dict(orient="records"):
+        family = str(row["strategy_family"])
+        scope = str(row.get("portfolio_scope") or "")
+        ending_bankroll = float(row["ending_bankroll"])
+        drawdown = float(row["max_drawdown_pct"])
+        x = map_x(ending_bankroll)
+        y = _map_y(drawdown, min_value=min_y, max_value=max_y, top=top, bottom=bottom, log_scale=False)
+        if family == "master_strategy_router_v1":
+            fill, outline, radius = MASTER_FILL, MASTER, 11
+        elif family == "statistical_routing_v1":
+            fill, outline, radius = ROUTER_FILL, ROUTER, 10
+        elif family == "combined_keep_families":
+            fill, outline, radius = NEUTRAL_FILL, "#6b7280", 10
+        elif family in prominent_families:
+            fill, outline, radius = BLOCK_FILL, BLOCK, 9
+        else:
+            fill, outline, radius = PRIMARY_FILL, PRIMARY, 8
+        if family in {"master_strategy_router_v1", "statistical_routing_v1"}:
+            draw.ellipse((x - radius - 2, y - radius - 2, x + radius + 2, y + radius + 2), outline=outline, width=3)
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=fill, outline=outline, width=2)
+        label = _strategy_label(short_names.get(family, family), scope)
+        label_x = x + 12 if x < right - 240 else x - 220
+        label_y = y - 10
+        draw.text((label_x, label_y), label, fill=TEXT, font=SMALL_FONT)
+        if family in {"master_strategy_router_v1", "statistical_routing_v1", "combined_keep_families"}:
+            detail = f"{_format_compact_currency(ending_bankroll)} | DD {drawdown * 100:.1f}%"
+            draw.text((label_x, label_y + 14), detail, fill=SUBTLE, font=SMALL_FONT)
+
+    return _save(image, render_dir / "master_router_vs_individual_strategies.png")
+
+
+def render_master_router_band_map(render_dir: Path, master_router_decisions: pd.DataFrame, route_summary: pd.DataFrame, *, sample_name: str) -> Path | None:
+    work = master_router_decisions[master_router_decisions["sample_name"] == sample_name].copy()
+    if work.empty:
+        return None
+    work["opening_band"] = work["opening_band"].astype(str)
+    work["selected_core_family"] = work["selected_core_family"].astype(str)
+    family_order = ["underdog_liftoff", "inversion", "winner_definition", "favorite_panic_fade_v1"]
+    family_columns = [family for family in family_order if family in set(work["selected_core_family"].tolist())]
+    extras = sorted(
+        [family for family in work["selected_core_family"].unique().tolist() if family not in family_columns],
+        key=_family_priority,
+    )
+    family_columns.extend(extras)
+    if not family_columns:
+        return None
+
+    pivot = work.groupby(["opening_band", "selected_core_family"], dropna=False).size().unstack(fill_value=0)
+    pivot = pivot.reindex(sorted(pivot.index.tolist(), key=_band_sort_key))
+    pivot = pivot.reindex(columns=family_columns, fill_value=0)
+    if pivot.empty:
+        return None
+
+    route_work = route_summary[route_summary["selection_sample_name"] == "time_train"].copy()
+    route_work["opening_band"] = route_work["opening_band"].astype(str)
+    route_lookup = {str(row["opening_band"]): row for row in route_work.to_dict(orient="records")}
+
+    cell_width = 150
+    cell_height = 54
+    label_width = 190
+    info_width = 360
+    image_width = max(CANVAS_WIDTH, LEFT_MARGIN + label_width + (cell_width * len(family_columns)) + info_width + RIGHT_MARGIN)
+    image_height = max(CANVAS_HEIGHT, 170 + (cell_height * len(pivot.index)) + 120)
+    image = Image.new("RGB", (image_width, image_height), BACKGROUND)
+    draw = ImageDraw.Draw(image)
+    draw.text((LEFT_MARGIN, 34), "Master router band map", fill=TEXT, font=TITLE_FONT)
+    draw.text(
+        (LEFT_MARGIN, 78),
+        f"{sample_name} | heatmap = selected core-family counts by opening band | right column = best family from routing benchmark",
+        fill=SUBTLE,
+        font=SUBTITLE_FONT,
+    )
+
+    origin_x = LEFT_MARGIN + label_width
+    origin_y = 170
+    max_count = int(pivot.to_numpy().max()) if not pivot.empty else 1
+    draw.text((LEFT_MARGIN, origin_y - 34), "Opening band", fill=TEXT, font=LABEL_FONT)
+    for column_index, family in enumerate(family_columns):
+        x = origin_x + (column_index * cell_width)
+        draw.text((x + 10, origin_y - 34), family, fill=TEXT, font=SMALL_FONT)
+    info_x = origin_x + (len(family_columns) * cell_width) + 24
+    draw.text((info_x, origin_y - 34), "Routing benchmark", fill=TEXT, font=LABEL_FONT)
+
+    for row_index, opening_band in enumerate(pivot.index.tolist()):
+        y = origin_y + (row_index * cell_height)
+        draw.text((LEFT_MARGIN, y + 14), str(opening_band), fill=TEXT, font=LABEL_FONT)
+        for column_index, family in enumerate(family_columns):
+            value = int(pivot.loc[opening_band, family])
+            x = origin_x + (column_index * cell_width)
+            intensity = 0 if max_count <= 0 else int(240 - (180 * (value / max_count)))
+            fill = (intensity, intensity, 255)
+            outline = MASTER if family == "winner_definition" and value == max_count else GRID
+            draw.rectangle((x, y, x + cell_width - 8, y + cell_height - 8), fill=fill, outline=outline, width=1)
+            label = str(value)
+            label_width = draw.textlength(label, font=LABEL_FONT)
+            draw.text((x + ((cell_width - 8 - label_width) / 2), y + 14), label, fill=TEXT, font=LABEL_FONT)
+
+        route_row = route_lookup.get(str(opening_band))
+        x = info_x
+        draw.rectangle((x, y, x + info_width - 28, y + cell_height - 8), fill=NEUTRAL_FILL, outline=GRID, width=1)
+        if route_row is not None:
+            selected_family = str(route_row["selected_family"])
+            selected_return = float(route_row["selected_avg_gross_return_with_slippage"])
+            selected_trades = int(route_row["selected_trade_count"])
+            line_1 = selected_family
+            line_2 = f"{selected_trades} trades | avg return {selected_return:.3f}"
+        else:
+            line_1 = "n/a"
+            line_2 = ""
+        draw.text((x + 10, y + 10), line_1, fill=TEXT, font=LABEL_FONT)
+        if line_2:
+            draw.text((x + 10, y + 28), line_2, fill=SUBTLE, font=SMALL_FONT)
+
+    return _save(image, render_dir / "master_router_band_map.png")
 
 
 def render_full_sample_ending_bankrolls(render_dir: Path, portfolio_summary: pd.DataFrame, *, sample_name: str) -> Path | None:
@@ -463,6 +819,8 @@ def main() -> int:
     portfolio_summary = _read_csv(source_dir / "benchmark_portfolio_summary.csv")
     robustness_summary = _read_csv(source_dir / "benchmark_portfolio_robustness_summary.csv")
     classification = _read_csv(source_dir / "benchmark_game_strategy_classification.csv")
+    route_summary = _read_csv(source_dir / "benchmark_route_summary.csv")
+    master_router_decisions = _read_csv(source_dir / "benchmark_master_router_decisions.csv")
 
     images: list[Path] = []
     images.extend(render_strategy_daily_paths(render_dir, portfolio_daily_paths, sample_name=args.sample_name))
@@ -471,6 +829,9 @@ def main() -> int:
         lambda: render_robustness_mean_bankrolls(render_dir, robustness_summary),
         lambda: render_strategy_classification_heatmap(render_dir, classification, sample_name=args.sample_name),
         lambda: render_payout_thresholds(render_dir, portfolio_daily_paths, sample_name=args.sample_name),
+        lambda: render_strategy_metric_rankings(render_dir, portfolio_summary, sample_name=args.sample_name),
+        lambda: render_master_router_position_scatter(render_dir, portfolio_summary, sample_name=args.sample_name),
+        lambda: render_master_router_band_map(render_dir, master_router_decisions, route_summary, sample_name=args.sample_name),
     ):
         output = generator()
         if output is not None:

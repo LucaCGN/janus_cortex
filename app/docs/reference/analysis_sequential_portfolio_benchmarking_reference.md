@@ -6,9 +6,10 @@ Define the canonical bankroll-simulation contract for the NBA analysis module an
 - repeated-seed robustness
 - the combined keep-family sleeve
 - the opening-band routed sleeve
+- the confidence-based master router baseline
 
 ## Canonical Contract
-Sequential portfolio benchmarking extends `run_analysis_backtests` under benchmark contract `v7`.
+Sequential portfolio benchmarking extends `run_analysis_backtests` under benchmark contract `v8`.
 
 Active defaults:
 - starting bankroll: `10.0`
@@ -51,10 +52,29 @@ Artifact additions in `v7`:
 - `benchmark_game_strategy_classification`
 - `portfolio_charts/*.svg`
 
-## Current Validated Family Status
-Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, starting bankroll `$10.00`, position fraction `1.0`, `max_concurrent_positions=3`, and the first `100` chronological games.
+Artifact additions in `v8`:
+- `benchmark_master_router_decisions`
 
-### `inversion`
+## Current Building-Block Status
+Validated on `2026-04-21` against season `2025-26`, phase `regular_season`, starting bankroll `$10.00`, position fraction `1.0`, `max_concurrent_positions=3`, and the first `100` chronological games.
+
+### Routed Core Families
+#### `winner_definition`
+- rule:
+  - buy once the market reaches `80c`
+  - widen the break line from `75c` to `76c` only when entry score margin is already `8+`
+- full-sample result:
+  - ending bankroll `2,490.05`
+  - max drawdown `24.49%`
+  - executed trades `50`
+- 10-seed robustness:
+  - positive seeds `10/10`
+  - mean ending bankroll `295,300.59`
+  - median ending bankroll `141,733.35`
+  - ending bankroll range `45,249.66` to `1,626,989.21`
+  - worst drawdown `59.56%`
+
+#### `inversion`
 - rule:
   - buy the underdog once it crosses `45c` for openers below `25c`, otherwise on the `50c` cross
   - require recent momentum and avoid badly trailing scoreboard states
@@ -70,22 +90,7 @@ Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, star
   - ending bankroll range `248.95` to `124,015.18`
   - worst drawdown `45.88%`
 
-### `winner_definition`
-- rule:
-  - buy once the market reaches `80c`
-  - widen the break line from `75c` to `76c` only when entry score margin is already `8+`
-- full-sample result:
-  - ending bankroll `2,490.05`
-  - max drawdown `24.49%`
-  - executed trades `50`
-- 10-seed robustness:
-  - positive seeds `10/10`
-  - mean ending bankroll `295,300.59`
-  - median ending bankroll `141,733.35`
-  - ending bankroll range `45,249.66` to `1,626,989.21`
-  - worst drawdown `59.56%`
-
-### `underdog_liftoff`
+#### `underdog_liftoff`
 - rule:
   - buy openers below `42c` once they rebound through `36c`
   - require momentum `>= 1`, at least `900` seconds left, and no worse than a `4` point deficit
@@ -101,7 +106,23 @@ Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, star
   - ending bankroll range `23.72` to `217.21`
   - worst drawdown `37.40%`
 
-### `q1_repricing`
+#### `favorite_panic_fade_v1`
+- rule:
+  - only for strong pregame favorites that suffer a panic selloff and then recross into stability
+  - enter on the recross, then exit on reclaim toward the low-`60c` range, `+8c`, or renewed weakness
+- full-sample result:
+  - ending bankroll `14,811.37`
+  - max drawdown `9.66%`
+  - executed trades `42`
+- 10-seed robustness:
+  - positive seeds `10/10`
+  - mean ending bankroll `26.22`
+  - median ending bankroll `26.25`
+  - ending bankroll range `14.10` to `40.13`
+  - worst drawdown `9.66%`
+
+### Independent Trigger Sleeves
+#### `q1_repricing`
 - rule:
   - eligible openers are now `25c-75c`
   - buy the first Q1 continuation once the price gains `7c` and clears `52c`
@@ -118,7 +139,22 @@ Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, star
   - ending bankroll range `11.53` to `21.74`
   - worst drawdown `19.07%`
 
-### `q4_clutch`
+#### `halftime_q3_repricing_v1`
+- rule:
+  - buy the early-Q3 continuation after halftime once price gains `5c`
+  - require positive momentum and enough stability to target `+7c`, `-4c`, or end-of-Q3 flattening
+- full-sample result:
+  - ending bankroll `1,035.01`
+  - max drawdown `14.70%`
+  - executed trades `49`
+- 10-seed robustness:
+  - positive seeds `9/10`
+  - mean ending bankroll `14.10`
+  - median ending bankroll `13.97`
+  - ending bankroll range `9.37` to `21.27`
+  - worst drawdown `7.93%`
+
+#### `q4_clutch`
 - rule:
   - buy in the last `300` seconds of Q4 when a close game with repeated lead changes reclaims `55c`
   - require positive recent momentum and no more than a `6` point margin
@@ -134,16 +170,38 @@ Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, star
   - ending bankroll range `10.00` to `38.36`
   - worst drawdown `10.71%`
 
-### Rejected Families
+### Experimental Family
+#### `comeback_reversion_v2`
+- rule:
+  - buy trailing underdogs in the Q3 reset window only after the rebound has started and the snapback still has room
+  - exit at `+8c`, `-5c`, or game end
+- full-sample result:
+  - ending bankroll `0.81`
+  - max drawdown `94.68%`
+  - executed trades `39`
+- 10-seed robustness:
+  - positive seeds `4/10`
+  - mean ending bankroll `12.21`
+  - median ending bankroll `8.19`
+  - ending bankroll range `2.58` to `31.69`
+  - worst drawdown `82.58%`
+- interpretation:
+  - improved enough to keep researching, but not robust enough to promote as a building block
+
+### Rejected Or Deferred Families
 - `reversion`
   - stable negative under the 10-seed lens
 - `comeback_reversion`
   - mixed with only `1/10` positive seeds
 - `volatility_scalp`
   - mixed with only `1/10` positive seeds
+- `model_residual_dislocation_v1`
+  - deferred until the backtest interface can separate training and inference cleanly for model-based residual signals
 
 ## Combined Keep-Family Sleeve
 Members:
+- `favorite_panic_fade_v1`
+- `halftime_q3_repricing_v1`
 - `inversion`
 - `q1_repricing`
 - `q4_clutch`
@@ -151,13 +209,13 @@ Members:
 - `winner_definition`
 
 Current result:
-- full-sample ending bankroll `47,057.42`
-- full-sample max drawdown `28.15%`
-- full-sample executed trades `63`
+- full-sample ending bankroll `96,805.76`
+- full-sample max drawdown `35.91%`
+- full-sample executed trades `72`
 
 Interpretation:
-- useful as a diversification surface
-- the added Q1 and Q4 sleeves make the combined lane materially stronger, but it still trails the top standalone inversion run
+- useful as a diversification surface and sanity check
+- the expanded keep set is stronger than earlier freezes, but the combined sleeve is still not the product controller
 
 ## Statistical Routing
 Current band map:
@@ -167,19 +225,52 @@ Current band map:
 - `40-50`: `inversion`
 - `50-60`: `winner_definition`
 - `60-70`: `q4_clutch`
-- `70-80`: `winner_definition`
-- `80-90`: `winner_definition`
+- `70-80`: `favorite_panic_fade_v1`
+- `80-90`: `favorite_panic_fade_v1`
 - `90-100`: `winner_definition`
 
 Current routed result:
-- full-sample ending bankroll `93,769.92`
-- full-sample max drawdown `20.38%`
-- full-sample executed trades `54`
+- full-sample ending bankroll `522,883.17`
+- full-sample max drawdown `34.72%`
+- full-sample executed trades `80`
 
 Interpretation:
 - opening band is enough to support deterministic family routing
-- the routed sleeve now hands the `60-70` band to the new clutch family
-- routed performance is materially stronger than the prior freeze, but still below the strongest standalone inversion run
+- the opening-band map now captures favorite-panic states in the `70-90` band
+- this is now a strong baseline reference, but not the final design for the controller
+
+## Master Router Baseline
+Current master router design:
+- core families:
+  - `winner_definition`
+  - `inversion`
+  - `underdog_liftoff`
+  - `favorite_panic_fade_v1`
+- extra sleeves:
+  - `q1_repricing`
+  - `halftime_q3_repricing_v1`
+  - `comeback_reversion_v2`
+  - `q4_clutch`
+- training source for priors:
+  - `time_train`
+- per-game confidence uses:
+  - `opening_band`
+  - `period_label`
+  - `context_bucket`
+  - `signal_strength`
+  - context win rate
+  - context average return
+  - context support
+
+Current result:
+- full-sample ending bankroll `5,396.87`
+- time-validation ending bankroll `1,915.95`
+- random-holdout ending bankroll `1,366,218.64`
+
+Interpretation:
+- it already beats `winner_definition` on `full_sample`, `time_validation`, and `random_holdout`
+- it is the first deterministic approximation of the intended end-product controller
+- repeated-seed robustness for the router itself is not yet frozen in the canonical contract
 
 ## Best-Strategy-By-Game Reference
 `benchmark_game_strategy_classification` is now part of the canonical artifact pack.
@@ -193,6 +284,9 @@ Current full-sample realized best-family counts:
 - `q4_clutch`: `23`
 - `volatility_scalp`: `17`
 - `q1_repricing`: `8`
+- `comeback_reversion_v2`: `16`
+- `favorite_panic_fade_v1`: `11`
+- `halftime_q3_repricing_v1`: `4`
 
 Interpretation:
 - this artifact is a routing and modeling reference, not a promotion rule
@@ -213,3 +307,6 @@ Promotion requires:
 - positive time-validation and random-holdout benchmark signal
 - acceptable drawdown
 - repeated-seed robustness that remains directionally defensible
+- promotion can be either:
+  - a routed core family
+  - an independently triggered sleeve

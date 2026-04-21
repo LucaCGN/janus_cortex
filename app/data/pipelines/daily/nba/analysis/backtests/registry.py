@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from app.data.pipelines.daily.nba.analysis.backtests.comeback_reversion import simulate_comeback_reversion_trades
+from app.data.pipelines.daily.nba.analysis.backtests.comeback_reversion_v2 import simulate_comeback_reversion_v2_trades
+from app.data.pipelines.daily.nba.analysis.backtests.favorite_panic_fade_v1 import simulate_favorite_panic_fade_v1_trades
+from app.data.pipelines.daily.nba.analysis.backtests.halftime_q3_repricing_v1 import simulate_halftime_q3_repricing_v1_trades
 from app.data.pipelines.daily.nba.analysis.backtests.inversion import simulate_inversion_trades
 from app.data.pipelines.daily.nba.analysis.backtests.q1_repricing import simulate_q1_repricing_trades
 from app.data.pipelines.daily.nba.analysis.backtests.q4_clutch import simulate_q4_clutch_trades
@@ -59,6 +62,15 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
             simulator=simulate_comeback_reversion_trades,
         ),
         StrategyDefinition(
+            family="comeback_reversion_v2",
+            entry_rule="q3_trailing_underdog_snapback",
+            exit_rule="plus_8c_or_minus_5c_or_end",
+            description="Q3-only underdog snapback after a live rebound inside the 15c-35c price band while still trailing by 5-14 points.",
+            comparator_group="underdog_reversion",
+            tags=("underdog", "snapback", "q3"),
+            simulator=simulate_comeback_reversion_v2_trades,
+        ),
+        StrategyDefinition(
             family="volatility_scalp",
             entry_rule="q1_midband_drawdown_scalp",
             exit_rule="partial_reclaim_or_minus_5c_or_end",
@@ -68,6 +80,15 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
             simulator=simulate_volatility_scalp_trades,
         ),
         StrategyDefinition(
+            family="favorite_panic_fade_v1",
+            entry_rule="favorite_recross_after_panic",
+            exit_rule="recover_to_62c_or_plus_8c_or_minus_5c_or_end",
+            description="Favorite recovery after a panic dip below 50c and a momentum-backed recross above 52c in Q2-Q4.",
+            comparator_group="favorite_recovery",
+            tags=("favorite", "recovery", "panic"),
+            simulator=simulate_favorite_panic_fade_v1_trades,
+        ),
+        StrategyDefinition(
             family="q1_repricing",
             entry_rule="q1_cross_plus_7c_with_momentum",
             exit_rule="plus_8c_or_minus_5c_or_end_of_q1",
@@ -75,6 +96,15 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
             comparator_group="opening_band_momentum",
             tags=("q1", "continuation", "repricing"),
             simulator=simulate_q1_repricing_trades,
+        ),
+        StrategyDefinition(
+            family="halftime_q3_repricing_v1",
+            entry_rule="early_q3_cross_plus_5c_with_momentum",
+            exit_rule="plus_7c_or_minus_4c_or_end_of_q3",
+            description="Early-Q3 repricing continuation after halftime for 35c-75c openers that reclaim 55c or opening-plus-5c with momentum.",
+            comparator_group="halftime_repricing",
+            tags=("q3", "halftime", "continuation"),
+            simulator=simulate_halftime_q3_repricing_v1_trades,
         ),
         StrategyDefinition(
             family="q4_clutch",
