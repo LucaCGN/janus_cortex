@@ -41,7 +41,7 @@ class AnalysisConsumerBundle:
 
 def _json_load(path: Path) -> dict[str, Any]:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"Required analysis artifact not found: {path}") from exc
     if not isinstance(payload, dict):
@@ -414,6 +414,414 @@ def _build_portfolio_rankings(backtest_payload: dict[str, Any]) -> list[dict[str
     return results
 
 
+def _finalist_scalar(row: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _finalist_score(row: dict[str, Any]) -> float:
+    bankroll = _finalist_scalar(
+        row,
+        "mean_ending_bankroll",
+        "ending_bankroll",
+        "portfolio_ending_bankroll",
+        "compounded_bankroll",
+        "avg_gross_return_with_slippage",
+        "avg_executed_trade_return_with_slippage",
+        "starting_bankroll",
+    )
+    if bankroll is None:
+        bankroll = 0.0
+    positive_rate = _finalist_scalar(row, "positive_seed_rate", "win_rate")
+    if positive_rate is None:
+        positive_rate = 0.0
+    drawdown = _finalist_scalar(row, "max_drawdown_pct", "worst_max_drawdown_pct", "avg_mae_after_entry")
+    if drawdown is None:
+        drawdown = 0.0
+    return float(bankroll) + (2.0 * float(positive_rate)) - (1.5 * abs(float(drawdown)))
+
+
+def _finalist_identifier(row: dict[str, Any]) -> str:
+    lane_name = str(row.get("lane_name") or row.get("strategy_family") or row.get("portfolio_scope") or "").strip()
+    strategy_family = str(row.get("strategy_family") or "").strip()
+    if lane_name and strategy_family and lane_name != strategy_family:
+        return f"{lane_name}|{strategy_family}"
+    return lane_name or strategy_family or "unknown_lane"
+
+
+def _finalist_family_type(row: dict[str, Any]) -> str:
+    family_type = str(row.get("family_type") or row.get("portfolio_scope") or "").strip()
+    if family_type:
+        return family_type
+    if row.get("lane_type"):
+        return str(row.get("lane_type"))
+    return "deterministic"
+
+
+def _lane_rows_from_payload(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [row for row in payload if isinstance(row, dict)]
+    if isinstance(payload, dict):
+        for key in ("lane_summary", "mean_path", "mean_daily_path", "daily_paths", "series", "rows"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [row for row in value if isinstance(row, dict)]
+        flattened: list[dict[str, Any]] = []
+        for value in payload.values():
+            if isinstance(value, list):
+                flattened.extend(row for row in value if isinstance(row, dict))
+            elif isinstance(value, dict):
+                nested_rows = _lane_rows_from_payload(value)
+                if nested_rows:
+                    flattened.extend(nested_rows)
+        if flattened:
+            return flattened
+    return []
+
+
+def _load_llm_experiment(benchmark: dict[str, Any]) -> dict[str, Any]:
+    llm_experiment = benchmark.get("llm_experiment")
+    return llm_experiment if isinstance(llm_experiment, dict) else {}
+
+
+def _build_finalist_pool(snapshot_benchmark: dict[str, Any]) -> list[dict[str, Any]]:
+    llm_experiment = _load_llm_experiment(snapshot_benchmark)
+    showdown = llm_experiment.get("showdown") if isinstance(llm_experiment.get("showdown"), dict) else {}
+    showdown_finalists = _lane_rows_from_payload(showdown.get("finalists"))
+    if showdown_finalists:
+        normalized: list[dict[str, Any]] = []
+        for row in showdown_finalists:
+            normalized.append(
+                {
+                    "finalist_id": _finalist_identifier(row),
+                    "lane_name": row.get("lane_name") or row.get("strategy_family"),
+                    "strategy_family": row.get("strategy_family") or row.get("lane_name"),
+                    "family_type": _finalist_family_type(row),
+                    "source_name": "llm_showdown",
+                    "score": row.get("finalist_score") if row.get("finalist_score") is not None else _finalist_score(row),
+                    "score_components": {
+                        "mean_ending_bankroll": _finalist_scalar(row, "mean_ending_bankroll", "ending_bankroll"),
+                        "positive_rate": _finalist_scalar(row, "positive_iteration_rate", "positive_seed_rate", "win_rate"),
+                        "drawdown_pct": _finalist_scalar(row, "mean_max_drawdown_pct", "max_drawdown_pct"),
+                    },
+                    "mean_ending_bankroll": row.get("mean_ending_bankroll"),
+                    "ending_bankroll": row.get("ending_bankroll"),
+                    "positive_seed_rate": row.get("positive_iteration_rate") or row.get("positive_seed_rate"),
+                    "max_drawdown_pct": row.get("mean_max_drawdown_pct") or row.get("max_drawdown_pct"),
+                    "trade_count": row.get("mean_executed_trade_count") or row.get("executed_trade_count"),
+                    "win_rate": row.get("win_rate"),
+                    "candidate_label": row.get("candidate_label"),
+                    "label_reason": row.get("label_reason"),
+                    "portfolio_scope": row.get("portfolio_scope"),
+                    "strategy_family_members": row.get("strategy_family_members"),
+                    "robustness_label": row.get("robustness_label"),
+                    "prompt_profile": row.get("prompt_profile"),
+                    "reasoning_effort": row.get("reasoning_effort"),
+                    "include_rationale": row.get("include_rationale"),
+                    "use_confidence_gate": row.get("use_confidence_gate"),
+                }
+            )
+        return normalized[:6]
+
+    candidates: list[dict[str, Any]] = []
+
+    deterministic_sources = [
+        ("portfolio_rankings", snapshot_benchmark.get("portfolio_rankings") or []),
+        ("individual_strategy_rankings", snapshot_benchmark.get("individual_strategy_rankings") or []),
+        ("strategy_rankings", snapshot_benchmark.get("strategy_rankings") or []),
+    ]
+    for source_name, rows in deterministic_sources:
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            candidate = dict(row)
+            candidate.setdefault("source_name", source_name)
+            candidate.setdefault("lane_name", candidate.get("strategy_family") or candidate.get("portfolio_scope"))
+            candidate.setdefault("family_type", candidate.get("portfolio_scope") or "deterministic")
+            candidates.append(candidate)
+
+    for row in _lane_rows_from_payload(llm_experiment.get("lane_summary")):
+        candidate = dict(row)
+        candidate.setdefault("source_name", "llm_experiment")
+        candidate.setdefault("lane_name", candidate.get("lane_name") or candidate.get("variant_name") or candidate.get("strategy_family"))
+        candidate.setdefault("family_type", "llm_lane")
+        candidate.setdefault("strategy_family", candidate.get("strategy_family") or candidate.get("lane_name"))
+        candidates.append(candidate)
+
+    seen: set[str] = set()
+    ranked: list[dict[str, Any]] = []
+    for row in candidates:
+        identifier = _finalist_identifier(row)
+        if identifier in seen:
+            continue
+        seen.add(identifier)
+        score = _finalist_score(row)
+        ranked.append(
+            {
+                "finalist_id": identifier,
+                "lane_name": row.get("lane_name") or row.get("strategy_family") or row.get("portfolio_scope"),
+                "strategy_family": row.get("strategy_family"),
+                "family_type": _finalist_family_type(row),
+                "source_name": row.get("source_name"),
+                "score": score,
+                "score_components": {
+                    "mean_ending_bankroll": _finalist_scalar(
+                        row, "mean_ending_bankroll", "ending_bankroll", "portfolio_ending_bankroll", "compounded_bankroll"
+                    ),
+                    "positive_rate": _finalist_scalar(row, "positive_seed_rate", "win_rate"),
+                    "drawdown_pct": _finalist_scalar(row, "max_drawdown_pct", "worst_max_drawdown_pct"),
+                },
+                "mean_ending_bankroll": row.get("mean_ending_bankroll"),
+                "ending_bankroll": row.get("ending_bankroll"),
+                "positive_seed_rate": row.get("positive_seed_rate"),
+                "max_drawdown_pct": row.get("max_drawdown_pct"),
+                "trade_count": row.get("trade_count") or row.get("executed_trade_count"),
+                "win_rate": row.get("win_rate"),
+                "candidate_label": row.get("candidate_label"),
+                "label_reason": row.get("label_reason"),
+                "portfolio_scope": row.get("portfolio_scope"),
+                "strategy_family_members": row.get("strategy_family_members"),
+                "robustness_label": row.get("robustness_label"),
+            }
+        )
+
+    ranked.sort(
+        key=lambda row: (
+            row.get("score") is not None,
+            float(row.get("score") or float("-inf")),
+            float(row.get("mean_ending_bankroll") or row.get("ending_bankroll") or float("-inf")),
+            float(row.get("positive_seed_rate") or row.get("win_rate") or float("-inf")),
+            -(abs(float(row.get("max_drawdown_pct") or 0.0))),
+            int(row.get("trade_count") or 0),
+            str(row.get("lane_name") or ""),
+        ),
+        reverse=True,
+    )
+    return ranked[:6]
+
+
+def _row_matches_finalist(row: dict[str, Any], finalist: dict[str, Any]) -> bool:
+    finalist_lane = str(finalist.get("lane_name") or "")
+    finalist_family = str(finalist.get("strategy_family") or "")
+    finalist_id = str(finalist.get("finalist_id") or "")
+    row_lane = str(row.get("lane_name") or row.get("strategy_family") or row.get("portfolio_scope") or "")
+    row_family = str(row.get("strategy_family") or "")
+    row_candidates = {
+        str(row.get("lane_name") or ""),
+        str(row.get("strategy_family") or ""),
+        str(row.get("portfolio_scope") or ""),
+        str(row.get("family_name") or ""),
+        str(row.get("portfolio_lane_name") or ""),
+        str(row.get("variant_name") or ""),
+        str(row.get("controller_name") or ""),
+        str(row.get("finalist_id") or ""),
+    }
+    if finalist_lane and row_lane == finalist_lane:
+        return True
+    if finalist_family and row_family == finalist_family:
+        return True
+    if finalist_id and finalist_id in row_candidates:
+        return True
+    if finalist.get("portfolio_scope") and row.get("portfolio_scope") == finalist.get("portfolio_scope"):
+        return True
+    return False
+
+
+def _series_from_rows(
+    rows: list[dict[str, Any]],
+    *,
+    finalist: dict[str, Any],
+    source_name: str,
+) -> list[dict[str, Any]]:
+    if not rows:
+        return []
+
+    matched = [dict(row) for row in rows if _row_matches_finalist(row, finalist)]
+    if not matched:
+        return []
+
+    normalized: list[dict[str, Any]] = []
+    for row in matched:
+        x_value = (
+            row.get("date")
+            or row.get("day")
+            or row.get("game_date")
+            or row.get("timestamp")
+            or row.get("step")
+            or row.get("sequence_index")
+            or row.get("day_index")
+        )
+        y_value = (
+            row.get("bankroll")
+            or row.get("ending_bankroll")
+            or row.get("equity")
+            or row.get("value")
+            or row.get("mean_bankroll")
+            or row.get("mean_ending_bankroll")
+        )
+        normalized.append(
+            to_jsonable(
+                {
+                    "finalist_id": finalist.get("finalist_id"),
+                    "lane_name": finalist.get("lane_name"),
+                    "strategy_family": finalist.get("strategy_family"),
+                    "family_type": finalist.get("family_type"),
+                    "source_name": source_name,
+                    "x": x_value,
+                    "y": y_value,
+                    "row": row,
+                }
+            )
+        )
+    return normalized
+
+
+def _build_finalist_series(snapshot_benchmark: dict[str, Any], finalists: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    llm_experiment = _load_llm_experiment(snapshot_benchmark)
+    showdown = llm_experiment.get("showdown") if isinstance(llm_experiment.get("showdown"), dict) else {}
+    showdown_rows = _lane_rows_from_payload(showdown.get("daily_paths"))
+    deterministic_rows = _lane_rows_from_payload(snapshot_benchmark.get("portfolio_daily_paths"))
+    llm_rows = _lane_rows_from_payload(
+        llm_experiment.get("mean_path")
+        or llm_experiment.get("mean_daily_path")
+        or llm_experiment.get("daily_paths")
+        or llm_experiment.get("series")
+    )
+
+    series_rows: list[dict[str, Any]] = []
+    for finalist in finalists:
+        source_name = str(finalist.get("source_name") or "")
+        finalist_rows: list[dict[str, Any]] = []
+        if showdown_rows:
+            finalist_rows = _series_from_rows(showdown_rows, finalist=finalist, source_name="llm_showdown")
+        elif source_name in {"llm_experiment", "llm_showdown"}:
+            finalist_rows = _series_from_rows(llm_rows, finalist=finalist, source_name="llm_experiment")
+        else:
+            finalist_rows = _series_from_rows(deterministic_rows, finalist=finalist, source_name="portfolio_daily_paths")
+        if finalist_rows:
+            series_rows.append(
+                {
+                    "finalist_id": finalist.get("finalist_id"),
+                    "lane_name": finalist.get("lane_name"),
+                    "strategy_family": finalist.get("strategy_family"),
+                    "family_type": finalist.get("family_type"),
+                    "source_name": "llm_showdown" if showdown_rows else (source_name or "portfolio_daily_paths"),
+                    "rows": finalist_rows,
+                }
+            )
+    return series_rows
+
+
+def _build_llm_variant_rankings(snapshot_benchmark: dict[str, Any]) -> list[dict[str, Any]]:
+    llm_experiment = _load_llm_experiment(snapshot_benchmark)
+    rows = _lane_rows_from_payload(llm_experiment.get("lane_summary"))
+    ranked: list[dict[str, Any]] = []
+    for rank, row in enumerate(
+        sorted(
+            rows,
+            key=lambda item: (
+                item.get("mean_ending_bankroll") is not None,
+                float(item.get("mean_ending_bankroll") or item.get("ending_bankroll") or float("-inf")),
+                float(item.get("positive_seed_rate") or item.get("win_rate") or float("-inf")),
+                -(abs(float(item.get("max_drawdown_pct") or item.get("worst_max_drawdown_pct") or 0.0))),
+                int(item.get("trade_count") or item.get("executed_trade_count") or 0),
+                str(item.get("lane_name") or item.get("variant_name") or ""),
+            ),
+            reverse=True,
+        ),
+        start=1,
+    ):
+        ranked.append(
+            to_jsonable(
+                {
+                    "rank": rank,
+                    "lane_name": row.get("lane_name") or row.get("variant_name"),
+                    "strategy_family": row.get("strategy_family"),
+                    "mean_ending_bankroll": row.get("mean_ending_bankroll"),
+                    "ending_bankroll": row.get("ending_bankroll"),
+                    "positive_seed_rate": row.get("positive_seed_rate"),
+                    "max_drawdown_pct": row.get("max_drawdown_pct"),
+                    "trade_count": row.get("trade_count") or row.get("executed_trade_count"),
+                    "win_rate": row.get("win_rate"),
+                    "score": _finalist_score(row),
+                    "notes": row.get("notes") or row.get("label_reason"),
+                }
+            )
+        )
+    return ranked
+
+
+def _build_controller_summary(snapshot_benchmark: dict[str, Any], finalists: list[dict[str, Any]]) -> dict[str, Any]:
+    master_router = snapshot_benchmark.get("master_router") or {}
+    llm_experiment = _load_llm_experiment(snapshot_benchmark)
+    showdown = llm_experiment.get("showdown") if isinstance(llm_experiment.get("showdown"), dict) else {}
+    showdown_summary_rows = _lane_rows_from_payload(showdown.get("summary"))
+    showdown_lookup = {
+        str(row.get("lane_name") or row.get("strategy_family") or ""): row
+        for row in showdown_summary_rows
+    }
+    winner_definition = next(
+        (
+            row
+            for row in finalists
+            if str(row.get("strategy_family")) == "winner_definition"
+        ),
+        {},
+    )
+    best_llm = next(
+        (
+            row
+            for row in finalists
+            if (
+                str(row.get("family_type")) in {"llm_lane", "llm_variant"}
+                or str(row.get("lane_name") or "").startswith("llm_")
+            )
+        ),
+        {},
+    )
+    return to_jsonable(
+        {
+            "master_router": {
+                "family_name": master_router.get("family_name"),
+                "selection_sample_name": master_router.get("selection_sample_name"),
+                "core_families": list(master_router.get("core_families") or []),
+                "extra_families": list(master_router.get("extra_families") or []),
+                "route_summary_count": len(master_router.get("route_summary") or []),
+            },
+            "winner_definition": {
+                "finalist_id": winner_definition.get("finalist_id"),
+                "lane_name": winner_definition.get("lane_name"),
+                "score": winner_definition.get("score"),
+                "mean_ending_bankroll": winner_definition.get("mean_ending_bankroll"),
+                "positive_seed_rate": winner_definition.get("positive_seed_rate"),
+                "max_drawdown_pct": winner_definition.get("max_drawdown_pct"),
+                "showdown_ending_bankroll": (showdown_lookup.get("winner_definition") or {}).get("ending_bankroll"),
+                "showdown_drawdown_pct": (showdown_lookup.get("winner_definition") or {}).get("max_drawdown_pct"),
+            },
+            "best_llm_lane": {
+                "finalist_id": best_llm.get("finalist_id"),
+                "lane_name": best_llm.get("lane_name"),
+                "score": best_llm.get("score"),
+                "mean_ending_bankroll": best_llm.get("mean_ending_bankroll"),
+                "positive_seed_rate": best_llm.get("positive_seed_rate"),
+                "max_drawdown_pct": best_llm.get("max_drawdown_pct"),
+                "showdown_ending_bankroll": (showdown_lookup.get(str(best_llm.get("lane_name") or "")) or {}).get("ending_bankroll"),
+                "showdown_drawdown_pct": (showdown_lookup.get(str(best_llm.get("lane_name") or "")) or {}).get("max_drawdown_pct"),
+            },
+            "comparison_note": (
+                "Finalists come from the LLM showdown when available; otherwise they fall back to benchmark-only rankings."
+            ),
+        }
+    )
+
+
 def _build_master_router_summary(backtest_payload: dict[str, Any]) -> dict[str, Any]:
     benchmark = backtest_payload.get("benchmark") or {}
     master_router_family = str(benchmark.get("master_router_family_name") or "")
@@ -460,6 +868,8 @@ def _build_master_router_summary(backtest_payload: dict[str, Any]) -> dict[str, 
     decision_frame = pd.DataFrame(list(benchmark.get("master_router_decisions") or []))
     selection_counts: list[dict[str, Any]] = []
     band_counts: list[dict[str, Any]] = []
+    low_confidence_summary: list[dict[str, Any]] = []
+    extra_trigger_counts: list[dict[str, Any]] = []
     if not decision_frame.empty:
         decision_frame["selected_confidence"] = pd.to_numeric(decision_frame["selected_confidence"], errors="coerce")
         selection_counts = list(
@@ -475,6 +885,21 @@ def _build_master_router_summary(backtest_payload: dict[str, Any]) -> dict[str, 
                 .to_dict(orient="records")
             )
         )
+        low_confidence_summary = list(
+            to_jsonable(
+                decision_frame.groupby(["sample_name"], dropna=False)
+                .agg(
+                    decision_count=("game_id", "count"),
+                    mean_confidence=("selected_confidence", "mean"),
+                    median_confidence=("selected_confidence", "median"),
+                    low_confidence_count_060=("selected_confidence", lambda values: int((values.fillna(-1) < 0.60).sum())),
+                    low_confidence_count_070=("selected_confidence", lambda values: int((values.fillna(-1) < 0.70).sum())),
+                )
+                .reset_index()
+                .sort_values(["sample_name"], ascending=[True])
+                .to_dict(orient="records")
+            )
+        )
         band_counts = list(
             to_jsonable(
                 decision_frame[decision_frame["sample_name"].astype(str) == "full_sample"]
@@ -485,6 +910,35 @@ def _build_master_router_summary(backtest_payload: dict[str, Any]) -> dict[str, 
                 .to_dict(orient="records")
             )
         )
+        extra_trigger_rows: list[dict[str, Any]] = []
+        for row in decision_frame.to_dict(orient="records"):
+            raw_value = row.get("triggered_extra_families_json")
+            if raw_value in (None, "", "[]"):
+                continue
+            try:
+                family_values = json.loads(raw_value) if isinstance(raw_value, str) else raw_value
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(family_values, list):
+                continue
+            for extra_family in family_values:
+                extra_trigger_rows.append(
+                    {
+                        "sample_name": row.get("sample_name"),
+                        "extra_family": str(extra_family),
+                    }
+                )
+        if extra_trigger_rows:
+            extra_trigger_counts = list(
+                to_jsonable(
+                    pd.DataFrame(extra_trigger_rows)
+                    .groupby(["sample_name", "extra_family"], dropna=False)
+                    .agg(trigger_count=("extra_family", "count"))
+                    .reset_index()
+                    .sort_values(["sample_name", "trigger_count", "extra_family"], ascending=[True, False, True])
+                    .to_dict(orient="records")
+                )
+            )
 
     route_summary = list(to_jsonable((benchmark.get("route_summary") or [])))
     return {
@@ -494,6 +948,8 @@ def _build_master_router_summary(backtest_payload: dict[str, Any]) -> dict[str, 
         "extra_families": list(benchmark.get("master_router_extra_families") or []),
         "comparison_rows": comparison_rows,
         "selection_counts": selection_counts,
+        "low_confidence_summary": low_confidence_summary,
+        "extra_trigger_counts": extra_trigger_counts,
         "band_counts": band_counts,
         "route_summary": route_summary,
     }
@@ -531,6 +987,18 @@ def build_analysis_consumer_snapshot(bundle: AnalysisConsumerBundle) -> dict[str
     backtest_payload = bundle.backtest_payload
     model_payload = bundle.model_payload
     benchmark = backtest_payload.get("benchmark") or {}
+    master_router_summary = _build_master_router_summary(backtest_payload)
+    strategy_rankings = _build_strategy_rankings(backtest_payload)
+    individual_strategy_rankings = _build_individual_strategy_rankings(backtest_payload)
+    portfolio_rankings = _build_portfolio_rankings(backtest_payload)
+    benchmark_view = {
+        **benchmark,
+        "strategy_rankings": strategy_rankings,
+        "individual_strategy_rankings": individual_strategy_rankings,
+        "portfolio_rankings": portfolio_rankings,
+        "master_router": master_router_summary,
+    }
+    finalists = _build_finalist_pool(benchmark_view)
 
     snapshot = {
         "season": bundle.season,
@@ -547,10 +1015,10 @@ def build_analysis_consumer_snapshot(bundle: AnalysisConsumerBundle) -> dict[str
             "contract_version": benchmark.get("contract_version"),
             "minimum_trade_count": benchmark.get("minimum_trade_count"),
             "experiment": backtest_payload.get("experiment") or {},
-            "strategy_rankings": _build_strategy_rankings(backtest_payload),
-            "individual_strategy_rankings": _build_individual_strategy_rankings(backtest_payload),
-            "portfolio_rankings": _build_portfolio_rankings(backtest_payload),
-            "master_router": _build_master_router_summary(backtest_payload),
+            "strategy_rankings": strategy_rankings,
+            "individual_strategy_rankings": individual_strategy_rankings,
+            "portfolio_rankings": portfolio_rankings,
+            "master_router": master_router_summary,
             "candidate_freeze": list(benchmark.get("candidate_freeze") or []),
             "portfolio_candidate_freeze": list(benchmark.get("portfolio_candidate_freeze") or []),
             "split_summary": list(benchmark.get("split_summary") or []),
@@ -560,6 +1028,21 @@ def build_analysis_consumer_snapshot(bundle: AnalysisConsumerBundle) -> dict[str
             "comparator_summary": list(benchmark.get("comparator_summary") or []),
             "context_rankings": list(benchmark.get("context_rankings") or []),
             "game_strategy_classification": list(benchmark.get("game_strategy_classification") or []),
+            "studio_dashboard": {
+                "finalists": finalists,
+                "finalist_series": _build_finalist_series(benchmark_view, finalists),
+                "llm_variant_rankings": _build_llm_variant_rankings(benchmark_view),
+                "controller_summary": _build_controller_summary(benchmark_view, finalists),
+                "metadata": {
+                    "selection_method": "prefer_llm_showdown_finalists_then_fallback_to_ranked_benchmark_pool",
+                    "series_rule": "prefer shared llm_showdown daily paths; otherwise fall back to deterministic portfolio daily paths",
+                    "llm_policy": "llm lanes surface when llm_experiment summary exists, and their line chart uses showdown paths when present",
+                    "notes": [
+                        "Top 6 finalists are deduplicated by lane and family identity.",
+                        "This payload is additive and leaves existing benchmark fields unchanged.",
+                    ],
+                },
+            },
         },
         "models": {
             "feature_set_version": model_payload.get("feature_set_version"),

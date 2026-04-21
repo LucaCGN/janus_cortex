@@ -5,8 +5,8 @@
 
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
-- benchmark contract: `v8`
-- status: validated through realistic execution replay, expanded family research, and a first master-router baseline
+- benchmark contract: `v10`
+- status: validated through realistic execution replay, expanded family research, a first master-router baseline, and a second LLM-router iteration with finalist showdown artifacts
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -31,6 +31,7 @@ Completed release wave:
 - `v1.4.2` final strategy refinement, promoted underdog continuation, and first statistical routing lane
 - `v1.4.3` realistic execution replay, promoted Q1/Q4 families, daily bankroll-path artifacts, and per-game strategy classification
 - `v1.4.4` expanded family research, promoted favorite-panic and halftime-Q3 methods, and master-router baseline
+- `v1.4.5` restrained LLM router variant benchmark, shared finalist showdown replay, and finalist-focused analysis studio refresh
 
 ## Current CLI Surface
 - `build_analysis_mart`
@@ -164,6 +165,45 @@ Rejected families:
   - it is directionally valid as the first deterministic controller for the end-product design
   - its robustness across repeated seeds is not yet frozen as a canonical artifact
 
+## Current LLM Router Iteration
+### Expanded Restrained Variant Benchmark
+- evaluation model: `gpt-5.4-mini`
+- benchmark shape: `10` random-holdout iterations of `30` games plus a fixed `100`-game showdown replay
+- total cost recorded in the successful artifact bundle: `0.034026`
+- note: effective live spend was modestly higher because a failed pre-aggregation run warmed the local cache before the final successful rerun
+
+Current repeated-iteration leaders:
+- `master_strategy_router_v1`
+  - mean ending bankroll: `558.15`
+  - mean drawdown: `35.21%`
+- `llm_hybrid_compact_guarded_v1`
+  - mean ending bankroll: `379.51`
+  - mean drawdown: `25.90%`
+  - interpretation: best LLM variant so far; compact payload plus deterministic confidence gate
+- `llm_hybrid_compact_v1`
+  - mean ending bankroll: `330.12`
+  - mean drawdown: `21.91%`
+- `llm_hybrid_restrained_v1`
+  - mean ending bankroll: `268.89`
+  - mean drawdown: `17.68%`
+- `winner_definition`
+  - mean ending bankroll: `274.73`
+  - mean drawdown: `24.02%`
+
+Finalist showdown replay on the shared `100`-game sample:
+- `master_strategy_router_v1`: ending bankroll `1,584,212.75`, drawdown `53.97%`
+- `llm_hybrid_compact_guarded_v1`: ending bankroll `628,041.16`, drawdown `21.69%`
+- `llm_hybrid_compact_v1`: ending bankroll `568,726.74`, drawdown `21.69%`
+- `llm_hybrid_restrained_v1`: ending bankroll `378,704.45`, drawdown `18.74%`
+- `winner_definition`: ending bankroll `388,365.85`, drawdown `23.28%`
+- `llm_hybrid_compact_no_rationale_v1`: ending bankroll `423,599.61`, drawdown `53.97%`
+
+Current interpretation:
+- deterministic routing is still the top bankroll engine
+- the compact guarded LLM router is now the best LLM variant to keep tuning
+- the value of the LLM is no longer only drawdown suppression; the best restrained compact variants are now materially competitive on return
+- medium-reasoning compact routing underperformed the lighter compact variants and is not the next prompt family to prioritize
+
 ### New Artifact Surface
 - `benchmark_portfolio_daily_paths`
   - day-by-day bankroll path for each strategy and sleeve across the 100-game replay
@@ -173,12 +213,18 @@ Rejected families:
   - realized best-strategy-by-game reference table for later routing and context-model work
 - `benchmark_master_router_decisions`
   - per-game core-family decision log with routed confidence components and triggered sleeve inventory
+- `benchmark_llm_experiment_lane_summary`
+  - repeated-iteration ranking table for restrained LLM router variants
+- `benchmark_llm_experiment_showdown_summary`
+  - shared finalist showdown results across the fixed `100`-game comparison sample
+- `benchmark_llm_experiment_showdown_daily_paths`
+  - line-chart source for the six-finalist dashboard comparison
 
 ## Validation Snapshot
 Validated on `2026-04-21`:
 - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
-  - `8 passed`
-- `python -m app.data.pipelines.daily.nba.analysis_module run_analysis_backtests --season 2025-26 --season-phase regular_season --portfolio-initial-bankroll 10 --portfolio-position-size-fraction 1.0 --portfolio-min-order-dollars 1 --portfolio-min-shares 5 --portfolio-max-concurrent-positions 3 --portfolio-concurrency-mode shared_cash_equal_split --robustness-seeds 1107,2113,3251,4421,5573,6659,7873,9011,10243,11519`
+  - `13 passed`
+- `python -m app.data.pipelines.daily.nba.analysis_module run_analysis_backtests --season 2025-26 --season-phase regular_season --strategy-family all --slippage-cents 0 --portfolio-initial-bankroll 10 --portfolio-position-size-fraction 1.0 --portfolio-game-limit 100 --portfolio-min-order-dollars 1 --portfolio-min-shares 5 --portfolio-max-concurrent-positions 3 --portfolio-concurrency-mode shared_cash_equal_split --llm-enable --llm-model gpt-5.4-mini --llm-iteration-games 30 --llm-iteration-count 10 --llm-max-budget-usd 8`
   - completed successfully
 - `python -m app.data.pipelines.daily.nba.analysis_module build_analysis_report --season 2025-26 --season-phase regular_season`
   - completed successfully
@@ -186,15 +232,17 @@ Validated on `2026-04-21`:
 ## Current Frontend Surface
 - permanent studio routes remain read-only
 - `frontend/analysis_studio` now exposes:
-  - individual-strategy ranking with robustness fields
-  - portfolio-lane ranking
-  - master-router composition and sample comparison
-  - opening-band routing reference versus master-router selection counts
-- current focus is still read-only visualization against frozen artifact contracts, not new frontend math
+  - six-finalist dark dashboard
+  - shared finalist evolution line chart
+  - compact finalist scoreboard
+  - master-router and best-LLM comparison cards
+  - bounded family-detail pane for concrete strategy families
+- current focus is still read-only visualization against frozen artifact contracts, but the surface is now tuned for router and LLM comparison instead of broad admin-style inspection
 
 ## Current Gaps
-- master-router repeated-seed robustness is not yet a frozen artifact
-- the confidence weighting still over-selects `winner_definition` relative to the strong standalone `favorite_panic_fade_v1` results
+- pregame `A` inputs remain out-of-sample untestable until a prior-season training window exists
+- the current LLM cost metrics are directionally valid but partly cache-warmed; one clean-cache benchmark pass is still useful before production budgeting
+- the compact guarded LLM router still needs explicit low-confidence routing rules before it becomes the only recommended override layer
 - the new concurrent-position engine is in place, but the current regular-season 100-game replay still rarely binds above two open positions
 - `comeback_reversion_v2` remains experimental and should not be promoted into the routed core yet
 - `model_residual_dislocation_v1` still needs a split-safe training interface

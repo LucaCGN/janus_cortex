@@ -1,1339 +1,955 @@
-const form = document.getElementById("snapshot-form");
-const runForm = document.getElementById("run-form");
-const explorerForm = document.getElementById("explorer-form");
-const comparisonForm = document.getElementById("comparison-form");
-const loadButton = document.getElementById("load-button");
-const runButton = document.getElementById("run-button");
-const explorerButton = document.getElementById("explorer-button");
-const comparisonButton = document.getElementById("comparison-button");
-const statusLine = document.getElementById("status-line");
-const runStatusLine = document.getElementById("run-status-line");
-const explorerStatusLine = document.getElementById("explorer-status-line");
-const comparisonStatusLine = document.getElementById("comparison-status-line");
-const errorLine = document.getElementById("error-line");
-const metadataGrid = document.getElementById("metadata-grid");
-const universeGrid = document.getElementById("universe-grid");
-const controlGrid = document.getElementById("control-grid");
-const strategyTable = document.getElementById("strategy-table");
-const portfolioTable = document.getElementById("portfolio-table");
-const masterRouterSummary = document.getElementById("master-router-summary");
-const masterRouterSelection = document.getElementById("master-router-selection");
-const routeBandTable = document.getElementById("route-band-table");
-const modelList = document.getElementById("model-list");
-const reportSections = document.getElementById("report-sections");
-const artifactGrid = document.getElementById("artifact-grid");
-const latestValidation = document.getElementById("latest-validation");
-const recentValidations = document.getElementById("recent-validations");
-const runList = document.getElementById("run-list");
-const versionOptions = document.getElementById("analysis-version-options");
-const gameList = document.getElementById("game-list");
-const gameDetail = document.getElementById("game-detail");
-const comparisonFamilySelect = document.getElementById("comparison_family");
-const comparisonIndex = document.getElementById("comparison-index");
-const comparisonDetail = document.getElementById("comparison-detail");
+'use strict';
 
-let selectedGameId = null;
-let selectedStrategyFamily = null;
-let latestGameListPayload = { items: [] };
-let latestStrategyRankings = [];
-let latestIndividualStrategyRankings = [];
-let latestPortfolioRankings = [];
-let latestMasterRouter = {};
-let latestBacktestIndexPayload = { families: [] };
+(function () {
+  const API_ROOT = '/v1/analysis/studio';
+  const FINALIST_LIMIT = 6;
 
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function formatValue(value, digits = 3) {
-  if (value === null || value === undefined || value === "") {
-    return "n/a";
-  }
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return Number.isInteger(value) ? String(value) : value.toFixed(digits);
-  }
-  return String(value);
-}
-
-function formatPercent(value, digits = 1) {
-  if (value === null || value === undefined || value === "") {
-    return "n/a";
-  }
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return "n/a";
-  }
-  return `${(numeric * 100).toFixed(digits)}%`;
-}
-
-function formatCurrency(value, digits = 2) {
-  if (value === null || value === undefined || value === "") {
-    return "n/a";
-  }
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return "n/a";
-  }
-  return `$${numeric.toLocaleString(undefined, {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}`;
-}
-
-function formatCurrencyCompact(value) {
-  if (value === null || value === undefined || value === "") {
-    return "n/a";
-  }
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return "n/a";
-  }
-  if (Math.abs(numeric) >= 1_000_000) {
-    return `$${(numeric / 1_000_000).toFixed(1)}M`;
-  }
-  if (Math.abs(numeric) >= 1_000) {
-    return `$${(numeric / 1_000).toFixed(1)}K`;
-  }
-  return `$${numeric.toFixed(0)}`;
-}
-
-function setLoadingState(isLoading, message) {
-  loadButton.disabled = isLoading;
-  loadButton.textContent = isLoading ? "Loading..." : "Load snapshot";
-  statusLine.textContent = message;
-}
-
-function setRunState(isLoading, message) {
-  runButton.disabled = isLoading;
-  runButton.textContent = isLoading ? "Starting..." : "Start run";
-  runStatusLine.textContent = message;
-}
-
-function setExplorerState(isLoading, message) {
-  explorerButton.disabled = isLoading;
-  explorerButton.textContent = isLoading ? "Loading..." : "Load games";
-  explorerStatusLine.textContent = message;
-}
-
-function setComparisonState(isLoading, message) {
-  comparisonButton.disabled = isLoading;
-  comparisonButton.textContent = isLoading ? "Loading..." : "Load family detail";
-  comparisonFamilySelect.disabled = isLoading || !(latestBacktestIndexPayload.families || []).length;
-  comparisonStatusLine.textContent = message;
-}
-
-function clearError() {
-  errorLine.hidden = true;
-  errorLine.textContent = "";
-}
-
-function showError(message) {
-  errorLine.hidden = false;
-  errorLine.textContent = message;
-}
-
-function metricCard(label, value, caption = "") {
-  return `
-    <article class="metric-card">
-      <span class="label">${escapeHtml(label)}</span>
-      <span class="value">${escapeHtml(value)}</span>
-      ${caption ? `<span class="caption">${escapeHtml(caption)}</span>` : ""}
-    </article>
-  `;
-}
-
-function tag(text, isSignal = false) {
-  const className = isSignal ? "tag signal" : "tag";
-  return `<span class="${className}">${escapeHtml(text)}</span>`;
-}
-
-function currentLoaderContext() {
-  return {
-    season: document.getElementById("season").value.trim(),
-    season_phase: document.getElementById("season_phase").value.trim(),
-    analysis_version: document.getElementById("analysis_version").value.trim(),
-    backtest_experiment_id: document.getElementById("backtest_experiment_id").value.trim(),
-    output_root: document.getElementById("output_root").value.trim(),
+  const els = {
+    form: document.getElementById('snapshot-form'),
+    season: document.getElementById('season'),
+    seasonPhase: document.getElementById('season_phase'),
+    analysisVersion: document.getElementById('analysis_version'),
+    outputRoot: document.getElementById('output_root'),
+    loadButton: document.getElementById('load-button'),
+    statusLine: document.getElementById('status-line'),
+    errorLine: document.getElementById('error-line'),
+    meta: document.getElementById('snapshot-meta'),
+    chart: document.getElementById('strategy-line-chart'),
+    legend: document.getElementById('strategy-line-legend'),
+    rankingTable: document.getElementById('finalist-ranking-table'),
+    masterSummary: document.getElementById('master-router-summary'),
+    routeBandTable: document.getElementById('route-band-table'),
+    llmVariantTable: document.getElementById('llm-variant-table'),
+    comparisonForm: document.getElementById('comparison-form'),
+    comparisonFamily: document.getElementById('comparison_family'),
+    comparisonTradeLimit: document.getElementById('comparison_trade_limit'),
+    comparisonContextLimit: document.getElementById('comparison_context_limit'),
+    comparisonTraceLimit: document.getElementById('comparison_trace_limit'),
+    comparisonButton: document.getElementById('comparison-button'),
+    comparisonStatusLine: document.getElementById('comparison-status-line'),
+    comparisonIndex: document.getElementById('comparison-index'),
+    comparisonDetail: document.getElementById('comparison-detail'),
   };
-}
 
-function currentExplorerFilters() {
-  return {
-    team_slug: document.getElementById("explorer_team_slug").value.trim(),
-    coverage_status: document.getElementById("explorer_coverage_status").value.trim(),
-    game_date: document.getElementById("explorer_game_date").value.trim(),
+  const state = {
+    snapshot: null,
+    finalists: [],
+    selectedFamily: '',
   };
-}
 
-function normalizeLimit(value, fallback) {
-  const parsed = Number.parseInt(String(value ?? ""), 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
+  function toNumber(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
 
-function currentComparisonOptions() {
-  return {
-    strategy_family: comparisonFamilySelect.value.trim(),
-    trade_limit: normalizeLimit(document.getElementById("comparison_trade_limit").value, 5),
-    context_limit: normalizeLimit(document.getElementById("comparison_context_limit").value, 10),
-    trace_limit: normalizeLimit(document.getElementById("comparison_trace_limit").value, 3),
-  };
-}
+  function formatNumber(value, digits = 2) {
+    const parsed = toNumber(value);
+    return parsed === null ? '—' : parsed.toFixed(digits);
+  }
 
-function buildQueryParams(context) {
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(context)) {
-    if (value) {
-      params.set(key, value);
+  function formatInteger(value) {
+    const parsed = toNumber(value);
+    return parsed === null ? '—' : Math.round(parsed).toLocaleString();
+  }
+
+  function formatPercent(value, digits = 1) {
+    const parsed = toNumber(value);
+    return parsed === null ? '—' : `${(parsed * 100).toFixed(digits)}%`;
+  }
+
+  function formatMetric(value, kind) {
+    if (kind === 'percent') {
+      return formatPercent(value);
+    }
+    if (kind === 'money') {
+      return formatNumber(value, 2);
+    }
+    if (kind === 'integer') {
+      return formatInteger(value);
+    }
+    return value === null || value === undefined || value === '' ? '—' : String(value);
+  }
+
+  function cleanString(value) {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    return String(value).trim();
+  }
+
+  function isTruthy(value) {
+    if (typeof value === 'boolean') return value;
+    const text = cleanString(value).toLowerCase();
+    return text === '1' || text === 'true' || text === 'yes' || text === 'y';
+  }
+
+  function setStatus(message, isError = false) {
+    if (els.statusLine) {
+      els.statusLine.textContent = message;
+    }
+    if (els.errorLine) {
+      els.errorLine.hidden = !isError;
+      els.errorLine.textContent = isError ? message : '';
     }
   }
-  return params;
-}
 
-function renderMetadata(snapshot) {
-  metadataGrid.innerHTML = [
-    metricCard("Season", snapshot.season),
-    metricCard("Phase", snapshot.season_phase),
-    metricCard("Version", snapshot.analysis_version),
-    metricCard("Output Dir", "Resolved", snapshot.output_dir),
-  ].join("");
-}
-
-function renderUniverse(snapshot) {
-  const universe = snapshot.report?.universe || {};
-  const counts = universe.coverage_status_counts || {};
-  universeGrid.innerHTML = [
-    metricCard("Finished Games", universe.games_total ?? "n/a"),
-    metricCard("Research Ready", universe.research_ready_games ?? "n/a"),
-    metricCard("Descriptive Only", universe.descriptive_only_games ?? "n/a"),
-    metricCard("Excluded", universe.excluded_games ?? "n/a"),
-    ...Object.entries(counts).map(([label, value]) => metricCard(label, value)),
-  ].join("");
-}
-
-function syncComparisonFamilySelect(families) {
-  if (!families.length) {
-    comparisonFamilySelect.innerHTML = '<option value="">load a snapshot first</option>';
-    comparisonFamilySelect.disabled = true;
-    return;
-  }
-
-  const options = families
-    .map(
-      (family) => `
-        <option value="${escapeHtml(family.strategy_family)}">
-          ${escapeHtml(family.strategy_family)}
-        </option>
-      `,
-    )
-    .join("");
-  comparisonFamilySelect.innerHTML = options;
-  comparisonFamilySelect.disabled = false;
-
-  const preferredFamily = families.some((family) => family.strategy_family === selectedStrategyFamily)
-    ? selectedStrategyFamily
-    : families[0].strategy_family;
-  comparisonFamilySelect.value = preferredFamily;
-  selectedStrategyFamily = preferredFamily;
-}
-
-function bindStrategyFamilyButtons(container) {
-  Array.from(container.querySelectorAll("[data-strategy-family]")).forEach((button) => {
-    button.addEventListener("click", () => {
-      loadBacktestDetail(button.getAttribute("data-strategy-family")).catch(() => {});
+  function buildQuery(params) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && String(value).trim() !== '') {
+        query.set(key, String(value));
+      }
     });
-  });
-}
-
-function renderStrategies(rows = latestIndividualStrategyRankings) {
-  if (!rows.length) {
-    strategyTable.className = "table-wrap empty-state";
-    strategyTable.textContent = "No ranked strategies are available in this snapshot.";
-    return;
+    const queryString = query.toString();
+    return queryString ? `?${queryString}` : '';
   }
 
-  strategyTable.className = "table-wrap";
-  strategyTable.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Rank</th>
-          <th>Family</th>
-          <th>Ending Bankroll</th>
-          <th>10-seed Mean</th>
-          <th>Positive Seeds</th>
-          <th>Avg Trade Return</th>
-          <th>Trades</th>
-          <th>Drawdown</th>
-          <th>Label</th>
-          <th>Inspect</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows
-          .slice(0, 8)
-          .map((row) => {
-            const isSelected = row.strategy_family === selectedStrategyFamily;
-            return `
-              <tr class="${isSelected ? "selected-row" : ""}">
-                <td>${escapeHtml(row.rank)}</td>
-                <td><strong>${escapeHtml(row.strategy_family)}</strong></td>
-                <td>${escapeHtml(formatCurrencyCompact(row.ending_bankroll))}</td>
-                <td>${escapeHtml(formatCurrencyCompact(row.mean_ending_bankroll))}</td>
-                <td>${escapeHtml(formatPercent(row.positive_seed_rate, 0))}</td>
-                <td>${escapeHtml(formatValue(row.avg_executed_trade_return_with_slippage))}</td>
-                <td>${escapeHtml(row.executed_trade_count ?? row.trade_count ?? "n/a")}</td>
-                <td>${escapeHtml(formatPercent(row.max_drawdown_pct))}</td>
-                <td>${escapeHtml(row.candidate_label ?? "n/a")}</td>
-                <td>
-                  <button
-                    type="button"
-                    class="ghost-button"
-                    data-strategy-family="${escapeHtml(row.strategy_family)}"
-                  >
-                    Inspect
-                  </button>
-                </td>
-              </tr>
-            `;
-          })
-          .join("")}
-      </tbody>
-    </table>
-  `;
-
-  bindStrategyFamilyButtons(strategyTable);
-}
-
-function renderPortfolioLanes(rows = latestPortfolioRankings) {
-  if (!rows.length) {
-    portfolioTable.className = "table-wrap empty-state";
-    portfolioTable.textContent = "No portfolio lanes are available in this snapshot.";
-    return;
-  }
-
-  portfolioTable.className = "table-wrap";
-  portfolioTable.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Rank</th>
-          <th>Lane</th>
-          <th>Scope</th>
-          <th>Ending Bankroll</th>
-          <th>Avg Trade Return</th>
-          <th>Trades</th>
-          <th>Drawdown</th>
-          <th>Robustness</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows
-          .map(
-            (row) => `
-              <tr class="${row.strategy_family === "master_strategy_router_v1" ? "selected-row" : ""}">
-                <td>${escapeHtml(row.rank)}</td>
-                <td><strong>${escapeHtml(row.strategy_family)}</strong></td>
-                <td>${escapeHtml(row.portfolio_scope || "n/a")}</td>
-                <td>${escapeHtml(formatCurrencyCompact(row.ending_bankroll))}</td>
-                <td>${escapeHtml(formatValue(row.avg_executed_trade_return_with_slippage))}</td>
-                <td>${escapeHtml(row.executed_trade_count ?? "n/a")}</td>
-                <td>${escapeHtml(formatPercent(row.max_drawdown_pct))}</td>
-                <td>${escapeHtml(row.robustness_label || "n/a")}</td>
-              </tr>
-            `,
-          )
-          .join("")}
-      </tbody>
-    </table>
-  `;
-}
-
-function renderMasterRouter(payload = latestMasterRouter) {
-  if (!payload || !payload.family_name) {
-    masterRouterSummary.className = "stack-list empty-state";
-    masterRouterSummary.textContent = "No master-router benchmark is available in this snapshot.";
-    masterRouterSelection.className = "stack-list empty-state";
-    masterRouterSelection.textContent = "No router selection counts are available in this snapshot.";
-    routeBandTable.className = "table-wrap empty-state";
-    routeBandTable.textContent = "No opening-band routing diagnostics are available in this snapshot.";
-    return;
-  }
-
-  const comparisonRows = payload.comparison_rows || [];
-  const groupedBySample = {};
-  for (const row of comparisonRows) {
-    const sample = row.sample_name || "unknown";
-    if (!groupedBySample[sample]) {
-      groupedBySample[sample] = [];
+  async function fetchJson(path) {
+    const response = await fetch(path, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const payload = await response.json();
+        detail = payload?.detail || payload?.message || detail;
+      } catch (error) {
+        // ignore json parse fallback
+      }
+      throw new Error(detail || `Request failed with status ${response.status}`);
     }
-    groupedBySample[sample].push(row);
+    return response.json();
   }
 
-  masterRouterSummary.className = "stack-list";
-  masterRouterSummary.innerHTML = `
-    <article class="stack-item">
-      <strong>${escapeHtml(payload.family_name)}</strong>
-      <span class="meta">selection sample: ${escapeHtml(payload.selection_sample_name || "n/a")}</span>
-      <div class="tag-row">
-        ${(payload.core_families || []).map((family) => tag(`core: ${family}`)).join("")}
-      </div>
-      <div class="tag-row">
-        ${(payload.extra_families || []).map((family) => tag(`extra: ${family}`)).join("")}
-      </div>
-    </article>
-    ${Object.entries(groupedBySample)
-      .map(([sampleName, rowsForSample]) => {
-        const ordered = rowsForSample
-          .slice()
-          .sort((left, right) => Number(right.ending_bankroll || 0) - Number(left.ending_bankroll || 0));
-        return `
-          <article class="stack-item">
-            <strong>${escapeHtml(sampleName)}</strong>
-            <div class="table-wrap">
-              <table class="dense-table">
-                <thead>
-                  <tr>
-                    <th>Family</th>
-                    <th>End</th>
-                    <th>Trades</th>
-                    <th>Drawdown</th>
-                    <th>Avg Return</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${ordered
-                    .map(
-                      (row) => `
-                        <tr class="${row.strategy_family === payload.family_name ? "selected-row" : ""}">
-                          <td>${escapeHtml(row.strategy_family)}</td>
-                          <td>${escapeHtml(formatCurrencyCompact(row.ending_bankroll))}</td>
-                          <td>${escapeHtml(row.executed_trade_count ?? "n/a")}</td>
-                          <td>${escapeHtml(formatPercent(row.max_drawdown_pct))}</td>
-                          <td>${escapeHtml(formatValue(row.avg_executed_trade_return_with_slippage))}</td>
-                        </tr>
-                      `,
-                    )
-                    .join("")}
-                </tbody>
-              </table>
-            </div>
-          </article>
-        `;
-      })
-      .join("")}
-  `;
+  function asArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
 
-  const selectionCounts = payload.selection_counts || [];
-  const selectionGroups = {};
-  for (const row of selectionCounts) {
-    const sample = row.sample_name || "unknown";
-    if (!selectionGroups[sample]) {
-      selectionGroups[sample] = [];
+  function getBenchmark(snapshot) {
+    return snapshot?.benchmark || {};
+  }
+
+  function getStudio(snapshot) {
+    return getBenchmark(snapshot)?.studio_dashboard || {};
+  }
+
+  function getFinalists(snapshot) {
+    const studio = getStudio(snapshot);
+    const finalists = asArray(studio.finalists);
+    if (finalists.length > 0) {
+      return finalists.slice(0, FINALIST_LIMIT);
     }
-    selectionGroups[sample].push(row);
-  }
 
-  masterRouterSelection.className = "stack-list";
-  masterRouterSelection.innerHTML = Object.entries(selectionGroups)
-    .map(([sampleName, rowsForSample]) => `
-      <article class="stack-item">
-        <strong>${escapeHtml(sampleName)}</strong>
-        <div class="tag-row">
-          ${rowsForSample
-            .map(
-              (row) => tag(
-                `${row.selected_core_family}: ${row.selection_count} @ ${formatPercent(row.mean_confidence)}`,
-                row.selected_core_family !== "winner_definition",
-              ),
-            )
-            .join("")}
-        </div>
-      </article>
-    `)
-    .join("");
-
-  const routeRows = payload.route_summary || [];
-  const bandCounts = payload.band_counts || [];
-  const topBandLookup = {};
-  for (const row of bandCounts) {
-    const band = row.opening_band || "n/a";
-    if (!topBandLookup[band]) {
-      topBandLookup[band] = [];
+    const benchmark = getBenchmark(snapshot);
+    const sources = [
+      asArray(benchmark.individual_strategy_rankings),
+      asArray(benchmark.portfolio_rankings),
+      asArray(benchmark.strategy_rankings),
+    ];
+    const merged = [];
+    const seen = new Set();
+    for (const source of sources) {
+      for (const row of source) {
+        const key = cleanString(row.finalist_id || row.strategy_family || row.lane_name || row.portfolio_scope);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        merged.push(row);
+      }
     }
-    topBandLookup[band].push(row);
-  }
-  for (const band of Object.keys(topBandLookup)) {
-    topBandLookup[band] = topBandLookup[band]
-      .slice()
-      .sort((left, right) => Number(right.selection_count || 0) - Number(left.selection_count || 0));
+    return merged.slice(0, FINALIST_LIMIT);
   }
 
-  routeBandTable.className = "table-wrap";
-  routeBandTable.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Opening Band</th>
-          <th>Routing Baseline</th>
-          <th>Baseline Avg Return</th>
-          <th>Baseline Trades</th>
-          <th>Master Router Top Core</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${routeRows
-          .map((row) => {
-            const topBand = (topBandLookup[row.opening_band] || [])[0] || {};
-            const topLabel = topBand.selected_core_family
-              ? `${topBand.selected_core_family} (${topBand.selection_count})`
-              : "n/a";
-            return `
-              <tr>
-                <td>${escapeHtml(row.opening_band)}</td>
-                <td>${escapeHtml(row.selected_family || "n/a")}</td>
-                <td>${escapeHtml(formatValue(row.selected_avg_gross_return_with_slippage))}</td>
-                <td>${escapeHtml(row.selected_trade_count ?? "n/a")}</td>
-                <td>${escapeHtml(topLabel)}</td>
-              </tr>
-            `;
-          })
-          .join("")}
-      </tbody>
-    </table>
-  `;
-}
-
-function renderModels(snapshot) {
-  const tracks = snapshot.models?.tracks || [];
-  if (!tracks.length) {
-    modelList.className = "stack-list empty-state";
-    modelList.textContent = "No model tracks are available in this snapshot.";
-    return;
-  }
-
-  modelList.className = "stack-list";
-  modelList.innerHTML = tracks
-    .map((track) => {
-      const tags = [
-        tag(`family: ${track.model_family || "n/a"}`),
-        tag(`status: ${track.status || "n/a"}`),
-        tag(`train: ${track.train_rows ?? "n/a"}`),
-        tag(`validation: ${track.validation_rows ?? "n/a"}`),
-      ].join("");
-      return `
-        <article class="stack-item">
-          <strong>${escapeHtml(track.track_name)}</strong>
-          <span class="meta">${escapeHtml(JSON.stringify(track.metrics || track.naive_comparison || {}))}</span>
-          <div class="tag-row">${tags}</div>
-        </article>
-      `;
-    })
-    .join("");
-}
-
-function renderReportSections(snapshot) {
-  const sections = snapshot.report?.sections || [];
-  if (!sections.length) {
-    reportSections.className = "stack-list empty-state";
-    reportSections.textContent = "No report sections are available in this snapshot.";
-    return;
-  }
-
-  reportSections.className = "stack-list";
-  reportSections.innerHTML = sections
-    .map((section) => `
-      <article class="stack-item">
-        <strong>${escapeHtml(section.title)}</strong>
-        <span class="meta">${escapeHtml(section.key)} / rows ${escapeHtml(section.row_count)}</span>
-        <div class="tag-row">
-          ${(section.columns || []).slice(0, 6).map((column) => tag(column)).join("")}
-        </div>
-      </article>
-    `)
-    .join("");
-}
-
-function renderArtifacts(snapshot) {
-  const artifacts = snapshot.artifacts || {};
-  const cards = Object.entries(artifacts).map(([group, payload]) => `
-    <article class="artifact-card">
-      <span class="label">${escapeHtml(group)}</span>
-      <code>${escapeHtml(JSON.stringify(payload, null, 2))}</code>
-    </article>
-  `);
-  artifactGrid.className = cards.length ? "artifact-grid" : "artifact-grid empty-state";
-  artifactGrid.innerHTML = cards.length ? cards.join("") : "No normalized artifact paths are available.";
-}
-
-function orderedColumns(rows, preferredColumns = []) {
-  if (!rows.length) {
-    return [];
-  }
-  const availableColumns = Object.keys(rows[0] || {});
-  const preferred = preferredColumns.filter((column) => availableColumns.includes(column));
-  const extras = availableColumns
-    .filter((column) => !preferred.includes(column))
-    .slice(0, Math.max(0, 7 - preferred.length));
-  return preferred.concat(extras);
-}
-
-function renderRecordTable(title, rows, preferredColumns, emptyMessage) {
-  if (!rows.length) {
-    return `
-      <article class="stack-item">
-        <strong>${escapeHtml(title)}</strong>
-        <span class="meta">${escapeHtml(emptyMessage)}</span>
-      </article>
-    `;
-  }
-
-  const columns = orderedColumns(rows, preferredColumns);
-  return `
-    <article class="stack-item">
-      <strong>${escapeHtml(title)}</strong>
-      <div class="table-wrap">
-        <table class="dense-table">
-          <thead>
-            <tr>
-              ${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}
-            </tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) => `
-                  <tr>
-                    ${columns.map((column) => `<td>${escapeHtml(formatValue(row[column]))}</td>`).join("")}
-                  </tr>
-                `,
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-    </article>
-  `;
-}
-
-function renderTradeTraces(traces) {
-  if (!traces.length) {
-    return `
-      <article class="stack-item">
-        <strong>Trade traces</strong>
-        <span class="meta">No bounded trade traces are available for this family.</span>
-      </article>
-    `;
-  }
-
-  return `
-    <article class="stack-item">
-      <strong>Trade traces</strong>
-      <div class="stack-list">
-        ${traces
-          .map((trace) => {
-            const states = Array.isArray(trace.states) ? trace.states : [];
-            return `
-              <article class="stack-item detail-card">
-                <strong>${escapeHtml(trace.game_id || "trace")}</strong>
-                <span class="meta">${escapeHtml(trace.team_slug || "n/a")} / ${escapeHtml(trace.entry_context_bucket || "n/a")}</span>
-                <div class="tag-row">
-                  ${tag(`entry_price: ${formatValue(trace.entry_price)}`)}
-                  ${tag(`exit_price: ${formatValue(trace.exit_price)}`)}
-                  ${tag(`return: ${formatValue(trace.gross_return_with_slippage)}`)}
-                  ${tag(`states: ${formatValue(states.length, 0)}`)}
-                </div>
-                ${
-                  states.length
-                    ? `
-                      <div class="table-wrap">
-                        <table class="dense-table">
-                          <thead>
-                            <tr>
-                              <th>Period</th>
-                              <th>Clock</th>
-                              <th>Price</th>
-                              <th>Diff</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            ${states
-                              .slice(0, 6)
-                              .map(
-                                (state) => `
-                                  <tr>
-                                    <td>${escapeHtml(formatValue(state.period, 0))}</td>
-                                    <td>${escapeHtml(state.clock || "n/a")}</td>
-                                    <td>${escapeHtml(formatValue(state.team_price))}</td>
-                                    <td>${escapeHtml(formatValue(state.score_diff, 0))}</td>
-                                  </tr>
-                                `,
-                              )
-                              .join("")}
-                          </tbody>
-                        </table>
-                      </div>
-                    `
-                    : ""
-                }
-              </article>
-            `;
-          })
-          .join("")}
-      </div>
-    </article>
-  `;
-}
-
-function renderBacktestIndex(payload) {
-  const families = payload.families || [];
-  latestBacktestIndexPayload = payload;
-  syncComparisonFamilySelect(families);
-
-  if (!families.length) {
-    comparisonIndex.className = "stack-list empty-state";
-    comparisonIndex.textContent = "No strategy families are available in the current backtest snapshot.";
-    return;
-  }
-
-  comparisonIndex.className = "stack-list";
-  comparisonIndex.innerHTML = families
-    .map((family) => {
-      const summary = family.summary || {};
-      const isSelected = family.strategy_family === selectedStrategyFamily;
-      return `
-        <article class="stack-item game-item${isSelected ? " selected" : ""}">
-          <strong>${escapeHtml(family.strategy_family)}</strong>
-          <span class="meta">${escapeHtml(summary.label_reason || "No candidate rationale available.")}</span>
-          <div class="tag-row">
-            ${tag(`end: ${formatCurrencyCompact(summary.ending_bankroll)}`)}
-            ${tag(`mean: ${formatCurrencyCompact(summary.mean_ending_bankroll)}`)}
-            ${tag(`positive: ${formatPercent(summary.positive_seed_rate, 0)}`)}
-            ${tag(`return: ${formatValue(summary.avg_gross_return_with_slippage)}`)}
-            ${tag(`trades: ${formatValue(summary.trade_count, 0)}`)}
-            ${tag(`label: ${summary.candidate_label || "n/a"}`, summary.candidate_label !== "keep")}
-          </div>
-          <div class="item-actions">
-            <button
-              type="button"
-              class="ghost-button"
-              data-strategy-family="${escapeHtml(family.strategy_family)}"
-            >
-              Inspect
-            </button>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-
-  bindStrategyFamilyButtons(comparisonIndex);
-}
-
-function renderBacktestDetail(payload) {
-  if (!payload || !payload.strategy_family) {
-    comparisonDetail.className = "stack-list empty-state";
-    comparisonDetail.textContent = "Choose a strategy family to inspect its bounded detail preview.";
-    return;
-  }
-
-  const summary = payload.summary || {};
-  const candidateFreeze = payload.candidate_freeze || {};
-  const individualRanking = payload.individual_ranking || {};
-  comparisonDetail.className = "stack-list";
-  comparisonDetail.innerHTML = `
-    <div class="metric-grid comparison-metrics">
-      ${metricCard("Family", payload.strategy_family)}
-      ${metricCard("Trades", formatValue(summary.trade_count, 0))}
-      ${metricCard("Return With Slippage", formatValue(summary.avg_gross_return_with_slippage))}
-      ${metricCard("10-seed Mean", formatCurrencyCompact(individualRanking.mean_ending_bankroll))}
-    </div>
-    <article class="stack-item">
-      <strong>${escapeHtml(payload.strategy_family)} summary</strong>
-      <span class="meta">${escapeHtml(candidateFreeze.label_reason || summary.label_reason || "No candidate-freeze rationale is available.")}</span>
-      <div class="tag-row">
-        ${tag(`candidate: ${candidateFreeze.candidate_label || summary.candidate_label || "n/a"}`, (candidateFreeze.candidate_label || summary.candidate_label) !== "keep")}
-        ${tag(`entry_rule: ${summary.entry_rule || "n/a"}`)}
-        ${tag(`end: ${formatCurrencyCompact(individualRanking.ending_bankroll)}`)}
-        ${tag(`positive_seeds: ${formatPercent(individualRanking.positive_seed_rate, 0)}`)}
-        ${tag(`drawdown: ${formatPercent(individualRanking.max_drawdown_pct)}`)}
-        ${tag(`hold_time: ${formatValue(summary.avg_hold_time_seconds, 0)}`)}
-        ${tag(`mfe: ${formatValue(summary.avg_mfe_after_entry)}`)}
-        ${tag(`mae: ${formatValue(summary.avg_mae_after_entry)}`)}
-      </div>
-    </article>
-    ${renderRecordTable(
-      "Best trades",
-      payload.best_trades || [],
-      ["game_id", "team_slug", "entry_price", "exit_price", "gross_return_with_slippage", "hold_time_seconds"],
-      "No bounded best-trade preview is available.",
-    )}
-    ${renderRecordTable(
-      "Worst trades",
-      payload.worst_trades || [],
-      ["game_id", "team_slug", "entry_price", "exit_price", "gross_return_with_slippage", "hold_time_seconds"],
-      "No bounded worst-trade preview is available.",
-    )}
-    ${renderRecordTable(
-      "Context summary",
-      payload.context_summary || [],
-      ["context_bucket", "trade_count", "win_rate", "avg_gross_return_with_slippage"],
-      "No bounded context summary is available.",
-    )}
-    ${renderTradeTraces(payload.trade_traces || [])}
-  `;
-}
-
-function renderControlPlane(payload) {
-  controlGrid.innerHTML = [
-    metricCard("Local Root", "Resolved", payload.local_root),
-    metricCard("Default Output Root", "Resolved", payload.default_output_root),
-    metricCard(
-      "Known Versions",
-      payload.available_analysis_versions.length,
-      payload.available_analysis_versions.join(", ") || "none",
-    ),
-    metricCard(
-      "Tracked Studio Runs",
-      payload.recent_runs.length,
-      payload.latest_analysis_output_dir || "no output directory discovered yet",
-    ),
-  ].join("");
-
-  const versions = payload.available_analysis_versions || [];
-  versionOptions.innerHTML = versions.map((value) => `<option value="${escapeHtml(value)}"></option>`).join("");
-  const analysisVersionInput = document.getElementById("analysis_version");
-  if (!analysisVersionInput.value.trim() && versions.length) {
-    analysisVersionInput.value = versions[versions.length - 1];
-  }
-
-  const latest = payload.latest_validation;
-  if (!latest) {
-    latestValidation.className = "stack-list empty-state";
-    latestValidation.textContent = "No validation summary found yet.";
-  } else {
-    latestValidation.className = "stack-list";
-    latestValidation.innerHTML = `
-      <article class="stack-item">
-        <strong>${escapeHtml(latest.run_label)} / ${escapeHtml(latest.target || "unknown target")}</strong>
-        <span class="meta">${escapeHtml(latest.summary_json)}</span>
-        <div class="tag-row">
-          ${tag(`version: ${latest.analysis_version || "n/a"}`)}
-          ${tag(`commands: ${latest.command_count || 0}`)}
-          ${tag(`all_ok: ${latest.all_commands_ok}`, !latest.all_commands_ok)}
-          ${tag(`research_ready: ${latest.universe?.research_ready_games ?? "n/a"}`)}
-        </div>
-      </article>
-    `;
-  }
-
-  const validations = payload.recent_validations || [];
-  if (!validations.length) {
-    recentValidations.className = "stack-list empty-state";
-    recentValidations.textContent = "No validation history found.";
-  } else {
-    recentValidations.className = "stack-list";
-    recentValidations.innerHTML = validations
-      .map(
-        (row) => `
-          <article class="stack-item">
-            <strong>${escapeHtml(row.run_label)}</strong>
-            <span class="meta">${escapeHtml(row.summary_markdown)}</span>
-            <div class="tag-row">
-              ${tag(`target: ${row.target || "n/a"}`)}
-              ${tag(`version: ${row.analysis_version || "n/a"}`)}
-              ${tag(`all_ok: ${row.all_commands_ok}`, !row.all_commands_ok)}
-            </div>
-          </article>
-        `,
-      )
-      .join("");
-  }
-
-  const runs = payload.recent_runs || [];
-  if (!runs.length) {
-    runList.className = "stack-list empty-state";
-    runList.textContent = "No studio runs launched yet.";
-  } else {
-    runList.className = "stack-list";
-    runList.innerHTML = runs
-      .map(
-        (run) => `
-          <article class="stack-item">
-            <strong>${escapeHtml(run.action)}</strong>
-            <span class="meta">${escapeHtml(run.status)} / ${escapeHtml(run.created_at)}</span>
-            <span class="meta">${escapeHtml(run.stdout_path || "")}</span>
-            <div class="tag-row">
-              ${tag(`season: ${run.season}`)}
-              ${tag(`phase: ${run.season_phase}`)}
-              ${tag(`version: ${run.analysis_version}`)}
-              ${tag(`return: ${run.return_code ?? "pending"}`, run.status === "failed")}
-            </div>
-          </article>
-        `,
-      )
-      .join("");
-  }
-}
-
-function renderGameList(payload) {
-  const items = payload.items || [];
-  if (!items.length) {
-    gameList.className = "stack-list empty-state";
-    gameList.textContent = "No finished games matched the current filters.";
-    return;
-  }
-
-  gameList.className = "stack-list";
-  gameList.innerHTML = items
-    .map((item) => {
-      const isSelected = item.game_id === selectedGameId;
-      return `
-        <article class="stack-item game-item${isSelected ? " selected" : ""}">
-          <strong>${escapeHtml(item.matchup || item.game_id)}</strong>
-          <span class="meta">${escapeHtml(item.game_date || "n/a")} / ${escapeHtml(item.game_start_time || "n/a")}</span>
-          <div class="tag-row">
-            ${tag(`coverage: ${(item.coverage_statuses || []).join(", ") || "n/a"}`, !item.research_ready_game_flag)}
-            ${tag(`research_ready: ${item.research_ready_game_flag}`, !item.research_ready_game_flag)}
-            ${tag(`winner: ${item.winner_team_slug || "n/a"}`)}
-          </div>
-          <div class="tag-row">
-            ${tag(`home swing: ${formatValue(item.home?.total_swing)}`)}
-            ${tag(`away swing: ${formatValue(item.away?.total_swing)}`)}
-          </div>
-          <div class="item-actions">
-            <button type="button" class="ghost-button" data-game-id="${escapeHtml(item.game_id)}">Inspect</button>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
-
-  Array.from(gameList.querySelectorAll("[data-game-id]")).forEach((button) => {
-    button.addEventListener("click", () => {
-      loadGameDetail(button.getAttribute("data-game-id")).catch(() => {});
+  function detailCapableFamilies(snapshot) {
+    const rows = asArray(getBenchmark(snapshot)?.strategy_rankings);
+    const names = new Set();
+    rows.forEach((row) => {
+      const family = cleanString(row.strategy_family);
+      if (family) {
+        names.add(family);
+      }
     });
-  });
-}
-
-function renderProfileCard(label, profile) {
-  if (!profile) {
-    return `
-      <article class="stack-item detail-card">
-        <strong>${escapeHtml(label)}</strong>
-        <span class="meta">No profile row is available for this side.</span>
-      </article>
-    `;
-  }
-  return `
-    <article class="stack-item detail-card">
-      <strong>${escapeHtml(label)} / ${escapeHtml(profile.team_slug || "n/a")}</strong>
-      <span class="meta">${escapeHtml(profile.opponent_team_slug || "n/a")} opponent / ${escapeHtml(profile.coverage_status || "n/a")}</span>
-      <div class="tag-row">
-        ${tag(`opening: ${formatValue(profile.opening_price)}`)}
-        ${tag(`closing: ${formatValue(profile.closing_price)}`)}
-        ${tag(`swing: ${formatValue(profile.total_swing)}`)}
-        ${tag(`inversions: ${formatValue(profile.inversion_count, 0)}`)}
-      </div>
-      <div class="tag-row">
-        ${tag(`price_path_ok: ${profile.price_path_reconciled_flag}`)}
-        ${tag(`winner: ${profile.final_winner_flag}`)}
-        ${tag(`stable80: ${formatValue(profile.winner_stable_80_clock_elapsed_seconds, 0)}`)}
-      </div>
-    </article>
-  `;
-}
-
-function renderStatePanelSide(label, payload) {
-  const summary = payload?.summary || {};
-  const rows = payload?.rows || [];
-  const table = rows.length
-    ? `
-      <div class="table-wrap">
-        <table class="dense-table">
-          <thead>
-            <tr>
-              <th>Idx</th>
-              <th>Period</th>
-              <th>Clock</th>
-              <th>Score</th>
-              <th>Diff</th>
-              <th>Context</th>
-              <th>Price</th>
-              <th>MFE</th>
-              <th>MAE</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) => `
-                  <tr>
-                    <td>${escapeHtml(formatValue(row.state_index, 0))}</td>
-                    <td>${escapeHtml(formatValue(row.period, 0))}</td>
-                    <td>${escapeHtml(row.clock || "n/a")}</td>
-                    <td>${escapeHtml(`${formatValue(row.score_for, 0)}-${formatValue(row.score_against, 0)}`)}</td>
-                    <td>${escapeHtml(formatValue(row.score_diff, 0))}</td>
-                    <td>${escapeHtml(row.context_bucket || "n/a")}</td>
-                    <td>${escapeHtml(formatValue(row.team_price))}</td>
-                    <td>${escapeHtml(formatValue(row.mfe_from_state))}</td>
-                    <td>${escapeHtml(formatValue(row.mae_from_state))}</td>
-                  </tr>
-                `,
-              )
-              .join("")}
-          </tbody>
-        </table>
-      </div>
-    `
-    : '<div class="empty-state">No state rows are available for this side.</div>';
-
-  return `
-    <div>
-      <article class="stack-item detail-card">
-        <strong>${escapeHtml(label)} state window</strong>
-        <span class="meta">${escapeHtml(formatValue(summary.state_count, 0))} available states / latest idx ${escapeHtml(formatValue(summary.latest_state_index, 0))}</span>
-        <div class="tag-row">
-          ${tag(`price_min: ${formatValue(summary.price_min)}`)}
-          ${tag(`price_max: ${formatValue(summary.price_max)}`)}
-          ${(summary.top_context_buckets || [])
-            .slice(0, 3)
-            .map((bucket) => tag(`${bucket.context_bucket}: ${formatValue(bucket.state_count, 0)}`))
-            .join("")}
-        </div>
-      </article>
-      ${table}
-    </div>
-  `;
-}
-
-function renderGameDetail(payload) {
-  const game = payload.game || {};
-  gameDetail.className = "stack-list";
-  gameDetail.innerHTML = `
-    <article class="stack-item">
-      <strong>${escapeHtml(game.matchup || game.game_id || "Selected game")}</strong>
-      <span class="meta">${escapeHtml(game.game_date || "n/a")} / ${escapeHtml(payload.analysis_version || "n/a")}</span>
-      <div class="tag-row">
-        ${tag(`coverage: ${(game.coverage_statuses || []).join(", ") || "n/a"}`, !game.research_ready_game_flag)}
-        ${tag(`research_ready: ${game.research_ready_game_flag}`, !game.research_ready_game_flag)}
-        ${tag(`winner: ${game.winner_team_slug || "n/a"}`)}
-      </div>
-    </article>
-    <div class="detail-grid">
-      ${renderProfileCard("Home", payload.profiles?.home)}
-      ${renderProfileCard("Away", payload.profiles?.away)}
-    </div>
-    <div class="dual-panel">
-      ${renderStatePanelSide("Home", payload.state_panel?.home)}
-      ${renderStatePanelSide("Away", payload.state_panel?.away)}
-    </div>
-  `;
-}
-
-async function loadControlPlane() {
-  const context = currentLoaderContext();
-  const params = new URLSearchParams();
-  params.set("season", context.season || "2025-26");
-  params.set("season_phase", context.season_phase || "regular_season");
-  const response = await fetch(`/v1/analysis/studio/control?${params.toString()}`);
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error?.message || "Failed to load the analysis studio control plane.");
-  }
-  renderControlPlane(payload);
-}
-
-async function loadBacktestDetail(strategyFamily, options = {}) {
-  const { silent = false } = options;
-  const loaderContext = currentLoaderContext();
-  const comparisonOptions = currentComparisonOptions();
-  const resolvedFamily = String(strategyFamily || comparisonOptions.strategy_family || "").trim();
-  if (!resolvedFamily) {
-    renderBacktestDetail(null);
-    setComparisonState(false, "Select a strategy family first.");
-    return null;
+    return names;
   }
 
-  const params = buildQueryParams({
-    season: loaderContext.season || "2025-26",
-    season_phase: loaderContext.season_phase || "regular_season",
-    analysis_version: loaderContext.analysis_version,
-    backtest_experiment_id: loaderContext.backtest_experiment_id,
-    output_root: loaderContext.output_root,
-    trade_limit: comparisonOptions.trade_limit,
-    context_limit: comparisonOptions.context_limit,
-    trace_limit: comparisonOptions.trace_limit,
-  });
-
-  if (!silent) {
-    clearError();
-    setComparisonState(true, `Loading ${resolvedFamily} detail...`);
+  function isDetailCapableFamily(snapshot, family) {
+    const target = cleanString(family);
+    return target !== '' && detailCapableFamilies(snapshot).has(target);
   }
-  try {
-    const response = await fetch(
-      `/v1/analysis/studio/backtests/${encodeURIComponent(resolvedFamily)}?${params.toString()}`,
+
+  function getSeriesRows(snapshot) {
+    const studio = getStudio(snapshot);
+    const rows = asArray(studio.finalist_series);
+    return rows.map((entry, index) => {
+      const family = cleanString(entry.strategy_family || entry.lane_name || entry.finalist_id);
+      const points = asArray(entry.rows).map((row, pointIndex) => ({
+        raw: row,
+        x: row.x ?? row.x_index ?? row.state_index ?? pointIndex,
+        y: row.y ?? row.value ?? row.ending_bankroll ?? row.compounded_return ?? row.bankroll ?? row.score,
+        label: row.label ?? row.x_label ?? row.event_at ?? row.game_date ?? `${pointIndex + 1}`,
+      }));
+      return {
+        finalist_id: cleanString(entry.finalist_id || family || index),
+        strategy_family: family,
+        family_type: cleanString(entry.family_type || entry.source_name || ''),
+        source_name: cleanString(entry.source_name || ''),
+        points,
+      };
+    });
+  }
+
+  function finalistLabel(row) {
+    return cleanString(
+      row.lane_name ||
+        row.variant_name ||
+        row.controller_name ||
+        row.strategy_family ||
+        row.family_name ||
+        row.portfolio_scope ||
+        row.finalist_id ||
+        'unknown'
     );
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error?.message || payload.detail || "The backtest family detail request failed.");
-    }
-    selectedStrategyFamily = resolvedFamily;
-    if (comparisonFamilySelect.options.length) {
-      comparisonFamilySelect.value = resolvedFamily;
-    }
-    renderStrategies();
-    renderBacktestIndex(latestBacktestIndexPayload);
-    renderBacktestDetail(payload);
-    if (!silent) {
-      setComparisonState(false, `Loaded ${resolvedFamily} trade, context, and trace previews.`);
-    }
-    return payload;
-  } catch (error) {
-    if (!silent) {
-      showError(error.message || "The backtest family detail request failed.");
-      setComparisonState(false, "Backtest family detail load failed. Check the error banner.");
-    }
-    throw error;
   }
-}
 
-async function loadBacktestIndex(preferredStrategyFamily = selectedStrategyFamily) {
-  const loaderContext = currentLoaderContext();
-  const params = buildQueryParams({
-    season: loaderContext.season || "2025-26",
-    season_phase: loaderContext.season_phase || "regular_season",
-    analysis_version: loaderContext.analysis_version,
-    backtest_experiment_id: loaderContext.backtest_experiment_id,
-    output_root: loaderContext.output_root,
-  });
-
-  clearError();
-  setComparisonState(true, "Loading ranked backtest families...");
-  try {
-    const response = await fetch(`/v1/analysis/studio/backtests?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error?.message || payload.detail || "The backtest family index request failed.");
-    }
-
-    latestBacktestIndexPayload = payload;
-    latestStrategyRankings = payload.benchmark?.strategy_rankings || latestStrategyRankings;
-    latestIndividualStrategyRankings = payload.benchmark?.individual_strategy_rankings || latestIndividualStrategyRankings;
-    latestPortfolioRankings = payload.benchmark?.portfolio_rankings || latestPortfolioRankings;
-    latestMasterRouter = payload.benchmark?.master_router || latestMasterRouter;
-    renderStrategies();
-    renderPortfolioLanes();
-    renderMasterRouter();
-    renderBacktestIndex(payload);
-
-    const families = payload.families || [];
-    if (!families.length) {
-      selectedStrategyFamily = null;
-      renderBacktestDetail(null);
-      setComparisonState(false, "No strategy families were found in this backtest snapshot.");
-      return payload;
-    }
-
-    const nextFamily = families.some((family) => family.strategy_family === preferredStrategyFamily)
-      ? preferredStrategyFamily
-      : families[0].strategy_family;
-    selectedStrategyFamily = nextFamily;
-    await loadBacktestDetail(nextFamily, { silent: true });
-    renderStrategies();
-    renderBacktestIndex(payload);
-    setComparisonState(false, `Loaded ${families.length} ranked strategy families from ${payload.analysis_version}.`);
-    return payload;
-  } catch (error) {
-    showError(error.message || "The backtest family index request failed.");
-    setComparisonState(false, "Backtest family index load failed. Check the error banner.");
-    throw error;
+  function getFinalistSeriesByFamily(seriesRows, strategyFamily) {
+    return seriesRows.find((entry) => {
+      const matchesFamily = cleanString(entry.strategy_family) === cleanString(strategyFamily);
+      const matchesId = cleanString(entry.finalist_id) === cleanString(strategyFamily);
+      return matchesFamily || matchesId;
+    }) || null;
   }
-}
 
-async function loadGameDetail(gameId, options = {}) {
-  const { silent = false } = options;
-  const loaderContext = currentLoaderContext();
-  const params = buildQueryParams({
-    season: loaderContext.season || "2025-26",
-    season_phase: loaderContext.season_phase || "regular_season",
-    analysis_version: loaderContext.analysis_version,
-    output_root: loaderContext.output_root,
-  });
-  if (!silent) {
-    clearError();
-    setExplorerState(true, `Loading ${gameId}...`);
+  function createCard(label, value, caption, tone = '') {
+    const card = document.createElement('article');
+    card.className = `metric-card ${tone}`.trim();
+    const labelNode = document.createElement('span');
+    labelNode.className = 'metric-label';
+    labelNode.textContent = label;
+    const valueNode = document.createElement('strong');
+    valueNode.className = 'metric-value';
+    valueNode.textContent = value;
+    card.append(labelNode, valueNode);
+    if (caption) {
+      const captionNode = document.createElement('span');
+      captionNode.className = 'metric-caption';
+      captionNode.textContent = caption;
+      card.appendChild(captionNode);
+    }
+    return card;
   }
-  try {
-    const response = await fetch(`/v1/analysis/studio/games/${encodeURIComponent(gameId)}?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error?.message || payload.detail || "Failed to load the selected analysis game.");
-    }
-    selectedGameId = gameId;
-    renderGameDetail(payload);
-    if (!silent) {
-      renderGameList(latestGameListPayload);
-      setExplorerState(false, `Loaded ${payload.game?.matchup || gameId}.`);
-    }
-    return payload;
-  } catch (error) {
-    if (!silent) {
-      showError(error.message || "Failed to load the selected analysis game.");
-      setExplorerState(false, "Game detail load failed. Check the error banner.");
-    }
-    throw error;
+
+  function renderEmpty(container, text) {
+    container.className = `${container.className.replace(/\bempty-state\b/g, '').trim()} empty-state`;
+    container.textContent = text;
   }
-}
 
-async function loadGameExplorer(preferredGameId = selectedGameId) {
-  const loaderContext = currentLoaderContext();
-  const filters = currentExplorerFilters();
-  const params = buildQueryParams({
-    season: loaderContext.season || "2025-26",
-    season_phase: loaderContext.season_phase || "regular_season",
-    analysis_version: loaderContext.analysis_version,
-    output_root: loaderContext.output_root,
-    team_slug: filters.team_slug,
-    coverage_status: filters.coverage_status,
-    game_date: filters.game_date,
-  });
+  function renderTable(container, columns, rows, options = {}) {
+    const { dense = true, selectableKey = null, selectedValue = null } = options;
+    container.innerHTML = '';
 
-  clearError();
-  setExplorerState(true, "Loading finished-game explorer...");
-  try {
-    const response = await fetch(`/v1/analysis/studio/games?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error?.message || payload.detail || "The game explorer request failed.");
-    }
-    const items = payload.items || [];
-    latestGameListPayload = payload;
-    if (!items.length) {
-      selectedGameId = null;
-      renderGameList(payload);
-      gameDetail.className = "stack-list empty-state";
-      gameDetail.textContent = "No finished games matched the current filters.";
-      setExplorerState(false, "No finished games matched the current filters.");
+    if (!rows.length) {
+      renderEmpty(container, options.emptyText || 'No rows available.');
       return;
     }
 
-    const nextGameId = items.some((item) => item.game_id === preferredGameId)
-      ? preferredGameId
-      : items[0].game_id;
-    selectedGameId = nextGameId;
-    renderGameList(payload);
-    await loadGameDetail(nextGameId, { silent: true });
-    renderGameList(payload);
-    setExplorerState(
-      false,
-      `Loaded ${payload.returned_games} of ${payload.total_games} finished games from ${payload.analysis_version}.`,
-    );
-  } catch (error) {
-    showError(error.message || "The game explorer request failed.");
-    setExplorerState(false, "Game explorer load failed. Check the error banner.");
-  }
-}
-
-async function loadSnapshot() {
-  clearError();
-  const context = currentLoaderContext();
-  const params = buildQueryParams(context);
-
-  setLoadingState(true, "Resolving the latest consumer snapshot...");
-  try {
-    const response = await fetch(`/v1/analysis/studio/snapshot?${params.toString()}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error?.message || payload.detail || "The snapshot request failed.");
+    container.className = 'table-wrap';
+    const table = document.createElement('table');
+    if (dense) {
+      table.className = 'dense-table';
     }
-    latestStrategyRankings = payload.benchmark?.strategy_rankings || [];
-    latestIndividualStrategyRankings = payload.benchmark?.individual_strategy_rankings || [];
-    latestPortfolioRankings = payload.benchmark?.portfolio_rankings || [];
-    latestMasterRouter = payload.benchmark?.master_router || {};
-    renderMetadata(payload);
-    renderUniverse(payload);
-    renderStrategies();
-    renderPortfolioLanes();
-    renderMasterRouter();
-    renderModels(payload);
-    renderReportSections(payload);
-    renderArtifacts(payload);
-    setLoadingState(false, `Loaded ${payload.analysis_version} from ${payload.output_dir}`);
-    await loadControlPlane();
-    try {
-      await loadBacktestIndex(selectedStrategyFamily);
-    } catch (_) {
-      // Keep the snapshot visible even if the comparison panel fails independently.
-    }
-    await loadGameExplorer(selectedGameId);
-  } catch (error) {
-    showError(error.message || "The snapshot request failed.");
-    setLoadingState(false, "Snapshot load failed. Check the error banner and adjust the request.");
-  }
-}
 
-async function startRun() {
-  clearError();
-  const context = currentLoaderContext();
-  const payload = {
-    action: document.getElementById("run_action").value,
-    validation_target: document.getElementById("validation_target").value,
-    rebuild: document.getElementById("rebuild").checked,
-    season: context.season || "2025-26",
-    season_phase: context.season_phase || "regular_season",
-    analysis_version: context.analysis_version || "v1_0_1",
-  };
-
-  setRunState(true, "Launching the local analysis command...");
-  try {
-    const response = await fetch("/v1/analysis/studio/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    columns.forEach((column) => {
+      const th = document.createElement('th');
+      th.textContent = column.label;
+      headerRow.appendChild(th);
     });
-    const data = await response.json();
-    if (!response.ok) {
-      throw new Error(data.error?.message || "Failed to launch the analysis studio run.");
-    }
-    setRunState(false, `Run ${data.run_id} launched for ${data.action}.`);
-    await loadControlPlane();
-  } catch (error) {
-    showError(error.message || "Failed to launch the analysis studio run.");
-    setRunState(false, "Run launch failed. Check the error banner.");
+    thead.appendChild(headerRow);
+
+    const tbody = document.createElement('tbody');
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      if (selectableKey && selectedValue !== null && cleanString(row[selectableKey]) === cleanString(selectedValue)) {
+        tr.classList.add('selected-row');
+      }
+      columns.forEach((column) => {
+        const td = document.createElement('td');
+        const value = column.getter ? column.getter(row) : row[column.key];
+        td.textContent = formatMetric(value, column.kind);
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    });
+
+    table.append(thead, tbody);
+    container.appendChild(table);
   }
-}
 
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  loadSnapshot();
-});
+  function renderLegend(legend, finalists, selectedFamily) {
+    legend.innerHTML = '';
+    finalists.forEach((row, index) => {
+      const chip = document.createElement('span');
+      chip.className = 'legend-chip';
+      if (cleanString(row.strategy_family) === cleanString(selectedFamily)) {
+        chip.classList.add('selected-card');
+      }
+      const score = row.score ?? row.mean_ending_bankroll ?? row.ending_bankroll ?? row.compounded_return;
+      chip.textContent = `${index + 1}. ${finalistLabel(row)} · ${formatNumber(score, 2)}`;
+      legend.appendChild(chip);
+    });
+  }
 
-runForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  startRun();
-});
+  function renderFinalistsTable(rows, selectedFamily) {
+    const columns = [
+      { label: 'Rank', getter: (row) => row.rank ?? '—', kind: 'integer' },
+      { label: 'Finalist', getter: finalistLabel },
+      { label: 'Score', getter: (row) => row.score ?? row.mean_ending_bankroll ?? row.ending_bankroll, kind: 'money' },
+      { label: 'Mean Bankroll', getter: (row) => row.mean_ending_bankroll ?? row.ending_bankroll, kind: 'money' },
+      { label: 'Positive Seeds', getter: (row) => row.positive_seed_rate, kind: 'percent' },
+      { label: 'Drawdown', getter: (row) => row.max_drawdown_pct, kind: 'percent' },
+      { label: 'Label', getter: (row) => row.candidate_label || row.robustness_label || row.label_reason || '—' },
+    ];
+    renderTable(els.rankingTable, columns, rows, {
+      selectedValue: selectedFamily,
+      selectableKey: 'strategy_family',
+      emptyText: 'The finalists table will appear after loading a snapshot.',
+    });
+  }
 
-explorerForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  loadGameExplorer();
-});
+  function renderMasterRouter(masterRouter, llmVariants) {
+    els.masterSummary.className = 'metric-grid small-grid';
+    els.masterSummary.innerHTML = '';
+    const comparisonRows = asArray(masterRouter.comparison_rows);
+    const routeRows = asArray(masterRouter.route_summary);
+    const lowConfidenceRows = asArray(masterRouter.low_confidence_summary);
+    const coreFamilies = asArray(masterRouter.core_families);
+    const extraFamilies = asArray(masterRouter.extra_families);
 
-comparisonForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  loadBacktestDetail(currentComparisonOptions().strategy_family).catch(() => {});
-});
+    const cards = [
+      createCard('Router family', cleanString(masterRouter.family_name || '—'), cleanString(masterRouter.selection_sample_name || 'selection sample')),
+      createCard('Core families', formatInteger(coreFamilies.length), coreFamilies.join(' · ') || 'No core families reported'),
+      createCard('Extra families', formatInteger(extraFamilies.length), extraFamilies.join(' · ') || 'No extra families reported'),
+      createCard('Comparison rows', formatInteger(comparisonRows.length), 'Full sample, time validation, and holdout comparisons'),
+    ];
+    if (routeRows.length || lowConfidenceRows.length) {
+      cards.push(createCard('Routing rows', formatInteger(routeRows.length), `Low-confidence cases: ${formatInteger(lowConfidenceRows.reduce((total, row) => total + (toNumber(row.decision_count) || 0), 0))}`));
+    }
+    cards.forEach((card) => els.masterSummary.appendChild(card));
 
-loadControlPlane()
-  .then(() => loadSnapshot())
-  .catch((error) => {
-    showError(error.message || "Failed to initialize the analysis studio.");
+    renderTable(
+      els.routeBandTable,
+      [
+        { label: 'Sample', key: 'sample_name' },
+        { label: 'Family', key: 'strategy_family' },
+        { label: 'Scope', key: 'portfolio_scope' },
+        { label: 'Bankroll', key: 'ending_bankroll', kind: 'money' },
+        { label: 'Return', key: 'compounded_return', kind: 'percent' },
+        { label: 'Drawdown', key: 'max_drawdown_pct', kind: 'percent' },
+        { label: 'Trades', key: 'executed_trade_count', kind: 'integer' },
+      ],
+      comparisonRows,
+      {
+        emptyText: 'Master-router comparisons will appear here after loading a snapshot.',
+      }
+    );
+
+    renderTable(
+      els.llmVariantTable,
+      [
+        { label: 'Rank', key: 'rank', kind: 'integer' },
+        { label: 'Variant', getter: finalistLabel },
+        { label: 'Score', key: 'score', kind: 'money' },
+        { label: 'Mean Bankroll', key: 'mean_ending_bankroll', kind: 'money' },
+        { label: 'Positive Seeds', key: 'positive_seed_rate', kind: 'percent' },
+        { label: 'Drawdown', key: 'max_drawdown_pct', kind: 'percent' },
+      ],
+      asArray(llmVariants),
+      {
+        emptyText: 'LLM variant summary will appear here after loading a snapshot.',
+      }
+    );
+  }
+
+  function getPointDomain(seriesRows) {
+    let min = Infinity;
+    let max = -Infinity;
+    let maxPoints = 0;
+    seriesRows.forEach((series) => {
+      maxPoints = Math.max(maxPoints, series.points.length);
+      series.points.forEach((point, index) => {
+        const xValue = toNumber(point.x);
+        const numeric = xValue === null ? index : xValue;
+        if (numeric < min) min = numeric;
+        if (numeric > max) max = numeric;
+      });
+    });
+    if (!Number.isFinite(min) || !Number.isFinite(max)) {
+      min = 0;
+      max = Math.max(maxPoints - 1, 1);
+    }
+    if (min === max) {
+      max = min + 1;
+    }
+    return { min, max, maxPoints };
+  }
+
+  function chartCoordinate(value, domainMin, domainMax, span, offset) {
+    return offset + ((value - domainMin) / (domainMax - domainMin)) * span;
+  }
+
+  function renderChart(snapshot) {
+    const seriesRows = getSeriesRows(snapshot);
+    els.chart.innerHTML = '';
+    if (!seriesRows.length) {
+      renderEmpty(els.chart, 'No finalist series were found in the current snapshot.');
+      els.legend.innerHTML = '';
+      return;
+    }
+
+    els.chart.className = 'chart-shell';
+    const width = 1200;
+    const height = 440;
+    const padding = { top: 18, right: 24, bottom: 42, left: 56 };
+    const innerWidth = width - padding.left - padding.right;
+    const innerHeight = height - padding.top - padding.bottom;
+    const { min, max, maxPoints } = getPointDomain(seriesRows);
+
+    let yMin = Infinity;
+    let yMax = -Infinity;
+    seriesRows.forEach((series) => {
+      series.points.forEach((point) => {
+        const value = toNumber(point.y);
+        if (value === null) return;
+        if (value < yMin) yMin = value;
+        if (value > yMax) yMax = value;
+      });
+    });
+    if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
+      yMin = 0;
+      yMax = 1;
+    }
+    if (yMin === yMax) {
+      yMax = yMin + 1;
+    }
+    const yPadding = (yMax - yMin) * 0.1 || 1;
+    yMin -= yPadding;
+    yMax += yPadding;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'Strategy evolution chart');
+
+    const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    background.setAttribute('x', '0');
+    background.setAttribute('y', '0');
+    background.setAttribute('width', width);
+    background.setAttribute('height', height);
+    background.setAttribute('fill', 'transparent');
+    svg.appendChild(background);
+
+    for (let index = 0; index <= 5; index += 1) {
+      const y = padding.top + (innerHeight / 5) * index;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', padding.left);
+      line.setAttribute('x2', width - padding.right);
+      line.setAttribute('y1', y);
+      line.setAttribute('y2', y);
+      line.setAttribute('class', 'chart-grid-line');
+      svg.appendChild(line);
+
+      const value = yMax - ((yMax - yMin) / 5) * index;
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', 10);
+      label.setAttribute('y', y + 4);
+      label.setAttribute('class', 'chart-axis-label');
+      label.textContent = formatNumber(value, 1);
+      svg.appendChild(label);
+    }
+
+    for (let index = 0; index <= Math.max(maxPoints - 1, 1); index += 1) {
+      const x = padding.left + (innerWidth / Math.max(maxPoints - 1, 1)) * index;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('y1', padding.top);
+      line.setAttribute('y2', height - padding.bottom);
+      line.setAttribute('x1', x);
+      line.setAttribute('x2', x);
+      line.setAttribute('class', 'chart-grid-line chart-grid-line-vertical');
+      svg.appendChild(line);
+    }
+
+    const palette = ['#f7f7f7', '#ff3b3b', '#b9c0ca', '#f0f0f0', '#ff7373', '#8b96a8'];
+    seriesRows.forEach((series, seriesIndex) => {
+      const color = palette[seriesIndex % palette.length];
+      const points = series.points
+        .map((point, pointIndex) => {
+          const xBase = toNumber(point.x);
+          const xValue = xBase === null ? pointIndex : xBase;
+          const yValue = toNumber(point.y);
+          if (yValue === null) return null;
+          const x = chartCoordinate(xValue, min, max, innerWidth, padding.left);
+          const y = padding.top + innerHeight - ((yValue - yMin) / (yMax - yMin)) * innerHeight;
+          return { x, y, label: point.label };
+        })
+        .filter(Boolean);
+      if (!points.length) {
+        return;
+      }
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute(
+        'd',
+        points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')
+      );
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', color);
+      path.setAttribute('stroke-width', seriesIndex === 0 ? '2.8' : '1.8');
+      path.setAttribute('stroke-linecap', 'round');
+      path.setAttribute('stroke-linejoin', 'round');
+      path.setAttribute('class', 'chart-series-line');
+      svg.appendChild(path);
+
+      const lastPoint = points[points.length - 1];
+      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      marker.setAttribute('cx', lastPoint.x.toFixed(2));
+      marker.setAttribute('cy', lastPoint.y.toFixed(2));
+      marker.setAttribute('r', seriesIndex === 0 ? '4' : '3');
+      marker.setAttribute('fill', color);
+      marker.setAttribute('class', 'chart-point');
+      svg.appendChild(marker);
+
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', lastPoint.x + 8);
+      label.setAttribute('y', lastPoint.y - 8);
+      label.setAttribute('class', 'chart-series-label');
+      label.textContent = finalistLabel(series);
+      svg.appendChild(label);
+    });
+
+    const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    xLabel.setAttribute('x', width - padding.right);
+    xLabel.setAttribute('y', height - 10);
+    xLabel.setAttribute('text-anchor', 'end');
+    xLabel.setAttribute('class', 'chart-axis-label');
+    xLabel.textContent = 'benchmark progression';
+    svg.appendChild(xLabel);
+
+    els.chart.appendChild(svg);
+    renderLegend(els.legend, state.finalists, state.selectedFamily);
+  }
+
+  function renderSnapshot(snapshot) {
+    state.snapshot = snapshot;
+    state.finalists = getFinalists(snapshot).map((row, index) => ({
+      ...row,
+      rank: row.rank ?? index + 1,
+    }));
+    const detailFirst = state.finalists.find((row) => isDetailCapableFamily(snapshot, row.strategy_family));
+    state.selectedFamily = cleanString(detailFirst?.strategy_family || '');
+
+    const benchmark = getBenchmark(snapshot);
+    const studio = getStudio(snapshot);
+    const metadataBits = [
+      snapshot.season,
+      snapshot.season_phase,
+      snapshot.analysis_version,
+      `${state.finalists.length} finalists`,
+      `${asArray(benchmark.master_router?.comparison_rows).length || 0} comparisons`,
+    ].filter(Boolean);
+    els.meta.textContent = metadataBits.join(' · ');
+
+    renderFinalistsTable(state.finalists, state.selectedFamily);
+    renderMasterRouter(benchmark.master_router || {}, studio.llm_variant_rankings || benchmark.llm_variant_summary || []);
+    renderChart(snapshot);
+    renderComparisonIndex(studio);
+    populateComparisonFamilySelect();
+    if (state.selectedFamily) {
+      els.comparisonFamily.value = state.selectedFamily;
+    }
+  }
+
+  function populateComparisonFamilySelect() {
+    els.comparisonFamily.innerHTML = '';
+    const detailFamilies = state.finalists.filter((row) => isDetailCapableFamily(state.snapshot, row.strategy_family));
+    if (!detailFamilies.length) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'no direct family detail for finalists';
+      els.comparisonFamily.appendChild(option);
+      els.comparisonFamily.disabled = true;
+      return;
+    }
+
+    detailFamilies.forEach((row) => {
+      const option = document.createElement('option');
+      option.value = cleanString(row.strategy_family || row.finalist_id);
+      option.textContent = finalistLabel(row);
+      els.comparisonFamily.appendChild(option);
+    });
+    els.comparisonFamily.disabled = false;
+  }
+
+  function renderComparisonIndex(studio) {
+    els.comparisonIndex.className = 'stack-list';
+    els.comparisonIndex.innerHTML = '';
+
+    const finalists = state.finalists.length ? state.finalists : getFinalists({ benchmark: { studio_dashboard: studio } });
+    if (!finalists.length) {
+      renderEmpty(els.comparisonIndex, 'No finalists are available for comparison.');
+      return;
+    }
+
+    finalists.forEach((row, index) => {
+      const card = document.createElement('article');
+      card.className = 'stack-item';
+      if (cleanString(row.strategy_family) === cleanString(state.selectedFamily)) {
+        card.classList.add('selected-card');
+      }
+
+      const head = document.createElement('div');
+      head.className = 'stack-head';
+      const titleWrap = document.createElement('div');
+      const kicker = document.createElement('p');
+      kicker.className = 'section-kicker';
+      kicker.textContent = `Finalist ${index + 1}`;
+      const title = document.createElement('h4');
+      title.style.margin = '0';
+      title.textContent = finalistLabel(row);
+      titleWrap.append(kicker, title);
+
+      const scorePill = document.createElement('span');
+      scorePill.className = 'pill';
+      scorePill.textContent = formatNumber(row.score ?? row.mean_ending_bankroll ?? row.ending_bankroll, 2);
+      head.append(titleWrap, scorePill);
+
+      const meta = document.createElement('p');
+      meta.className = 'meta';
+      meta.textContent = [
+        row.family_type || 'strategy',
+        row.source_name || 'deterministic',
+        row.candidate_label || row.robustness_label || row.label_reason || 'no label',
+      ]
+        .filter(Boolean)
+        .join(' · ');
+
+      const tags = document.createElement('div');
+      tags.className = 'tag-row';
+      const primaryTags = [
+        `Rank ${row.rank ?? index + 1}`,
+        `Mean ${formatNumber(row.mean_ending_bankroll ?? row.ending_bankroll, 2)}`,
+        `Seeds ${formatPercent(row.positive_seed_rate)}`,
+        `DD ${formatPercent(row.max_drawdown_pct)}`,
+      ];
+      primaryTags.forEach((text) => {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = text;
+        tags.appendChild(tag);
+      });
+
+      card.append(head, meta, tags);
+      els.comparisonIndex.appendChild(card);
+    });
+  }
+
+  function renderMetricGrid(container, rows) {
+    const grid = document.createElement('div');
+    grid.className = 'metric-grid small-grid';
+    rows.forEach((row) => {
+      grid.appendChild(createCard(row.label, row.value, row.caption, row.tone || ''));
+    });
+    container.appendChild(grid);
+  }
+
+  function renderNamedTable(container, title, rows, columns, emptyText) {
+    const block = document.createElement('article');
+    block.className = 'stack-item';
+    const header = document.createElement('div');
+    header.className = 'subpanel-header';
+    const labelWrap = document.createElement('div');
+    const kicker = document.createElement('p');
+    kicker.className = 'section-kicker';
+    kicker.textContent = title;
+    const heading = document.createElement('h4');
+    heading.style.margin = '0';
+    heading.textContent = title;
+    labelWrap.append(kicker, heading);
+    header.appendChild(labelWrap);
+    block.appendChild(header);
+
+    const wrap = document.createElement('div');
+    block.appendChild(wrap);
+    renderTable(wrap, columns, rows, { emptyText: emptyText || `No ${title.toLowerCase()} rows.` });
+    container.appendChild(block);
+  }
+
+  function renderFamilyDetail(detail) {
+    els.comparisonDetail.className = 'stack-list';
+    els.comparisonDetail.innerHTML = '';
+
+    if (!detail) {
+      renderEmpty(els.comparisonDetail, 'Choose a finalist to inspect the bounded family detail.');
+      return;
+    }
+
+    const summary = detail.summary || {};
+    const candidate = detail.candidate_freeze || {};
+    const ranking = detail.individual_ranking || {};
+    const summaryBlock = document.createElement('article');
+    summaryBlock.className = 'stack-item selected-card';
+    const header = document.createElement('div');
+    header.className = 'stack-head';
+    const titleWrap = document.createElement('div');
+    const kicker = document.createElement('p');
+    kicker.className = 'section-kicker';
+    kicker.textContent = 'Selected finalist';
+    const title = document.createElement('h4');
+    title.style.margin = '0';
+    title.textContent = finalistLabel(summary) || cleanString(detail.strategy_family);
+    titleWrap.append(kicker, title);
+    const label = document.createElement('span');
+    label.className = 'pill';
+    label.textContent = summary.candidate_label || candidate.candidate_label || ranking.robustness_label || 'analysis ready';
+    header.append(titleWrap, label);
+
+    const meta = document.createElement('p');
+    meta.className = 'meta';
+    meta.textContent = [
+      summary.strategy_family || detail.strategy_family,
+      summary.portfolio_scope || ranking.portfolio_scope,
+      summary.label_reason || candidate.label_reason,
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
+    summaryBlock.append(header, meta);
+    els.comparisonDetail.appendChild(summaryBlock);
+
+    renderMetricGrid(els.comparisonDetail, [
+      {
+        label: 'Mean ending bankroll',
+        value: formatNumber(summary.mean_ending_bankroll ?? summary.ending_bankroll, 2),
+        caption: 'Benchmark selector value',
+      },
+      {
+        label: 'Positive seed rate',
+        value: formatPercent(summary.positive_seed_rate ?? ranking.positive_seed_rate),
+        caption: 'Robustness check',
+      },
+      {
+        label: 'Max drawdown',
+        value: formatPercent(summary.max_drawdown_pct ?? ranking.max_drawdown_pct),
+        caption: 'Observed risk',
+      },
+      {
+        label: 'Trade count',
+        value: formatInteger(summary.trade_count ?? ranking.executed_trade_count),
+        caption: 'Filtered family sample',
+      },
+    ]);
+
+    renderNamedTable(
+      els.comparisonDetail,
+      'Best trades',
+      asArray(detail.best_trades),
+      [
+        { label: 'Game', key: 'game_id' },
+        { label: 'Entry', key: 'entry_at' },
+        { label: 'Exit', key: 'exit_at' },
+        { label: 'Return', key: 'gross_return_with_slippage', kind: 'percent' },
+        { label: 'Hold', key: 'hold_time_seconds', kind: 'integer' },
+      ],
+      'No best-trade rows were returned.'
+    );
+
+    renderNamedTable(
+      els.comparisonDetail,
+      'Worst trades',
+      asArray(detail.worst_trades),
+      [
+        { label: 'Game', key: 'game_id' },
+        { label: 'Entry', key: 'entry_at' },
+        { label: 'Exit', key: 'exit_at' },
+        { label: 'Return', key: 'gross_return_with_slippage', kind: 'percent' },
+        { label: 'Hold', key: 'hold_time_seconds', kind: 'integer' },
+      ],
+      'No worst-trade rows were returned.'
+    );
+
+    renderNamedTable(
+      els.comparisonDetail,
+      'Context summary',
+      asArray(detail.context_summary),
+      [
+        { label: 'Context', key: 'context_bucket' },
+        { label: 'Trades', key: 'trade_count', kind: 'integer' },
+        { label: 'Win rate', key: 'win_rate', kind: 'percent' },
+        { label: 'Avg return', key: 'avg_gross_return_with_slippage', kind: 'percent' },
+        { label: 'Drawdown', key: 'max_drawdown_pct', kind: 'percent' },
+      ],
+      'No context rows were returned.'
+    );
+  }
+
+  async function loadSnapshot() {
+    const season = cleanString(els.season.value);
+    const seasonPhase = cleanString(els.seasonPhase.value);
+    const analysisVersion = cleanString(els.analysisVersion.value);
+    const outputRoot = cleanString(els.outputRoot.value);
+    const url =
+      `${API_ROOT}/snapshot` +
+      buildQuery({
+        season,
+        season_phase: seasonPhase,
+        analysis_version: analysisVersion,
+        output_root: outputRoot,
+      });
+
+    setStatus('Loading benchmark snapshot...');
+    els.loadButton.disabled = true;
+    try {
+      const snapshot = await fetchJson(url);
+      renderSnapshot(snapshot);
+      setStatus(`Loaded ${snapshot.season} ${snapshot.season_phase} · ${snapshot.analysis_version}`);
+      if (state.selectedFamily && isDetailCapableFamily(snapshot, state.selectedFamily)) {
+        loadFamilyDetail(state.selectedFamily).catch(() => {});
+      }
+    } catch (error) {
+      setStatus(error.message || 'Failed to load snapshot.', true);
+      els.chart.className = 'chart-shell empty-state';
+      els.chart.textContent = 'Snapshot load failed.';
+      els.legend.innerHTML = '';
+      els.rankingTable.innerHTML = '';
+      els.masterSummary.innerHTML = '';
+      els.routeBandTable.innerHTML = '';
+      els.llmVariantTable.innerHTML = '';
+      els.comparisonIndex.innerHTML = '';
+      els.comparisonDetail.innerHTML = '';
+      throw error;
+    } finally {
+      els.loadButton.disabled = false;
+    }
+  }
+
+  async function loadFamilyDetail(strategyFamily) {
+    const family = cleanString(strategyFamily);
+    if (!family) {
+      renderFamilyDetail(null);
+      return;
+    }
+    if (!state.snapshot) {
+      return;
+    }
+    if (!isDetailCapableFamily(state.snapshot, family)) {
+      renderFamilyDetail({
+        summary: { strategy_family: family, note: 'Bounded family detail is only available for concrete strategy families.' },
+        best_trades: [],
+        worst_trades: [],
+        context_summary: [],
+      });
+      return;
+    }
+
+    const season = cleanString(els.season.value);
+    const seasonPhase = cleanString(els.seasonPhase.value);
+    const analysisVersion = cleanString(els.analysisVersion.value);
+    const outputRoot = cleanString(els.outputRoot.value);
+    const tradeLimit = cleanString(els.comparisonTradeLimit.value) || '5';
+    const contextLimit = cleanString(els.comparisonContextLimit.value) || '10';
+    const traceLimit = cleanString(els.comparisonTraceLimit.value) || '3';
+    const url =
+      `${API_ROOT}/backtests/${encodeURIComponent(family)}` +
+      buildQuery({
+        season,
+        season_phase: seasonPhase,
+        analysis_version: analysisVersion,
+        output_root: outputRoot,
+        trade_limit: tradeLimit,
+        context_limit: contextLimit,
+        trace_limit: traceLimit,
+      });
+
+    setStatus(`Loading ${family} detail...`);
+    els.comparisonButton.disabled = true;
+    try {
+      const detail = await fetchJson(url);
+      renderFamilyDetail(detail);
+      setStatus(`Loaded ${family} detail`);
+    } catch (error) {
+      setStatus(error.message || `Failed to load ${family} detail.`, true);
+      renderFamilyDetail(null);
+      throw error;
+    } finally {
+      els.comparisonButton.disabled = false;
+    }
+  }
+
+  els.form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await loadSnapshot();
+    } catch (error) {
+      // error already surfaced
+    }
   });
 
-window.setInterval(() => {
-  loadControlPlane().catch(() => {});
-}, 5000);
+  els.comparisonForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    try {
+      await loadFamilyDetail(els.comparisonFamily.value);
+    } catch (error) {
+      // error already surfaced
+    }
+  });
+
+  els.comparisonFamily.addEventListener('change', () => {
+    state.selectedFamily = cleanString(els.comparisonFamily.value);
+    renderFinalistsTable(state.finalists, state.selectedFamily);
+    renderLegend(els.legend, state.finalists, state.selectedFamily);
+    if (isDetailCapableFamily(state.snapshot, state.selectedFamily)) {
+      loadFamilyDetail(state.selectedFamily).catch(() => {});
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    const card = event.target.closest?.('.stack-item');
+    if (!card || !els.comparisonIndex.contains(card)) {
+      return;
+    }
+    const cards = Array.from(els.comparisonIndex.querySelectorAll('.stack-item'));
+    const index = cards.indexOf(card);
+    const finalist = state.finalists[index];
+    if (!finalist) {
+      return;
+    }
+    state.selectedFamily = cleanString(finalist.strategy_family || finalist.finalist_id);
+    if (isDetailCapableFamily(state.snapshot, state.selectedFamily)) {
+      els.comparisonFamily.value = state.selectedFamily;
+    }
+    renderFinalistsTable(state.finalists, state.selectedFamily);
+    renderComparisonIndex(getStudio(state.snapshot || {}));
+    renderLegend(els.legend, state.finalists, state.selectedFamily);
+    if (isDetailCapableFamily(state.snapshot, state.selectedFamily)) {
+      loadFamilyDetail(state.selectedFamily).catch(() => {});
+    } else {
+      renderFamilyDetail({
+        summary: { strategy_family: state.selectedFamily, note: 'This finalist is a router or LLM lane. Use the chart and finalist tables for comparison.' },
+        best_trades: [],
+        worst_trades: [],
+        context_summary: [],
+      });
+    }
+  });
+
+  if (state.finalists.length === 0) {
+    renderEmpty(els.chart, 'Load a snapshot to render the finalists and the master-router comparison.');
+    renderEmpty(els.rankingTable, 'Load a snapshot to inspect the finalists ranking.');
+    renderEmpty(els.masterSummary, 'Master-router cards appear here after loading.');
+    renderEmpty(els.routeBandTable, 'Opening-band routing appears here after loading.');
+    renderEmpty(els.llmVariantTable, 'LLM variant summary appears here after loading.');
+    renderEmpty(els.comparisonIndex, 'No strategy families loaded yet.');
+    renderEmpty(els.comparisonDetail, 'Choose a family to inspect detail.');
+  }
+
+  loadSnapshot().catch(() => {});
+})();

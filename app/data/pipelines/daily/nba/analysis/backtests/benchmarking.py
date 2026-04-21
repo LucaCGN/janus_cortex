@@ -1579,6 +1579,9 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "llm_experiment_summary": "benchmark_llm_experiment_summary",
         "llm_experiment_lane_summary": "benchmark_llm_experiment_lane_summary",
         "llm_experiment_decisions": "benchmark_llm_experiment_decisions",
+        "llm_experiment_showdown_summary": "benchmark_llm_experiment_showdown_summary",
+        "llm_experiment_showdown_daily_paths": "benchmark_llm_experiment_showdown_daily_paths",
+        "llm_experiment_showdown_decisions": "benchmark_llm_experiment_showdown_decisions",
     }
     for frame_name, frame in result.benchmark_frames.items():
         stem = artifact_stems.get(frame_name)

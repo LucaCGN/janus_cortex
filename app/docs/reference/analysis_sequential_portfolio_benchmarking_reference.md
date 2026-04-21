@@ -7,9 +7,10 @@ Define the canonical bankroll-simulation contract for the NBA analysis module an
 - the combined keep-family sleeve
 - the opening-band routed sleeve
 - the confidence-based master router baseline
+- the restrained LLM-router finalist benchmark and shared showdown replay
 
 ## Canonical Contract
-Sequential portfolio benchmarking extends `run_analysis_backtests` under benchmark contract `v8`.
+Sequential portfolio benchmarking extends `run_analysis_backtests` under benchmark contract `v10`.
 
 Active defaults:
 - starting bankroll: `10.0`
@@ -54,6 +55,16 @@ Artifact additions in `v7`:
 
 Artifact additions in `v8`:
 - `benchmark_master_router_decisions`
+
+Artifact additions in `v9`:
+- `benchmark_llm_experiment_lane_summary`
+- `benchmark_llm_experiment_decisions`
+- `benchmark_llm_experiment_summary`
+
+Artifact additions in `v10`:
+- `benchmark_llm_experiment_showdown_summary`
+- `benchmark_llm_experiment_showdown_daily_paths`
+- finalist-focused consumer snapshot payload for the analysis studio dashboard
 
 ## Current Building-Block Status
 Validated on `2026-04-21` against season `2025-26`, phase `regular_season`, starting bankroll `$10.00`, position fraction `1.0`, `max_concurrent_positions=3`, and the first `100` chronological games.
@@ -258,6 +269,66 @@ Current master router design:
   - `period_label`
   - `context_bucket`
   - `signal_strength`
+
+Current master router result:
+- full-sample ending bankroll `5,396.87`
+- time-validation ending bankroll `1,915.95`
+- random-holdout ending bankroll `1,366,218.64`
+
+Interpretation:
+- the first confidence-based controller is valid and beats `winner_definition` on the main held-out controller slices
+- it remains the strongest deterministic bankroll engine even after the expanded LLM pass
+
+## Restrained LLM Router Benchmark
+Validated on `2026-04-21` under:
+- model: `gpt-5.4-mini`
+- iteration count: `10`
+- games per iteration: `30`
+- showdown replay: shared fixed `100`-game sample across the top finalists
+
+Current restrained LLM variant leaders:
+- `llm_hybrid_compact_guarded_v1`
+  - mean ending bankroll `379.51`
+  - mean drawdown `25.90%`
+  - interpretation: best current LLM balance of return, stability, and bounded autonomy
+- `llm_hybrid_compact_v1`
+  - mean ending bankroll `330.12`
+  - mean drawdown `21.91%`
+- `llm_hybrid_restrained_v1`
+  - mean ending bankroll `268.89`
+  - mean drawdown `17.68%`
+- `winner_definition`
+  - mean ending bankroll `274.73`
+  - mean drawdown `24.02%`
+- `master_strategy_router_v1`
+  - mean ending bankroll `558.15`
+  - mean drawdown `35.21%`
+
+Shared finalist showdown on the same `100` games:
+- `master_strategy_router_v1`
+  - ending bankroll `1,584,212.75`
+  - max drawdown `53.97%`
+- `llm_hybrid_compact_guarded_v1`
+  - ending bankroll `628,041.16`
+  - max drawdown `21.69%`
+- `llm_hybrid_compact_v1`
+  - ending bankroll `568,726.74`
+  - max drawdown `21.69%`
+- `llm_hybrid_compact_no_rationale_v1`
+  - ending bankroll `423,599.61`
+  - max drawdown `53.97%`
+- `winner_definition`
+  - ending bankroll `388,365.85`
+  - max drawdown `23.28%`
+- `llm_hybrid_restrained_v1`
+  - ending bankroll `378,704.45`
+  - max drawdown `18.74%`
+
+Current interpretation:
+- the best LLM variants are now materially competitive, not just drawdown filters
+- the deterministic master router still wins on pure bankroll growth
+- the compact guarded LLM lane is the best next override candidate because it improves the drawdown profile without collapsing returns
+- medium-reasoning compact routing did not justify its extra complexity
   - context win rate
   - context average return
   - context support

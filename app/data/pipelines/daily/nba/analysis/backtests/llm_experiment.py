@@ -46,6 +46,11 @@ LLM_EXPERIMENT_SUMMARY_COLUMNS = (
     "lane_name",
     "lane_mode",
     "llm_component_scope",
+    "lane_group",
+    "prompt_profile",
+    "reasoning_effort",
+    "include_rationale",
+    "use_confidence_gate",
     "starting_bankroll",
     "ending_bankroll",
     "compounded_return",
@@ -65,6 +70,11 @@ LLM_EXPERIMENT_LANE_SUMMARY_COLUMNS = (
     "lane_name",
     "lane_mode",
     "llm_component_scope",
+    "lane_group",
+    "prompt_profile",
+    "reasoning_effort",
+    "include_rationale",
+    "use_confidence_gate",
     "iteration_count",
     "positive_iteration_count",
     "positive_iteration_rate",
@@ -85,6 +95,11 @@ LLM_EXPERIMENT_DECISION_COLUMNS = (
     "sample_name",
     "lane_name",
     "lane_mode",
+    "lane_group",
+    "prompt_profile",
+    "reasoning_effort",
+    "include_rationale",
+    "use_confidence_gate",
     "decision_stage",
     "game_id",
     "game_date",
@@ -106,13 +121,54 @@ LLM_EXPERIMENT_DECISION_COLUMNS = (
     "error_text",
 )
 
+LLM_EXPERIMENT_SHOWDOWN_SUMMARY_COLUMNS = (
+    "sample_name",
+    "lane_name",
+    "lane_mode",
+    "lane_group",
+    "prompt_profile",
+    "reasoning_effort",
+    "include_rationale",
+    "use_confidence_gate",
+    "starting_bankroll",
+    "first_entry_at",
+    "ending_bankroll",
+    "compounded_return",
+    "max_drawdown_pct",
+    "executed_trade_count",
+    "avg_executed_trade_return_with_slippage",
+    "llm_call_count",
+    "llm_cache_hit_count",
+    "llm_input_tokens",
+    "llm_cached_input_tokens",
+    "llm_output_tokens",
+    "llm_reasoning_tokens",
+    "llm_estimated_cost_usd",
+    "finalist_score",
+)
+
+LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS = (
+    "sample_name",
+    "lane_name",
+    "lane_mode",
+    "lane_group",
+    "path_day_index",
+    "path_date",
+    "settled_trade_count_to_date",
+    "ending_bankroll",
+    "daily_pnl_amount",
+    "compounded_return",
+)
+
 _LLM_MODEL_INPUT_PRICE_PER_1M = 0.75
 _LLM_MODEL_CACHED_INPUT_PRICE_PER_1M = 0.075
 _LLM_MODEL_OUTPUT_PRICE_PER_1M = 4.50
 _LLM_CACHE_FILENAME = "llm_router_cache.json"
-_LLM_PROMPT_VERSION = "v1"
+_LLM_PROMPT_VERSION = "v2"
 _LLM_TRACE_ROW_LIMIT = 4
 _LLM_FALLBACK_CONFIDENCE = 0.51
+_LLM_FINALIST_COUNT = 6
+_LLM_SHOWDOWN_SAMPLE_NAME = "llm_showdown_fixed"
 _LLM_BASELINES = (
     "winner_definition",
     "inversion",
@@ -124,28 +180,72 @@ _LLM_BASELINES = (
 )
 _LLM_LANES = (
     {
-        "lane_name": "llm_strategy_eval_v1",
-        "lane_mode": "llm_restrained",
-        "llm_component_scope": "b_only",
-        "allowed_roles": ("core",),
-    },
-    {
-        "lane_name": "llm_ingame_eval_v1",
-        "lane_mode": "llm_restrained",
-        "llm_component_scope": "c_only",
-        "allowed_roles": ("extra",),
-    },
-    {
         "lane_name": "llm_hybrid_restrained_v1",
+        "lane_group": "llm_variant",
         "lane_mode": "llm_restrained",
         "llm_component_scope": "bc_restrained",
         "allowed_roles": ("core", "extra"),
+        "prompt_profile": "full",
+        "reasoning_effort": "low",
+        "include_rationale": True,
+        "use_confidence_gate": False,
     },
     {
-        "lane_name": "llm_hybrid_freedom_v1",
+        "lane_name": "llm_hybrid_compact_v1",
+        "lane_group": "llm_variant",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact",
+        "reasoning_effort": "low",
+        "include_rationale": True,
+        "use_confidence_gate": False,
+    },
+    {
+        "lane_name": "llm_hybrid_compact_guarded_v1",
+        "lane_group": "llm_variant",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact",
+        "reasoning_effort": "low",
+        "include_rationale": True,
+        "use_confidence_gate": True,
+        "gate_min_top_confidence": 0.72,
+        "gate_min_gap": 0.08,
+    },
+    {
+        "lane_name": "llm_hybrid_compact_no_rationale_v1",
+        "lane_group": "llm_variant",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact",
+        "reasoning_effort": "low",
+        "include_rationale": False,
+        "use_confidence_gate": False,
+    },
+    {
+        "lane_name": "llm_hybrid_compact_medium_v1",
+        "lane_group": "llm_variant",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact",
+        "reasoning_effort": "medium",
+        "include_rationale": True,
+        "use_confidence_gate": False,
+    },
+    {
+        "lane_name": "llm_hybrid_freedom_compact_v1",
+        "lane_group": "llm_variant",
         "lane_mode": "llm_freedom",
         "llm_component_scope": "bc_freedom",
         "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact",
+        "reasoning_effort": "low",
+        "include_rationale": True,
+        "use_confidence_gate": False,
     },
 )
 
@@ -154,6 +254,11 @@ class _LLMSelectionResponse(BaseModel):
     selected_candidate_ids: list[str] = Field(default_factory=list)
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
     rationale: str = Field(default="", max_length=120)
+
+
+class _LLMSelectionNoRationaleResponse(BaseModel):
+    selected_candidate_ids: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
 
 
 @dataclass(slots=True)
@@ -353,10 +458,11 @@ def normalize_llm_selected_candidate_ids(
     return normalized
 
 
-def _rough_prompt_cost(system_prompt: str, user_payload: dict[str, Any]) -> float:
+def _rough_prompt_cost(system_prompt: str, user_payload: dict[str, Any], *, include_rationale: bool) -> float:
     payload_text = json.dumps(user_payload, separators=(",", ":"), ensure_ascii=True)
     estimated_input_tokens = max(1, int((len(system_prompt) + len(payload_text)) / 4))
-    return estimate_llm_usage_cost(input_tokens=estimated_input_tokens, output_tokens=96)
+    estimated_output_tokens = 96 if include_rationale else 56
+    return estimate_llm_usage_cost(input_tokens=estimated_input_tokens, output_tokens=estimated_output_tokens)
 
 
 def _resolve_output_dir(request: BacktestRunRequest) -> Path:
@@ -737,6 +843,8 @@ def _build_llm_prompt_payload(
     lane_name: str,
     lane_mode: str,
     llm_component_scope: str,
+    prompt_profile: str,
+    use_confidence_gate: bool,
     game_id: str,
     opening_band: str,
     available_candidates: list[dict[str, Any]],
@@ -746,67 +854,122 @@ def _build_llm_prompt_payload(
     profile_rows = []
     for family in families_in_scope:
         profile = family_profiles.get(family) or {}
-        profile_rows.append(
-            {
-                "fam": family,
-                "role": profile.get("candidate_role"),
-                "entry": profile.get("entry_rule"),
-                "exit": profile.get("exit_rule"),
-                "wr": profile.get("win_rate"),
-                "ar": profile.get("avg_return"),
-                "n": profile.get("trade_count"),
-                "strong": profile.get("strong_contexts") or [],
-                "weak": profile.get("weak_contexts") or [],
-            }
-        )
+        if prompt_profile == "compact":
+            profile_rows.append(
+                {
+                    "fam": family,
+                    "role": profile.get("candidate_role"),
+                    "wr": profile.get("win_rate"),
+                    "ar": profile.get("avg_return"),
+                    "n": profile.get("trade_count"),
+                    "tags": list(profile.get("tags") or [])[:3],
+                }
+            )
+        else:
+            profile_rows.append(
+                {
+                    "fam": family,
+                    "role": profile.get("candidate_role"),
+                    "entry": profile.get("entry_rule"),
+                    "exit": profile.get("exit_rule"),
+                    "wr": profile.get("win_rate"),
+                    "ar": profile.get("avg_return"),
+                    "n": profile.get("trade_count"),
+                    "strong": profile.get("strong_contexts") or [],
+                    "weak": profile.get("weak_contexts") or [],
+                }
+            )
     candidate_rows = []
     for candidate in available_candidates:
-        candidate_rows.append(
-            {
-                "id": candidate["candidate_id"],
-                "role": candidate["candidate_role"],
-                "fam": candidate["strategy_family"],
-                "side": candidate["team_side"],
-                "tm": candidate["team_slug"],
-                "opp": candidate["opponent_team_slug"],
-                "ob": candidate["opening_band"],
-                "per": candidate["period_label"],
-                "ctx": candidate["context_bucket"],
-                "sd": candidate["score_diff"],
-                "ep": candidate["entry_price"],
-                "sig": candidate["signal_strength"],
-                "det_conf": candidate["deterministic_confidence"],
-                "ctx_ar": candidate["context_avg_return"],
-                "ctx_wr": candidate["context_win_rate"],
-                "ctx_n": candidate["context_trade_count"],
-                "dfo": candidate["price_delta_from_open"],
-                "lc": candidate["lead_changes_so_far"],
-                "m5": candidate["net_points_last_5_events"],
-                "trace": candidate["trace_rows"],
-                "meta": candidate["entry_metadata"],
-            }
-        )
+        base_row = {
+            "id": candidate["candidate_id"],
+            "role": candidate["candidate_role"],
+            "fam": candidate["strategy_family"],
+            "side": candidate["team_side"],
+            "tm": candidate["team_slug"],
+            "opp": candidate["opponent_team_slug"],
+            "ob": candidate["opening_band"],
+            "per": candidate["period_label"],
+            "ctx": candidate["context_bucket"],
+            "sd": candidate["score_diff"],
+            "ep": candidate["entry_price"],
+            "sig": candidate["signal_strength"],
+            "det_conf": candidate["deterministic_confidence"],
+            "ctx_ar": candidate["context_avg_return"],
+            "ctx_wr": candidate["context_win_rate"],
+            "ctx_n": candidate["context_trade_count"],
+            "dfo": candidate["price_delta_from_open"],
+            "lc": candidate["lead_changes_so_far"],
+            "m5": candidate["net_points_last_5_events"],
+        }
+        if prompt_profile != "compact":
+            base_row["trace"] = candidate["trace_rows"]
+            base_row["meta"] = candidate["entry_metadata"]
+        candidate_rows.append(base_row)
+    sorted_candidates = sorted(
+        available_candidates,
+        key=lambda candidate: (
+            -float(candidate.get("deterministic_confidence") or 0.0),
+            -float(candidate.get("rank_score") or 0.0),
+            str(candidate.get("candidate_id") or ""),
+        ),
+    )
+    top_candidate = sorted_candidates[0] if sorted_candidates else {}
+    second_candidate = sorted_candidates[1] if len(sorted_candidates) > 1 else {}
+    top_confidence = _safe_float(top_candidate.get("deterministic_confidence")) or 0.0
+    second_confidence = _safe_float(second_candidate.get("deterministic_confidence")) or 0.0
+    router_hint = {
+        "top_id": top_candidate.get("candidate_id"),
+        "top_family": top_candidate.get("strategy_family"),
+        "top_det_conf": round(top_confidence, 6),
+        "gap_to_next": round(max(0.0, top_confidence - second_confidence), 6),
+        "candidate_count": len(available_candidates),
+        "confidence_gate_active": bool(use_confidence_gate),
+    }
     return {
         "v": _LLM_PROMPT_VERSION,
         "lane": lane_name,
         "mode": lane_mode,
         "scope": llm_component_scope,
+        "profile": prompt_profile,
         "game_id": game_id,
         "opening_band": opening_band,
+        "router": router_hint,
         "profiles": profile_rows,
         "candidates": candidate_rows,
     }
 
 
-def _build_llm_system_prompt(*, lane_mode: str, llm_component_scope: str) -> str:
+def _build_llm_system_prompt(
+    *,
+    lane_mode: str,
+    llm_component_scope: str,
+    prompt_profile: str,
+    include_rationale: bool,
+    use_confidence_gate: bool,
+) -> str:
     constraint = "Select no more than one core and one extra candidate." if lane_mode != "llm_freedom" else "You may select multiple candidates if they reinforce the same side."
+    profile_hint = (
+        "Compact payload: rely on deterministic confidence, context stats, score state, and momentum fields."
+        if prompt_profile == "compact"
+        else "Full payload: you may also use trace rows and entry metadata."
+    )
+    gate_hint = (
+        "If the router leader is already strong, prefer keeping the deterministic leader instead of forcing a novelty override."
+        if use_confidence_gate
+        else "Only override the deterministic leader when the evidence clearly favors another candidate or a skip."
+    )
+    output_hint = (
+        "Return only minified JSON with the selected candidate ids, a confidence score, and a rationale under 80 characters."
+        if include_rationale
+        else "Return only minified JSON with the selected candidate ids and a confidence score."
+    )
     return (
         "You are evaluating NBA live-trading candidate strategies. "
         "Use only the JSON provided. Optimize for compounded bankroll growth under drawdown control. "
         "Prefer skip when support is weak or contexts are contradictory. "
         "Never invent new strategy ids. Never select both sides of the same game. "
-        f"Lane scope is {llm_component_scope}. {constraint} "
-        "Return only minified JSON with the selected candidate ids, a confidence score, and a rationale under 80 characters."
+        f"Lane scope is {llm_component_scope}. {constraint} {profile_hint} {gate_hint} {output_hint}"
     )
 
 
@@ -853,13 +1016,43 @@ def _select_fallback_candidate_ids(
     return selected
 
 
+def _confidence_gate_decision(
+    available_candidates: list[dict[str, Any]],
+    *,
+    enabled: bool,
+    min_top_confidence: float,
+    min_gap: float,
+) -> tuple[bool, float, float]:
+    if not enabled or not available_candidates:
+        return False, 0.0, 0.0
+    sorted_candidates = sorted(
+        available_candidates,
+        key=lambda candidate: (
+            -float(candidate.get("deterministic_confidence") or 0.0),
+            -float(candidate.get("rank_score") or 0.0),
+            str(candidate.get("candidate_id") or ""),
+        ),
+    )
+    top_confidence = _safe_float(sorted_candidates[0].get("deterministic_confidence")) or 0.0
+    second_confidence = _safe_float(sorted_candidates[1].get("deterministic_confidence")) or 0.0 if len(sorted_candidates) > 1 else 0.0
+    gap = max(0.0, top_confidence - second_confidence)
+    return top_confidence >= float(min_top_confidence) and gap >= float(min_gap), top_confidence, gap
+
+
 def _maybe_call_llm(
     *,
     client: OpenAI | None,
     model: str,
     lane_name: str,
+    lane_group: str,
     lane_mode: str,
     llm_component_scope: str,
+    prompt_profile: str,
+    include_rationale: bool,
+    reasoning_effort: str,
+    use_confidence_gate: bool,
+    gate_min_top_confidence: float,
+    gate_min_gap: float,
     allowed_roles: tuple[str, ...] | list[str],
     available_candidates: list[dict[str, Any]],
     family_profiles: dict[str, dict[str, Any]],
@@ -877,22 +1070,58 @@ def _maybe_call_llm(
     if not available_candidates:
         return _LLMCallResult([], 0.0, "No candidates available.", False, 0, 0, 0, 0, 0.0, "no_candidates")
 
+    gate_triggered, top_confidence, top_gap = _confidence_gate_decision(
+        available_candidates,
+        enabled=use_confidence_gate,
+        min_top_confidence=gate_min_top_confidence,
+        min_gap=gate_min_gap,
+    )
+    if gate_triggered:
+        rationale = "" if not include_rationale else f"Gate kept router leader c={top_confidence:.2f} g={top_gap:.2f}"
+        return _LLMCallResult(
+            fallback_ids,
+            top_confidence if fallback_ids else 0.0,
+            rationale,
+            False,
+            0,
+            0,
+            0,
+            0,
+            0.0,
+            "confidence_gate",
+        )
+
     prompt_payload = _build_llm_prompt_payload(
         lane_name=lane_name,
         lane_mode=lane_mode,
         llm_component_scope=llm_component_scope,
+        prompt_profile=prompt_profile,
+        use_confidence_gate=use_confidence_gate,
         game_id=str(available_candidates[0].get("game_id") or ""),
         opening_band=str(available_candidates[0].get("opening_band") or ""),
         available_candidates=available_candidates,
         family_profiles=family_profiles,
     )
-    system_prompt = _build_llm_system_prompt(lane_mode=lane_mode, llm_component_scope=llm_component_scope)
+    system_prompt = _build_llm_system_prompt(
+        lane_mode=lane_mode,
+        llm_component_scope=llm_component_scope,
+        prompt_profile=prompt_profile,
+        include_rationale=include_rationale,
+        use_confidence_gate=use_confidence_gate,
+    )
     cache_key_payload = {
         "model": model,
         "prompt_version": _LLM_PROMPT_VERSION,
         "lane_name": lane_name,
+        "lane_group": lane_group,
         "lane_mode": lane_mode,
         "llm_component_scope": llm_component_scope,
+        "prompt_profile": prompt_profile,
+        "include_rationale": include_rationale,
+        "reasoning_effort": reasoning_effort,
+        "use_confidence_gate": use_confidence_gate,
+        "gate_min_top_confidence": gate_min_top_confidence,
+        "gate_min_gap": gate_min_gap,
         "payload": prompt_payload,
     }
     cache_key = hashlib.sha256(json.dumps(cache_key_payload, separators=(",", ":"), sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()
@@ -917,7 +1146,7 @@ def _maybe_call_llm(
             "cache_hit",
         )
 
-    estimated_cost = _rough_prompt_cost(system_prompt, prompt_payload)
+    estimated_cost = _rough_prompt_cost(system_prompt, prompt_payload, include_rationale=include_rationale)
     if budget_state.spent_usd + estimated_cost > max_budget_usd:
         return _LLMCallResult(
             fallback_ids,
@@ -946,18 +1175,19 @@ def _maybe_call_llm(
         )
 
     try:
+        response_model: type[BaseModel] = _LLMSelectionResponse if include_rationale else _LLMSelectionNoRationaleResponse
         response = client.responses.parse(
             model=model,
             input=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": json.dumps(prompt_payload, separators=(",", ":"), ensure_ascii=True)},
             ],
-            text_format=_LLMSelectionResponse,
-            reasoning={"effort": "low"},
+            text_format=response_model,
+            reasoning={"effort": reasoning_effort},
             max_output_tokens=240,
             store=False,
         )
-        parsed = getattr(response, "output_parsed", None) or _LLMSelectionResponse()
+        parsed = getattr(response, "output_parsed", None) or response_model()
         usage = _usage_from_response(response)
         actual_cost = estimate_llm_usage_cost(
             input_tokens=usage["input_tokens"],
@@ -974,13 +1204,13 @@ def _maybe_call_llm(
         cache_store.payload[cache_key] = {
             "selected_candidate_ids": list(normalized_ids),
             "confidence": float(parsed.confidence),
-            "rationale": str(parsed.rationale),
+            "rationale": str(getattr(parsed, "rationale", "") or ""),
         }
         _persist_llm_cache(cache_store)
         return _LLMCallResult(
             normalized_ids,
             float(parsed.confidence),
-            str(parsed.rationale),
+            str(getattr(parsed, "rationale", "") or ""),
             False,
             usage["input_tokens"],
             usage["cached_input_tokens"],
@@ -1026,6 +1256,7 @@ def _selected_trade_frame(selected_candidate_ids: list[str], candidate_lookup: d
 def _portfolio_summary_row_to_frame(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "starting_bankroll": _safe_float(summary.get("starting_bankroll")) or 0.0,
+        "first_entry_at": _serialise_scalar(summary.get("first_entry_at")),
         "ending_bankroll": _safe_float(summary.get("ending_bankroll")) or 0.0,
         "compounded_return": _safe_float(summary.get("compounded_return")) or 0.0,
         "max_drawdown_pct": _safe_float(summary.get("max_drawdown_pct")) or 0.0,
@@ -1060,6 +1291,282 @@ def _run_lane_portfolio(
     return summary
 
 
+def _run_lane_portfolio_with_steps(
+    trades_df: pd.DataFrame,
+    *,
+    sample_name: str,
+    lane_name: str,
+    portfolio_scope: str,
+    strategy_family_members: tuple[str, ...] | list[str],
+    request: BacktestRunRequest,
+) -> tuple[dict[str, Any], pd.DataFrame]:
+    return simulate_trade_portfolio(
+        trades_df,
+        sample_name=sample_name,
+        strategy_family=lane_name,
+        portfolio_scope=portfolio_scope,
+        strategy_family_members=tuple(strategy_family_members),
+        initial_bankroll=request.portfolio_initial_bankroll,
+        position_size_fraction=request.portfolio_position_size_fraction,
+        game_limit=request.portfolio_game_limit,
+        min_order_dollars=request.portfolio_min_order_dollars,
+        min_shares=request.portfolio_min_shares,
+        max_concurrent_positions=request.portfolio_max_concurrent_positions,
+        concurrency_mode=request.portfolio_concurrency_mode,
+    )
+
+
+def _build_daily_path_frame(
+    summary_df: pd.DataFrame,
+    steps_df: pd.DataFrame,
+    *,
+    lane_lookup: dict[str, dict[str, Any]],
+) -> pd.DataFrame:
+    if summary_df.empty:
+        return pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS)
+
+    step_work = steps_df.copy() if not steps_df.empty else pd.DataFrame(columns=steps_df.columns)
+    if not step_work.empty:
+        step_work["settled_at"] = pd.to_datetime(step_work["settled_at"], errors="coerce", utc=True)
+        step_work["entry_at"] = pd.to_datetime(step_work["entry_at"], errors="coerce", utc=True)
+        step_work["bankroll_after"] = pd.to_numeric(step_work["bankroll_after"], errors="coerce")
+
+    rows: list[dict[str, Any]] = []
+    for summary in summary_df.to_dict(orient="records"):
+        lane_name = str(summary.get("lane_name") or summary.get("strategy_family") or "")
+        lane_meta = lane_lookup.get(lane_name) or {}
+        lane_steps = (
+            step_work[
+                (step_work["sample_name"] == summary.get("sample_name"))
+                & (step_work["strategy_family"] == lane_name)
+            ].copy()
+            if not step_work.empty
+            else pd.DataFrame(columns=step_work.columns)
+        )
+        lane_steps = lane_steps[
+            (lane_steps["portfolio_action"] == "executed") & lane_steps["settled_at"].notna()
+        ].copy() if not lane_steps.empty else lane_steps
+        starting_bankroll = float(summary.get("starting_bankroll") or 0.0)
+        first_entry_at = pd.to_datetime(summary.get("first_entry_at"), errors="coerce", utc=True)
+        if pd.notna(first_entry_at):
+            rows.append(
+                {
+                    "sample_name": summary.get("sample_name"),
+                    "lane_name": lane_name,
+                    "lane_mode": summary.get("lane_mode"),
+                    "lane_group": lane_meta.get("lane_group"),
+                    "path_day_index": 0,
+                    "path_date": _serialise_scalar(first_entry_at.date()),
+                    "settled_trade_count_to_date": 0,
+                    "ending_bankroll": starting_bankroll,
+                    "daily_pnl_amount": 0.0,
+                    "compounded_return": 0.0,
+                }
+            )
+        previous_bankroll = starting_bankroll
+        for index, record in enumerate(lane_steps.sort_values(["settled_at", "trade_sequence"], kind="mergesort").to_dict(orient="records"), start=1):
+            ending_bankroll = _safe_float(record.get("bankroll_after")) or previous_bankroll
+            path_date = pd.to_datetime(record.get("settled_at"), errors="coerce", utc=True)
+            rows.append(
+                {
+                    "sample_name": summary.get("sample_name"),
+                    "lane_name": lane_name,
+                    "lane_mode": summary.get("lane_mode"),
+                    "lane_group": lane_meta.get("lane_group"),
+                    "path_day_index": index,
+                    "path_date": _serialise_scalar(path_date.date()) if pd.notna(path_date) else None,
+                    "settled_trade_count_to_date": index,
+                    "ending_bankroll": ending_bankroll,
+                    "daily_pnl_amount": ending_bankroll - previous_bankroll,
+                    "compounded_return": ((ending_bankroll / starting_bankroll) - 1.0) if starting_bankroll > 0 else 0.0,
+                }
+            )
+            previous_bankroll = ending_bankroll
+    return pd.DataFrame(rows, columns=LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS)
+
+
+def _lane_group_for_name(lane_name: str) -> str:
+    return "llm_variant" if str(lane_name).startswith("llm_") else "deterministic"
+
+
+def _lane_config_rows() -> list[dict[str, Any]]:
+    return [
+        {
+            "lane_name": str(lane["lane_name"]),
+            "lane_group": str(lane.get("lane_group") or "llm_variant"),
+            "lane_mode": str(lane["lane_mode"]),
+            "llm_component_scope": str(lane["llm_component_scope"]),
+            "prompt_profile": str(lane.get("prompt_profile") or "full"),
+            "reasoning_effort": str(lane.get("reasoning_effort") or "low"),
+            "include_rationale": bool(lane.get("include_rationale", True)),
+            "use_confidence_gate": bool(lane.get("use_confidence_gate", False)),
+        }
+        for lane in _LLM_LANES
+    ]
+
+
+def _llm_finalist_score(
+    *,
+    mean_ending_bankroll: float | None,
+    positive_iteration_rate: float | None,
+    mean_max_drawdown_pct: float | None,
+    mean_executed_trade_count: float | None,
+) -> float:
+    bankroll = max(1.0, float(mean_ending_bankroll or 0.0))
+    positive_rate = float(positive_iteration_rate or 0.0)
+    drawdown = max(0.0, float(mean_max_drawdown_pct or 0.0))
+    trade_density = min(1.0, max(0.0, float(mean_executed_trade_count or 0.0) / 20.0))
+    return float(np.log10(bankroll) + (positive_rate * 0.95) + (trade_density * 0.15) - (drawdown * 1.35))
+
+
+def _rank_showdown_lanes(lane_summary_df: pd.DataFrame) -> list[dict[str, Any]]:
+    if lane_summary_df.empty:
+        return []
+    ranked_rows: list[dict[str, Any]] = []
+    for row in lane_summary_df.to_dict(orient="records"):
+        finalist_score = _llm_finalist_score(
+            mean_ending_bankroll=_safe_float(row.get("mean_ending_bankroll")),
+            positive_iteration_rate=_safe_float(row.get("positive_iteration_rate")),
+            mean_max_drawdown_pct=_safe_float(row.get("mean_max_drawdown_pct")),
+            mean_executed_trade_count=_safe_float(row.get("mean_executed_trade_count")),
+        )
+        ranked_rows.append(
+            {
+                **row,
+                "finalist_score": finalist_score,
+                "lane_group": row.get("lane_group") or _lane_group_for_name(str(row.get("lane_name") or "")),
+            }
+        )
+    ranked_rows.sort(
+        key=lambda row: (
+            float(row.get("finalist_score") or float("-inf")),
+            float(row.get("mean_ending_bankroll") or float("-inf")),
+            -float(row.get("mean_max_drawdown_pct") or 0.0),
+            str(row.get("lane_name") or ""),
+        ),
+        reverse=True,
+    )
+    return ranked_rows
+
+
+def _run_llm_lane_sample(
+    *,
+    iteration_index: int,
+    iteration_seed: int,
+    sample_name: str,
+    sampled_game_ids: tuple[str, ...] | list[str],
+    lane: dict[str, Any],
+    game_candidates: dict[str, list[dict[str, Any]]],
+    family_profiles: dict[str, dict[str, Any]],
+    request: BacktestRunRequest,
+    client: OpenAI | None,
+    budget_state: _LLMBudgetState,
+    cache_store: _LLMCacheStore,
+) -> tuple[pd.DataFrame, dict[str, Any], list[dict[str, Any]]]:
+    lane_name = str(lane["lane_name"])
+    lane_group = str(lane.get("lane_group") or "llm_variant")
+    lane_mode = str(lane["lane_mode"])
+    llm_component_scope = str(lane["llm_component_scope"])
+    allowed_roles = tuple(str(role) for role in lane["allowed_roles"])
+    prompt_profile = str(lane.get("prompt_profile") or "full")
+    include_rationale = bool(lane.get("include_rationale", True))
+    reasoning_effort = str(lane.get("reasoning_effort") or "low")
+    use_confidence_gate = bool(lane.get("use_confidence_gate", False))
+    gate_min_top_confidence = float(lane.get("gate_min_top_confidence") or 0.0)
+    gate_min_gap = float(lane.get("gate_min_gap") or 0.0)
+
+    lane_selected_ids: list[str] = []
+    lane_token_totals = {
+        "llm_call_count": 0,
+        "llm_cache_hit_count": 0,
+        "llm_input_tokens": 0,
+        "llm_cached_input_tokens": 0,
+        "llm_output_tokens": 0,
+        "llm_reasoning_tokens": 0,
+        "llm_estimated_cost_usd": 0.0,
+    }
+    candidate_lookup = {
+        str(candidate["candidate_id"]): candidate
+        for game_id in sampled_game_ids
+        for candidate in game_candidates.get(str(game_id), [])
+    }
+    decision_rows: list[dict[str, Any]] = []
+    allowed_role_set = set(allowed_roles)
+
+    for game_id in sampled_game_ids:
+        all_candidates = game_candidates.get(str(game_id), [])
+        available_candidates = [
+            candidate
+            for candidate in all_candidates
+            if str(candidate.get("candidate_role")) in allowed_role_set
+        ]
+        call_result = _maybe_call_llm(
+            client=client,
+            model=request.llm_model,
+            lane_name=lane_name,
+            lane_group=lane_group,
+            lane_mode=lane_mode,
+            llm_component_scope=llm_component_scope,
+            prompt_profile=prompt_profile,
+            include_rationale=include_rationale,
+            reasoning_effort=reasoning_effort,
+            use_confidence_gate=use_confidence_gate,
+            gate_min_top_confidence=gate_min_top_confidence,
+            gate_min_gap=gate_min_gap,
+            allowed_roles=allowed_roles,
+            available_candidates=available_candidates,
+            family_profiles=family_profiles,
+            max_budget_usd=float(request.llm_max_budget_usd),
+            budget_state=budget_state,
+            cache_store=cache_store,
+        )
+        lane_selected_ids.extend(call_result.selected_candidate_ids)
+        lane_token_totals["llm_call_count"] += 0 if call_result.decision_status in {"cache_hit", "no_candidates", "budget_guard", "client_unavailable", "error", "confidence_gate"} else 1
+        lane_token_totals["llm_cache_hit_count"] += 1 if call_result.cache_hit else 0
+        lane_token_totals["llm_input_tokens"] += int(call_result.input_tokens)
+        lane_token_totals["llm_cached_input_tokens"] += int(call_result.cached_input_tokens)
+        lane_token_totals["llm_output_tokens"] += int(call_result.output_tokens)
+        lane_token_totals["llm_reasoning_tokens"] += int(call_result.reasoning_tokens)
+        lane_token_totals["llm_estimated_cost_usd"] += float(call_result.estimated_cost_usd)
+        decision_rows.append(
+            {
+                "iteration_index": iteration_index,
+                "iteration_seed": iteration_seed,
+                "sample_name": sample_name,
+                "lane_name": lane_name,
+                "lane_mode": lane_mode,
+                "lane_group": lane_group,
+                "prompt_profile": prompt_profile,
+                "reasoning_effort": reasoning_effort,
+                "include_rationale": include_rationale,
+                "use_confidence_gate": use_confidence_gate,
+                "decision_stage": llm_component_scope,
+                "game_id": game_id,
+                "game_date": _serialise_scalar((all_candidates[0].get("game_date") if all_candidates else None)),
+                "opening_band": str(all_candidates[0].get("opening_band") or "") if all_candidates else None,
+                "available_candidate_count": len(available_candidates),
+                "available_candidate_ids_json": json.dumps([candidate["candidate_id"] for candidate in available_candidates], separators=(",", ":")),
+                "selected_candidate_count": len(call_result.selected_candidate_ids),
+                "selected_candidate_ids_json": json.dumps(call_result.selected_candidate_ids, separators=(",", ":")),
+                "selected_strategy_families_json": json.dumps(
+                    sorted({candidate_lookup[candidate_id]["strategy_family"] for candidate_id in call_result.selected_candidate_ids if candidate_id in candidate_lookup}),
+                    separators=(",", ":"),
+                ),
+                "decision_status": call_result.decision_status,
+                "cache_hit_flag": bool(call_result.cache_hit),
+                "llm_confidence": float(call_result.confidence),
+                "rationale": call_result.rationale,
+                "input_tokens": int(call_result.input_tokens),
+                "cached_input_tokens": int(call_result.cached_input_tokens),
+                "output_tokens": int(call_result.output_tokens),
+                "reasoning_tokens": int(call_result.reasoning_tokens),
+                "estimated_cost_usd": float(call_result.estimated_cost_usd),
+                "error_text": call_result.error_text,
+            }
+        )
+    return _selected_trade_frame(lane_selected_ids, candidate_lookup), lane_token_totals, decision_rows
+
+
 def build_llm_experiment_frames(
     split_results: dict[str, BacktestResult],
     request: BacktestRunRequest,
@@ -1076,6 +1583,9 @@ def build_llm_experiment_frames(
         "llm_experiment_summary": pd.DataFrame(columns=LLM_EXPERIMENT_SUMMARY_COLUMNS),
         "llm_experiment_lane_summary": pd.DataFrame(columns=LLM_EXPERIMENT_LANE_SUMMARY_COLUMNS),
         "llm_experiment_decisions": pd.DataFrame(columns=LLM_EXPERIMENT_DECISION_COLUMNS),
+        "llm_experiment_showdown_summary": pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_SUMMARY_COLUMNS),
+        "llm_experiment_showdown_daily_paths": pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS),
+        "llm_experiment_showdown_decisions": pd.DataFrame(columns=LLM_EXPERIMENT_DECISION_COLUMNS),
     }
     if not request.llm_enable:
         return {
@@ -1122,6 +1632,29 @@ def build_llm_experiment_frames(
     cache_store = _load_llm_cache(output_dir / _LLM_CACHE_FILENAME)
     client = _resolve_openai_client() if request.llm_enable else None
     budget_state = _LLMBudgetState()
+    lane_catalog = _lane_config_rows()
+    lane_lookup = {row["lane_name"]: row for row in lane_catalog}
+    lane_lookup[MASTER_ROUTER_PORTFOLIO] = {
+        "lane_name": MASTER_ROUTER_PORTFOLIO,
+        "lane_group": "deterministic",
+        "lane_mode": "deterministic",
+        "llm_component_scope": "deterministic_router",
+        "prompt_profile": None,
+        "reasoning_effort": None,
+        "include_rationale": None,
+        "use_confidence_gate": None,
+    }
+    for family in relevant_families:
+        lane_lookup[str(family)] = {
+            "lane_name": str(family),
+            "lane_group": "deterministic",
+            "lane_mode": "deterministic",
+            "llm_component_scope": "single_family",
+            "prompt_profile": None,
+            "reasoning_effort": None,
+            "include_rationale": None,
+            "use_confidence_gate": None,
+        }
 
     iteration_rows: list[dict[str, Any]] = []
     summary_rows: list[dict[str, Any]] = []
@@ -1173,8 +1706,13 @@ def build_llm_experiment_frames(
                 "iteration_seed": iteration_seed,
                 "sample_name": sample_name,
                 "lane_name": MASTER_ROUTER_PORTFOLIO,
+                "lane_group": "deterministic",
                 "lane_mode": "deterministic",
                 "llm_component_scope": "deterministic_router",
+                "prompt_profile": None,
+                "reasoning_effort": None,
+                "include_rationale": None,
+                "use_confidence_gate": None,
                 **_portfolio_summary_row_to_frame(master_router_summary),
                 "llm_call_count": 0,
                 "llm_cache_hit_count": 0,
@@ -1204,8 +1742,13 @@ def build_llm_experiment_frames(
                     "iteration_seed": iteration_seed,
                     "sample_name": sample_name,
                     "lane_name": family,
+                    "lane_group": "deterministic",
                     "lane_mode": "deterministic",
                     "llm_component_scope": "single_family",
+                    "prompt_profile": None,
+                    "reasoning_effort": None,
+                    "include_rationale": None,
+                    "use_confidence_gate": None,
                     **_portfolio_summary_row_to_frame(baseline_summary),
                     "llm_call_count": 0,
                     "llm_cache_hit_count": 0,
@@ -1221,84 +1764,20 @@ def build_llm_experiment_frames(
             lane_name = str(lane["lane_name"])
             lane_mode = str(lane["lane_mode"])
             llm_component_scope = str(lane["llm_component_scope"])
-            allowed_roles = tuple(str(role) for role in lane["allowed_roles"])
-            lane_selected_ids: list[str] = []
-            lane_token_totals = {
-                "llm_call_count": 0,
-                "llm_cache_hit_count": 0,
-                "llm_input_tokens": 0,
-                "llm_cached_input_tokens": 0,
-                "llm_output_tokens": 0,
-                "llm_reasoning_tokens": 0,
-                "llm_estimated_cost_usd": 0.0,
-            }
-            candidate_lookup = {
-                str(candidate["candidate_id"]): candidate
-                for game_id in sampled_game_ids
-                for candidate in game_candidates.get(game_id, [])
-            }
-
-            for game_id in sampled_game_ids:
-                all_candidates = game_candidates.get(game_id, [])
-                available_candidates = [
-                    candidate
-                    for candidate in all_candidates
-                    if str(candidate.get("candidate_role")) in set(allowed_roles)
-                ]
-                call_result = _maybe_call_llm(
-                    client=client,
-                    model=request.llm_model,
-                    lane_name=lane_name,
-                    lane_mode=lane_mode,
-                    llm_component_scope=llm_component_scope,
-                    allowed_roles=allowed_roles,
-                    available_candidates=available_candidates,
-                    family_profiles=family_profiles,
-                    max_budget_usd=float(request.llm_max_budget_usd),
-                    budget_state=budget_state,
-                    cache_store=cache_store,
-                )
-                lane_selected_ids.extend(call_result.selected_candidate_ids)
-                lane_token_totals["llm_call_count"] += 0 if call_result.decision_status in {"cache_hit", "no_candidates", "budget_guard", "client_unavailable", "error"} else 1
-                lane_token_totals["llm_cache_hit_count"] += 1 if call_result.cache_hit else 0
-                lane_token_totals["llm_input_tokens"] += int(call_result.input_tokens)
-                lane_token_totals["llm_cached_input_tokens"] += int(call_result.cached_input_tokens)
-                lane_token_totals["llm_output_tokens"] += int(call_result.output_tokens)
-                lane_token_totals["llm_reasoning_tokens"] += int(call_result.reasoning_tokens)
-                lane_token_totals["llm_estimated_cost_usd"] += float(call_result.estimated_cost_usd)
-                decision_rows.append(
-                    {
-                        "iteration_index": iteration_index,
-                        "iteration_seed": iteration_seed,
-                        "sample_name": sample_name,
-                        "lane_name": lane_name,
-                        "lane_mode": lane_mode,
-                        "decision_stage": llm_component_scope,
-                        "game_id": game_id,
-                        "game_date": _serialise_scalar((all_candidates[0].get("game_date") if all_candidates else None)),
-                        "opening_band": str(all_candidates[0].get("opening_band") or "") if all_candidates else None,
-                        "available_candidate_count": len(available_candidates),
-                        "available_candidate_ids_json": json.dumps([candidate["candidate_id"] for candidate in available_candidates], separators=(",", ":")),
-                        "selected_candidate_count": len(call_result.selected_candidate_ids),
-                        "selected_candidate_ids_json": json.dumps(call_result.selected_candidate_ids, separators=(",", ":")),
-                        "selected_strategy_families_json": json.dumps(
-                            sorted({candidate_lookup[candidate_id]["strategy_family"] for candidate_id in call_result.selected_candidate_ids if candidate_id in candidate_lookup}),
-                            separators=(",", ":"),
-                        ),
-                        "decision_status": call_result.decision_status,
-                        "cache_hit_flag": bool(call_result.cache_hit),
-                        "llm_confidence": float(call_result.confidence),
-                        "rationale": call_result.rationale,
-                        "input_tokens": int(call_result.input_tokens),
-                        "cached_input_tokens": int(call_result.cached_input_tokens),
-                        "output_tokens": int(call_result.output_tokens),
-                        "reasoning_tokens": int(call_result.reasoning_tokens),
-                        "estimated_cost_usd": float(call_result.estimated_cost_usd),
-                        "error_text": call_result.error_text,
-                    }
-                )
-
-            selected_trades_df = _selected_trade_frame(lane_selected_ids, candidate_lookup)
+            selected_trades_df, lane_token_totals, lane_decision_rows = _run_llm_lane_sample(
+                iteration_index=iteration_index,
+                iteration_seed=iteration_seed,
+                sample_name=sample_name,
+                sampled_game_ids=sampled_game_ids,
+                lane=lane,
+                game_candidates=game_candidates,
+                family_profiles=family_profiles,
+                request=request,
+                client=client,
+                budget_state=budget_state,
+                cache_store=cache_store,
+            )
+            decision_rows.extend(lane_decision_rows)
             lane_summary = _run_lane_portfolio(
                 selected_trades_df,
                 sample_name=sample_name,
@@ -1315,6 +1794,11 @@ def build_llm_experiment_frames(
                     "lane_name": lane_name,
                     "lane_mode": lane_mode,
                     "llm_component_scope": llm_component_scope,
+                    "lane_group": str(lane.get("lane_group") or "llm_variant"),
+                    "prompt_profile": lane.get("prompt_profile"),
+                    "reasoning_effort": lane.get("reasoning_effort"),
+                    "include_rationale": lane.get("include_rationale"),
+                    "use_confidence_gate": lane.get("use_confidence_gate"),
                     **_portfolio_summary_row_to_frame(lane_summary),
                     **lane_token_totals,
                 }
@@ -1328,7 +1812,27 @@ def build_llm_experiment_frames(
         lane_summary_df = pd.DataFrame(columns=LLM_EXPERIMENT_LANE_SUMMARY_COLUMNS)
     else:
         grouped = []
-        for (lane_name, lane_mode, llm_component_scope), group in summary_df.groupby(["lane_name", "lane_mode", "llm_component_scope"], sort=False, dropna=False):
+        group_cols = [
+            "lane_name",
+            "lane_mode",
+            "llm_component_scope",
+            "lane_group",
+            "prompt_profile",
+            "reasoning_effort",
+            "include_rationale",
+            "use_confidence_gate",
+        ]
+        for group_key, group in summary_df.groupby(group_cols, sort=False, dropna=False):
+            (
+                lane_name,
+                lane_mode,
+                llm_component_scope,
+                lane_group,
+                prompt_profile,
+                reasoning_effort,
+                include_rationale,
+                use_confidence_gate,
+            ) = group_key
             ending_bankroll = pd.to_numeric(group["ending_bankroll"], errors="coerce")
             starting_bankroll = pd.to_numeric(group["starting_bankroll"], errors="coerce")
             compounded_return = pd.to_numeric(group["compounded_return"], errors="coerce")
@@ -1340,6 +1844,11 @@ def build_llm_experiment_frames(
                     "lane_name": lane_name,
                     "lane_mode": lane_mode,
                     "llm_component_scope": llm_component_scope,
+                    "lane_group": lane_group,
+                    "prompt_profile": prompt_profile,
+                    "reasoning_effort": reasoning_effort,
+                    "include_rationale": include_rationale,
+                    "use_confidence_gate": use_confidence_gate,
                     "iteration_count": int(len(group)),
                     "positive_iteration_count": int((ending_bankroll > starting_bankroll).sum()),
                     "positive_iteration_rate": float((ending_bankroll > starting_bankroll).mean()),
@@ -1356,6 +1865,144 @@ def build_llm_experiment_frames(
             )
         lane_summary_df = pd.DataFrame(grouped, columns=LLM_EXPERIMENT_LANE_SUMMARY_COLUMNS)
 
+    ranked_lanes = _rank_showdown_lanes(lane_summary_df)
+    finalist_rows = ranked_lanes[:_LLM_FINALIST_COUNT]
+    finalist_names = [str(row.get("lane_name") or "") for row in finalist_rows]
+    showdown_summary_rows: list[dict[str, Any]] = []
+    showdown_steps_frames: list[pd.DataFrame] = []
+    showdown_decision_rows: list[dict[str, Any]] = []
+    showdown_summary_df = pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_SUMMARY_COLUMNS)
+    showdown_daily_paths_df = pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS)
+    showdown_decisions_df = pd.DataFrame(columns=LLM_EXPERIMENT_DECISION_COLUMNS)
+    showdown_seed = int(iteration_plan[0]["iteration_seed"]) if iteration_plan else int(request.holdout_seed)
+    showdown_game_count = min(max(1, int(request.portfolio_game_limit)), 100)
+    showdown_plan = build_llm_iteration_plan(
+        evaluation_result,
+        strategy_families=relevant_families,
+        iteration_count=1,
+        games_per_iteration=showdown_game_count,
+        seeds=(showdown_seed,),
+        fallback_seed=request.holdout_seed,
+    )
+    if finalist_names and showdown_plan:
+        showdown_game_ids = tuple(str(game_id) for game_id in showdown_plan[0]["sampled_game_ids"])
+        showdown_result = _subset_backtest_result(evaluation_result, showdown_game_ids)
+        showdown_candidates = _build_game_candidates(
+            showdown_result,
+            family_profiles=family_profiles,
+            priors=priors,
+            core_strategy_families=tuple(core_strategy_families),
+            extra_strategy_families=tuple(extra_strategy_families),
+        )
+        finalist_score_lookup = {str(row["lane_name"]): float(row.get("finalist_score") or 0.0) for row in finalist_rows}
+        llm_lane_lookup = {str(lane["lane_name"]): lane for lane in _LLM_LANES}
+        for lane_name in finalist_names:
+            lane_meta = lane_lookup.get(lane_name) or {}
+            if lane_name == MASTER_ROUTER_PORTFOLIO:
+                trades_df, _ = build_master_router_trade_frame(
+                    showdown_result,
+                    sample_name=_LLM_SHOWDOWN_SAMPLE_NAME,
+                    selection_sample_name=selection_sample_name,
+                    priors=priors,
+                    core_strategy_families=tuple(core_strategy_families),
+                    extra_strategy_families=tuple(extra_strategy_families),
+                )
+                showdown_summary, showdown_steps = _run_lane_portfolio_with_steps(
+                    trades_df,
+                    sample_name=_LLM_SHOWDOWN_SAMPLE_NAME,
+                    lane_name=lane_name,
+                    portfolio_scope=PORTFOLIO_SCOPE_ROUTED,
+                    strategy_family_members=tuple([*core_strategy_families, *extra_strategy_families]),
+                    request=request,
+                )
+                token_totals = {
+                    "llm_call_count": 0,
+                    "llm_cache_hit_count": 0,
+                    "llm_input_tokens": 0,
+                    "llm_cached_input_tokens": 0,
+                    "llm_output_tokens": 0,
+                    "llm_reasoning_tokens": 0,
+                    "llm_estimated_cost_usd": 0.0,
+                }
+            elif lane_name in registry:
+                trades_df = _clean_trades_df(
+                    showdown_result.trade_frames.get(lane_name, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+                )
+                showdown_summary, showdown_steps = _run_lane_portfolio_with_steps(
+                    trades_df,
+                    sample_name=_LLM_SHOWDOWN_SAMPLE_NAME,
+                    lane_name=lane_name,
+                    portfolio_scope=PORTFOLIO_SCOPE_SINGLE_FAMILY,
+                    strategy_family_members=(lane_name,),
+                    request=request,
+                )
+                token_totals = {
+                    "llm_call_count": 0,
+                    "llm_cache_hit_count": 0,
+                    "llm_input_tokens": 0,
+                    "llm_cached_input_tokens": 0,
+                    "llm_output_tokens": 0,
+                    "llm_reasoning_tokens": 0,
+                    "llm_estimated_cost_usd": 0.0,
+                }
+            else:
+                lane = llm_lane_lookup.get(lane_name)
+                if lane is None:
+                    continue
+                trades_df, token_totals, lane_decisions = _run_llm_lane_sample(
+                    iteration_index=0,
+                    iteration_seed=showdown_seed,
+                    sample_name=_LLM_SHOWDOWN_SAMPLE_NAME,
+                    sampled_game_ids=showdown_game_ids,
+                    lane=lane,
+                    game_candidates=showdown_candidates,
+                    family_profiles=family_profiles,
+                    request=request,
+                    client=client,
+                    budget_state=budget_state,
+                    cache_store=cache_store,
+                )
+                showdown_decision_rows.extend(lane_decisions)
+                showdown_summary, showdown_steps = _run_lane_portfolio_with_steps(
+                    trades_df,
+                    sample_name=_LLM_SHOWDOWN_SAMPLE_NAME,
+                    lane_name=lane_name,
+                    portfolio_scope=PORTFOLIO_SCOPE_ROUTED,
+                    strategy_family_members=tuple([*core_strategy_families, *extra_strategy_families]),
+                    request=request,
+                )
+            showdown_summary_rows.append(
+                {
+                    "sample_name": _LLM_SHOWDOWN_SAMPLE_NAME,
+                    "lane_name": lane_name,
+                    "lane_mode": lane_meta.get("lane_mode"),
+                    "lane_group": lane_meta.get("lane_group"),
+                    "prompt_profile": lane_meta.get("prompt_profile"),
+                    "reasoning_effort": lane_meta.get("reasoning_effort"),
+                    "include_rationale": lane_meta.get("include_rationale"),
+                    "use_confidence_gate": lane_meta.get("use_confidence_gate"),
+                    **_portfolio_summary_row_to_frame(showdown_summary),
+                    **token_totals,
+                    "finalist_score": finalist_score_lookup.get(lane_name, 0.0),
+                }
+            )
+            showdown_steps_frames.append(showdown_steps)
+        showdown_summary_df = pd.DataFrame(showdown_summary_rows, columns=LLM_EXPERIMENT_SHOWDOWN_SUMMARY_COLUMNS)
+        showdown_steps_df = (
+            pd.concat(showdown_steps_frames, ignore_index=True)
+            if showdown_steps_frames
+            else pd.DataFrame()
+        )
+        showdown_daily_paths_df = _build_daily_path_frame(showdown_summary_df, showdown_steps_df, lane_lookup=lane_lookup)
+        showdown_decisions_df = pd.DataFrame(showdown_decision_rows, columns=LLM_EXPERIMENT_DECISION_COLUMNS)
+
+    total_cost = (
+        float(pd.to_numeric(summary_df["llm_estimated_cost_usd"], errors="coerce").fillna(0.0).sum()) if not summary_df.empty else 0.0
+    ) + (
+        float(pd.to_numeric(showdown_summary_df["llm_estimated_cost_usd"], errors="coerce").fillna(0.0).sum())
+        if not showdown_summary_df.empty
+        else 0.0
+    )
     payload = {
         "enabled": bool(request.llm_enable),
         "status": "ready" if request.llm_enable else "disabled",
@@ -1366,15 +2013,28 @@ def build_llm_experiment_frames(
         "iteration_game_count": int(request.llm_iteration_games),
         "iteration_count": int(request.llm_iteration_count),
         "max_budget_usd": float(request.llm_max_budget_usd),
-        "total_cost_usd": float(pd.to_numeric(summary_df["llm_estimated_cost_usd"], errors="coerce").fillna(0.0).sum()) if not summary_df.empty else 0.0,
+        "lane_catalog": lane_catalog,
+        "total_cost_usd": total_cost,
         "iterations": json.loads(iteration_df.to_json(orient="records")) if not iteration_df.empty else [],
-        "lane_summary": json.loads(lane_summary_df.to_json(orient="records")) if not lane_summary_df.empty else [],
+        "lane_summary": finalist_rows if finalist_rows else (json.loads(lane_summary_df.to_json(orient="records")) if not lane_summary_df.empty else []),
+        "showdown": {
+            "sample_name": _LLM_SHOWDOWN_SAMPLE_NAME,
+            "seed": showdown_seed,
+            "game_count": int(len(showdown_plan[0]["sampled_game_ids"])) if showdown_plan else 0,
+            "selection_rule": "top_6_by_log_bankroll_plus_positive_rate_minus_drawdown",
+            "finalists": finalist_rows,
+            "summary": json.loads(showdown_summary_df.to_json(orient="records")) if not showdown_summary_df.empty else [],
+            "daily_paths": json.loads(showdown_daily_paths_df.to_json(orient="records")) if not showdown_daily_paths_df.empty else [],
+        },
     }
     frames = {
         "llm_experiment_iterations": iteration_df,
         "llm_experiment_summary": summary_df,
         "llm_experiment_lane_summary": lane_summary_df,
         "llm_experiment_decisions": decisions_df,
+        "llm_experiment_showdown_summary": showdown_summary_df,
+        "llm_experiment_showdown_daily_paths": showdown_daily_paths_df,
+        "llm_experiment_showdown_decisions": showdown_decisions_df,
     }
     return payload, frames
 
