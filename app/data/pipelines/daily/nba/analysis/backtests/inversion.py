@@ -44,6 +44,12 @@ def _select_inversion_entry(group: pd.DataFrame) -> TradeSelection | None:
             if float(row["score_diff"]) < DEFAULT_DYNAMIC_INVERSION_MIN_SCORE_DIFF:
                 previous_price = float(price)
                 continue
+            resolved_price = float(price)
+            signal_strength = (
+                ((resolved_price - entry_threshold) * 100.0)
+                + max(0.0, float(row["net_points_last_5_events"]))
+                + max(0.0, float(row["score_diff"])) * 0.5
+            )
             return TradeSelection(
                 entry_index=index,
                 metadata={
@@ -51,6 +57,7 @@ def _select_inversion_entry(group: pd.DataFrame) -> TradeSelection | None:
                     "exit_threshold": DEFAULT_DYNAMIC_INVERSION_EXIT_THRESHOLD,
                     "entry_momentum_min": DEFAULT_DYNAMIC_INVERSION_MIN_MOMENTUM,
                     "entry_score_diff_min": DEFAULT_DYNAMIC_INVERSION_MIN_SCORE_DIFF,
+                    "signal_strength": signal_strength,
                 },
             )
         previous_price = float(price)

@@ -39,6 +39,8 @@ BACKTEST_TRADE_COLUMNS = (
     "score_diff_bucket",
     "context_bucket",
     "context_tags_json",
+    "entry_metadata_json",
+    "signal_strength",
     "entry_state_index",
     "exit_state_index",
     "entry_at",
@@ -197,9 +199,11 @@ def _trade_row(
     entry_rule: str,
     exit_rule: str,
     slippage_cents: int,
+    selection_metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     entry = group.iloc[entry_index]
     exit_row = group.iloc[exit_index]
+    metadata = dict(selection_metadata or {})
     entry_price = float(entry["team_price"])
     exit_price = float(exit_row["team_price"])
     mfe_after_entry = float(group.iloc[entry_index:]["team_price"].max() - entry_price)
@@ -232,6 +236,8 @@ def _trade_row(
             "score_diff_bucket": entry["score_diff_bucket"],
             "context_bucket": entry["context_bucket"],
         },
+        "entry_metadata_json": metadata,
+        "signal_strength": _safe_float(metadata.get("signal_strength")),
         "entry_state_index": int(entry["state_index"]),
         "exit_state_index": int(exit_row["state_index"]),
         "entry_at": entry_at,
@@ -280,6 +286,7 @@ def simulate_trade_loop(
                 entry_rule=entry_rule,
                 exit_rule=exit_rule,
                 slippage_cents=slippage_cents,
+                selection_metadata=selection.metadata,
             )
         )
     return trades

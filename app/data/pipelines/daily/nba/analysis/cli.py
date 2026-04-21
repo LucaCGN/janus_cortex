@@ -9,8 +9,12 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_HOLDOUT_RATIO,
     DEFAULT_BACKTEST_HOLDOUT_SEED,
     DEFAULT_BACKTEST_MIN_TRADE_COUNT,
+    DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
     DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT,
     DEFAULT_BACKTEST_PORTFOLIO_INITIAL_BANKROLL,
+    DEFAULT_BACKTEST_PORTFOLIO_MAX_CONCURRENT_POSITIONS,
+    DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS,
+    DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
     DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
     DEFAULT_SEASON,
@@ -77,6 +81,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
     )
     backtest_parser.add_argument("--portfolio-game-limit", type=int, default=DEFAULT_BACKTEST_PORTFOLIO_GAME_LIMIT)
+    backtest_parser.add_argument("--portfolio-min-order-dollars", type=float, default=DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS)
+    backtest_parser.add_argument("--portfolio-min-shares", type=float, default=DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES)
+    backtest_parser.add_argument(
+        "--portfolio-max-concurrent-positions",
+        type=int,
+        default=DEFAULT_BACKTEST_PORTFOLIO_MAX_CONCURRENT_POSITIONS,
+    )
+    backtest_parser.add_argument(
+        "--portfolio-concurrency-mode",
+        default=DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
+    )
     backtest_parser.add_argument("--output-root", default=None)
 
     model_parser = subparsers.add_parser("train_analysis_baselines")
@@ -137,6 +152,10 @@ def dispatch_command(
                 portfolio_initial_bankroll=args.portfolio_initial_bankroll,
                 portfolio_position_size_fraction=args.portfolio_position_size_fraction,
                 portfolio_game_limit=args.portfolio_game_limit,
+                portfolio_min_order_dollars=args.portfolio_min_order_dollars,
+                portfolio_min_shares=args.portfolio_min_shares,
+                portfolio_max_concurrent_positions=args.portfolio_max_concurrent_positions,
+                portfolio_concurrency_mode=args.portfolio_concurrency_mode,
                 analysis_version=args.analysis_version,
                 output_root=args.output_root,
             )

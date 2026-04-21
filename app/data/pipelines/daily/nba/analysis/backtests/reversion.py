@@ -22,11 +22,13 @@ def _select_reversion_entry(group: pd.DataFrame) -> TradeSelection | None:
     if not bool(trigger.any()):
         return None
     entry_index = int(trigger[trigger].index[0])
+    entry_price = float(prices.iloc[entry_index])
     return TradeSelection(
         entry_index=entry_index,
         metadata={
             "opening_price": opening_price,
             "target_exit_price": opening_price - DEFAULT_REVERSION_EXIT_BUFFER,
+            "signal_strength": (max(0.0, opening_price - entry_price) * 100.0),
         },
     )
 

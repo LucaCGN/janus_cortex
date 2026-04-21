@@ -25,12 +25,16 @@ def _select_winner_definition_entry(group: pd.DataFrame) -> TradeSelection | Non
         if entry_score_diff is not None and entry_score_diff >= DEFAULT_WINNER_DEFINITION_BIG_LEAD_SCORE_DIFF
         else DEFAULT_WINNER_DEFINITION_BREAK
     )
+    signal_strength = ((float(entry_row["team_price"]) - DEFAULT_WINNER_DEFINITION_ENTRY) * 100.0) + max(
+        0.0, float(entry_score_diff or 0.0)
+    ) * 0.5
     return TradeSelection(
         entry_index=entry_index,
         metadata={
             "entry_threshold": DEFAULT_WINNER_DEFINITION_ENTRY,
             "exit_threshold": exit_threshold,
             "entry_score_diff": entry_score_diff,
+            "signal_strength": signal_strength,
         },
     )
 
