@@ -1,72 +1,78 @@
 # Roadmap To Multi-Algorithm Portfolio Validation
 
 ## Purpose
-Define the critical path from the current `v1_0_1` offline analysis baseline to the first release where several different trading algorithms can be replayed, stress-tested across repeated random seeds, combined into sleeves, and eventually allocated under one comparable capital program.
+Define the critical path from the current `v1_0_1` offline analysis baseline to the first release where several different trading algorithms are:
+- benchmarked under one comparable bankroll contract
+- routed against each other deterministically
+- stress-tested across repeated seeds
+- compared against lightweight statistical context models
 
 ## Milestone Ladder
 
-| Milestone | Meaning | Critical Branches |
-| --- | --- | --- |
-| `v1.0.1` | current offline analysis baseline | already completed |
-| `v1.0.2` | safe database validation foundation | `codex/data-dev-db-safety` |
-| `v1.0.3` | full non-live validation of current offline stack | `codex/ops-analysis-validation` |
-| `v1.0.4` | expanded strategy-lab release with multiple runnable strategy families | `codex/analysis-strategy-lab` |
-| `v1.1.0` | benchmarked multi-algorithm backtest candidate | `codex/analysis-sampling-benchmarking` plus `codex/analysis-strategy-lab` |
-| `v1.2.0` | stable read-only consumer adapters | `codex/analysis-a8-consumer-adapters` |
-| `v1.3.0` | frontend analysis studio alpha | `codex/frontend-analysis-studio` |
-| `v1.3.1` | read-only family comparison follow-on lane | `codex/frontend-analysis-comparison` |
-| `v1.4.0` | sequential portfolio benchmark | `codex/analysis-sequential-portfolio-benchmarking` |
-| `v1.4.1` | repeated-seed robustness and combined keep-family sleeve | `codex/analysis-portfolio-robustness` |
-| `v1.4.2` | allocation / visualization follow-on | read-only visualization lane or combined-sleeve allocation lane |
-| `v1.4.x` | season continuity expansion | `codex/season-playoffs-preseason`, `codex/season-wnba-bootstrap` |
+| Milestone | Meaning | Status | Critical Branches |
+| --- | --- | --- | --- |
+| `v1.0.1` | offline analysis baseline | completed | already merged |
+| `v1.0.2` | safe database validation foundation | completed | archived |
+| `v1.0.3` | full non-live validation of current offline stack | completed | archived |
+| `v1.0.4` | expanded strategy-lab release | completed | archived |
+| `v1.1.0` | benchmarked multi-algorithm backtest candidate | completed | archived |
+| `v1.2.0` | stable read-only consumer adapters | completed | archived |
+| `v1.3.0` | frontend analysis studio alpha | completed | archived |
+| `v1.3.1` | read-only family comparison follow-on lane | completed | archived |
+| `v1.4.0` | sequential portfolio benchmark | completed | archived |
+| `v1.4.1` | repeated-seed robustness and combined keep-family sleeve | completed | archived |
+| `v1.4.2` | final strategy refinement and first statistical routing lane | completed | now on active branch state |
+| `v1.5.0` | deterministic routing and allocation freeze | next critical path | `codex/analysis-routing-allocation` |
+| `v1.5.1` | context-model baselines around promoted families | next after routing baseline | `codex/analysis-context-models` |
+| `v1.5.2` | read-only portfolio visualization | parallel after routing freeze | `codex/frontend-analysis-portfolio-viz` |
+| `v1.5.x` | season continuity expansion | secondary sidecars | `codex/season-playoffs-preseason`, `codex/season-wnba-bootstrap` |
 
-Planning note:
-- these are planning milestones for the current execution wave
-- they do not replace schema migration naming or historic `v0.x` implementation history
-- the earlier multi-algorithm benchmark work is complete
-- this roadmap now governs the next layer: sequential bankroll simulation, robustness checks, and sleeve construction
+## Current Promotion Baseline
+The promoted deterministic family set is now:
+- `inversion`
+- `winner_definition`
+- `underdog_liftoff`
 
-## Critical Path To Portfolio Validation
-1. freeze the sequential bankroll accounting contract
-2. replay each candidate family as a linear opportunity progression
-3. compare ending bankroll, drawdown, and capital-at-risk behavior against random-holdout and naive baselines
-4. confirm the surviving families across repeated holdout seeds
-5. construct the first combined keep-family sleeve
-6. decide whether the next lane is allocation logic or visualization
+The current rejected family set is:
+- `reversion`
+- `comeback_reversion`
+- `volatility_scalp`
 
-## What Counts As "Sequential Portfolio Ready"
-The target is a set of strategy families that can be rerun through one comparable bankroll simulation workflow:
-- favorite drawdown reversion
-- underdog inversion continuation
-- winner-definition continuation
-- quarter-context comeback reversion
-- opening-band volatility scalp
+## Critical Path From Here
+1. freeze a better deterministic routed or priority portfolio
+2. quantify overlap cost and family blocking
+3. build statistical context models against that deterministic control
+4. surface the resulting portfolio and robustness outputs in read-only UI
 
-Optional sixth family if evidence supports it:
-- scoreboard-control mismatch fade or continuation
-
-## `v1.4.x` Exit Criteria
-- each family can be replayed independently under the same bankroll contract
-- the simulation records ending capital, drawdown, and trade-by-trade capital usage
-- the sequential path is deterministic for the same inputs and seed
-- the evaluation is reproducible on a non-live database
-- comparative outputs exist for random-holdout and naive baselines
-- refined and dropped strategy candidates are documented explicitly
-- surviving families are checked across repeated seeds
-- the first combined keep-family sleeve is emitted and documented
+## What Counts As "Several Backtestable Algos"
+The target is no longer just several independent family rules. The target is:
+- multiple standalone families under the same bankroll contract
+- at least one promoted routed or priority portfolio
+- model-ready targets for continuation, persistence, or route-quality scoring
 
 ## Branch Dependency Graph
 
 ### Critical Path
-1. [branches/analysis_sequential_portfolio_benchmarking.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_sequential_portfolio_benchmarking.md)
-2. [branches/analysis_portfolio_robustness.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_portfolio_robustness.md)
+1. [branches/analysis_routing_allocation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_routing_allocation.md)
+2. [branches/analysis_context_models.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_context_models.md)
 
 ### Parallel Or Secondary Tracks
+- [branches/frontend_analysis_portfolio_viz.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_portfolio_viz.md)
 - [branches/season_playoffs_preseason.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_playoffs_preseason.md)
 - [branches/season_wnba_bootstrap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_wnba_bootstrap.md)
 
+## Branch Dependency Table
+
+| Branch | Milestone | Depends On | Can Run In Parallel With | Blocks | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `codex/analysis-routing-allocation` | `v1.5.0` | frozen `v1.4.2` keep families | season branches | context models and final portfolio visualization | next critical branch |
+| `codex/analysis-context-models` | `v1.5.1` | `codex/analysis-routing-allocation` | frontend visualization prep, season branches | later structured-tag or richer modeling work | model work needs a deterministic control |
+| `codex/frontend-analysis-portfolio-viz` | `v1.5.2` | `codex/analysis-routing-allocation` | `codex/analysis-context-models`, season branches | no critical-path branch | read-only consumer lane |
+| `codex/season-playoffs-preseason` | `v1.5.x` | safety workflow already merged | routing/allocation, context models, WNBA | no critical-path branch | secondary lane |
+| `codex/season-wnba-bootstrap` | `v1.5.x` | safety workflow already merged | routing/allocation, context models, playoffs | no critical-path branch | secondary lane |
+
 ## Stable Risks
-- running migration or validation work against the live database too early
-- promoting strategies without explicit sequential bankroll and holdout checks
-- letting seasonal continuity work leak into the sequential portfolio lane
-- changing strategy trigger logic and bankroll accounting in the same branch
+- optimizing sleeve rules on the same branch that changes raw family math
+- letting visualization reimplement benchmark logic instead of reading artifacts
+- promoting model lanes before deterministic routing is frozen
+- using text-driven heuristics before the structured statistical control is strong enough

@@ -812,7 +812,7 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     first = engine.build_benchmark_run_result(frame, request)
     second = engine.build_benchmark_run_result(frame, request)
 
-    assert first.payload["benchmark"]["contract_version"] == "v5"
+    assert first.payload["benchmark"]["contract_version"] == "v6"
     assert first.payload["benchmark"]["time_validation_cutoff"] is not None
     assert set(first.split_results.keys()) == {"full_sample", "time_train", "time_validation", "random_train", "random_holdout"}
     assert first.split_results["random_holdout"].payload["games_considered"] > 0
@@ -838,6 +838,8 @@ def test_backtests_benchmarking_outputs_are_reproducible(tmp_path: Path) -> None
     assert set(robustness_summary_df["robustness_label"]).issubset(
         {"stable_positive", "stable_negative", "mixed", "not_run"}
     )
+    assert "mean_ending_bankroll" in robustness_summary_df.columns
+    assert "mean_compounded_return" in robustness_summary_df.columns
     combined_rows = first.benchmark_frames["portfolio_summary"][
         first.benchmark_frames["portfolio_summary"]["strategy_family"] == "combined_keep_families"
     ]

@@ -10,6 +10,8 @@ These branch plans are no longer active launch targets. They were merged and the
 - [ops_analysis_validation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/ops_analysis_validation.md)
 - [analysis_strategy_lab.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/analysis_strategy_lab.md)
 - [analysis_sampling_benchmarking.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/analysis_sampling_benchmarking.md)
+- [analysis_sequential_portfolio_benchmarking.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/analysis_sequential_portfolio_benchmarking.md)
+- [analysis_portfolio_robustness.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/analysis_portfolio_robustness.md)
 - [analysis_consumer_adapters.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/analysis_consumer_adapters.md)
 - [analysis_backtest_detail_contract.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/analysis_backtest_detail_contract.md)
 - [frontend_analysis_studio.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/archive/branches/frontend_analysis_studio.md)

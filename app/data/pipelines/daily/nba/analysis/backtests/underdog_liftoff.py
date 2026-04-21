@@ -81,8 +81,8 @@ def simulate_underdog_liftoff_trades(state_df: pd.DataFrame, *, slippage_cents: 
     return simulate_trade_loop(
         state_df,
         strategy_family="underdog_liftoff",
-        entry_rule="cross_above_38c_with_momentum",
-        exit_rule="hit_50c_or_minus_4c_or_end",
+        entry_rule="cross_above_36c_with_momentum",
+        exit_rule="hit_50c_or_minus_3c_or_end",
         slippage_cents=slippage_cents,
         entry_selector=_select_underdog_liftoff_entry,
         exit_selector=_select_underdog_liftoff_exit,

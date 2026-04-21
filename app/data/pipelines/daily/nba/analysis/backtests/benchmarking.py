@@ -163,9 +163,11 @@ PORTFOLIO_ROBUSTNESS_SUMMARY_COLUMNS = (
     "positive_seed_count",
     "positive_seed_rate",
     "min_ending_bankroll",
+    "mean_ending_bankroll",
     "median_ending_bankroll",
     "max_ending_bankroll",
     "min_compounded_return",
+    "mean_compounded_return",
     "median_compounded_return",
     "max_compounded_return",
     "worst_max_drawdown_pct",
@@ -844,9 +846,11 @@ def _build_portfolio_robustness_frames(
                 "positive_seed_count": positive_seed_count,
                 "positive_seed_rate": positive_seed_count / seed_count if seed_count > 0 else None,
                 "min_ending_bankroll": float(ending.min()) if not ending.dropna().empty else None,
+                "mean_ending_bankroll": float(ending.mean()) if not ending.dropna().empty else None,
                 "median_ending_bankroll": float(ending.median()) if not ending.dropna().empty else None,
                 "max_ending_bankroll": float(ending.max()) if not ending.dropna().empty else None,
                 "min_compounded_return": float(compounded.min()) if not compounded.dropna().empty else None,
+                "mean_compounded_return": float(compounded.mean()) if not compounded.dropna().empty else None,
                 "median_compounded_return": float(compounded.median()) if not compounded.dropna().empty else None,
                 "max_compounded_return": float(compounded.max()) if not compounded.dropna().empty else None,
                 "worst_max_drawdown_pct": float(drawdown.max()) if not drawdown.dropna().empty else None,
@@ -1189,6 +1193,7 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
             lines.append(
                 f"- {row.get('strategy_family')}: `{row.get('robustness_label')}` because `{row.get('robustness_reason')}`;"
                 f" positive seeds `{row.get('positive_seed_count')}/{row.get('seed_count')}`,"
+                f" mean bankroll `{_format_num(row.get('mean_ending_bankroll'))}`,"
                 f" median bankroll `{_format_num(row.get('median_ending_bankroll'))}`,"
                 f" worst drawdown `{_format_num(row.get('worst_max_drawdown_pct'))}`"
             )

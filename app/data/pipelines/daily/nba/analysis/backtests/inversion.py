@@ -71,7 +71,7 @@ def simulate_inversion_trades(state_df: pd.DataFrame, *, slippage_cents: int) ->
         state_df,
         strategy_family="inversion",
         entry_rule="dynamic_cross_above_45c_or_50c_with_momentum",
-        exit_rule="break_back_below_48c_or_end",
+        exit_rule="break_back_below_49c_or_end",
         slippage_cents=slippage_cents,
         entry_selector=_select_inversion_entry,
         exit_selector=_select_inversion_exit,

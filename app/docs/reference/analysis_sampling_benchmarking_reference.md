@@ -1,28 +1,30 @@
 # Analysis Sampling And Benchmarking Reference
 
 ## Purpose
-Freeze the benchmark contract that promotes the strategy lab into a reproducible multi-algorithm experiment program.
+Freeze the benchmark contract that promotes the strategy lab into a reproducible multi-family experiment program.
 
 This reference covers:
-- which benchmark splits exist
-- which comparators every family is scored against
-- which comparative artifacts the backtest runner emits
-- how the current `keep`, `drop`, and `experimental` labels are derived
-- how the opening-band routing lane is selected
+- benchmark splits
+- shared comparators
+- emitted artifacts
+- keep/drop labeling
+- routing selection policy
+- robustness summary fields
 
 ## Benchmark Contract
-`run_analysis_backtests` remains the canonical CLI entry point, but it now evaluates strategies under one shared benchmark contract:
+`run_analysis_backtests` is the canonical CLI entry point.
 
-- full sample
-- time-train sample
-- time-validation sample
-- random-train sample
-- random-holdout sample
+The active benchmark contract version is `v6`.
 
-The benchmark contract version is now `v5`.
+Shared samples:
+- `full_sample`
+- `time_train`
+- `time_validation`
+- `random_train`
+- `random_holdout`
 
 ## Shared Metrics
-Every strategy family is scored with the same metric set:
+Every strategy family is scored with:
 - `trade_count`
 - `win_rate`
 - `avg_gross_return`
@@ -34,28 +36,22 @@ Every strategy family is scored with the same metric set:
 
 ## Comparator Baselines
 Each family and sample is compared against:
-
-### `no_trade`
-- zero-return baseline on the same opportunity count
-
-### `winner_prediction_hold_to_end`
-- buy the strategy-selected side at the strategy entry
-- hold until the last observed state of that game-side path
-- use the same slippage setting as the strategy run
+- `no_trade`
+- `winner_prediction_hold_to_end`
 
 ## Split Policy
 ### Time Validation
 - reuses the same game-date cutoff logic as the modeling package
-- default cutoff is the 75th-percentile game date unless explicitly provided
+- default cutoff remains the 75th-percentile game date unless explicitly provided
 
 ### Random Holdout
-- operates at `game_id` level to keep all states from the same game in the same random split
+- operates at `game_id` level
 - is reproducible from `holdout_seed`
 - defaults to a 10% holdout ratio
 
 ## Comparative Artifacts
-The backtest runner now emits:
-- full-sample family artifacts from the strategy-lab release
+The backtest runner emits:
+- family-level artifacts
 - `benchmark_split_summary`
 - `benchmark_family_summary`
 - `benchmark_comparator_summary`
@@ -71,17 +67,14 @@ The backtest runner now emits:
 - `benchmark_experiment_registry.json`
 
 ## Candidate Freeze Labels
-The benchmark labels remain intentionally conservative:
-
 ### `keep`
-- full sample meets the minimum trade count
-- time-validation sample has trades
-- random-holdout sample has trades
+- meets minimum trade count on full sample
+- has time-validation and random-holdout trades
 - full, time-validation, and random-holdout average slippage-adjusted returns are all positive
 
 ### `drop`
-- full sample meets the minimum trade count
-- time-validation and random-holdout samples both exist
+- meets minimum trade count on full sample
+- has time-validation and random-holdout trades
 - full, time-validation, and random-holdout average slippage-adjusted returns are all non-positive
 
 ### `experimental`
@@ -90,20 +83,50 @@ The benchmark labels remain intentionally conservative:
 - or mixed benchmark signals
 
 ## Routing Layer
-The current routing lane is statistical, not model-driven:
-- derive an opening-band family map from `time_train`
-- prefer the highest positive average slippage-adjusted return for that opening band
-- fall back to the best available average return when no positive family exists in-band
-- replay that band map through every split as `statistical_routing_v1`
+The current routing lane is deterministic:
+- learn an opening-band family map from `time_train`
+- prefer the highest positive average slippage-adjusted return in-band
+- fall back to the best available average return if no positive family exists for that band
+- replay that band map across every split as `statistical_routing_v1`
 
-This lane currently answers whether game categorization is viable without introducing a learned model.
+Current promoted band map:
+- `10-20`: `underdog_liftoff`
+- `20-30`: `underdog_liftoff`
+- `30-40`: `inversion`
+- `40-50`: `inversion`
+- `50-60`: `winner_definition`
+- `60-70`: `winner_definition`
+- `70-80`: `winner_definition`
+- `80-90`: `winner_definition`
+- `90-100`: `winner_definition`
+
+## Robustness Summary Fields
+`benchmark_portfolio_robustness_summary` now includes:
+- `positive_seed_rate`
+- `min_ending_bankroll`
+- `mean_ending_bankroll`
+- `median_ending_bankroll`
+- `max_ending_bankroll`
+- `min_compounded_return`
+- `mean_compounded_return`
+- `median_compounded_return`
+- `max_compounded_return`
+- `worst_max_drawdown_pct`
+
+This makes the average 100-game ending bankroll a first-class artifact rather than an ad hoc post-processing step.
+
+## Frozen Current Benchmark Outcome
+Keep:
+- `inversion`
+- `winner_definition`
+- `underdog_liftoff`
+
+Drop:
+- `reversion`
+- `comeback_reversion`
+- `volatility_scalp`
 
 ## Operator Note
-This benchmark lane still does not pick a live strategy automatically. It produces:
-- the family-level benchmark surface
-- the sequential bankroll surface
-- repeated-seed robustness evidence across the full family set
-- the combined keep-family sleeve
-- the first statistical routing surface
+This lane remains statistical and deterministic. It does not choose live trades.
 
-The next decision layer should stay statistical for allocation and promotion. Any later LLM usage should be interpretive only and should consume these benchmark artifacts rather than replacing them.
+Any later LLM usage should stay interpretive and consume these artifacts rather than replacing the benchmark contract.

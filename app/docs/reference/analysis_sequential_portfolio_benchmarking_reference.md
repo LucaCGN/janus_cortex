@@ -3,25 +3,25 @@
 ## Purpose
 Define the canonical bankroll-simulation contract for the NBA analysis module and freeze the current validated outcomes for:
 - single-family sequential replay
-- repeated-seed robustness across the full six-family set
+- repeated-seed robustness
 - the combined keep-family sleeve
-- the opening-band statistical routing lane
+- the opening-band routed sleeve
 
 ## Canonical Contract
-Sequential portfolio benchmarking now extends `run_analysis_backtests` under benchmark contract `v5`.
+Sequential portfolio benchmarking extends `run_analysis_backtests` under benchmark contract `v6`.
 
 Active defaults:
 - starting bankroll: `10.0`
 - position size fraction: `1.0`
 - game limit: `100`
-- overlap policy: one position at a time, later entries are skipped while capital is already committed
+- overlap policy: one position at a time
 - split set:
   - `full_sample`
   - `time_train`
   - `time_validation`
   - `random_train`
   - `random_holdout`
-- explicit robustness seeds used in the current validation pass:
+- frozen robustness seeds:
   - `1107`
   - `2113`
   - `3251`
@@ -34,136 +34,89 @@ Active defaults:
   - `11519`
 
 Determinism rules:
-- trade order is sorted by `entry_at`, then stable game, side, family, and state-index tie-breakers
-- the game window is the first `100` chronological games in the chosen sample
-- final-state entries are discarded rather than converted into zero-hold trades
-- the same sample and seed produce the same bankroll path
-
-## Portfolio Artifacts
-Each benchmarked backtest run emits:
-- `benchmark_portfolio_summary`
-- `benchmark_portfolio_steps`
-- `benchmark_portfolio_candidate_freeze`
-- `benchmark_portfolio_robustness_detail`
-- `benchmark_portfolio_robustness_summary`
-- `benchmark_route_summary`
-
-Key portfolio metrics:
-- `ending_bankroll`
-- `total_pnl_amount`
-- `compounded_return`
-- `max_drawdown_amount`
-- `max_drawdown_pct`
-- `executed_trade_count`
-- `skipped_overlap_count`
-- `skipped_bankroll_count`
+- trade order is sorted by `entry_at` with stable tie-breakers
+- the replay uses the first `100` chronological games in the selected sample
+- final-state entries are discarded
+- the same input and seed produce the same bankroll path
 
 ## Current Validated Family Status
-Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, with a `$10.00` starting bankroll and `1.0` position fraction.
+Validated on `2026-04-20` against season `2025-26`, phase `regular_season`, starting bankroll `$10.00`, position fraction `1.0`, and the first `100` chronological games.
 
 ### `inversion`
-- how it works:
-  - buy the underdog once it crosses `45c` for deeper openers below `25c`, otherwise on the standard `50c` cross
-  - require positive recent momentum and avoid badly trailing scoreboard states
-  - exit if the path breaks back below `48c` or the game ends
+- rule:
+  - buy the underdog once it crosses `45c` for openers below `25c`, otherwise on the `50c` cross
+  - require recent momentum and avoid badly trailing scoreboard states
+  - exit if the path breaks back below `49c` or the game ends
 - full-sample result:
-  - ending bankroll: `46420820.82`
-  - max drawdown: `29.11%`
-  - executed trades: `79`
+  - ending bankroll `47,534,677.74`
+  - max drawdown `29.11%`
+  - executed trades `79`
 - 10-seed robustness:
-  - label: `stable_positive`
-  - positive seeds: `10 / 10`
-  - ending bankroll range: `165.26` to `110720.97`
-  - median ending bankroll: `2479.15`
-  - worst drawdown: `56.27%`
+  - positive seeds `10/10`
+  - mean ending bankroll `15,401.84`
+  - median ending bankroll `2,344.44`
+  - ending bankroll range `248.95` to `124,015.18`
+  - worst drawdown `45.88%`
 
 ### `winner_definition`
-- how it works:
+- rule:
   - buy once the market reaches `80c`
-  - widen the break line from `75c` to `76c` only when the entry score margin is already `8+`
-  - otherwise keep the standard `75c` break or hold to the end
+  - widen the break line from `75c` to `76c` only when entry score margin is already `8+`
 - full-sample result:
-  - ending bankroll: `2490.05`
-  - max drawdown: `24.49%`
-  - executed trades: `50`
+  - ending bankroll `2,490.05`
+  - max drawdown `24.49%`
+  - executed trades `50`
 - 10-seed robustness:
-  - label: `stable_positive`
-  - positive seeds: `10 / 10`
-  - ending bankroll range: `45249.66` to `1626989.21`
-  - median ending bankroll: `141733.35`
-  - worst drawdown: `52.38%`
+  - positive seeds `10/10`
+  - mean ending bankroll `295,209.99`
+  - median ending bankroll `141,733.35`
+  - ending bankroll range `45,249.66` to `1,626,989.21`
+  - worst drawdown `52.38%`
 
 ### `underdog_liftoff`
-- how it works:
-  - buy an underdog opener below `45c` once it confirms strength through `38c`
-  - require positive recent momentum, at least `900` seconds left, and no worse than a `2` point deficit
-  - exit at `50c`, on a `4c` stop, or at the end
+- rule:
+  - buy openers below `42c` once they rebound through `36c`
+  - require momentum `>= 1`, at least `900` seconds left, and no worse than a `4` point deficit
+  - exit at `50c`, on a `3c` stop, or at the end
 - full-sample result:
-  - ending bankroll: `82867.67`
-  - max drawdown: `69.13%`
-  - executed trades: `96`
+  - ending bankroll `23,491,618.95`
+  - max drawdown `50.12%`
+  - executed trades `95`
 - 10-seed robustness:
-  - label: `mixed`
-  - positive seeds: `9 / 10`
-  - ending bankroll range: `8.00` to `73.39`
-  - median ending bankroll: `25.22`
-  - worst drawdown: `48.19%`
+  - positive seeds `10/10`
+  - mean ending bankroll `60.33`
+  - median ending bankroll `42.01`
+  - ending bankroll range `23.72` to `217.21`
+  - worst drawdown `37.40%`
 
-### `reversion`
-- full-sample result:
-  - ending bankroll effectively goes to zero
-  - max drawdown: `100.00%`
-- 10-seed robustness:
-  - label: `stable_negative`
-  - positive seeds: `0 / 10`
-  - median ending bankroll: effectively `0`
-  - worst drawdown: `100.00%`
-
-### `comeback_reversion`
-- full-sample result:
-  - ending bankroll: `0.0187`
-  - max drawdown: `99.84%`
-- 10-seed robustness:
-  - label: `mixed`
-  - positive seeds: `1 / 10`
-  - median ending bankroll: `0.6487`
-  - worst drawdown: `99.99%`
-
-### `volatility_scalp`
-- full-sample result:
-  - ending bankroll: `0.0034`
-  - max drawdown: `99.97%`
-- 10-seed robustness:
-  - label: `mixed`
-  - positive seeds: `1 / 10`
-  - median ending bankroll: `2.62`
-  - worst drawdown: `88.14%`
+### Rejected Families
+- `reversion`
+  - stable negative under the 10-seed lens
+- `comeback_reversion`
+  - mixed with only `1/10` positive seeds
+- `volatility_scalp`
+  - mixed with only `1/10` positive seeds
 
 ## Combined Keep-Family Sleeve
-The current keep sleeve merges the three promoted single-family candidates:
-- members: `inversion,underdog_liftoff,winner_definition`
-- combined family label: `combined_keep_families`
+Members:
+- `inversion`
+- `underdog_liftoff`
+- `winner_definition`
 
 Current result:
-- full-sample ending bankroll: `58310.08`
-- full-sample compounded return: `5830.01`
-- full-sample max drawdown: `33.09%`
-- full-sample executed trades: `63`
-- full-sample skipped overlaps: `97`
-- random-holdout ending bankroll: `12524360.00`
-- random-holdout compounded return: `1252435.00`
+- full-sample ending bankroll `14,492.75`
+- full-sample max drawdown `28.15%`
+- full-sample executed trades `59`
+- full-sample skipped overlaps `92`
 
 Interpretation:
-- the combined sleeve is still useful as a diversification surface
-- it does not beat pure `inversion` on terminal bankroll because overlap collisions suppress the highest-upside inversion path
-- the next portfolio question is weighting and priority, not sleeve existence
+- useful as a diversification surface
+- still weaker than the top standalone families because overlap collisions suppress the highest-upside paths
 
 ## Statistical Routing
-The first routing lane learns an opening-band family choice from `time_train` and replays that map across every split.
-
-Current opening-band map:
-- `10-20`: `inversion`
-- `20-30`: `inversion`
+Current band map:
+- `10-20`: `underdog_liftoff`
+- `20-30`: `underdog_liftoff`
 - `30-40`: `inversion`
 - `40-50`: `inversion`
 - `50-60`: `winner_definition`
@@ -173,58 +126,27 @@ Current opening-band map:
 - `90-100`: `winner_definition`
 
 Current routed result:
-- full-sample ending bankroll: `22480.43`
-- full-sample max drawdown: `31.20%`
-- random-holdout ending bankroll: `1330294.00`
+- full-sample ending bankroll `19,541.50`
+- full-sample max drawdown `30.66%`
+- full-sample executed trades `52`
+- full-sample skipped overlaps `66`
 
 Interpretation:
-- the training split does support simple game categorization by opening band
-- underdog bands still route to `inversion`, not `underdog_liftoff`
-- `underdog_liftoff` remains a profitable standalone family, but not the preferred opening-band router when inversion is available
+- opening band is enough to support deterministic family routing
+- the routed sleeve now prefers `underdog_liftoff` in the two lowest active bands
+- routed performance is still below the strongest standalone families, so the next step is allocation and overlap logic rather than new threshold churn
 
-## Final Improvement Pass
-Retained strategy changes from this pass:
-- `inversion`
-  - dynamic deeper entry for the lowest opener tier
-  - positive momentum and scoreboard guardrails
-  - tighter `48c` protection line
-- `winner_definition`
-  - slightly wider break line only in stronger scoreboard-control states
-- `underdog_liftoff`
-  - new underdog continuation family in the `38c -> 50c` zone
-- `statistical_routing_v1`
-  - training-derived opening-band family selection
-
-Kept as historical rejections:
-- `inversion 52c/48c`
-- `winner_definition 82c/77c`
-- `winner_definition` two-state `80c` confirmation
+## Rejected Refinements
+Rejected or superseded variants from the refinement pass:
+- `inversion` low-open cut expansion above `30c`
+- `winner_definition` stronger break-line variants
+- weaker `underdog_liftoff` trigger zones around `38c` and wider `4c` stops
 
 ## Promotion Rule
-Per-trade average return is not enough to promote a family.
+A family is not promoted on win rate alone.
 
-Promotion now requires:
-- positive sequential full-sample result
-- positive sequential random-holdout result
-- acceptable sequential drawdown
-- repeated-seed behavior that is at least directionally defensible under the same bankroll contract
-
-## Statistical And LLM Boundary
-The LLM layer is not part of the benchmark contract.
-
-What remains purely statistical:
-- keep/drop decisions
-- repeated-seed robustness
-- drawdown and tail-risk comparisons
-- opening-band family routing
-- future sleeve weight selection
-
-Where a later statistical-plus-LLM review layer may help:
-- explain why `inversion` dominates underdog opening bands
-- summarize recurring failure traces for `underdog_liftoff`
-- propose the next parameter grids after the statistical gate identifies a weak boundary
-
-## Next Follow-On Questions
-- should robustness expand to the routed sleeve and the combined sleeve directly?
-- should allocation work prioritize `inversion` while letting `winner_definition` and `underdog_liftoff` act as capped side sleeves?
-- should the next modeling lane learn route selection from opening band, early momentum, and score-state features instead of fixed band rules?
+Promotion requires:
+- positive full-sample sequential result
+- positive time-validation and random-holdout benchmark signal
+- acceptable drawdown
+- repeated-seed robustness that remains directionally defensible

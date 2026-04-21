@@ -2,90 +2,90 @@
 
 ## End Goal
 Turn the current offline NBA analysis stack into a repeatable trading-research program that can:
-- measure human-expectation drift and intragame odds volatility
-- simulate strategies as a sequential bankroll path instead of only as independent wins and losses
-- validate profitability against naive baselines, random holdouts, and slippage stress
-- refine strategy families under the sequential capital framing before promoting any candidate
-- carry the program forward into playoffs, preseason, and WNBA continuity work
+- classify research-ready versus descriptive-only games deterministically
+- benchmark several strategy families under the same sequential bankroll contract
+- route between surviving families with deterministic context rules
+- compare deterministic routing with later statistical model layers
+- surface the final outputs in read-only tooling before any live decision layer is considered
 
-Detailed milestone and branch decomposition now lives in:
+Detailed milestone and branch decomposition lives in:
 - [roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
 - [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 
 ## What Is Already Done
-- `A0-A7` implementation wave completed:
-  - package split
-  - research universe and QA layer
-  - mart builders
-  - descriptive report pack
-  - backtest engine
-  - predictive baselines
-  - player-impact shadow lane
-- `v1.3.1` family comparison frontend is merged to `main`
-- current CLI surface present:
+- `A0-A7` implementation wave completed
+- release wave completed through `v1.4.2`
+- current CLI surface is stable:
   - `build_analysis_mart`
   - `build_analysis_report`
   - `run_analysis_backtests`
   - `train_analysis_baselines`
+- current promoted keep families:
+  - `inversion`
+  - `winner_definition`
+  - `underdog_liftoff`
 
-## Validation Status
-- the offline structure is in place
-- disposable non-live validation has already been used for the merged analysis lanes
-- strategy refinement now needs to be judged with sequential bankroll accounting, not just raw win-rate snapshots
+## Frozen Current State
+- research-ready games: `1198 / 1224`
+- descriptive-only games still visible: `26`
+- benchmark contract: `v6`
+- bankroll contract:
+  - start `$10.00`
+  - position fraction `1.0`
+  - first `100` chronological games
+  - one open position at a time
 
-## Current Gaps
-- sequential bankroll accounting is not yet the primary evaluation lens
-- the surviving strategy families still need to be rerun under the new linear capital progression
-- repeated-resample robustness for the sequential framing still needs to be added
-- deeper model diagnostics remain a follow-on lane
-- playoffs, preseason, and WNBA continuity work are still not in the active lane
+## Immediate Critical Path
 
-## Next Phase Order
+### 1. Deterministic Routing And Allocation
+Branch:
+- `codex/analysis-routing-allocation`
 
-### 1. Sequential Portfolio Benchmarking
-Branches:
-- `codex/analysis-sequential-portfolio-benchmarking`
+Why this is next:
+- the three keep families now exist
+- the main remaining gap is overlap friction and family selection, not raw family discovery
 
-Goals:
-- freeze the bankroll rules
-- rerun each strategy family independently as a sequential capital path
-- compare ending bankroll, drawdown, and capital-at-risk on random-holdout and naive baselines
+Target outputs:
+- promoted routed sleeve or priority stack
+- overlap-cost diagnostics
+- routed robustness, not just single-family robustness
 
-Exit criteria:
-- each family produces a deterministic sequential portfolio result
-- the baseline and holdout comparisons are reproducible
-- the strategy ranking is explained in portfolio terms, not just per-trade terms
+### 2. Context Models Around The Winners
+Branch:
+- `codex/analysis-context-models`
 
-### 2. Strategy Refinement
-Branches:
-- `codex/analysis-sequential-portfolio-benchmarking`
+Why this follows:
+- once the deterministic routing baseline is frozen, model work can be judged against a real control instead of against intuition
 
-Goals:
-- tighten the strategy families that survive sequential capital accounting
-- identify which triggers or exits should be dropped, narrowed, or split into separate experimental variants
-- keep the family comparisons independent before any portfolio blend is considered
+Target outputs:
+- continuation-quality models for `inversion`
+- persistence or reopen-risk models for `winner_definition`
+- target-hit or stop-hit models for `underdog_liftoff`
+- route-score baselines for portfolio selection
 
-Exit criteria:
-- refined families are explicitly documented
-- the portfolio simulation is still deterministic after refinement
-- any strategy that fails the new premise is marked for drop or experimental handling
+### 3. Read-Only Portfolio Visualization
+Branch:
+- `codex/frontend-analysis-portfolio-viz`
 
-### 3. Season Continuity
-Branches:
+Why this is parallel-friendly:
+- it can consume frozen artifacts after routing/allocation rules are fixed
+- it should not block model work once the contracts are stable
+
+Target outputs:
+- portfolio rankings
+- robustness tables
+- route maps
+- overlap diagnostics
+
+## Parallel Sidecars
 - `codex/season-playoffs-preseason`
 - `codex/season-wnba-bootstrap`
 
-Goals:
-- keep the data platform alive beyond the closed regular season
-- prepare playoff, preseason, and WNBA structures without breaking the regular-season analysis lane
-
-Exit criteria:
-- season-scope schemas and sync logic are in place
-- offseason work can continue on basketball data rather than waiting for the next NBA regular season
+These remain secondary and should not block the portfolio-routing or model path.
 
 ## Product Questions To Keep Answering
-- when is a game statistically defined, and which comeback classes still break that rule?
-- which strategy families actually compound capital when the bankroll is carried forward?
-- how much drawdown can each family tolerate before the sequential path breaks?
-- which odds paths are driven by repeatable context versus isolated narratives?
-- which player-presence or play-type effects are strong enough to matter without over-claiming causality?
+- which family should own a game before tipoff and after the game state changes?
+- where is the true cost of overlap and blocked trades?
+- can a simple statistical model improve routing or trade-quality ranking without overfitting?
+- when do underdog rebounds deserve continuation treatment versus inversion treatment?
+- which outputs need to be visible in the studio before any later human or LLM review layer is considered?

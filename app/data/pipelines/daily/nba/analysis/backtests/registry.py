@@ -23,8 +23,8 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
         StrategyDefinition(
             family="inversion",
             entry_rule="dynamic_cross_above_45c_or_50c_with_momentum",
-            exit_rule="break_back_below_48c_or_end",
-            description="Dynamic underdog continuation with deeper early entries for live underdogs and a tighter 48c protection line.",
+            exit_rule="break_back_below_49c_or_end",
+            description="Dynamic underdog continuation with deeper early entries for live underdogs and a tighter 49c protection line.",
             comparator_group="underdog_continuation",
             tags=("underdog", "continuation", "dynamic_thresholds"),
             simulator=simulate_inversion_trades,
@@ -40,9 +40,9 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
         ),
         StrategyDefinition(
             family="underdog_liftoff",
-            entry_rule="cross_above_38c_with_momentum",
-            exit_rule="hit_50c_or_minus_4c_or_end",
-            description="Underdog continuation that buys a rebound through 38c with positive momentum and exits at 50c or a 4c stop.",
+            entry_rule="cross_above_36c_with_momentum",
+            exit_rule="hit_50c_or_minus_3c_or_end",
+            description="Underdog continuation that buys a rebound through 36c for sub-42c openers with looser scoreboard tolerance and exits at 50c or a 3c stop.",
             comparator_group="underdog_continuation",
             tags=("underdog", "continuation", "rebound_confirmation"),
             simulator=simulate_underdog_liftoff_trades,
