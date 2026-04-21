@@ -5,6 +5,15 @@ from typing import Any
 import pandas as pd
 
 from app.data.pipelines.daily.nba.analysis.backtests.engine import BACKTEST_TRADE_COLUMNS
+from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
+    DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
+    DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES,
+    DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+    MASTER_ROUTER_DECISION_COLUMNS,
+    MASTER_ROUTER_PORTFOLIO,
+    build_master_router_selection_priors,
+    build_master_router_trade_frame,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult, StrategyDefinition
 from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
@@ -400,7 +409,6 @@ def simulate_trade_portfolio(
             key=lambda item: (
                 _safe_float(item.get("signal_strength")) is not None,
                 _safe_float(item.get("signal_strength")) or float("-inf"),
-                _safe_float(item.get("gross_return_with_slippage")) or float("-inf"),
                 str(item.get("source_strategy_family") or strategy_family),
                 str(item.get("game_id") or ""),
                 str(item.get("team_side") or ""),
@@ -747,6 +755,78 @@ def build_routed_portfolio_benchmark_frames(
     return summary_df, steps_df
 
 
+def build_master_router_portfolio_benchmark_frames(
+    split_results: dict[str, BacktestResult],
+    *,
+    initial_bankroll: float,
+    position_size_fraction: float,
+    game_limit: int | None,
+    min_order_dollars: float | None,
+    min_shares: float | None,
+    max_concurrent_positions: int | None,
+    concurrency_mode: str | None,
+    split_order: tuple[str, ...],
+    selection_sample_name: str = DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+    core_strategy_families: tuple[str, ...] | list[str] = DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
+    extra_strategy_families: tuple[str, ...] | list[str] = DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES,
+    master_router_family_name: str = MASTER_ROUTER_PORTFOLIO,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    selection_result = split_results.get(selection_sample_name)
+    priors = build_master_router_selection_priors(
+        selection_result,
+        core_strategy_families=core_strategy_families,
+    )
+    core_members = tuple(str(family) for family in core_strategy_families if str(family))
+    extra_members = tuple(str(family) for family in extra_strategy_families if str(family))
+    if not priors or not core_members:
+        return (
+            pd.DataFrame(columns=PORTFOLIO_SUMMARY_COLUMNS),
+            pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS),
+            pd.DataFrame(columns=MASTER_ROUTER_DECISION_COLUMNS),
+        )
+
+    summary_rows: list[dict[str, Any]] = []
+    step_frames: list[pd.DataFrame] = []
+    decision_frames: list[pd.DataFrame] = []
+    routed_members = (*core_members, *extra_members)
+    for sample_name in split_order:
+        split_result = split_results.get(sample_name)
+        if split_result is None:
+            continue
+        combined_trades_df, decisions_df = build_master_router_trade_frame(
+            split_result,
+            sample_name=sample_name,
+            selection_sample_name=selection_sample_name,
+            priors=priors,
+            core_strategy_families=core_members,
+            extra_strategy_families=extra_members,
+        )
+        summary, steps_df = simulate_trade_portfolio(
+            combined_trades_df,
+            sample_name=sample_name,
+            strategy_family=master_router_family_name,
+            portfolio_scope=PORTFOLIO_SCOPE_ROUTED,
+            strategy_family_members=routed_members,
+            initial_bankroll=initial_bankroll,
+            position_size_fraction=position_size_fraction,
+            game_limit=game_limit,
+            min_order_dollars=min_order_dollars,
+            min_shares=min_shares,
+            max_concurrent_positions=max_concurrent_positions,
+            concurrency_mode=concurrency_mode,
+        )
+        summary_rows.append(summary)
+        if not steps_df.empty:
+            step_frames.append(steps_df)
+        if not decisions_df.empty:
+            decision_frames.append(decisions_df)
+
+    summary_df = pd.DataFrame(summary_rows, columns=PORTFOLIO_SUMMARY_COLUMNS)
+    steps_df = pd.concat(step_frames, ignore_index=True) if step_frames else pd.DataFrame(columns=PORTFOLIO_STEP_COLUMNS)
+    decisions_df = pd.concat(decision_frames, ignore_index=True) if decision_frames else pd.DataFrame(columns=MASTER_ROUTER_DECISION_COLUMNS)
+    return summary_df, steps_df, decisions_df
+
+
 def _portfolio_candidate_label(
     *,
     full_executed_trade_count: int,
@@ -837,6 +917,7 @@ __all__ = [
     "PORTFOLIO_STEP_COLUMNS",
     "PORTFOLIO_SUMMARY_COLUMNS",
     "build_combined_portfolio_benchmark_frames",
+    "build_master_router_portfolio_benchmark_frames",
     "build_portfolio_benchmark_frames",
     "build_portfolio_candidate_freeze_frame",
     "build_routed_portfolio_benchmark_frames",

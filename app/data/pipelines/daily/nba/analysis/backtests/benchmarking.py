@@ -17,6 +17,13 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     build_backtest_result,
     write_backtest_artifacts,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
+    DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
+    DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES,
+    DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+    MASTER_ROUTER_DECISION_COLUMNS,
+    MASTER_ROUTER_PORTFOLIO,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     COMBINED_KEEP_FAMILIES_PORTFOLIO,
     PORTFOLIO_CANDIDATE_FREEZE_COLUMNS,
@@ -25,6 +32,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     PORTFOLIO_SCOPE_SINGLE_FAMILY,
     STATISTICAL_ROUTING_PORTFOLIO,
     build_combined_portfolio_benchmark_frames,
+    build_master_router_portfolio_benchmark_frames,
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
     build_routed_portfolio_benchmark_frames,
@@ -161,6 +169,8 @@ BENCHMARK_GAME_STRATEGY_CLASSIFICATION_COLUMNS = (
     "triggered_families_json",
     "entry_at",
 )
+
+BENCHMARK_MASTER_ROUTER_DECISION_COLUMNS = MASTER_ROUTER_DECISION_COLUMNS
 
 BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS = (
     "sample_name",
@@ -1236,6 +1246,35 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         portfolio_summary_df = pd.concat([portfolio_summary_df, routed_portfolio_summary_df], ignore_index=True)
     if not routed_portfolio_steps_df.empty:
         portfolio_steps_df = pd.concat([portfolio_steps_df, routed_portfolio_steps_df], ignore_index=True)
+    master_router_core_families = tuple(
+        family
+        for family in DEFAULT_MASTER_ROUTER_CORE_FAMILIES
+        if family in registry
+    )
+    master_router_extra_families = tuple(
+        family
+        for family in DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES
+        if family in registry
+    )
+    master_router_summary_df, master_router_steps_df, master_router_decisions_df = build_master_router_portfolio_benchmark_frames(
+        split_results,
+        initial_bankroll=request.portfolio_initial_bankroll,
+        position_size_fraction=request.portfolio_position_size_fraction,
+        game_limit=request.portfolio_game_limit,
+        min_order_dollars=request.portfolio_min_order_dollars,
+        min_shares=request.portfolio_min_shares,
+        max_concurrent_positions=request.portfolio_max_concurrent_positions,
+        concurrency_mode=request.portfolio_concurrency_mode,
+        split_order=_SPLIT_ORDER,
+        selection_sample_name=DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+        core_strategy_families=master_router_core_families,
+        extra_strategy_families=master_router_extra_families,
+        master_router_family_name=MASTER_ROUTER_PORTFOLIO,
+    )
+    if not master_router_summary_df.empty:
+        portfolio_summary_df = pd.concat([portfolio_summary_df, master_router_summary_df], ignore_index=True)
+    if not master_router_steps_df.empty:
+        portfolio_steps_df = pd.concat([portfolio_steps_df, master_router_steps_df], ignore_index=True)
     robustness_families = tuple(sorted(registry.keys()))
     portfolio_robustness_detail_df, portfolio_robustness_summary_df = _build_portfolio_robustness_frames(
         work,
@@ -1280,6 +1319,10 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_routing_families": list(positive_routing_families),
         "portfolio_routing_family_name": STATISTICAL_ROUTING_PORTFOLIO if opening_band_route_map else None,
         "portfolio_opening_band_route_map": opening_band_route_map,
+        "master_router_selection_sample_name": DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+        "master_router_core_families": list(master_router_core_families),
+        "master_router_extra_families": list(master_router_extra_families),
+        "master_router_family_name": MASTER_ROUTER_PORTFOLIO if not master_router_summary_df.empty else None,
         "portfolio_metric_columns": [
             "ending_bankroll",
             "total_pnl_amount",
@@ -1305,6 +1348,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_robustness_detail": to_jsonable(portfolio_robustness_detail_df.to_dict(orient="records")),
         "portfolio_robustness_summary": to_jsonable(portfolio_robustness_summary_df.to_dict(orient="records")),
         "game_strategy_classification": to_jsonable(game_strategy_classification_df.to_dict(orient="records")),
+        "master_router_decisions": to_jsonable(master_router_decisions_df.to_dict(orient="records")),
     }
     payload["experiment"] = {
         "experiment_id": _build_experiment_id(request, registry),
@@ -1329,6 +1373,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_robustness_detail": portfolio_robustness_detail_df,
         "portfolio_robustness_summary": portfolio_robustness_summary_df,
         "game_strategy_classification": game_strategy_classification_df,
+        "master_router_decisions": master_router_decisions_df,
     }
     return BenchmarkRunResult(
         payload=payload,
@@ -1494,6 +1539,7 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "candidate_freeze": "benchmark_candidate_freeze",
         "route_summary": "benchmark_route_summary",
         "game_strategy_classification": "benchmark_game_strategy_classification",
+        "master_router_decisions": "benchmark_master_router_decisions",
         "portfolio_summary": "benchmark_portfolio_summary",
         "portfolio_steps": "benchmark_portfolio_steps",
         "portfolio_daily_paths": "benchmark_portfolio_daily_paths",
@@ -1535,6 +1581,7 @@ __all__ = [
     "BENCHMARK_CONTEXT_RANK_COLUMNS",
     "BENCHMARK_FAMILY_SUMMARY_COLUMNS",
     "BENCHMARK_GAME_STRATEGY_CLASSIFICATION_COLUMNS",
+    "BENCHMARK_MASTER_ROUTER_DECISION_COLUMNS",
     "BENCHMARK_PORTFOLIO_DAILY_PATH_COLUMNS",
     "BENCHMARK_ROUTE_SUMMARY_COLUMNS",
     "PORTFOLIO_CANDIDATE_FREEZE_COLUMNS",

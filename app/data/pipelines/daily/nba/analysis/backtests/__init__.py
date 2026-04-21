@@ -7,6 +7,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
 )
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     build_combined_portfolio_benchmark_frames,
+    build_master_router_portfolio_benchmark_frames,
     build_portfolio_benchmark_frames,
     build_portfolio_candidate_freeze_frame,
     build_routed_portfolio_benchmark_frames,
@@ -23,6 +24,7 @@ __all__ = [
     "build_combined_portfolio_benchmark_frames",
     "build_backtest_result",
     "build_benchmark_run_result",
+    "build_master_router_portfolio_benchmark_frames",
     "build_portfolio_benchmark_frames",
     "build_portfolio_candidate_freeze_frame",
     "build_routed_portfolio_benchmark_frames",

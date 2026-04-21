@@ -23,18 +23,27 @@ Define the critical path from the current `v1_0_1` offline analysis baseline to 
 | `v1.4.1` | repeated-seed robustness and combined keep-family sleeve | completed | archived |
 | `v1.4.2` | final strategy refinement and first statistical routing lane | completed | now on active branch state |
 | `v1.4.3` | realistic execution replay, quarter-specific families, and richer benchmark artifacts | completed | current frozen baseline |
-| `v1.5.0` | deterministic routing and allocation freeze | next critical path | `codex/analysis-routing-allocation` |
+| `v1.4.4` | expanded family research and master-router baseline | current active branch state | `codex/analysis-master-router-research` |
+| `v1.5.0` | deterministic routing and allocation freeze | next critical path after merge | `codex/analysis-routing-allocation` |
 | `v1.5.1` | context-model baselines around promoted families | next after routing baseline | `codex/analysis-context-models` |
 | `v1.5.2` | read-only portfolio visualization | parallel after routing freeze | `codex/frontend-analysis-portfolio-viz` |
 | `v1.5.x` | season continuity expansion | secondary sidecars | `codex/season-playoffs-preseason`, `codex/season-wnba-bootstrap` |
 
 ## Current Promotion Baseline
-The promoted deterministic family set is now:
-- `inversion`
-- `winner_definition`
-- `underdog_liftoff`
-- `q1_repricing`
-- `q4_clutch`
+The current building-block set is now:
+- routed core families:
+  - `winner_definition`
+  - `inversion`
+  - `underdog_liftoff`
+  - `favorite_panic_fade_v1`
+- independent trigger sleeves:
+  - `q1_repricing`
+  - `halftime_q3_repricing_v1`
+  - `q4_clutch`
+
+The current experimental or deferred set is:
+- `comeback_reversion_v2`
+- `model_residual_dislocation_v1`
 
 The current rejected family set is:
 - `reversion`
@@ -42,23 +51,25 @@ The current rejected family set is:
 - `volatility_scalp`
 
 ## Critical Path From Here
-1. freeze a better deterministic routed or priority portfolio
-2. quantify overlap cost, family blocking, and actual concurrent-position pressure under the `v7` replay contract
-3. turn the new per-game strategy-classification artifact into a deterministic routing or ranking control
-4. build statistical context models against that deterministic control
-5. surface the resulting portfolio and robustness outputs in read-only UI
+1. freeze the master router and confidence-weighting logic under the `v8` replay contract
+2. quantify overlap cost, family blocking, and actual concurrent-position pressure under routed core plus independent sleeve execution
+3. decide whether `comeback_reversion_v2` graduates, is replaced, or is dropped from the extra-sleeve candidate set
+4. add a split-safe interface for model-driven residual families before promoting `model_residual_dislocation_v1`
+5. build statistical context models against the frozen deterministic control
+6. surface the resulting portfolio and robustness outputs in read-only UI
 
 ## What Counts As "Several Backtestable Algos"
 The target is no longer just several independent family rules. The target is:
 - multiple standalone families under the same bankroll contract
-- at least one promoted routed or priority portfolio
+- at least one promoted master controller that ranks routed core families and allows independent sleeves to fire
 - model-ready targets for continuation, persistence, or route-quality scoring
 
 ## Branch Dependency Graph
 
 ### Critical Path
-1. [branches/analysis_routing_allocation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_routing_allocation.md)
-2. [branches/analysis_context_models.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_context_models.md)
+1. current active implementation and cleanup on `codex/analysis-master-router-research`
+2. [branches/analysis_routing_allocation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_routing_allocation.md)
+3. [branches/analysis_context_models.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_context_models.md)
 
 ### Parallel Or Secondary Tracks
 - [branches/frontend_analysis_portfolio_viz.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_portfolio_viz.md)
@@ -69,7 +80,8 @@ The target is no longer just several independent family rules. The target is:
 
 | Branch | Milestone | Depends On | Can Run In Parallel With | Blocks | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `codex/analysis-routing-allocation` | `v1.5.0` | frozen `v1.4.3` keep families and `v7` replay contract | season branches | context models and final portfolio visualization | next critical branch |
+| `codex/analysis-master-router-research` | `v1.4.4` | frozen `v1.4.3` keep families and realistic execution replay | docs cleanup only | `codex/analysis-routing-allocation` | expands the non-redundant family set and establishes the first master controller |
+| `codex/analysis-routing-allocation` | `v1.5.0` | merged `v1.4.4` master-router baseline and `v8` replay contract | season branches | context models and final portfolio visualization | next critical branch |
 | `codex/analysis-context-models` | `v1.5.1` | `codex/analysis-routing-allocation` | frontend visualization prep, season branches | later structured-tag or richer modeling work | model work needs a deterministic control |
 | `codex/frontend-analysis-portfolio-viz` | `v1.5.2` | `codex/analysis-routing-allocation` | `codex/analysis-context-models`, season branches | no critical-path branch | read-only consumer lane |
 | `codex/season-playoffs-preseason` | `v1.5.x` | safety workflow already merged | routing/allocation, context models, WNBA | no critical-path branch | secondary lane |
@@ -79,4 +91,5 @@ The target is no longer just several independent family rules. The target is:
 - optimizing sleeve rules on the same branch that changes raw family math
 - letting visualization reimplement benchmark logic instead of reading artifacts
 - promoting model lanes before deterministic routing is frozen
+- freezing the controller around the old three-family assumption after the research pass found a new non-redundant core candidate
 - using text-driven heuristics before the structured statistical control is strong enough
