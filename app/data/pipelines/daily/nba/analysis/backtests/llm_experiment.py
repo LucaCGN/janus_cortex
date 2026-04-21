@@ -160,9 +160,14 @@ LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS = (
     "compounded_return",
 )
 
-_LLM_MODEL_INPUT_PRICE_PER_1M = 0.75
-_LLM_MODEL_CACHED_INPUT_PRICE_PER_1M = 0.075
-_LLM_MODEL_OUTPUT_PRICE_PER_1M = 4.50
+_LLM_MODEL_PRICING_PER_1M: dict[str, tuple[float, float, float]] = {
+    "gpt-5.4": (2.50, 0.25, 15.00),
+    "gpt-5.4-mini": (0.75, 0.075, 4.50),
+    "gpt-5.4-nano": (0.20, 0.02, 1.25),
+}
+_LLM_MODEL_INPUT_PRICE_PER_1M = _LLM_MODEL_PRICING_PER_1M["gpt-5.4-mini"][0]
+_LLM_MODEL_CACHED_INPUT_PRICE_PER_1M = _LLM_MODEL_PRICING_PER_1M["gpt-5.4-mini"][1]
+_LLM_MODEL_OUTPUT_PRICE_PER_1M = _LLM_MODEL_PRICING_PER_1M["gpt-5.4-mini"][2]
 _LLM_CACHE_FILENAME = "llm_router_cache.json"
 _LLM_PROMPT_VERSION = "v2"
 _LLM_TRACE_ROW_LIMIT = 4
@@ -328,15 +333,21 @@ def _clean_trades_df(trades_df: pd.DataFrame) -> pd.DataFrame:
 
 def estimate_llm_usage_cost(
     *,
+    model: str = "gpt-5.4-mini",
     input_tokens: int,
     cached_input_tokens: int = 0,
     output_tokens: int = 0,
 ) -> float:
+    normalized_model = str(model or "").strip().lower()
+    input_price, cached_input_price, output_price = _LLM_MODEL_PRICING_PER_1M.get(
+        normalized_model,
+        _LLM_MODEL_PRICING_PER_1M["gpt-5.4-mini"],
+    )
     uncached_input_tokens = max(0, int(input_tokens) - int(cached_input_tokens))
     return (
-        (uncached_input_tokens / 1_000_000.0) * _LLM_MODEL_INPUT_PRICE_PER_1M
-        + (max(0, int(cached_input_tokens)) / 1_000_000.0) * _LLM_MODEL_CACHED_INPUT_PRICE_PER_1M
-        + (max(0, int(output_tokens)) / 1_000_000.0) * _LLM_MODEL_OUTPUT_PRICE_PER_1M
+        (uncached_input_tokens / 1_000_000.0) * input_price
+        + (max(0, int(cached_input_tokens)) / 1_000_000.0) * cached_input_price
+        + (max(0, int(output_tokens)) / 1_000_000.0) * output_price
     )
 
 
@@ -458,11 +469,15 @@ def normalize_llm_selected_candidate_ids(
     return normalized
 
 
-def _rough_prompt_cost(system_prompt: str, user_payload: dict[str, Any], *, include_rationale: bool) -> float:
+def _rough_prompt_cost(system_prompt: str, user_payload: dict[str, Any], *, model: str, include_rationale: bool) -> float:
     payload_text = json.dumps(user_payload, separators=(",", ":"), ensure_ascii=True)
     estimated_input_tokens = max(1, int((len(system_prompt) + len(payload_text)) / 4))
     estimated_output_tokens = 96 if include_rationale else 56
-    return estimate_llm_usage_cost(input_tokens=estimated_input_tokens, output_tokens=estimated_output_tokens)
+    return estimate_llm_usage_cost(
+        model=model,
+        input_tokens=estimated_input_tokens,
+        output_tokens=estimated_output_tokens,
+    )
 
 
 def _resolve_output_dir(request: BacktestRunRequest) -> Path:
@@ -1146,7 +1161,12 @@ def _maybe_call_llm(
             "cache_hit",
         )
 
-    estimated_cost = _rough_prompt_cost(system_prompt, prompt_payload, include_rationale=include_rationale)
+    estimated_cost = _rough_prompt_cost(
+        system_prompt,
+        prompt_payload,
+        model=model,
+        include_rationale=include_rationale,
+    )
     if budget_state.spent_usd + estimated_cost > max_budget_usd:
         return _LLMCallResult(
             fallback_ids,
@@ -1190,6 +1210,7 @@ def _maybe_call_llm(
         parsed = getattr(response, "output_parsed", None) or response_model()
         usage = _usage_from_response(response)
         actual_cost = estimate_llm_usage_cost(
+            model=model,
             input_tokens=usage["input_tokens"],
             cached_input_tokens=usage["cached_input_tokens"],
             output_tokens=usage["output_tokens"],
