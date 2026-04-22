@@ -23,6 +23,10 @@ from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import (
     estimate_llm_usage_cost,
     normalize_llm_selected_candidate_ids,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
+    build_master_router_selection_priors,
+    build_master_router_trade_frame,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     _normalize_family_members,
     build_combined_portfolio_benchmark_frames,
@@ -1732,3 +1736,171 @@ def test_llm_selected_candidate_normalization_respects_role_and_side_rules() -> 
         allowed_roles=("core", "extra"),
     )
     assert freedom == ["core-home-2", "extra-home-1", "core-home-1"]
+
+    capped = normalize_llm_selected_candidate_ids(
+        ["core-home-2", "extra-home-1", "core-home-1"],
+        candidates,
+        lane_mode="llm_freedom",
+        allowed_roles=("core", "extra"),
+        max_selected_candidates=2,
+        max_core_candidates=1,
+        max_extra_candidates=1,
+        require_core_for_extra=True,
+    )
+    assert capped == ["core-home-2", "extra-home-1"]
+
+
+def test_master_router_trade_frame_can_guard_extras_and_skip_low_confidence_cores() -> None:
+    selection_result = BacktestResult(
+        payload={},
+        trade_frames={
+            "winner_definition": pd.DataFrame(
+                [
+                    {
+                        "game_id": "G1",
+                        "team_side": "home",
+                        "team_slug": "OKC",
+                        "opponent_team_slug": "HOU",
+                        "opening_band": "60-70",
+                        "period_label": "Q4",
+                        "context_bucket": "Q4|lead_5_9",
+                        "signal_strength": 6.0,
+                        "entry_price": 0.80,
+                        "entry_state_index": 1,
+                        "exit_state_index": 2,
+                        "entry_at": datetime(2026, 2, 22, 20, 10, tzinfo=timezone.utc),
+                        "exit_at": datetime(2026, 2, 22, 20, 20, tzinfo=timezone.utc),
+                        "gross_return_with_slippage": 0.12,
+                    }
+                ]
+            ),
+            "inversion": pd.DataFrame(
+                [
+                    {
+                        "game_id": "G2",
+                        "team_side": "away",
+                        "team_slug": "DEN",
+                        "opponent_team_slug": "UTA",
+                        "opening_band": "40-50",
+                        "period_label": "Q2",
+                        "context_bucket": "Q2|lead_1_4",
+                        "signal_strength": 4.0,
+                        "entry_price": 0.52,
+                        "entry_state_index": 1,
+                        "exit_state_index": 2,
+                        "entry_at": datetime(2026, 2, 22, 20, 30, tzinfo=timezone.utc),
+                        "exit_at": datetime(2026, 2, 22, 20, 40, tzinfo=timezone.utc),
+                        "gross_return_with_slippage": 0.18,
+                    }
+                ]
+            ),
+            "underdog_liftoff": pd.DataFrame(columns=engine.BACKTEST_TRADE_COLUMNS),
+        },
+        state_df=pd.DataFrame(),
+        strategy_registry={},
+    )
+    sample_result = BacktestResult(
+        payload={},
+        trade_frames={
+            "winner_definition": pd.DataFrame(
+                [
+                    {
+                        "game_id": "G1",
+                        "team_side": "home",
+                        "team_slug": "OKC",
+                        "opponent_team_slug": "HOU",
+                        "opening_band": "60-70",
+                        "period_label": "Q4",
+                        "context_bucket": "Q4|lead_5_9",
+                        "signal_strength": 7.0,
+                        "entry_price": 0.82,
+                        "entry_state_index": 1,
+                        "exit_state_index": 2,
+                        "entry_at": datetime(2026, 2, 22, 20, 50, tzinfo=timezone.utc),
+                        "exit_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
+                        "gross_return_with_slippage": 0.08,
+                    }
+                ]
+            ),
+            "inversion": pd.DataFrame(
+                [
+                    {
+                        "game_id": "G2",
+                        "team_side": "away",
+                        "team_slug": "DEN",
+                        "opponent_team_slug": "UTA",
+                        "opening_band": "40-50",
+                        "period_label": "Q2",
+                        "context_bucket": "Q2|lead_1_4",
+                        "signal_strength": 1.0,
+                        "entry_price": 0.48,
+                        "entry_state_index": 1,
+                        "exit_state_index": 2,
+                        "entry_at": datetime(2026, 2, 22, 21, 10, tzinfo=timezone.utc),
+                        "exit_at": datetime(2026, 2, 22, 21, 20, tzinfo=timezone.utc),
+                        "gross_return_with_slippage": 0.05,
+                    }
+                ]
+            ),
+            "underdog_liftoff": pd.DataFrame(columns=engine.BACKTEST_TRADE_COLUMNS),
+            "q1_repricing": pd.DataFrame(
+                [
+                    {
+                        "game_id": "G1",
+                        "team_side": "home",
+                        "team_slug": "OKC",
+                        "opponent_team_slug": "HOU",
+                        "opening_band": "60-70",
+                        "period_label": "Q1",
+                        "context_bucket": "Q1|lead_1_4",
+                        "signal_strength": 5.0,
+                        "entry_price": 0.55,
+                        "entry_state_index": 1,
+                        "exit_state_index": 2,
+                        "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                        "exit_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
+                        "gross_return_with_slippage": 0.09,
+                    },
+                    {
+                        "game_id": "G1",
+                        "team_side": "away",
+                        "team_slug": "HOU",
+                        "opponent_team_slug": "OKC",
+                        "opening_band": "60-70",
+                        "period_label": "Q1",
+                        "context_bucket": "Q1|lead_1_4",
+                        "signal_strength": 6.0,
+                        "entry_price": 0.45,
+                        "entry_state_index": 1,
+                        "exit_state_index": 2,
+                        "entry_at": datetime(2026, 2, 22, 20, 1, tzinfo=timezone.utc),
+                        "exit_at": datetime(2026, 2, 22, 20, 6, tzinfo=timezone.utc),
+                        "gross_return_with_slippage": -0.04,
+                    },
+                ]
+            ),
+            "q4_clutch": pd.DataFrame(columns=engine.BACKTEST_TRADE_COLUMNS),
+        },
+        state_df=pd.DataFrame(),
+        strategy_registry={},
+    )
+    priors = build_master_router_selection_priors(
+        selection_result,
+        core_strategy_families=("winner_definition", "inversion", "underdog_liftoff"),
+    )
+
+    trade_frame, decisions_df = build_master_router_trade_frame(
+        sample_result,
+        sample_name="sample",
+        selection_sample_name="selection",
+        priors=priors,
+        core_strategy_families=("winner_definition", "inversion", "underdog_liftoff"),
+        extra_strategy_families=("q1_repricing", "q4_clutch"),
+        extra_selection_mode="same_side",
+        min_selected_core_confidence=0.55,
+        min_core_confidence_for_extras=0.55,
+    )
+
+    assert list(trade_frame["source_strategy_family"]) == ["winner_definition", "q1_repricing"]
+    assert list(trade_frame["team_side"]) == ["home", "home"]
+    assert decisions_df.loc[decisions_df["game_id"] == "G2", "selected_core_family"].iloc[0] is None

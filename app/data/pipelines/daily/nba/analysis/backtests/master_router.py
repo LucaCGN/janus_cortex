@@ -234,6 +234,39 @@ def _decorate_extra_candidate(record: dict[str, Any], *, source_family: str) -> 
     return decorated
 
 
+def _select_extra_records_for_game(
+    game_extra_df: pd.DataFrame,
+    *,
+    selected_team_side: str | None,
+    selected_core_confidence: float | None,
+    extra_selection_mode: str,
+    min_core_confidence_for_extras: float,
+) -> list[dict[str, Any]]:
+    if game_extra_df.empty:
+        return []
+    if extra_selection_mode == "none":
+        return []
+    if selected_core_confidence is None or selected_core_confidence < float(min_core_confidence_for_extras):
+        return []
+    work = game_extra_df.copy()
+    resolved_team_side = str(selected_team_side or "")
+    if extra_selection_mode in {"same_side", "same_side_top1"}:
+        if not resolved_team_side:
+            return []
+        work = work[work["team_side"].astype(str) == resolved_team_side].copy()
+    if work.empty:
+        return []
+    work = work.sort_values(
+        ["entry_at", "signal_strength", "source_strategy_family", "team_side"],
+        ascending=[True, False, True, True],
+        kind="mergesort",
+        na_position="last",
+    ).reset_index(drop=True)
+    if extra_selection_mode == "same_side_top1":
+        work = work.head(1).reset_index(drop=True)
+    return work.to_dict(orient="records")
+
+
 def build_master_router_trade_frame(
     split_result: Any,
     *,
@@ -242,6 +275,9 @@ def build_master_router_trade_frame(
     priors: dict[str, dict[str, Any]],
     core_strategy_families: tuple[str, ...] | list[str],
     extra_strategy_families: tuple[str, ...] | list[str],
+    extra_selection_mode: str = "all",
+    min_selected_core_confidence: float = 0.0,
+    min_core_confidence_for_extras: float = 0.0,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     core_frames: list[pd.DataFrame] = []
     extra_frames: list[pd.DataFrame] = []
@@ -262,8 +298,11 @@ def build_master_router_trade_frame(
 
     decision_rows: list[dict[str, Any]] = []
     selected_core_records: list[dict[str, Any]] = []
+    selected_extra_records: list[dict[str, Any]] = []
     combined_core = pd.concat(core_frames, ignore_index=True) if core_frames else pd.DataFrame(columns=[*BACKTEST_TRADE_COLUMNS, "source_strategy_family"])
     combined_extra = pd.concat(extra_frames, ignore_index=True) if extra_frames else pd.DataFrame(columns=[*BACKTEST_TRADE_COLUMNS, "source_strategy_family"])
+    if not combined_extra.empty:
+        combined_extra["entry_at"] = pd.to_datetime(combined_extra["entry_at"], errors="coerce", utc=True)
     if not combined_core.empty:
         combined_core["entry_at"] = pd.to_datetime(combined_core["entry_at"], errors="coerce", utc=True)
         combined_core["game_date"] = pd.to_datetime(combined_core["entry_at"], errors="coerce", utc=True).dt.date
@@ -287,11 +326,29 @@ def build_master_router_trade_frame(
                 reverse=True,
             )
             best = ranked[0]
-            selected_core_records.append(
-                _decorate_core_candidate(
-                    best,
-                    confidence=float(best["master_router_confidence"]),
-                    source_family=str(best["source_strategy_family"]),
+            best_confidence = float(best["master_router_confidence"])
+            keep_core = best_confidence >= float(min_selected_core_confidence)
+            if keep_core:
+                selected_core_records.append(
+                    _decorate_core_candidate(
+                        best,
+                        confidence=best_confidence,
+                        source_family=str(best["source_strategy_family"]),
+                    )
+                )
+            game_extra_df = (
+                combined_extra[combined_extra["game_id"].astype(str) == str(game_id)].copy()
+                if not combined_extra.empty
+                else pd.DataFrame(columns=[*BACKTEST_TRADE_COLUMNS, "source_strategy_family"])
+            )
+            selected_extra_records.extend(
+                _decorate_extra_candidate(record, source_family=str(record.get("source_strategy_family") or ""))
+                for record in _select_extra_records_for_game(
+                    game_extra_df,
+                    selected_team_side=str(best.get("team_side") or "") if keep_core else None,
+                    selected_core_confidence=best_confidence if keep_core else None,
+                    extra_selection_mode=str(extra_selection_mode or "all"),
+                    min_core_confidence_for_extras=float(min_core_confidence_for_extras),
                 )
             )
             extra_triggered_families = sorted(
@@ -304,16 +361,20 @@ def build_master_router_trade_frame(
                     "game_id": game_id,
                     "game_date": _serialize_scalar(best.get("game_date")),
                     "opening_band": best.get("opening_band"),
-                    "selected_core_family": best.get("source_strategy_family"),
-                    "selected_team_side": best.get("team_side"),
-                    "selected_team_slug": best.get("team_slug"),
-                    "selected_opponent_team_slug": best.get("opponent_team_slug"),
-                    "selected_entry_period_label": best.get("period_label"),
-                    "selected_entry_context_bucket": best.get("context_bucket"),
-                    "selected_entry_at": _serialize_scalar(best.get("entry_at")),
-                    "selected_confidence": best.get("master_router_confidence"),
-                    "selected_signal_strength": _safe_float(best.get("signal_strength")),
-                    "selected_confidence_components_json": json.dumps(best.get("master_router_confidence_components_json") or {}, sort_keys=True),
+                    "selected_core_family": best.get("source_strategy_family") if keep_core else None,
+                    "selected_team_side": best.get("team_side") if keep_core else None,
+                    "selected_team_slug": best.get("team_slug") if keep_core else None,
+                    "selected_opponent_team_slug": best.get("opponent_team_slug") if keep_core else None,
+                    "selected_entry_period_label": best.get("period_label") if keep_core else None,
+                    "selected_entry_context_bucket": best.get("context_bucket") if keep_core else None,
+                    "selected_entry_at": _serialize_scalar(best.get("entry_at")) if keep_core else None,
+                    "selected_confidence": best.get("master_router_confidence") if keep_core else None,
+                    "selected_signal_strength": _safe_float(best.get("signal_strength")) if keep_core else None,
+                    "selected_confidence_components_json": (
+                        json.dumps(best.get("master_router_confidence_components_json") or {}, sort_keys=True)
+                        if keep_core
+                        else json.dumps({}, sort_keys=True)
+                    ),
                     "triggered_core_family_count": len({str(item.get("source_strategy_family") or "") for item in ranked}),
                     "triggered_core_families_json": json.dumps(
                         sorted({str(item.get("source_strategy_family") or "") for item in ranked}),
@@ -327,10 +388,8 @@ def build_master_router_trade_frame(
     selected_core_df = pd.DataFrame(selected_core_records)
     selected_core_df = selected_core_df if not selected_core_df.empty else pd.DataFrame(columns=MASTER_ROUTER_TRADE_COLUMNS)
     decorated_extra_df = (
-        pd.DataFrame(
-            [_decorate_extra_candidate(record, source_family=str(record.get("source_strategy_family") or "")) for record in combined_extra.to_dict(orient="records")]
-        )
-        if not combined_extra.empty
+        pd.DataFrame(selected_extra_records)
+        if selected_extra_records
         else pd.DataFrame(columns=MASTER_ROUTER_TRADE_COLUMNS)
     )
     combined_trade_records = [

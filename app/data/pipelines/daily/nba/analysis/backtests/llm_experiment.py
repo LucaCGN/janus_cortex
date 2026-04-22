@@ -480,6 +480,10 @@ def normalize_llm_selected_candidate_ids(
     *,
     lane_mode: str,
     allowed_roles: tuple[str, ...] | list[str],
+    max_selected_candidates: int | None = None,
+    max_core_candidates: int | None = None,
+    max_extra_candidates: int | None = None,
+    require_core_for_extra: bool = False,
 ) -> list[str]:
     allowed_role_set = {str(role) for role in allowed_roles}
     available_lookup = {str(candidate["candidate_id"]): candidate for candidate in available_candidates}
@@ -502,7 +506,31 @@ def normalize_llm_selected_candidate_ids(
     ordered = [candidate for candidate in ordered if str(candidate.get("team_side") or "") == selected_side]
 
     if lane_mode == "llm_freedom":
-        return [str(candidate["candidate_id"]) for candidate in ordered]
+        normalized: list[str] = []
+        core_count = 0
+        extra_count = 0
+        resolved_max_selected = None if max_selected_candidates is None else max(0, int(max_selected_candidates))
+        resolved_max_core = None if max_core_candidates is None else max(0, int(max_core_candidates))
+        resolved_max_extra = None if max_extra_candidates is None else max(0, int(max_extra_candidates))
+        for candidate in ordered:
+            role = str(candidate.get("candidate_role") or "")
+            if role == "core":
+                if resolved_max_core is not None and core_count >= resolved_max_core:
+                    continue
+                normalized.append(str(candidate["candidate_id"]))
+                core_count += 1
+            elif role == "extra":
+                if require_core_for_extra and core_count <= 0:
+                    continue
+                if resolved_max_extra is not None and extra_count >= resolved_max_extra:
+                    continue
+                normalized.append(str(candidate["candidate_id"]))
+                extra_count += 1
+            else:
+                continue
+            if resolved_max_selected is not None and len(normalized) >= resolved_max_selected:
+                break
+        return normalized
 
     keep_by_role: dict[str, str] = {}
     for candidate in ordered:
@@ -1045,8 +1073,24 @@ def _build_llm_system_prompt(
     prompt_profile: str,
     include_rationale: bool,
     use_confidence_gate: bool,
+    max_selected_candidates: int | None = None,
+    max_core_candidates: int | None = None,
+    max_extra_candidates: int | None = None,
+    require_core_for_extra: bool = False,
 ) -> str:
-    constraint = "Select no more than one core and one extra candidate." if lane_mode != "llm_freedom" else "You may select multiple candidates if they reinforce the same side."
+    if lane_mode != "llm_freedom":
+        constraint = "Select no more than one core and one extra candidate."
+    else:
+        constraint_parts = ["You may select multiple candidates only if they reinforce the same side."]
+        if max_selected_candidates is not None:
+            constraint_parts.append(f"Never select more than {max(0, int(max_selected_candidates))} total candidates.")
+        if max_core_candidates is not None:
+            constraint_parts.append(f"Never select more than {max(0, int(max_core_candidates))} core candidates.")
+        if max_extra_candidates is not None:
+            constraint_parts.append(f"Never select more than {max(0, int(max_extra_candidates))} extra candidates.")
+        if require_core_for_extra:
+            constraint_parts.append("Only select an extra candidate if you also selected a same-side core candidate.")
+        constraint = " ".join(constraint_parts)
     profile_hint = (
         "Compact payload: rely on deterministic confidence, context stats, score state, and momentum fields."
         if prompt_profile in {"compact", "compact_anchor", "compact_anchor_examples"}
@@ -1166,6 +1210,10 @@ def _maybe_call_llm(
     gate_min_top_confidence: float,
     gate_min_gap: float,
     allowed_roles: tuple[str, ...] | list[str],
+    max_selected_candidates: int | None,
+    max_core_candidates: int | None,
+    max_extra_candidates: int | None,
+    require_core_for_extra: bool,
     available_candidates: list[dict[str, Any]],
     family_profiles: dict[str, dict[str, Any]],
     max_budget_usd: float,
@@ -1178,6 +1226,10 @@ def _maybe_call_llm(
         available_candidates,
         lane_mode=lane_mode,
         allowed_roles=allowed_roles,
+        max_selected_candidates=max_selected_candidates,
+        max_core_candidates=max_core_candidates,
+        max_extra_candidates=max_extra_candidates,
+        require_core_for_extra=require_core_for_extra,
     )
     if not available_candidates:
         return _LLMCallResult([], 0.0, "No candidates available.", False, 0, 0, 0, 0, 0.0, "no_candidates")
@@ -1221,6 +1273,10 @@ def _maybe_call_llm(
         prompt_profile=prompt_profile,
         include_rationale=include_rationale,
         use_confidence_gate=use_confidence_gate,
+        max_selected_candidates=max_selected_candidates,
+        max_core_candidates=max_core_candidates,
+        max_extra_candidates=max_extra_candidates,
+        require_core_for_extra=require_core_for_extra,
     )
     cache_key_payload = {
         "model": model,
@@ -1235,6 +1291,10 @@ def _maybe_call_llm(
         "use_confidence_gate": use_confidence_gate,
         "gate_min_top_confidence": gate_min_top_confidence,
         "gate_min_gap": gate_min_gap,
+        "max_selected_candidates": max_selected_candidates,
+        "max_core_candidates": max_core_candidates,
+        "max_extra_candidates": max_extra_candidates,
+        "require_core_for_extra": require_core_for_extra,
         "payload": prompt_payload,
     }
     cache_key = hashlib.sha256(json.dumps(cache_key_payload, separators=(",", ":"), sort_keys=True, ensure_ascii=True).encode("utf-8")).hexdigest()
@@ -1245,6 +1305,10 @@ def _maybe_call_llm(
             available_candidates,
             lane_mode=lane_mode,
             allowed_roles=allowed_roles,
+            max_selected_candidates=max_selected_candidates,
+            max_core_candidates=max_core_candidates,
+            max_extra_candidates=max_extra_candidates,
+            require_core_for_extra=require_core_for_extra,
         )
         return _LLMCallResult(
             cached_selection,
@@ -1344,6 +1408,10 @@ def _maybe_call_llm(
             available_candidates,
             lane_mode=lane_mode,
             allowed_roles=allowed_roles,
+            max_selected_candidates=max_selected_candidates,
+            max_core_candidates=max_core_candidates,
+            max_extra_candidates=max_extra_candidates,
+            require_core_for_extra=require_core_for_extra,
         )
         cache_store.payload[cache_key] = {
             "selected_candidate_ids": list(normalized_ids),
@@ -1634,6 +1702,14 @@ def _run_llm_lane_sample(
     use_confidence_gate = bool(lane.get("use_confidence_gate", False))
     gate_min_top_confidence = float(lane.get("gate_min_top_confidence") or 0.0)
     gate_min_gap = float(lane.get("gate_min_gap") or 0.0)
+    max_selected_candidates = (
+        None
+        if lane.get("max_selected_candidates") is None
+        else int(lane.get("max_selected_candidates"))
+    )
+    max_core_candidates = None if lane.get("max_core_candidates") is None else int(lane.get("max_core_candidates"))
+    max_extra_candidates = None if lane.get("max_extra_candidates") is None else int(lane.get("max_extra_candidates"))
+    require_core_for_extra = bool(lane.get("require_core_for_extra", False))
 
     lane_selected_ids: list[str] = []
     lane_token_totals = {
@@ -1674,6 +1750,10 @@ def _run_llm_lane_sample(
             gate_min_top_confidence=gate_min_top_confidence,
             gate_min_gap=gate_min_gap,
             allowed_roles=allowed_roles,
+            max_selected_candidates=max_selected_candidates,
+            max_core_candidates=max_core_candidates,
+            max_extra_candidates=max_extra_candidates,
+            require_core_for_extra=require_core_for_extra,
             available_candidates=available_candidates,
             family_profiles=family_profiles,
             max_budget_usd=float(request.llm_max_budget_usd),
@@ -1700,6 +1780,10 @@ def _run_llm_lane_sample(
                 "reasoning_effort": reasoning_effort,
                 "include_rationale": include_rationale,
                 "use_confidence_gate": use_confidence_gate,
+                "max_selected_candidates": max_selected_candidates,
+                "max_core_candidates": max_core_candidates,
+                "max_extra_candidates": max_extra_candidates,
+                "require_core_for_extra": require_core_for_extra,
                 "decision_stage": llm_component_scope,
                 "game_id": game_id,
                 "game_date": _serialise_scalar((all_candidates[0].get("game_date") if all_candidates else None)),
