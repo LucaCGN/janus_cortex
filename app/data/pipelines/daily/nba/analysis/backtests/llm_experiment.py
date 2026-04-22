@@ -254,6 +254,55 @@ _LLM_LANES = (
     },
 )
 
+_LLM_FULL_MODEL_TUNED_LANES = (
+    {
+        "lane_name": "llm_hybrid_full_anchor_none_v1",
+        "lane_group": "llm_full_tuned",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact_anchor",
+        "reasoning_effort": "none",
+        "include_rationale": False,
+        "use_confidence_gate": False,
+    },
+    {
+        "lane_name": "llm_hybrid_full_anchor_low_v1",
+        "lane_group": "llm_full_tuned",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact_anchor",
+        "reasoning_effort": "low",
+        "include_rationale": True,
+        "use_confidence_gate": False,
+    },
+    {
+        "lane_name": "llm_hybrid_full_anchor_guarded_low_v1",
+        "lane_group": "llm_full_tuned",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact_anchor",
+        "reasoning_effort": "low",
+        "include_rationale": False,
+        "use_confidence_gate": True,
+        "gate_min_top_confidence": 0.66,
+        "gate_min_gap": 0.05,
+    },
+    {
+        "lane_name": "llm_hybrid_full_anchor_examples_low_v1",
+        "lane_group": "llm_full_tuned",
+        "lane_mode": "llm_restrained",
+        "llm_component_scope": "bc_restrained",
+        "allowed_roles": ("core", "extra"),
+        "prompt_profile": "compact_anchor_examples",
+        "reasoning_effort": "low",
+        "include_rationale": False,
+        "use_confidence_gate": False,
+    },
+)
+
 
 class _LLMSelectionResponse(BaseModel):
     selected_candidate_ids: list[str] = Field(default_factory=list)
@@ -862,6 +911,7 @@ def _build_llm_prompt_payload(
     use_confidence_gate: bool,
     game_id: str,
     opening_band: str,
+    fallback_ids: list[str],
     available_candidates: list[dict[str, Any]],
     family_profiles: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
@@ -933,6 +983,25 @@ def _build_llm_prompt_payload(
     second_candidate = sorted_candidates[1] if len(sorted_candidates) > 1 else {}
     top_confidence = _safe_float(top_candidate.get("deterministic_confidence")) or 0.0
     second_confidence = _safe_float(second_candidate.get("deterministic_confidence")) or 0.0
+    candidate_by_id = {str(candidate.get("candidate_id") or ""): candidate for candidate in available_candidates}
+    fallback_rows = []
+    for candidate_id in fallback_ids:
+        candidate = candidate_by_id.get(str(candidate_id))
+        if candidate is None:
+            continue
+        fallback_rows.append(
+            {
+                "id": str(candidate.get("candidate_id") or ""),
+                "fam": str(candidate.get("strategy_family") or ""),
+                "role": str(candidate.get("candidate_role") or ""),
+                "side": str(candidate.get("team_side") or ""),
+                "det_conf": _safe_float(candidate.get("deterministic_confidence")),
+                "ctx_ar": _safe_float(candidate.get("context_avg_return")),
+                "ctx_wr": _safe_float(candidate.get("context_win_rate")),
+                "ctx_n": int(candidate.get("context_trade_count") or 0),
+                "sig": _safe_float(candidate.get("signal_strength")),
+            }
+        )
     router_hint = {
         "top_id": top_candidate.get("candidate_id"),
         "top_family": top_candidate.get("strategy_family"),
@@ -940,8 +1009,10 @@ def _build_llm_prompt_payload(
         "gap_to_next": round(max(0.0, top_confidence - second_confidence), 6),
         "candidate_count": len(available_candidates),
         "confidence_gate_active": bool(use_confidence_gate),
+        "default_ids": [str(candidate_id) for candidate_id in fallback_ids],
+        "default_rows": fallback_rows,
     }
-    return {
+    payload = {
         "v": _LLM_PROMPT_VERSION,
         "lane": lane_name,
         "mode": lane_mode,
@@ -953,6 +1024,18 @@ def _build_llm_prompt_payload(
         "profiles": profile_rows,
         "candidates": candidate_rows,
     }
+    if prompt_profile in {"compact_anchor", "compact_anchor_examples"}:
+        payload["selection_policy"] = {
+            "task": "accept_or_override_router_default",
+            "prefer_keep_default_when_top_det_conf_at_least": 0.58,
+            "only_skip_when": [
+                "all candidates are weak or contradictory",
+                "the default selection has clearly adverse context",
+                "a same-side replacement is materially stronger",
+            ],
+            "restrained_lane_target": "prefer one core selection; add an extra only on the same side with independent support",
+        }
+    return payload
 
 
 def _build_llm_system_prompt(
@@ -966,13 +1049,27 @@ def _build_llm_system_prompt(
     constraint = "Select no more than one core and one extra candidate." if lane_mode != "llm_freedom" else "You may select multiple candidates if they reinforce the same side."
     profile_hint = (
         "Compact payload: rely on deterministic confidence, context stats, score state, and momentum fields."
-        if prompt_profile == "compact"
+        if prompt_profile in {"compact", "compact_anchor", "compact_anchor_examples"}
         else "Full payload: you may also use trace rows and entry metadata."
     )
     gate_hint = (
         "If the router leader is already strong, prefer keeping the deterministic leader instead of forcing a novelty override."
         if use_confidence_gate
         else "Only override the deterministic leader when the evidence clearly favors another candidate or a skip."
+    )
+    anchor_hint = (
+        "This is an accept-or-override task. The router block contains the deterministic default selection. "
+        "If router.default_ids is non-empty and the top deterministic confidence is at least 0.58, keep the default unless there is clear contrary evidence. "
+        "Clear contrary evidence means the default has adverse context and weak state support, or another candidate on the same side is materially stronger. "
+        "Avoid zero selections when a valid default exists and there is no clear contradiction."
+        if prompt_profile in {"compact_anchor", "compact_anchor_examples"}
+        else ""
+    )
+    example_hint = (
+        "Example A: if the router default has positive context return, useful sample size, and no stronger same-side alternative, keep it. "
+        "Example B: if the router default exists but another same-side candidate has much better confidence and context while the default is weak, override to that stronger candidate."
+        if prompt_profile == "compact_anchor_examples"
+        else ""
     )
     output_hint = (
         "Return only minified JSON with the selected candidate ids, a confidence score, and a rationale under 80 characters."
@@ -982,9 +1079,9 @@ def _build_llm_system_prompt(
     return (
         "You are evaluating NBA live-trading candidate strategies. "
         "Use only the JSON provided. Optimize for compounded bankroll growth under drawdown control. "
-        "Prefer skip when support is weak or contexts are contradictory. "
+        "Prefer skip only when support is genuinely weak or contexts are contradictory. "
         "Never invent new strategy ids. Never select both sides of the same game. "
-        f"Lane scope is {llm_component_scope}. {constraint} {profile_hint} {gate_hint} {output_hint}"
+        f"Lane scope is {llm_component_scope}. {constraint} {profile_hint} {gate_hint} {anchor_hint} {example_hint} {output_hint}"
     )
 
 
@@ -1114,6 +1211,7 @@ def _maybe_call_llm(
         use_confidence_gate=use_confidence_gate,
         game_id=str(available_candidates[0].get("game_id") or ""),
         opening_band=str(available_candidates[0].get("opening_band") or ""),
+        fallback_ids=fallback_ids,
         available_candidates=available_candidates,
         family_profiles=family_profiles,
     )
@@ -1410,7 +1508,15 @@ def _lane_group_for_name(lane_name: str) -> str:
     return "llm_variant" if str(lane_name).startswith("llm_") else "deterministic"
 
 
-def _lane_config_rows() -> list[dict[str, Any]]:
+def _resolve_llm_lanes(model: str) -> tuple[dict[str, Any], ...]:
+    normalized_model = str(model or "").strip().lower()
+    if normalized_model == "gpt-5.4":
+        return tuple([*_LLM_LANES, *_LLM_FULL_MODEL_TUNED_LANES])
+    return tuple(_LLM_LANES)
+
+
+def _lane_config_rows(model: str) -> list[dict[str, Any]]:
+    llm_lanes = _resolve_llm_lanes(model)
     return [
         {
             "lane_name": str(lane["lane_name"]),
@@ -1422,7 +1528,7 @@ def _lane_config_rows() -> list[dict[str, Any]]:
             "include_rationale": bool(lane.get("include_rationale", True)),
             "use_confidence_gate": bool(lane.get("use_confidence_gate", False)),
         }
-        for lane in _LLM_LANES
+        for lane in llm_lanes
     ]
 
 
@@ -1653,7 +1759,8 @@ def build_llm_experiment_frames(
     cache_store = _load_llm_cache(output_dir / _LLM_CACHE_FILENAME)
     client = _resolve_openai_client() if request.llm_enable else None
     budget_state = _LLMBudgetState()
-    lane_catalog = _lane_config_rows()
+    llm_lanes = _resolve_llm_lanes(request.llm_model)
+    lane_catalog = _lane_config_rows(request.llm_model)
     lane_lookup = {row["lane_name"]: row for row in lane_catalog}
     lane_lookup[MASTER_ROUTER_PORTFOLIO] = {
         "lane_name": MASTER_ROUTER_PORTFOLIO,
@@ -1781,7 +1888,7 @@ def build_llm_experiment_frames(
                 }
             )
 
-        for lane in _LLM_LANES:
+        for lane in llm_lanes:
             lane_name = str(lane["lane_name"])
             lane_mode = str(lane["lane_mode"])
             llm_component_scope = str(lane["llm_component_scope"])
@@ -1916,7 +2023,7 @@ def build_llm_experiment_frames(
             extra_strategy_families=tuple(extra_strategy_families),
         )
         finalist_score_lookup = {str(row["lane_name"]): float(row.get("finalist_score") or 0.0) for row in finalist_rows}
-        llm_lane_lookup = {str(lane["lane_name"]): lane for lane in _LLM_LANES}
+        llm_lane_lookup = {str(lane["lane_name"]): lane for lane in llm_lanes}
         for lane_name in finalist_names:
             lane_meta = lane_lookup.get(lane_name) or {}
             if lane_name == MASTER_ROUTER_PORTFOLIO:
