@@ -67,6 +67,11 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "portfolio_target_exposure_fraction",
     "portfolio_random_slippage_max_cents",
     "portfolio_random_slippage_seed",
+    "portfolio_runup_throttle_peak_multiple",
+    "portfolio_runup_throttle_fraction_scale",
+    "portfolio_drawdown_throttle_threshold_pct",
+    "portfolio_drawdown_throttle_fraction_scale",
+    "portfolio_drawdown_new_entry_stop_pct",
     "max_concurrent_positions_observed",
     "avg_executed_trade_return_with_slippage",
     "avg_executed_share_count",
@@ -74,6 +79,7 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "last_exit_at",
     "skipped_concurrency_count",
     "skipped_min_order_count",
+    "skipped_risk_guard_count",
 )
 
 PORTFOLIO_STEP_COLUMNS = (
@@ -107,7 +113,14 @@ PORTFOLIO_STEP_COLUMNS = (
     "cash_after_entry",
     "stake_amount",
     "target_position_fraction",
+    "effective_position_fraction",
+    "risk_fraction_scale",
     "concurrent_game_load",
+    "drawdown_pct_before_batch",
+    "peak_bankroll_before_batch",
+    "runup_throttle_active",
+    "drawdown_throttle_active",
+    "risk_guard_active",
     "minimum_required_stake",
     "share_count",
     "profit_loss_amount",
@@ -264,6 +277,41 @@ def normalize_portfolio_random_slippage_seed(value: int | None) -> int:
         return DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED
 
 
+def normalize_portfolio_runup_throttle_peak_multiple(value: float | None) -> float | None:
+    multiple = _safe_float(value)
+    if multiple is None:
+        return None
+    return max(1.0, multiple)
+
+
+def normalize_portfolio_runup_throttle_fraction_scale(value: float | None) -> float:
+    scale = _safe_float(value)
+    if scale is None:
+        return 1.0
+    return max(0.0, min(1.0, scale))
+
+
+def normalize_portfolio_drawdown_throttle_threshold_pct(value: float | None) -> float | None:
+    threshold = _safe_float(value)
+    if threshold is None:
+        return None
+    return max(0.0, min(1.0, threshold))
+
+
+def normalize_portfolio_drawdown_throttle_fraction_scale(value: float | None) -> float:
+    scale = _safe_float(value)
+    if scale is None:
+        return 1.0
+    return max(0.0, min(1.0, scale))
+
+
+def normalize_portfolio_drawdown_new_entry_stop_pct(value: float | None) -> float | None:
+    threshold = _safe_float(value)
+    if threshold is None:
+        return None
+    return max(0.0, min(1.0, threshold))
+
+
 def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
     if trades_df.empty:
         return pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS)
@@ -354,6 +402,43 @@ def _resolve_target_position_fraction(
     return max(base_fraction, min(1.0, dynamic_fraction))
 
 
+def _resolve_risk_adjusted_position_fraction(
+    *,
+    target_position_fraction: float,
+    starting_bankroll: float,
+    peak_bankroll: float,
+    bankroll_before_batch: float,
+    runup_throttle_peak_multiple: float | None,
+    runup_throttle_fraction_scale: float,
+    drawdown_throttle_threshold_pct: float | None,
+    drawdown_throttle_fraction_scale: float,
+) -> tuple[float, float, bool, bool, float]:
+    resolved_fraction = max(0.0, min(1.0, float(target_position_fraction)))
+    current_drawdown_pct = 0.0
+    if peak_bankroll > 0:
+        current_drawdown_pct = max(0.0, peak_bankroll - bankroll_before_batch) / peak_bankroll
+    scale = 1.0
+    runup_active = False
+    drawdown_active = False
+    if (
+        runup_throttle_peak_multiple is not None
+        and starting_bankroll > 0
+        and peak_bankroll >= (starting_bankroll * runup_throttle_peak_multiple)
+        and runup_throttle_fraction_scale < 1.0
+    ):
+        scale *= runup_throttle_fraction_scale
+        runup_active = True
+    if (
+        drawdown_throttle_threshold_pct is not None
+        and current_drawdown_pct >= drawdown_throttle_threshold_pct
+        and drawdown_throttle_fraction_scale < 1.0
+    ):
+        scale *= drawdown_throttle_fraction_scale
+        drawdown_active = True
+    effective_fraction = max(0.0, min(1.0, resolved_fraction * scale))
+    return effective_fraction, scale, runup_active, drawdown_active, current_drawdown_pct
+
+
 def _apply_game_limit(trades_df: pd.DataFrame, *, game_limit: int | None) -> tuple[pd.DataFrame, dict[str, int]]:
     if trades_df.empty:
         return trades_df.copy(), {}
@@ -395,6 +480,11 @@ def simulate_trade_portfolio(
     target_exposure_fraction: float | None = None,
     random_slippage_max_cents: int | None = None,
     random_slippage_seed: int | None = None,
+    runup_throttle_peak_multiple: float | None = None,
+    runup_throttle_fraction_scale: float | None = None,
+    drawdown_throttle_threshold_pct: float | None = None,
+    drawdown_throttle_fraction_scale: float | None = None,
+    drawdown_new_entry_stop_pct: float | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
     cash_balance = normalize_portfolio_initial_bankroll(initial_bankroll)
     fraction = normalize_portfolio_position_size_fraction(position_size_fraction)
@@ -407,6 +497,11 @@ def simulate_trade_portfolio(
     resolved_target_exposure_fraction = normalize_portfolio_target_exposure_fraction(target_exposure_fraction)
     resolved_random_slippage_max_cents = normalize_portfolio_random_slippage_max_cents(random_slippage_max_cents)
     resolved_random_slippage_seed = normalize_portfolio_random_slippage_seed(random_slippage_seed)
+    resolved_runup_throttle_peak_multiple = normalize_portfolio_runup_throttle_peak_multiple(runup_throttle_peak_multiple)
+    resolved_runup_throttle_fraction_scale = normalize_portfolio_runup_throttle_fraction_scale(runup_throttle_fraction_scale)
+    resolved_drawdown_throttle_threshold_pct = normalize_portfolio_drawdown_throttle_threshold_pct(drawdown_throttle_threshold_pct)
+    resolved_drawdown_throttle_fraction_scale = normalize_portfolio_drawdown_throttle_fraction_scale(drawdown_throttle_fraction_scale)
+    resolved_drawdown_new_entry_stop_pct = normalize_portfolio_drawdown_new_entry_stop_pct(drawdown_new_entry_stop_pct)
     resolved_family_members = _normalize_family_members(strategy_family, strategy_family_members)
     serialized_family_members = ",".join(resolved_family_members)
     execution_rng = _build_execution_rng(
@@ -431,6 +526,7 @@ def simulate_trade_portfolio(
     skipped_bankroll_count = 0
     skipped_concurrency_count = 0
     skipped_min_order_count = 0
+    skipped_risk_guard_count = 0
     max_concurrent_positions_observed = 0
     settlement_sequence = 0
 
@@ -527,8 +623,28 @@ def simulate_trade_portfolio(
             target_exposure_fraction=resolved_target_exposure_fraction,
             concurrent_game_load=concurrent_game_load,
         )
+        (
+            effective_position_fraction,
+            risk_fraction_scale,
+            runup_throttle_active,
+            drawdown_throttle_active,
+            drawdown_pct_before_batch,
+        ) = _resolve_risk_adjusted_position_fraction(
+            target_position_fraction=target_position_fraction,
+            starting_bankroll=normalize_portfolio_initial_bankroll(initial_bankroll),
+            peak_bankroll=peak_bankroll,
+            bankroll_before_batch=equity_before_batch,
+            runup_throttle_peak_multiple=resolved_runup_throttle_peak_multiple,
+            runup_throttle_fraction_scale=resolved_runup_throttle_fraction_scale,
+            drawdown_throttle_threshold_pct=resolved_drawdown_throttle_threshold_pct,
+            drawdown_throttle_fraction_scale=resolved_drawdown_throttle_fraction_scale,
+        )
+        risk_guard_active = (
+            resolved_drawdown_new_entry_stop_pct is not None
+            and drawdown_pct_before_batch >= resolved_drawdown_new_entry_stop_pct
+        )
         per_trade_budget = (
-            (cash_balance * target_position_fraction)
+            (cash_balance * effective_position_fraction)
             if selected_count > 0 and resolved_concurrency_mode == "shared_cash_equal_split"
             else 0.0
         )
@@ -575,6 +691,9 @@ def simulate_trade_portfolio(
             if id(record) not in selected_keys:
                 skip_reason = "concurrency"
                 skipped_concurrency_count += 1
+            elif risk_guard_active:
+                skip_reason = "risk_guard"
+                skipped_risk_guard_count += 1
             elif equity_before <= 0 or cash_before <= 0 or fraction <= 0:
                 skip_reason = "bankroll"
                 skipped_bankroll_count += 1
@@ -650,7 +769,14 @@ def simulate_trade_portfolio(
                     "cash_after_entry": cash_after_entry,
                     "stake_amount": stake_amount,
                     "target_position_fraction": target_position_fraction,
+                    "effective_position_fraction": effective_position_fraction,
+                    "risk_fraction_scale": risk_fraction_scale,
                     "concurrent_game_load": concurrent_game_load,
+                    "drawdown_pct_before_batch": drawdown_pct_before_batch,
+                    "peak_bankroll_before_batch": peak_bankroll,
+                    "runup_throttle_active": runup_throttle_active,
+                    "drawdown_throttle_active": drawdown_throttle_active,
+                    "risk_guard_active": risk_guard_active,
                     "minimum_required_stake": minimum_required_stake,
                     "share_count": share_count,
                     "profit_loss_amount": profit_loss_amount,
@@ -697,6 +823,11 @@ def simulate_trade_portfolio(
         "portfolio_target_exposure_fraction": resolved_target_exposure_fraction,
         "portfolio_random_slippage_max_cents": resolved_random_slippage_max_cents,
         "portfolio_random_slippage_seed": resolved_random_slippage_seed,
+        "portfolio_runup_throttle_peak_multiple": resolved_runup_throttle_peak_multiple,
+        "portfolio_runup_throttle_fraction_scale": resolved_runup_throttle_fraction_scale,
+        "portfolio_drawdown_throttle_threshold_pct": resolved_drawdown_throttle_threshold_pct,
+        "portfolio_drawdown_throttle_fraction_scale": resolved_drawdown_throttle_fraction_scale,
+        "portfolio_drawdown_new_entry_stop_pct": resolved_drawdown_new_entry_stop_pct,
         "max_concurrent_positions_observed": max_concurrent_positions_observed,
         "avg_executed_trade_return_with_slippage": (
             sum(executed_trade_returns) / len(executed_trade_returns) if executed_trade_returns else None
@@ -706,6 +837,7 @@ def simulate_trade_portfolio(
         ),
         "first_entry_at": _serialise_scalar(limited["entry_at"].min()) if not limited.empty else None,
         "last_exit_at": _serialise_scalar(limited["exit_at"].max()) if not limited.empty else None,
+        "skipped_risk_guard_count": skipped_risk_guard_count,
     }
     return summary, pd.DataFrame(step_rows, columns=PORTFOLIO_STEP_COLUMNS)
 

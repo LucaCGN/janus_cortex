@@ -796,6 +796,74 @@ def _parse_json_dict(value: Any) -> dict[str, Any]:
         return {}
 
 
+def _build_rolling_summary(value: Any) -> dict[str, Any]:
+    payload = _parse_json_dict(value)
+    latest = payload.get("latest") if isinstance(payload, dict) else {}
+    if not isinstance(latest, dict) or not latest:
+        return {}
+    return {
+        "n": int(_safe_float(latest.get("window_sample_games")) or 0),
+        "swing": round(_safe_float(latest.get("avg_total_swing")) or 0.0, 4),
+        "inv": round(_safe_float(latest.get("avg_inversion_count")) or 0.0, 4),
+        "open": round(_safe_float(latest.get("avg_opening_price")) or 0.0, 4),
+    }
+
+
+def build_team_profile_context_lookup(team_profiles_df: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    if team_profiles_df.empty or "team_slug" not in team_profiles_df.columns:
+        return {}
+    lookup: dict[str, dict[str, Any]] = {}
+    for record in team_profiles_df.to_dict(orient="records"):
+        team_slug = str(record.get("team_slug") or "").strip()
+        if not team_slug:
+            continue
+        sample_games = max(1.0, _safe_float(record.get("sample_games")) or 0.0)
+        lookup[team_slug] = {
+            "tm": team_slug,
+            "wr": round((_safe_float(record.get("wins")) or 0.0) / sample_games, 4),
+            "fav_rate": round((_safe_float(record.get("favorite_games")) or 0.0) / sample_games, 4),
+            "dog_rate": round((_safe_float(record.get("underdog_games")) or 0.0) / sample_games, 4),
+            "avg_open": round(_safe_float(record.get("avg_opening_price")) or 0.0, 4),
+            "swing": round(_safe_float(record.get("avg_total_swing")) or 0.0, 4),
+            "mfe": round(_safe_float(record.get("avg_max_favorable_excursion")) or 0.0, 4),
+            "mae": round(_safe_float(record.get("avg_max_adverse_excursion")) or 0.0, 4),
+            "inv_rate": round(_safe_float(record.get("inversion_rate")) or 0.0, 4),
+            "fav_dd": round(_safe_float(record.get("avg_favorite_drawdown")) or 0.0, 4),
+            "dog_spike": round(_safe_float(record.get("avg_underdog_spike")) or 0.0, 4),
+            "mismatch": round(_safe_float(record.get("control_confidence_mismatch_rate")) or 0.0, 4),
+            "stable80": round(_safe_float(record.get("winner_stable_80_rate")) or 0.0, 4),
+            "stable90": round(_safe_float(record.get("winner_stable_90_rate")) or 0.0, 4),
+            "open_trend": round(_safe_float(record.get("opening_price_trend_slope")) or 0.0, 4),
+            "r10": _build_rolling_summary(record.get("rolling_10_json")),
+            "r20": _build_rolling_summary(record.get("rolling_20_json")),
+        }
+    return lookup
+
+
+def _build_matchup_historical_context(
+    *,
+    team_slug: str,
+    opponent_team_slug: str,
+    team_profile_lookup: dict[str, dict[str, Any]] | None,
+) -> dict[str, Any] | None:
+    lookup = team_profile_lookup or {}
+    team = lookup.get(str(team_slug or "").strip()) or {}
+    opponent = lookup.get(str(opponent_team_slug or "").strip()) or {}
+    if not team and not opponent:
+        return None
+    return {
+        "team": team,
+        "opp": opponent,
+        "delta": {
+            "wr": round((_safe_float(team.get("wr")) or 0.0) - (_safe_float(opponent.get("wr")) or 0.0), 4),
+            "swing": round((_safe_float(team.get("swing")) or 0.0) - (_safe_float(opponent.get("swing")) or 0.0), 4),
+            "inv_rate": round((_safe_float(team.get("inv_rate")) or 0.0) - (_safe_float(opponent.get("inv_rate")) or 0.0), 4),
+            "stable80": round((_safe_float(team.get("stable80")) or 0.0) - (_safe_float(opponent.get("stable80")) or 0.0), 4),
+            "mismatch": round((_safe_float(team.get("mismatch")) or 0.0) - (_safe_float(opponent.get("mismatch")) or 0.0), 4),
+        },
+    }
+
+
 def _build_game_candidates(
     sample_result: BacktestResult,
     *,
@@ -803,6 +871,7 @@ def _build_game_candidates(
     priors: dict[str, dict[str, Any]],
     core_strategy_families: tuple[str, ...] | list[str],
     extra_strategy_families: tuple[str, ...] | list[str],
+    historical_team_context_lookup: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, list[dict[str, Any]]]:
     state_lookup = _build_state_lookup(sample_result.state_df)
     trace_lookup = _build_trace_lookup(sample_result.state_df)
@@ -850,6 +919,11 @@ def _build_game_candidates(
                 deterministic_confidence = None
                 components = {}
             entry_metadata = _parse_json_dict(record.get("entry_metadata_json"))
+            historical_game_context = _build_matchup_historical_context(
+                team_slug=str(record.get("team_slug") or state_snapshot.get("team_slug") or ""),
+                opponent_team_slug=str(record.get("opponent_team_slug") or state_snapshot.get("opponent_team_slug") or ""),
+                team_profile_lookup=historical_team_context_lookup,
+            )
             candidate_id = f"{family}|{game_id}|{team_side}|{entry_state_index if entry_state_index is not None else 'na'}"
             avg_return = _safe_float(context_stats.get("avg_return")) if context_stats else None
             trade_count = int(context_stats.get("trade_count") or 0) if context_stats else 0
@@ -893,6 +967,7 @@ def _build_game_candidates(
                         if key in {"entry_threshold", "target_price", "stop_loss", "target_move", "min_momentum", "min_score_diff"}
                     },
                     "trace_rows": trace_rows,
+                    "historical_game_context": historical_game_context,
                     "deterministic_components": components,
                     "rank_score": rank_score,
                     "trade_record": record,
@@ -1052,6 +1127,16 @@ def _build_llm_prompt_payload(
         "profiles": profile_rows,
         "candidates": candidate_rows,
     }
+    historical_game_context = next(
+        (
+            candidate.get("historical_game_context")
+            for candidate in available_candidates
+            if isinstance(candidate.get("historical_game_context"), dict) and candidate.get("historical_game_context")
+        ),
+        None,
+    )
+    if historical_game_context:
+        payload["historical_game_context"] = historical_game_context
     if prompt_profile in {"compact_anchor", "compact_anchor_examples"}:
         payload["selection_policy"] = {
             "task": "accept_or_override_router_default",
@@ -1123,6 +1208,8 @@ def _build_llm_system_prompt(
     return (
         "You are evaluating NBA live-trading candidate strategies. "
         "Use only the JSON provided. Optimize for compounded bankroll growth under drawdown control. "
+        "If historical_game_context is present, treat it as a prior from earlier games, not as certainty. "
+        "Live state and current candidate quality matter more than broad season averages. "
         "Prefer skip only when support is genuinely weak or contexts are contradictory. "
         "Never invent new strategy ids. Never select both sides of the same game. "
         f"Lane scope is {llm_component_scope}. {constraint} {profile_hint} {gate_hint} {anchor_hint} {example_hint} {output_hint}"
@@ -2504,6 +2591,7 @@ __all__ = [
     "LLM_EXPERIMENT_ITERATION_COLUMNS",
     "LLM_EXPERIMENT_LANE_SUMMARY_COLUMNS",
     "LLM_EXPERIMENT_SUMMARY_COLUMNS",
+    "build_team_profile_context_lookup",
     "build_final_option_showdown_frames",
     "build_llm_experiment_frames",
     "build_llm_iteration_plan",

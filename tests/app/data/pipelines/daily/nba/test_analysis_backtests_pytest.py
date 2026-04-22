@@ -12,8 +12,11 @@ from app.data.pipelines.daily.nba.analysis.backtests.benchmarking import (
     _normalize_robustness_seeds,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import (
+    _build_game_candidates,
+    _build_llm_prompt_payload,
     _build_context_lookup,
     _clean_trades_df,
+    build_team_profile_context_lookup,
     _safe_float,
     _serialise_scalar,
     _LLM_MODEL_CACHED_INPUT_PRICE_PER_1M,
@@ -1077,6 +1080,76 @@ def test_trade_portfolio_respects_polymarket_minimum_order_floor() -> None:
     assert float(steps_df.iloc[0]["minimum_required_stake"]) == pytest.approx(1.5)
 
 
+def test_trade_portfolio_risk_controls_throttle_after_runup_and_stop_on_drawdown() -> None:
+    trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G1",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "opponent_team_slug": "LAL",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
+                "entry_price": 0.40,
+                "gross_return_with_slippage": 2.0,
+            },
+            {
+                "game_id": "G2",
+                "team_side": "home",
+                "team_slug": "DEN",
+                "opponent_team_slug": "UTA",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 6, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 6, 30, tzinfo=timezone.utc),
+                "entry_price": 0.40,
+                "gross_return_with_slippage": -0.50,
+            },
+            {
+                "game_id": "G3",
+                "team_side": "home",
+                "team_slug": "MIL",
+                "opponent_team_slug": "NYK",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 7, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 12, tzinfo=timezone.utc),
+                "entry_price": 0.40,
+                "gross_return_with_slippage": 0.20,
+            },
+        ]
+    )
+
+    summary, steps_df = simulate_trade_portfolio(
+        trades_df,
+        sample_name="full_sample",
+        strategy_family="master_strategy_router_same_side_top1_conf60_v1",
+        initial_bankroll=10.0,
+        position_size_fraction=1.0,
+        game_limit=3,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=1,
+        concurrency_mode="shared_cash_equal_split",
+        runup_throttle_peak_multiple=2.0,
+        runup_throttle_fraction_scale=0.50,
+        drawdown_new_entry_stop_pct=0.20,
+        random_slippage_max_cents=0,
+        random_slippage_seed=20260422,
+    )
+
+    assert summary["executed_trade_count"] == 2
+    assert summary["skipped_risk_guard_count"] == 1
+    assert list(steps_df["portfolio_action"]) == ["executed", "executed", "skipped"]
+    assert list(steps_df["skip_reason"]) == [None, None, "risk_guard"]
+    assert float(steps_df.iloc[1]["effective_position_fraction"]) == pytest.approx(0.5)
+    assert bool(steps_df.iloc[1]["runup_throttle_active"]) is True
+    assert bool(steps_df.iloc[2]["risk_guard_active"]) is True
+    assert float(steps_df.iloc[2]["drawdown_pct_before_batch"]) == pytest.approx(0.25)
+
+
 def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> None:
     inversion_trades_df = pd.DataFrame(
         [
@@ -1650,6 +1723,135 @@ def test_llm_experiment_trade_frame_and_context_lookup_are_deterministic() -> No
     assert overall["win_rate"] == pytest.approx(2 / 3)
     assert [row["context_bucket"] for row in context_rows] == ["Q1|trail_1_4", "Q2|lead_1_4"]
     assert context_rows[0]["avg_return"] == pytest.approx(0.05)
+
+
+def test_llm_prompt_payload_can_include_postseason_historical_team_context() -> None:
+    state_df = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="GCTX",
+                team_slug="BOS",
+                opponent_team_slug="NYK",
+                opening_price=0.62,
+                state_index=1,
+                team_price=0.66,
+                event_at=datetime(2026, 4, 21, 20, 0, tzinfo=timezone.utc),
+                opening_band="60-70",
+                period_label="Q4",
+                context_bucket="Q4|lead_5_9",
+                score_diff=7,
+                net_points_last_5_events=4.0,
+                seconds_to_game_end=180.0,
+                lead_changes_so_far=3,
+            )
+        ]
+    )
+    trade_frames = {
+        "winner_definition": pd.DataFrame(
+            [
+                {
+                    "game_id": "GCTX",
+                    "team_side": "home",
+                    "team_slug": "BOS",
+                    "opponent_team_slug": "NYK",
+                    "opening_band": "60-70",
+                    "period_label": "Q4",
+                    "context_bucket": "Q4|lead_5_9",
+                    "entry_state_index": 1,
+                    "entry_at": datetime(2026, 4, 21, 20, 0, tzinfo=timezone.utc),
+                    "entry_price": 0.66,
+                    "signal_strength": 5.0,
+                    "entry_metadata_json": "{\"entry_threshold\": 0.8}",
+                }
+            ]
+        )
+    }
+    result = BacktestResult(payload={}, trade_frames=trade_frames, state_df=state_df, strategy_registry={})
+    family_profiles = {
+        "winner_definition": {
+            "candidate_role": "core",
+            "trade_count": 20,
+            "win_rate": 0.65,
+            "avg_return": 0.08,
+            "tags": ["favorite", "late"],
+        }
+    }
+    priors = {
+        "winner_definition": {
+            "overall": {"trade_count": 20, "win_rate": 0.65, "avg_return": 0.08},
+            "exact_context_lookup": {("60-70", "Q4", "Q4|lead_5_9"): {"trade_count": 8, "win_rate": 0.75, "avg_return": 0.11}},
+            "band_period_lookup": {},
+        }
+    }
+    team_profiles_df = pd.DataFrame(
+        [
+            {
+                "team_slug": "BOS",
+                "sample_games": 82,
+                "wins": 56,
+                "favorite_games": 54,
+                "underdog_games": 28,
+                "avg_opening_price": 0.63,
+                "avg_total_swing": 0.21,
+                "avg_max_favorable_excursion": 0.17,
+                "avg_max_adverse_excursion": 0.09,
+                "inversion_rate": 0.18,
+                "avg_favorite_drawdown": 0.11,
+                "avg_underdog_spike": 0.07,
+                "control_confidence_mismatch_rate": 0.08,
+                "winner_stable_80_rate": 0.44,
+                "winner_stable_90_rate": 0.27,
+                "opening_price_trend_slope": 0.01,
+                "rolling_10_json": "{\"latest\":{\"window_sample_games\":10,\"avg_total_swing\":0.24,\"avg_inversion_count\":0.8,\"avg_opening_price\":0.65}}",
+                "rolling_20_json": "{\"latest\":{\"window_sample_games\":20,\"avg_total_swing\":0.22,\"avg_inversion_count\":0.6,\"avg_opening_price\":0.64}}",
+            },
+            {
+                "team_slug": "NYK",
+                "sample_games": 82,
+                "wins": 48,
+                "favorite_games": 41,
+                "underdog_games": 41,
+                "avg_opening_price": 0.54,
+                "avg_total_swing": 0.18,
+                "avg_max_favorable_excursion": 0.14,
+                "avg_max_adverse_excursion": 0.10,
+                "inversion_rate": 0.12,
+                "avg_favorite_drawdown": 0.09,
+                "avg_underdog_spike": 0.05,
+                "control_confidence_mismatch_rate": 0.05,
+                "winner_stable_80_rate": 0.31,
+                "winner_stable_90_rate": 0.18,
+                "opening_price_trend_slope": -0.02,
+                "rolling_10_json": "{\"latest\":{\"window_sample_games\":10,\"avg_total_swing\":0.17,\"avg_inversion_count\":0.4,\"avg_opening_price\":0.53}}",
+                "rolling_20_json": "{\"latest\":{\"window_sample_games\":20,\"avg_total_swing\":0.19,\"avg_inversion_count\":0.5,\"avg_opening_price\":0.55}}",
+            },
+        ]
+    )
+    team_lookup = build_team_profile_context_lookup(team_profiles_df)
+    game_candidates = _build_game_candidates(
+        result,
+        family_profiles=family_profiles,
+        priors=priors,
+        core_strategy_families=("winner_definition",),
+        extra_strategy_families=(),
+        historical_team_context_lookup=team_lookup,
+    )
+    payload = _build_llm_prompt_payload(
+        lane_name="llm_hybrid_freedom_compact_v1",
+        lane_mode="llm_freedom",
+        llm_component_scope="bc_freedom",
+        prompt_profile="compact",
+        use_confidence_gate=False,
+        game_id="GCTX",
+        opening_band="60-70",
+        fallback_ids=[game_candidates["GCTX"][0]["candidate_id"]],
+        available_candidates=game_candidates["GCTX"],
+        family_profiles=family_profiles,
+    )
+
+    assert payload["historical_game_context"]["team"]["tm"] == "BOS"
+    assert payload["historical_game_context"]["opp"]["tm"] == "NYK"
+    assert payload["historical_game_context"]["delta"]["stable80"] == pytest.approx(0.13)
 
 
 def test_llm_experiment_iteration_seed_and_family_normalization() -> None:
