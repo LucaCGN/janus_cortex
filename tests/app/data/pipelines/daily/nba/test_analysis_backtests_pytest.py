@@ -38,6 +38,9 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     build_routed_portfolio_benchmark_frames,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult
+from app.data.pipelines.daily.nba.analysis.backtests.unified_router import (
+    resolve_unified_router_game_selection,
+)
 from app.data.pipelines.daily.nba.analysis.contracts import (
     ANALYSIS_VERSION,
     BacktestRunRequest,
@@ -2106,3 +2109,33 @@ def test_master_router_trade_frame_can_guard_extras_and_skip_low_confidence_core
     assert list(trade_frame["source_strategy_family"]) == ["winner_definition", "q1_repricing"]
     assert list(trade_frame["team_side"]) == ["home", "home"]
     assert decisions_df.loc[decisions_df["game_id"] == "G2", "selected_core_family"].iloc[0] is None
+
+
+def test_unified_router_selection_prefers_default_then_llm_then_skip() -> None:
+    strong_default = resolve_unified_router_game_selection(
+        deterministic_decision={"selected_core_family": "winner_definition", "selected_confidence": 0.74},
+        llm_decision={"selected_candidate_count": 1, "llm_confidence": 0.91, "decision_status": "ok"},
+        weak_confidence_threshold=0.60,
+        llm_accept_confidence=0.60,
+    )
+    assert strong_default["final_source"] == "deterministic_default"
+    assert strong_default["default_is_weak_flag"] is False
+
+    llm_override = resolve_unified_router_game_selection(
+        deterministic_decision={"selected_core_family": "winner_definition", "selected_confidence": 0.42},
+        llm_decision={"selected_candidate_count": 1, "llm_confidence": 0.71, "decision_status": "ok"},
+        weak_confidence_threshold=0.60,
+        llm_accept_confidence=0.60,
+    )
+    assert llm_override["final_source"] == "llm_override"
+    assert llm_override["default_is_weak_flag"] is True
+
+    weak_skip = resolve_unified_router_game_selection(
+        deterministic_decision={"selected_core_family": "winner_definition", "selected_confidence": 0.42},
+        llm_decision={"selected_candidate_count": 0, "llm_confidence": 0.0, "decision_status": "ok"},
+        weak_confidence_threshold=0.60,
+        llm_accept_confidence=0.60,
+        skip_weak_when_llm_empty=True,
+    )
+    assert weak_skip["final_source"] == "skip_weak_game"
+    assert weak_skip["final_selection_reason"] == "weak_default_llm_skip"
