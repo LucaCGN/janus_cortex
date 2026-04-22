@@ -17,7 +17,10 @@ from app.data.pipelines.daily.nba.analysis.backtests.engine import (
     build_backtest_result,
     write_backtest_artifacts,
 )
-from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import build_llm_experiment_frames
+from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import (
+    build_final_option_showdown_frames,
+    build_llm_experiment_frames,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
     DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
     DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES,
@@ -44,6 +47,8 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     normalize_portfolio_min_order_dollars,
     normalize_portfolio_min_shares,
     normalize_portfolio_position_size_fraction,
+    normalize_portfolio_random_slippage_max_cents,
+    normalize_portfolio_random_slippage_seed,
     simulate_trade_portfolio,
 )
 from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
@@ -1041,6 +1046,8 @@ def _build_portfolio_robustness_frames(
                 min_shares=request.portfolio_min_shares,
                 max_concurrent_positions=request.portfolio_max_concurrent_positions,
                 concurrency_mode=request.portfolio_concurrency_mode,
+                random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+                random_slippage_seed=request.portfolio_random_slippage_seed,
             )
             ending_bankroll = _safe_float(summary.get("ending_bankroll"))
             starting_bankroll = normalize_portfolio_initial_bankroll(request.portfolio_initial_bankroll)
@@ -1179,6 +1186,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+        random_slippage_seed=request.portfolio_random_slippage_seed,
         split_order=_SPLIT_ORDER,
     )
     portfolio_candidate_freeze_df = build_portfolio_candidate_freeze_frame(
@@ -1222,6 +1231,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+        random_slippage_seed=request.portfolio_random_slippage_seed,
         split_order=_SPLIT_ORDER,
         combined_family_name=COMBINED_KEEP_FAMILIES_PORTFOLIO,
     )
@@ -1240,6 +1251,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+        random_slippage_seed=request.portfolio_random_slippage_seed,
         split_order=_SPLIT_ORDER,
         routed_family_name=STATISTICAL_ROUTING_PORTFOLIO,
     )
@@ -1266,6 +1279,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+        random_slippage_seed=request.portfolio_random_slippage_seed,
         split_order=_SPLIT_ORDER,
         selection_sample_name=DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
         core_strategy_families=master_router_core_families,
@@ -1290,6 +1305,14 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         registry=registry,
         core_strategy_families=master_router_core_families,
         extra_strategy_families=master_router_extra_families,
+    )
+    final_option_showdown_payload, final_option_showdown_frames = build_final_option_showdown_frames(
+        split_results,
+        request,
+        registry=registry,
+        core_strategy_families=master_router_core_families,
+        extra_strategy_families=master_router_extra_families,
+        llm_models=request.llm_compare_models,
     )
 
     payload = full_result.payload
@@ -1320,6 +1343,8 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
             "min_shares": normalize_portfolio_min_shares(request.portfolio_min_shares),
             "max_concurrent_positions": normalize_portfolio_max_concurrent_positions(request.portfolio_max_concurrent_positions),
             "concurrency_mode": normalize_portfolio_concurrency_mode(request.portfolio_concurrency_mode),
+            "random_slippage_max_cents": normalize_portfolio_random_slippage_max_cents(request.portfolio_random_slippage_max_cents),
+            "random_slippage_seed": normalize_portfolio_random_slippage_seed(request.portfolio_random_slippage_seed),
         },
         "portfolio_keep_families": list(keep_families),
         "portfolio_robustness_families": list(robustness_families),
@@ -1358,6 +1383,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "game_strategy_classification": to_jsonable(game_strategy_classification_df.to_dict(orient="records")),
         "master_router_decisions": to_jsonable(master_router_decisions_df.to_dict(orient="records")),
         "llm_experiment": to_jsonable(llm_experiment_payload),
+        "final_option_showdown": to_jsonable(final_option_showdown_payload),
     }
     payload["experiment"] = {
         "experiment_id": _build_experiment_id(request, registry),
@@ -1383,6 +1409,7 @@ def build_benchmark_run_result(state_df: pd.DataFrame, request: BacktestRunReque
         "portfolio_robustness_summary": portfolio_robustness_summary_df,
         "game_strategy_classification": game_strategy_classification_df,
         "master_router_decisions": master_router_decisions_df,
+        **final_option_showdown_frames,
         **llm_experiment_frames,
     }
     return BenchmarkRunResult(
@@ -1399,6 +1426,8 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
     route_rows = benchmark.get("route_summary") or []
     portfolio_freeze_rows = benchmark.get("portfolio_candidate_freeze") or []
     portfolio_robustness_rows = benchmark.get("portfolio_robustness_summary") or []
+    final_option_showdown = benchmark.get("final_option_showdown") or {}
+    final_option_showdown_rows = final_option_showdown.get("summary") or []
     llm_experiment = benchmark.get("llm_experiment") or {}
     llm_lane_rows = llm_experiment.get("lane_summary") or []
     portfolio_full_rows = [row for row in (benchmark.get("portfolio_summary") or []) if row.get("sample_name") == "full_sample"]
@@ -1447,6 +1476,8 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
         f"- Portfolio min shares: `{_format_num((benchmark.get('portfolio_config') or {}).get('min_shares'))}`",
         f"- Portfolio max concurrent positions: `{_format_num((benchmark.get('portfolio_config') or {}).get('max_concurrent_positions'))}`",
         f"- Portfolio concurrency mode: `{(benchmark.get('portfolio_config') or {}).get('concurrency_mode')}`",
+        f"- Portfolio random slippage max cents: `{_format_num((benchmark.get('portfolio_config') or {}).get('random_slippage_max_cents'))}`",
+        f"- Portfolio random slippage seed: `{_format_num((benchmark.get('portfolio_config') or {}).get('random_slippage_seed'))}`",
         "",
         "## Candidate Freeze",
         "",
@@ -1507,6 +1538,23 @@ def _render_benchmark_markdown(payload: dict[str, Any]) -> str:
                 f" mean bankroll `{_format_num(row.get('mean_ending_bankroll'))}`,"
                 f" median bankroll `{_format_num(row.get('median_ending_bankroll'))}`,"
                 f" worst drawdown `{_format_num(row.get('worst_max_drawdown_pct'))}`"
+            )
+        lines.append("")
+    lines.extend(["## Final Option Showdown", ""])
+    if not final_option_showdown_rows:
+        lines.append("- No final-option showdown rows were produced.")
+        lines.append("")
+    else:
+        lines.append(
+            f"- Sample: `{final_option_showdown.get('sample_name')}` over `{final_option_showdown.get('game_count')}` games;"
+            f" LLM lane `{final_option_showdown.get('llm_lane_name')}` with models `{', '.join(final_option_showdown.get('models') or []) or 'none'}`"
+        )
+        for row in final_option_showdown_rows:
+            lines.append(
+                f"- {row.get('lane_name')}: ending bankroll `{_format_num(row.get('ending_bankroll'))}`,"
+                f" compounded return `{_format_num(row.get('compounded_return'))}`,"
+                f" max drawdown `{_format_num(row.get('max_drawdown_pct'))}`,"
+                f" executed trades `{_format_num(row.get('executed_trade_count'))}`"
             )
         lines.append("")
     lines.extend(["## LLM Experiment", ""])
@@ -1575,6 +1623,9 @@ def write_benchmark_artifacts(result: BenchmarkRunResult, output_dir: Path) -> d
         "portfolio_candidate_freeze": "benchmark_portfolio_candidate_freeze",
         "portfolio_robustness_detail": "benchmark_portfolio_robustness_detail",
         "portfolio_robustness_summary": "benchmark_portfolio_robustness_summary",
+        "final_option_showdown_summary": "benchmark_final_option_showdown_summary",
+        "final_option_showdown_daily_paths": "benchmark_final_option_showdown_daily_paths",
+        "final_option_showdown_decisions": "benchmark_final_option_showdown_decisions",
         "llm_experiment_iterations": "benchmark_llm_experiment_iterations",
         "llm_experiment_summary": "benchmark_llm_experiment_summary",
         "llm_experiment_lane_summary": "benchmark_llm_experiment_lane_summary",

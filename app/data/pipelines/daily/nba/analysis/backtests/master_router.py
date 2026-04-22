@@ -16,11 +16,9 @@ DEFAULT_MASTER_ROUTER_CORE_FAMILIES = (
     "winner_definition",
     "inversion",
     "underdog_liftoff",
-    "favorite_panic_fade_v1",
 )
 DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES = (
     "q1_repricing",
-    "halftime_q3_repricing_v1",
     "q4_clutch",
 )
 

@@ -20,6 +20,8 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS,
     DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
+    DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS,
+    DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED,
     DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
     DEFAULT_SEASON,
     DEFAULT_SEASON_PHASE,
@@ -44,6 +46,18 @@ def _parse_int_csv(value: str | None, *, fallback: tuple[int, ...]) -> tuple[int
     return tuple(parsed) if parsed else fallback
 
 
+def _parse_str_csv(value: str | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    parsed: list[str] = []
+    for chunk in str(value).split(","):
+        cleaned = chunk.strip()
+        if not cleaned:
+            continue
+        parsed.append(cleaned)
+    return tuple(parsed)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Offline NBA odds analysis mart, reports, backtests, and baselines.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -65,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser = subparsers.add_parser("run_analysis_backtests")
     backtest_parser.add_argument("--season", default=DEFAULT_SEASON)
     backtest_parser.add_argument("--season-phase", default=DEFAULT_SEASON_PHASE)
+    backtest_parser.add_argument("--season-phases", default=None)
     backtest_parser.add_argument("--analysis-version", default=ANALYSIS_VERSION)
     backtest_parser.add_argument("--strategy-family", default="all")
     backtest_parser.add_argument("--entry-rule", default=None)
@@ -96,8 +111,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--portfolio-concurrency-mode",
         default=DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
     )
+    backtest_parser.add_argument(
+        "--portfolio-random-slippage-max-cents",
+        type=int,
+        default=DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS,
+    )
+    backtest_parser.add_argument(
+        "--portfolio-random-slippage-seed",
+        type=int,
+        default=DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED,
+    )
     backtest_parser.add_argument("--llm-enable", action="store_true")
     backtest_parser.add_argument("--llm-model", default=DEFAULT_BACKTEST_LLM_MODEL)
+    backtest_parser.add_argument("--llm-compare-models", default=None)
     backtest_parser.add_argument("--llm-iteration-games", type=int, default=DEFAULT_BACKTEST_LLM_ITERATION_GAMES)
     backtest_parser.add_argument("--llm-iteration-count", type=int, default=DEFAULT_BACKTEST_LLM_ITERATION_COUNT)
     backtest_parser.add_argument("--llm-max-budget-usd", type=float, default=DEFAULT_BACKTEST_LLM_MAX_BUDGET_USD)
@@ -146,6 +172,7 @@ def dispatch_command(
             BacktestRunRequest(
                 season=args.season,
                 season_phase=args.season_phase,
+                season_phases=_parse_str_csv(args.season_phases) or None,
                 strategy_family=args.strategy_family,
                 entry_rule=args.entry_rule,
                 exit_rule=args.exit_rule,
@@ -165,8 +192,11 @@ def dispatch_command(
                 portfolio_min_shares=args.portfolio_min_shares,
                 portfolio_max_concurrent_positions=args.portfolio_max_concurrent_positions,
                 portfolio_concurrency_mode=args.portfolio_concurrency_mode,
+                portfolio_random_slippage_max_cents=args.portfolio_random_slippage_max_cents,
+                portfolio_random_slippage_seed=args.portfolio_random_slippage_seed,
                 llm_enable=bool(args.llm_enable),
                 llm_model=args.llm_model,
+                llm_compare_models=_parse_str_csv(args.llm_compare_models),
                 llm_iteration_games=args.llm_iteration_games,
                 llm_iteration_count=args.llm_iteration_count,
                 llm_max_budget_usd=args.llm_max_budget_usd,

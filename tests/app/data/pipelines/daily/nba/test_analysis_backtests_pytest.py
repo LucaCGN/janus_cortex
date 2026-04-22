@@ -878,27 +878,15 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     assert result.payload["state_rows_considered"] == len(frame)
     assert result.payload["games_considered"] == 11
     assert set(result.payload["registry"].keys()) == {
-        "reversion",
         "inversion",
         "winner_definition",
         "underdog_liftoff",
-        "comeback_reversion",
-        "comeback_reversion_v2",
-        "favorite_panic_fade_v1",
-        "halftime_q3_repricing_v1",
-        "volatility_scalp",
         "q1_repricing",
         "q4_clutch",
     }
-    assert result.payload["families"]["reversion"]["trade_count"] == 1
     assert result.payload["families"]["inversion"]["trade_count"] == 4
     assert result.payload["families"]["winner_definition"]["trade_count"] == 1
     assert result.payload["families"]["underdog_liftoff"]["trade_count"] == 1
-    assert result.payload["families"]["comeback_reversion"]["trade_count"] == 2
-    assert result.payload["families"]["comeback_reversion_v2"]["trade_count"] == 1
-    assert result.payload["families"]["favorite_panic_fade_v1"]["trade_count"] == 1
-    assert result.payload["families"]["halftime_q3_repricing_v1"]["trade_count"] == 1
-    assert result.payload["families"]["volatility_scalp"]["trade_count"] == 1
     assert result.payload["families"]["q1_repricing"]["trade_count"] == 2
     assert result.payload["families"]["q4_clutch"]["trade_count"] == 1
 
@@ -915,21 +903,15 @@ def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None
     assert Path(payload["artifacts"]["json"]).exists()
     assert Path(payload["artifacts"]["markdown"]).exists()
     assert Path(payload["artifacts"]["family_summary_csv"]).exists()
-    assert Path(payload["artifacts"]["reversion_csv"]).exists()
     assert Path(payload["artifacts"]["inversion_csv"]).exists()
     assert Path(payload["artifacts"]["winner_definition_csv"]).exists()
     assert Path(payload["artifacts"]["underdog_liftoff_csv"]).exists()
-    assert Path(payload["artifacts"]["comeback_reversion_csv"]).exists()
-    assert Path(payload["artifacts"]["comeback_reversion_v2_csv"]).exists()
-    assert Path(payload["artifacts"]["favorite_panic_fade_v1_csv"]).exists()
-    assert Path(payload["artifacts"]["halftime_q3_repricing_v1_csv"]).exists()
-    assert Path(payload["artifacts"]["volatility_scalp_csv"]).exists()
     assert Path(payload["artifacts"]["q1_repricing_csv"]).exists()
     assert Path(payload["artifacts"]["q4_clutch_csv"]).exists()
-    assert Path(payload["artifacts"]["reversion_best_trades_csv"]).exists()
-    assert Path(payload["artifacts"]["reversion_worst_trades_csv"]).exists()
-    assert Path(payload["artifacts"]["reversion_context_summary_csv"]).exists()
-    assert Path(payload["artifacts"]["reversion_trade_traces_json"]).exists()
+    assert Path(payload["artifacts"]["inversion_best_trades_csv"]).exists()
+    assert Path(payload["artifacts"]["inversion_worst_trades_csv"]).exists()
+    assert Path(payload["artifacts"]["inversion_context_summary_csv"]).exists()
+    assert Path(payload["artifacts"]["inversion_trade_traces_json"]).exists()
 
 
 def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
@@ -956,15 +938,9 @@ def test_backtests_slippage_monotonicity(tmp_path: Path) -> None:
     )
 
     for family in (
-        "reversion",
         "inversion",
         "winner_definition",
         "underdog_liftoff",
-        "comeback_reversion",
-        "comeback_reversion_v2",
-        "favorite_panic_fade_v1",
-        "halftime_q3_repricing_v1",
-        "volatility_scalp",
         "q1_repricing",
         "q4_clutch",
     ):
@@ -1041,6 +1017,8 @@ def test_trade_portfolio_respects_concurrency_game_limit_and_compounding() -> No
         min_shares=5.0,
         max_concurrent_positions=1,
         concurrency_mode="shared_cash_equal_split",
+        random_slippage_max_cents=0,
+        random_slippage_seed=20260422,
     )
 
     assert summary["games_considered"] == 3
@@ -1170,6 +1148,8 @@ def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> 
         min_shares=5.0,
         max_concurrent_positions=1,
         concurrency_mode="shared_cash_equal_split",
+        random_slippage_max_cents=0,
+        random_slippage_seed=20260422,
         split_order=("full_sample",),
     )
 
@@ -1268,6 +1248,8 @@ def test_routed_portfolio_lane_selects_family_by_opening_band() -> None:
         min_shares=5.0,
         max_concurrent_positions=1,
         concurrency_mode="shared_cash_equal_split",
+        random_slippage_max_cents=0,
+        random_slippage_seed=20260422,
         split_order=("full_sample",),
     )
 
@@ -1343,26 +1325,6 @@ def test_master_router_lane_selects_highest_confidence_core_family_and_keeps_ext
                     "entry_at": datetime(2026, 2, 22, 20, 40, tzinfo=timezone.utc),
                     "exit_at": datetime(2026, 2, 22, 20, 50, tzinfo=timezone.utc),
                     "gross_return_with_slippage": 0.12,
-                }
-            ]
-        ),
-        "favorite_panic_fade_v1": pd.DataFrame(
-            [
-                {
-                    "game_id": "T-PANIC",
-                    "team_side": "home",
-                    "team_slug": "BOS",
-                    "opponent_team_slug": "CHI",
-                    "opening_band": "70-80",
-                    "period_label": "Q3",
-                    "context_bucket": "Q3|trail_1_4",
-                    "signal_strength": 7.0,
-                    "entry_price": 0.53,
-                    "entry_state_index": 1,
-                    "exit_state_index": 2,
-                    "entry_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
-                    "exit_at": datetime(2026, 2, 22, 21, 10, tzinfo=timezone.utc),
-                    "gross_return_with_slippage": 0.22,
                 }
             ]
         ),
@@ -1448,26 +1410,6 @@ def test_master_router_lane_selects_highest_confidence_core_family_and_keeps_ext
                 }
             ]
         ),
-        "favorite_panic_fade_v1": pd.DataFrame(
-            [
-                {
-                    "game_id": "G1",
-                    "team_side": "home",
-                    "team_slug": "BOS",
-                    "opponent_team_slug": "CHI",
-                    "opening_band": "70-80",
-                    "period_label": "Q3",
-                    "context_bucket": "Q3|trail_1_4",
-                    "signal_strength": 7.0,
-                    "entry_price": 0.53,
-                    "entry_state_index": 1,
-                    "exit_state_index": 2,
-                    "entry_at": datetime(2026, 2, 22, 20, 35, tzinfo=timezone.utc),
-                    "exit_at": datetime(2026, 2, 22, 20, 45, tzinfo=timezone.utc),
-                    "gross_return_with_slippage": 0.21,
-                }
-            ]
-        ),
         "q1_repricing": pd.DataFrame(
             [
                 {
@@ -1513,9 +1455,11 @@ def test_master_router_lane_selects_highest_confidence_core_family_and_keeps_ext
         min_shares=5.0,
         max_concurrent_positions=2,
         concurrency_mode="shared_cash_equal_split",
+        random_slippage_max_cents=0,
+        random_slippage_seed=20260422,
         split_order=("full_sample",),
         selection_sample_name="time_train",
-        core_strategy_families=("winner_definition", "inversion", "underdog_liftoff", "favorite_panic_fade_v1"),
+        core_strategy_families=("winner_definition", "inversion", "underdog_liftoff"),
         extra_strategy_families=("q1_repricing",),
     )
 
@@ -1523,17 +1467,17 @@ def test_master_router_lane_selects_highest_confidence_core_family_and_keeps_ext
     summary = summary_df.iloc[0]
     assert summary["strategy_family"] == "master_strategy_router_v1"
     assert summary["portfolio_scope"] == "routed_family_set"
-    assert summary["strategy_family_members"] == "winner_definition,inversion,underdog_liftoff,favorite_panic_fade_v1,q1_repricing"
+    assert summary["strategy_family_members"] == "winner_definition,inversion,underdog_liftoff,q1_repricing"
     assert summary["executed_trade_count"] == 2
     assert list(steps_df["source_strategy_family"]) == [
         "q1_repricing",
-        "favorite_panic_fade_v1",
+        "underdog_liftoff",
     ]
     assert list(steps_df["portfolio_action"]) == ["executed", "executed"]
     assert len(decisions_df) == 1
     decision = decisions_df.iloc[0]
-    assert decision["selected_core_family"] == "favorite_panic_fade_v1"
-    assert decision["triggered_core_family_count"] == 4
+    assert decision["selected_core_family"] == "underdog_liftoff"
+    assert decision["triggered_core_family_count"] == 3
     assert decision["triggered_extra_family_count"] == 1
 
 

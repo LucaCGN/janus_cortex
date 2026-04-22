@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 from app.data.pipelines.daily.nba.analysis.backtests.engine import BACKTEST_TRADE_COLUMNS
@@ -23,6 +25,8 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS,
     DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
+    DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS,
+    DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED,
 )
 
 
@@ -57,6 +61,8 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "portfolio_min_shares",
     "portfolio_max_concurrent_positions",
     "portfolio_concurrency_mode",
+    "portfolio_random_slippage_max_cents",
+    "portfolio_random_slippage_seed",
     "max_concurrent_positions_observed",
     "avg_executed_trade_return_with_slippage",
     "avg_executed_share_count",
@@ -86,6 +92,10 @@ PORTFOLIO_STEP_COLUMNS = (
     "candidate_batch_size",
     "strategy_selection_rank",
     "gross_return_with_slippage",
+    "entry_exec_price",
+    "exit_exec_price",
+    "random_entry_slippage_cents",
+    "random_exit_slippage_cents",
     "portfolio_action",
     "skip_reason",
     "bankroll_before",
@@ -124,7 +134,7 @@ PORTFOLIO_CANDIDATE_FREEZE_COLUMNS = (
 
 
 def _safe_float(value: Any) -> float | None:
-    if value is None or value == "":
+    if value is None or value == "" or pd.isna(value):
         return None
     try:
         return float(value)
@@ -215,6 +225,25 @@ def normalize_portfolio_concurrency_mode(value: str | None) -> str:
     return DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE
 
 
+def normalize_portfolio_random_slippage_max_cents(value: int | None) -> int:
+    if value is None:
+        return DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS
+    try:
+        resolved = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS
+    return max(0, resolved)
+
+
+def normalize_portfolio_random_slippage_seed(value: int | None) -> int:
+    if value is None:
+        return DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED
+
+
 def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
     if trades_df.empty:
         return pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS)
@@ -264,6 +293,33 @@ def _minimum_required_stake(entry_price: float | None, *, min_order_dollars: flo
     return max(min_order_dollars, share_floor)
 
 
+def _build_execution_rng(*, seed: int, sample_name: str, strategy_family: str) -> np.random.Generator:
+    digest = hashlib.sha256(f"{seed}|{sample_name}|{strategy_family}".encode("utf-8")).digest()
+    return np.random.default_rng(int.from_bytes(digest[:8], byteorder="big", signed=False))
+
+
+def _resolve_trade_execution(
+    record: dict[str, Any],
+    *,
+    rng: np.random.Generator,
+    random_slippage_max_cents: int,
+) -> tuple[float, float, float, int, int]:
+    entry_price = max(1e-6, _safe_float(record.get("entry_price")) or 0.0)
+    exit_price_raw = _safe_float(record.get("exit_price"))
+    fallback_trade_return = _safe_float(record.get("gross_return_with_slippage"))
+    base_slippage = max(0.0, (_safe_float(record.get("slippage_cents")) or 0.0) / 100.0)
+    random_entry_slippage_cents = int(rng.integers(0, random_slippage_max_cents + 1)) if random_slippage_max_cents > 0 else 0
+    random_exit_slippage_cents = int(rng.integers(0, random_slippage_max_cents + 1)) if random_slippage_max_cents > 0 else 0
+    entry_exec = min(0.999999, entry_price + base_slippage + (random_entry_slippage_cents / 100.0))
+    if exit_price_raw is None:
+        trade_return = fallback_trade_return or 0.0
+        exit_exec = max(0.0, entry_exec * (1.0 + trade_return))
+    else:
+        exit_exec = max(0.0, exit_price_raw - base_slippage - (random_exit_slippage_cents / 100.0))
+        trade_return = (exit_exec - entry_exec) / entry_exec if entry_exec > 0 else 0.0
+    return trade_return, entry_exec, exit_exec, random_entry_slippage_cents, random_exit_slippage_cents
+
+
 def _apply_game_limit(trades_df: pd.DataFrame, *, game_limit: int | None) -> tuple[pd.DataFrame, dict[str, int]]:
     if trades_df.empty:
         return trades_df.copy(), {}
@@ -301,6 +357,8 @@ def simulate_trade_portfolio(
     min_shares: float | None = None,
     max_concurrent_positions: int | None = None,
     concurrency_mode: str | None = None,
+    random_slippage_max_cents: int | None = None,
+    random_slippage_seed: int | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
     cash_balance = normalize_portfolio_initial_bankroll(initial_bankroll)
     fraction = normalize_portfolio_position_size_fraction(position_size_fraction)
@@ -309,8 +367,15 @@ def simulate_trade_portfolio(
     resolved_min_shares = normalize_portfolio_min_shares(min_shares)
     resolved_max_concurrent_positions = normalize_portfolio_max_concurrent_positions(max_concurrent_positions)
     resolved_concurrency_mode = normalize_portfolio_concurrency_mode(concurrency_mode)
+    resolved_random_slippage_max_cents = normalize_portfolio_random_slippage_max_cents(random_slippage_max_cents)
+    resolved_random_slippage_seed = normalize_portfolio_random_slippage_seed(random_slippage_seed)
     resolved_family_members = _normalize_family_members(strategy_family, strategy_family_members)
     serialized_family_members = ",".join(resolved_family_members)
+    execution_rng = _build_execution_rng(
+        seed=resolved_random_slippage_seed,
+        sample_name=sample_name,
+        strategy_family=strategy_family,
+    )
     work = _prepare_trade_frame(trades_df)
     limited, game_order = _apply_game_limit(work, game_limit=resolved_game_limit)
 
@@ -428,7 +493,17 @@ def simulate_trade_portfolio(
         for batch_rank, record in enumerate(ranked_batch, start=1):
             trade_sequence += 1
             exit_at = pd.to_datetime(record.get("exit_at"), errors="coerce", utc=True)
-            trade_return = _safe_float(record.get("gross_return_with_slippage")) or 0.0
+            (
+                trade_return,
+                entry_exec_price,
+                exit_exec_price,
+                random_entry_slippage_cents,
+                random_exit_slippage_cents,
+            ) = _resolve_trade_execution(
+                record,
+                rng=execution_rng,
+                random_slippage_max_cents=resolved_random_slippage_max_cents,
+            )
             signal_strength = _safe_float(record.get("signal_strength"))
             step_index = len(step_rows)
             equity_before = _portfolio_equity(cash_balance, open_positions)
@@ -520,6 +595,10 @@ def simulate_trade_portfolio(
                     "candidate_batch_size": len(batch_records),
                     "strategy_selection_rank": selected_keys.get(id(record), batch_rank),
                     "gross_return_with_slippage": trade_return,
+                    "entry_exec_price": entry_exec_price,
+                    "exit_exec_price": exit_exec_price,
+                    "random_entry_slippage_cents": random_entry_slippage_cents,
+                    "random_exit_slippage_cents": random_exit_slippage_cents,
                     "portfolio_action": action,
                     "skip_reason": skip_reason,
                     "bankroll_before": equity_before,
@@ -568,6 +647,8 @@ def simulate_trade_portfolio(
         "portfolio_min_shares": resolved_min_shares,
         "portfolio_max_concurrent_positions": resolved_max_concurrent_positions,
         "portfolio_concurrency_mode": resolved_concurrency_mode,
+        "portfolio_random_slippage_max_cents": resolved_random_slippage_max_cents,
+        "portfolio_random_slippage_seed": resolved_random_slippage_seed,
         "max_concurrent_positions_observed": max_concurrent_positions_observed,
         "avg_executed_trade_return_with_slippage": (
             sum(executed_trade_returns) / len(executed_trade_returns) if executed_trade_returns else None
@@ -592,6 +673,8 @@ def build_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    random_slippage_max_cents: int | None,
+    random_slippage_seed: int | None,
     split_order: tuple[str, ...],
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     summary_rows: list[dict[str, Any]] = []
@@ -615,6 +698,8 @@ def build_portfolio_benchmark_frames(
                 min_shares=min_shares,
                 max_concurrent_positions=max_concurrent_positions,
                 concurrency_mode=concurrency_mode,
+                random_slippage_max_cents=random_slippage_max_cents,
+                random_slippage_seed=random_slippage_seed,
             )
             summary_rows.append(summary)
             if not steps_df.empty:
@@ -635,6 +720,8 @@ def build_combined_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    random_slippage_max_cents: int | None = None,
+    random_slippage_seed: int | None = None,
     split_order: tuple[str, ...],
     combined_family_name: str = COMBINED_KEEP_FAMILIES_PORTFOLIO,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -675,6 +762,8 @@ def build_combined_portfolio_benchmark_frames(
             min_shares=min_shares,
             max_concurrent_positions=max_concurrent_positions,
             concurrency_mode=concurrency_mode,
+            random_slippage_max_cents=random_slippage_max_cents,
+            random_slippage_seed=random_slippage_seed,
         )
         summary_rows.append(summary)
         if not steps_df.empty:
@@ -697,6 +786,8 @@ def build_routed_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    random_slippage_max_cents: int | None = None,
+    random_slippage_seed: int | None = None,
     split_order: tuple[str, ...],
     routed_family_name: str = STATISTICAL_ROUTING_PORTFOLIO,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -745,6 +836,8 @@ def build_routed_portfolio_benchmark_frames(
             min_shares=min_shares,
             max_concurrent_positions=max_concurrent_positions,
             concurrency_mode=concurrency_mode,
+            random_slippage_max_cents=random_slippage_max_cents,
+            random_slippage_seed=random_slippage_seed,
         )
         summary_rows.append(summary)
         if not steps_df.empty:
@@ -765,6 +858,8 @@ def build_master_router_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    random_slippage_max_cents: int | None = None,
+    random_slippage_seed: int | None = None,
     split_order: tuple[str, ...],
     selection_sample_name: str = DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
     core_strategy_families: tuple[str, ...] | list[str] = DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
@@ -814,6 +909,8 @@ def build_master_router_portfolio_benchmark_frames(
             min_shares=min_shares,
             max_concurrent_positions=max_concurrent_positions,
             concurrency_mode=concurrency_mode,
+            random_slippage_max_cents=random_slippage_max_cents,
+            random_slippage_seed=random_slippage_seed,
         )
         summary_rows.append(summary)
         if not steps_df.empty:
@@ -928,6 +1025,8 @@ __all__ = [
     "normalize_portfolio_min_order_dollars",
     "normalize_portfolio_min_shares",
     "normalize_portfolio_position_size_fraction",
+    "normalize_portfolio_random_slippage_max_cents",
+    "normalize_portfolio_random_slippage_seed",
     "simulate_trade_portfolio",
     "STATISTICAL_ROUTING_PORTFOLIO",
 ]

@@ -399,13 +399,98 @@ def _resolve_catalog_refs(
     return refs
 
 
+def _parse_matchup_question(question: Any) -> tuple[str | None, str | None]:
+    raw = str(question or "").strip()
+    if not raw or ":" in raw or " vs. " not in raw:
+        return None, None
+    away_name, home_name = [part.strip() for part in raw.split(" vs. ", maxsplit=1)]
+    if not away_name or not home_name:
+        return None, None
+    return away_name, home_name
+
+
+def _catalog_moneyline_row_to_record(row: pd.Series) -> dict[str, Any]:
+    event_slug = str(row.get("event_slug") or "").strip().lower()
+    outcome_label = str(row.get("outcome") or "").strip()
+    away_name, home_name = _parse_matchup_question(row.get("question"))
+    slug_parts = event_slug.split("-")
+    away_abbr = slug_parts[1].upper() if len(slug_parts) >= 5 else None
+    home_abbr = slug_parts[2].upper() if len(slug_parts) >= 5 else None
+
+    team_abbr: str | None = None
+    if away_name and outcome_label.lower() == away_name.lower():
+        team_abbr = away_abbr
+    elif home_name and outcome_label.lower() == home_name.lower():
+        team_abbr = home_abbr
+    elif len(outcome_label) <= 4:
+        team_abbr = outcome_label.upper()
+
+    return {
+        "event_slug": event_slug,
+        "market_id": str(row.get("external_market_id") or row.get("market_id") or "").strip() or None,
+        "outcome": outcome_label,
+        "token_id": str(row.get("token_id") or "").strip() or None,
+        "team_abbr": team_abbr,
+        "last_price": _safe_float(row.get("last_price")),
+        "ingestion_source": "catalog_fallback",
+    }
+
+
+def _collect_catalog_moneyline_df(connection: Any, *, expected_slugs: list[str]) -> pd.DataFrame:
+    normalized_slugs = sorted({str(slug or "").strip().lower() for slug in expected_slugs if str(slug or "").strip()})
+    if not normalized_slugs:
+        return pd.DataFrame()
+
+    rows = _query_df(
+        connection,
+        """
+        WITH latest_market_snapshots AS (
+            SELECT DISTINCT ON (market_id)
+                market_id,
+                captured_at,
+                last_price
+            FROM catalog.market_state_snapshots
+            ORDER BY market_id, captured_at DESC
+        )
+        SELECT
+            e.canonical_slug AS event_slug,
+            m.market_id,
+            mer.external_market_id,
+            m.question,
+            m.market_type,
+            o.outcome_label AS outcome,
+            o.token_id,
+            s.last_price
+        FROM catalog.events e
+        JOIN catalog.markets m ON m.event_id = e.event_id
+        LEFT JOIN catalog.market_external_refs mer ON mer.market_id = m.market_id
+        JOIN catalog.outcomes o ON o.market_id = m.market_id
+        LEFT JOIN latest_market_snapshots s ON s.market_id = m.market_id
+        WHERE e.canonical_slug = ANY(%s)
+          AND lower(COALESCE(m.market_type, '')) = 'moneyline';
+        """,
+        (normalized_slugs,),
+    )
+    if rows.empty:
+        return rows
+
+    records = [_catalog_moneyline_row_to_record(row) for _, row in rows.iterrows()]
+    out = pd.DataFrame(records)
+    if out.empty:
+        return out
+    out["event_slug"] = out["event_slug"].astype(str).str.lower()
+    return out.drop_duplicates(subset=["event_slug", "market_id", "outcome", "token_id"])
+
+
 def _collect_moneyline_season_df(
+    connection: Any,
     *,
     start_dt: datetime,
     end_dt: datetime,
     window_days: int,
     page_size: int,
     max_pages: int,
+    expected_slugs: list[str] | None = None,
 ) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     cursor = start_dt
@@ -423,10 +508,16 @@ def _collect_moneyline_season_df(
         if not frame.empty:
             frames.append(frame)
         cursor = window_end + timedelta(days=1)
+
+    catalog_fallback_df = _collect_catalog_moneyline_df(connection, expected_slugs=expected_slugs or [])
+    if not catalog_fallback_df.empty:
+        frames.append(catalog_fallback_df)
+
     if not frames:
         return pd.DataFrame()
+
     out = pd.concat(frames, ignore_index=True)
-    out["event_slug"] = out["event_slug"].astype(str)
+    out["event_slug"] = out["event_slug"].astype(str).str.lower()
     return out.drop_duplicates(subset=["event_slug", "market_id", "outcome", "token_id"])
 
 
@@ -764,11 +855,13 @@ def materialize_regular_season_features(
         game_start_min = min(_fallback_game_start(row) for _, row in games_df.iterrows()) - timedelta(days=1)
         game_start_max = max(_fallback_game_start(row) for _, row in games_df.iterrows()) + timedelta(days=1)
         moneyline_df = _collect_moneyline_season_df(
+            connection,
             start_dt=game_start_min,
             end_dt=game_start_max,
             window_days=moneyline_window_days,
             page_size=moneyline_page_size,
             max_pages=moneyline_max_pages,
+            expected_slugs=games_df["expected_slug"].dropna().astype(str).tolist(),
         )
 
     feature_snapshots_written = 0

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -174,13 +174,13 @@ _LLM_TRACE_ROW_LIMIT = 4
 _LLM_FALLBACK_CONFIDENCE = 0.51
 _LLM_FINALIST_COUNT = 6
 _LLM_SHOWDOWN_SAMPLE_NAME = "llm_showdown_fixed"
+_FINAL_OPTION_SHOWDOWN_SAMPLE_NAME = "final_option_showdown"
+_FINAL_OPTION_SHOWDOWN_LLM_LANE_NAME = "llm_hybrid_freedom_compact_v1"
 _LLM_BASELINES = (
     "winner_definition",
     "inversion",
     "underdog_liftoff",
-    "favorite_panic_fade_v1",
     "q1_repricing",
-    "halftime_q3_repricing_v1",
     "q4_clutch",
 )
 _LLM_LANES = (
@@ -1406,6 +1406,8 @@ def _run_lane_portfolio(
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+        random_slippage_seed=request.portfolio_random_slippage_seed,
     )
     return summary
 
@@ -1432,6 +1434,8 @@ def _run_lane_portfolio_with_steps(
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
+        random_slippage_seed=request.portfolio_random_slippage_seed,
     )
 
 
@@ -2167,11 +2171,227 @@ def build_llm_experiment_frames(
     return payload, frames
 
 
+def build_final_option_showdown_frames(
+    split_results: dict[str, BacktestResult],
+    request: BacktestRunRequest,
+    *,
+    registry: dict[str, StrategyDefinition],
+    core_strategy_families: tuple[str, ...] | list[str],
+    extra_strategy_families: tuple[str, ...] | list[str],
+    llm_models: tuple[str, ...] | list[str],
+) -> tuple[dict[str, Any], dict[str, pd.DataFrame]]:
+    empty_frames = {
+        "final_option_showdown_summary": pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_SUMMARY_COLUMNS),
+        "final_option_showdown_daily_paths": pd.DataFrame(columns=LLM_EXPERIMENT_SHOWDOWN_DAILY_PATH_COLUMNS),
+        "final_option_showdown_decisions": pd.DataFrame(columns=LLM_EXPERIMENT_DECISION_COLUMNS),
+    }
+    sample_result = split_results.get("full_sample")
+    selection_result = split_results.get(DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE) or sample_result
+    if sample_result is None or selection_result is None:
+        return {"status": "skipped_missing_full_sample"}, empty_frames
+
+    core_members = tuple(str(family) for family in core_strategy_families if str(family) in registry)
+    extra_members = tuple(str(family) for family in extra_strategy_families if str(family) in registry)
+    relevant_families = tuple(dict.fromkeys([*core_members, *extra_members, "winner_definition"]))
+    priors = build_master_router_selection_priors(selection_result, core_strategy_families=core_members)
+    family_profiles = _build_family_profiles(
+        selection_result,
+        registry=registry,
+        strategy_families=relevant_families,
+        core_strategy_families=core_members,
+    )
+    game_candidates = _build_game_candidates(
+        sample_result,
+        family_profiles=family_profiles,
+        priors=priors,
+        core_strategy_families=core_members,
+        extra_strategy_families=extra_members,
+    )
+    ordered_games = (
+        sample_result.state_df[["game_id", "game_date"]]
+        .drop_duplicates(subset=["game_id"])
+        .sort_values(["game_date", "game_id"], kind="mergesort", na_position="last")
+        .reset_index(drop=True)
+    )
+    sampled_game_ids = tuple(str(game_id) for game_id in ordered_games["game_id"].tolist())
+    showdown_rows: list[dict[str, Any]] = []
+    showdown_steps_frames: list[pd.DataFrame] = []
+    showdown_decision_rows: list[dict[str, Any]] = []
+
+    winner_definition_trades_df = _clean_trades_df(
+        sample_result.trade_frames.get("winner_definition", pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+    )
+    winner_definition_summary, winner_definition_steps = _run_lane_portfolio_with_steps(
+        winner_definition_trades_df,
+        sample_name=_FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+        lane_name="winner_definition",
+        portfolio_scope=PORTFOLIO_SCOPE_SINGLE_FAMILY,
+        strategy_family_members=("winner_definition",),
+        request=request,
+    )
+    showdown_rows.append(
+        {
+            "sample_name": _FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+            "lane_name": "winner_definition",
+            "lane_mode": "deterministic",
+            "lane_group": "deterministic",
+            "prompt_profile": None,
+            "reasoning_effort": None,
+            "include_rationale": None,
+            "use_confidence_gate": None,
+            **_portfolio_summary_row_to_frame(winner_definition_summary),
+            "llm_call_count": 0,
+            "llm_cache_hit_count": 0,
+            "llm_input_tokens": 0,
+            "llm_cached_input_tokens": 0,
+            "llm_output_tokens": 0,
+            "llm_reasoning_tokens": 0,
+            "llm_estimated_cost_usd": 0.0,
+            "finalist_score": None,
+        }
+    )
+    showdown_steps_frames.append(winner_definition_steps)
+
+    master_router_trades_df, _master_router_decisions_df = build_master_router_trade_frame(
+        sample_result,
+        sample_name=_FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+        selection_sample_name=DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+        priors=priors,
+        core_strategy_families=core_members,
+        extra_strategy_families=extra_members,
+    )
+    master_router_summary, master_router_steps = _run_lane_portfolio_with_steps(
+        master_router_trades_df,
+        sample_name=_FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+        lane_name=MASTER_ROUTER_PORTFOLIO,
+        portfolio_scope=PORTFOLIO_SCOPE_ROUTED,
+        strategy_family_members=tuple([*core_members, *extra_members]),
+        request=request,
+    )
+    showdown_rows.append(
+        {
+            "sample_name": _FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+            "lane_name": MASTER_ROUTER_PORTFOLIO,
+            "lane_mode": "deterministic",
+            "lane_group": "deterministic",
+            "prompt_profile": None,
+            "reasoning_effort": None,
+            "include_rationale": None,
+            "use_confidence_gate": None,
+            **_portfolio_summary_row_to_frame(master_router_summary),
+            "llm_call_count": 0,
+            "llm_cache_hit_count": 0,
+            "llm_input_tokens": 0,
+            "llm_cached_input_tokens": 0,
+            "llm_output_tokens": 0,
+            "llm_reasoning_tokens": 0,
+            "llm_estimated_cost_usd": 0.0,
+            "finalist_score": None,
+        }
+    )
+    showdown_steps_frames.append(master_router_steps)
+
+    resolved_models = tuple(dict.fromkeys(str(model).strip() for model in llm_models if str(model).strip()))
+    client = _resolve_openai_client() if resolved_models else None
+    cache_store = _load_llm_cache(_resolve_output_dir(request) / _LLM_CACHE_FILENAME)
+    budget_state = _LLMBudgetState()
+    for model in resolved_models:
+        lane = next(
+            (item for item in _resolve_llm_lanes(model) if str(item.get("lane_name")) == _FINAL_OPTION_SHOWDOWN_LLM_LANE_NAME),
+            None,
+        )
+        if lane is None:
+            continue
+        model_request = replace(request, llm_model=model)
+        lane_name = f"{model} :: {_FINAL_OPTION_SHOWDOWN_LLM_LANE_NAME}"
+        trades_df, token_totals, lane_decisions = _run_llm_lane_sample(
+            iteration_index=0,
+            iteration_seed=int(request.holdout_seed),
+            sample_name=_FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+            sampled_game_ids=sampled_game_ids,
+            lane=lane,
+            game_candidates=game_candidates,
+            family_profiles=family_profiles,
+            request=model_request,
+            client=client,
+            budget_state=budget_state,
+            cache_store=cache_store,
+        )
+        for row in lane_decisions:
+            row["lane_name"] = lane_name
+        showdown_decision_rows.extend(lane_decisions)
+        lane_summary, lane_steps = _run_lane_portfolio_with_steps(
+            trades_df,
+            sample_name=_FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+            lane_name=lane_name,
+            portfolio_scope=PORTFOLIO_SCOPE_ROUTED,
+            strategy_family_members=tuple([*core_members, *extra_members]),
+            request=model_request,
+        )
+        showdown_rows.append(
+            {
+                "sample_name": _FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+                "lane_name": lane_name,
+                "lane_mode": lane.get("lane_mode"),
+                "lane_group": model,
+                "prompt_profile": lane.get("prompt_profile"),
+                "reasoning_effort": lane.get("reasoning_effort"),
+                "include_rationale": lane.get("include_rationale"),
+                "use_confidence_gate": lane.get("use_confidence_gate"),
+                **_portfolio_summary_row_to_frame(lane_summary),
+                **token_totals,
+                "finalist_score": None,
+            }
+        )
+        showdown_steps_frames.append(lane_steps)
+
+    showdown_summary_df = pd.DataFrame(showdown_rows, columns=LLM_EXPERIMENT_SHOWDOWN_SUMMARY_COLUMNS)
+    showdown_steps_df = pd.concat(showdown_steps_frames, ignore_index=True) if showdown_steps_frames else pd.DataFrame()
+    lane_lookup = {
+        "winner_definition": {
+            "lane_name": "winner_definition",
+            "lane_mode": "deterministic",
+            "lane_group": "deterministic",
+        },
+        MASTER_ROUTER_PORTFOLIO: {
+            "lane_name": MASTER_ROUTER_PORTFOLIO,
+            "lane_mode": "deterministic",
+            "lane_group": "deterministic",
+        },
+        **{
+            f"{model} :: {_FINAL_OPTION_SHOWDOWN_LLM_LANE_NAME}": {
+                "lane_name": f"{model} :: {_FINAL_OPTION_SHOWDOWN_LLM_LANE_NAME}",
+                "lane_mode": "llm_freedom",
+                "lane_group": model,
+            }
+            for model in resolved_models
+        },
+    }
+    showdown_daily_paths_df = _build_daily_path_frame(showdown_summary_df, showdown_steps_df, lane_lookup=lane_lookup)
+    showdown_decisions_df = pd.DataFrame(showdown_decision_rows, columns=LLM_EXPERIMENT_DECISION_COLUMNS)
+    payload = {
+        "status": "ready",
+        "sample_name": _FINAL_OPTION_SHOWDOWN_SAMPLE_NAME,
+        "game_count": int(len(sampled_game_ids)),
+        "selection_sample_name": DEFAULT_MASTER_ROUTER_SELECTION_SAMPLE,
+        "llm_lane_name": _FINAL_OPTION_SHOWDOWN_LLM_LANE_NAME,
+        "models": list(resolved_models),
+        "summary": json.loads(showdown_summary_df.to_json(orient="records")) if not showdown_summary_df.empty else [],
+        "daily_paths": json.loads(showdown_daily_paths_df.to_json(orient="records")) if not showdown_daily_paths_df.empty else [],
+    }
+    return payload, {
+        "final_option_showdown_summary": showdown_summary_df,
+        "final_option_showdown_daily_paths": showdown_daily_paths_df,
+        "final_option_showdown_decisions": showdown_decisions_df,
+    }
+
+
 __all__ = [
     "LLM_EXPERIMENT_DECISION_COLUMNS",
     "LLM_EXPERIMENT_ITERATION_COLUMNS",
     "LLM_EXPERIMENT_LANE_SUMMARY_COLUMNS",
     "LLM_EXPERIMENT_SUMMARY_COLUMNS",
+    "build_final_option_showdown_frames",
     "build_llm_experiment_frames",
     "build_llm_iteration_plan",
     "estimate_llm_usage_cost",

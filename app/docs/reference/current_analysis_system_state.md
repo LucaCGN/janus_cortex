@@ -1,12 +1,12 @@
 # Current Analysis System State
 
 ## Snapshot Date
-- `2026-04-21`
+- `2026-04-22`
 
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
-- benchmark contract: `v10`
-- status: validated through realistic execution replay, expanded family research, a first master-router baseline, and a second LLM-router iteration with finalist showdown artifacts
+- benchmark contract: `v11`
+- status: regular-season corpus validated, postseason coverage wired end to end, and final 4-option adverse-execution showdown completed
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -21,17 +21,17 @@ Completed implementation wave:
 Completed release wave:
 - `v1.0.2` safe DB validation workflow
 - `v1.0.3` non-live validation workflow
-- `v1.0.4` five-family strategy lab
+- `v1.0.4` strategy-lab expansion
 - `v1.1.0` benchmarked multi-algorithm backtest workflow
 - `v1.2.0` stable read-only consumer adapters
-- `v1.3.0` permanent analysis studio alpha
-- `v1.3.1` read-only family comparison follow-on lane
+- `v1.3.0` analysis studio alpha
 - `v1.4.0` sequential portfolio benchmark
 - `v1.4.1` repeated-seed robustness and combined keep-family sleeve
-- `v1.4.2` final strategy refinement, promoted underdog continuation, and first statistical routing lane
-- `v1.4.3` realistic execution replay, promoted Q1/Q4 families, daily bankroll-path artifacts, and per-game strategy classification
-- `v1.4.4` expanded family research, promoted favorite-panic and halftime-Q3 methods, and master-router baseline
-- `v1.4.5` restrained LLM router variant benchmark, shared finalist showdown replay, and finalist-focused analysis studio refresh
+- `v1.4.2` refined underdog continuation and first routing lane
+- `v1.4.3` realistic execution replay and quarter-specific sleeves
+- `v1.4.4` master-router baseline and expanded family research
+- `v1.4.5` LLM router benchmarking and finalist dashboard
+- `v1.4.6` postseason event coverage, exact game-event linking, adverse slippage contract, and final 4-option showdown
 
 ## Current CLI Surface
 - `build_analysis_mart`
@@ -40,230 +40,138 @@ Completed release wave:
 - `train_analysis_baselines`
 
 ## Corpus Snapshot
+### Regular Season
 - season: `2025-26`
 - phase: `regular_season`
 - finished games: `1224`
 - research-ready games: `1198`
 - descriptive-only games: `26`
-- coverage-status counts:
-  - `covered_pre_and_ingame=1198`
-  - `covered_partial=13`
-  - `no_history=10`
-  - `no_matching_event=2`
-  - `pregame_only=1`
 
-## Mart Snapshot
-- `nba.nba_analysis_game_team_profiles=2448`
-- `nba.nba_analysis_state_panel=1379024`
+### Postseason Validation Slice
+- phases: `play_in`, `playoffs`
+- finished games validated: `20`
+- split:
+  - `play_in=6`
+  - `playoffs=14`
+- research-ready games: `20 / 20`
+- state-panel rows:
+  - `play_in=7,128`
+  - `playoffs=15,990`
+  - combined=`23,118`
 
-## Current Building Block Set
-The current deterministic stack is split into:
-- `A` routed core families that compete per game on confidence
-- `B` independent trigger sleeves that can fire as extra positions in their own quarters
+## Frozen Underlying Strategy Stack
+These are the kept underlying methods that still compose the deterministic controller:
 
-### Routed Core Families
-#### `winner_definition`
-- rule: buy `80c`, break `75c` or `76c` for stronger scoreboard control
-- full-sample 100-game ending bankroll: `2,490.05`
-- 10-seed mean ending bankroll: `295,300.59`
-- 10-seed median ending bankroll: `141,733.35`
-- 10-seed worst drawdown: `59.56%`
+### Core Families
+- `winner_definition`
+  - rule: reach `80c`, break back through `75c` or `76c`, otherwise hold to end
+- `inversion`
+  - rule: dynamic underdog continuation through the `45c/50c` reclaim line with exit below `49c`
+- `underdog_liftoff`
+  - rule: sub-`42c` openers, rebound through `36c`, exit at `50c` or `-3c`
 
-#### `inversion`
-- rule: dynamic `45c/50c` continuation with momentum and scoreboard guardrails, exit below `49c`
-- full-sample 100-game ending bankroll: `47,534,677.74`
-- 10-seed mean ending bankroll: `15,401.84`
-- 10-seed median ending bankroll: `2,344.44`
-- 10-seed worst drawdown: `45.88%`
+### Independent Sleeves
+- `q1_repricing`
+  - first-quarter repricing continuation
+- `q4_clutch`
+  - late close-game continuation after repeated lead changes
 
-#### `underdog_liftoff`
-- rule: sub-`42c` opener, rebound through `36c`, momentum `>=1`, score diff `>=-4`, exit `50c` or `-3c`
-- full-sample 100-game ending bankroll: `23,491,618.95`
-- 10-seed mean ending bankroll: `60.33`
-- 10-seed median ending bankroll: `42.01`
-- 10-seed worst drawdown: `37.40%`
+## Final Compared Options
+The repo is now frozen around these four externally compared options:
+- `winner_definition`
+- `master_strategy_router_v1`
+- `gpt-5.4 :: llm_hybrid_freedom_compact_v1`
+- `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1`
 
-#### `favorite_panic_fade_v1`
-- rule: buy strong pregame favorites after a panic selloff only once they recross into stability, then exit on reclaim toward the mid-`60c` range, `+8c`, or a renewed break
-- full-sample 100-game ending bankroll: `14,811.37`
-- 10-seed mean ending bankroll: `26.22`
-- 10-seed median ending bankroll: `26.25`
-- 10-seed worst drawdown: `9.66%`
+Interpretation:
+- `winner_definition` is the definitive single-family reference
+- `master_strategy_router_v1` is the definitive deterministic controller reference
+- the two LLM freedom lanes are the final bounded controller variants that remain worth comparing against the deterministic router
 
-### Independent Trigger Sleeves
-#### `q1_repricing`
-- rule: for `25c-75c` openers, buy the first-Q1 continuation once price gains `7c` and clears `52c`, with momentum `>=3` and score diff `>=1`
-- full-sample 100-game ending bankroll: `2,820.72`
-- 10-seed mean ending bankroll: `16.63`
-- 10-seed median ending bankroll: `16.01`
-- 10-seed worst drawdown: `19.07%`
+## Current Execution Contract
+- initial bankroll: `$10.00`
+- position size fraction: `20%`
+- max concurrent positions: `5`
+- concurrency mode: `shared_cash_equal_split`
+- min order: `$1.00`
+- min shares: `5`
+- deterministic slippage: `0c`
+- random adverse slippage: `0-20c`
+- random slippage seed: `20260422`
 
-#### `halftime_q3_repricing_v1`
-- rule: buy the early-Q3 continuation after halftime once price gains `5c`, momentum is positive, and the path stays stable enough to target a `+7c` continuation before Q3 ends
-- full-sample 100-game ending bankroll: `1,035.01`
-- 10-seed mean ending bankroll: `14.10`
-- 10-seed median ending bankroll: `13.97`
-- 10-seed worst drawdown: `7.93%`
+This contract is intentionally hostile and is now the current truth for controller hardening work.
 
-#### `q4_clutch`
-- rule: in the last `300` seconds of Q4, buy the side that reclaims `55c` in a close game after repeated lead changes, then exit on the next extension or break-back
-- full-sample 100-game ending bankroll: `112,582.58`
-- 10-seed mean ending bankroll: `26.47`
-- 10-seed median ending bankroll: `29.15`
-- 10-seed worst drawdown: `10.71%`
+## Final Postseason Validation Result
+On the fixed chronological `20`-game postseason slice:
 
-### Experimental And Deferred Research
+| Option | Ending Bankroll | Compounded Return | Max Drawdown | Trades | Avg Trade Return | LLM Cost |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `master_strategy_router_v1` | `$3.97` | `-60.25%` | `60.25%` | `11` | `-17.50%` | `$0.0000` |
+| `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1` | `$3.71` | `-62.87%` | `67.78%` | `19` | `-9.77%` | `$0.0206` |
+| `gpt-5.4 :: llm_hybrid_freedom_compact_v1` | `$3.62` | `-63.77%` | `63.77%` | `21` | `-8.18%` | `$0.0622` |
+| `winner_definition` | `$2.68` | `-73.21%` | `73.21%` | `9` | `-20.15%` | `$0.0000` |
+
+## Current Controller Read
+Deterministic router mix on the validated postseason slice:
+- `winner_definition`: `17`
+- `underdog_liftoff`: `2`
+- `inversion`: `1`
+- triggered `q4_clutch`: `2`
+
+LLM freedom mix:
+- `gpt-5.4`
+  - `winner_definition`: `18`
+  - `underdog_liftoff`: `3`
+  - `q4_clutch`: `2`
+  - `inversion`: `1`
+- `gpt-5.4-mini`
+  - `winner_definition`: `18`
+  - `underdog_liftoff`: `3`
+  - `inversion`: `2`
+  - `q4_clutch`: `2`
+
+Current interpretation:
+- the postseason slice is substantially harder than the regular-season growth runs
+- all four finalist options lose money under the `v11` adverse-execution contract
+- `master_strategy_router_v1` preserves bankroll best
+- the LLM freedom lanes do not justify promotion over the deterministic router under this contract
+- LLM value should now be treated as a selective review or override path, not as the default controller
+
+## Archived Or Demoted Methods
+These are not part of the active stack anymore:
+- `favorite_panic_fade_v1`
+- `halftime_q3_repricing_v1`
 - `comeback_reversion_v2`
-  - improved over the original comeback family, but still too path-dependent for promotion
-  - full-sample 100-game ending bankroll: `0.81`
-  - 10-seed mean ending bankroll: `12.21`
-  - 10-seed positive-seed rate: `40%`
 - `model_residual_dislocation_v1`
-  - deferred until the strategy interface supports a clean fit/apply split without sample leakage
-
-Rejected families:
 - `reversion`
 - `comeback_reversion`
 - `volatility_scalp`
+- `statistical_routing_v1`
+- `combined_keep_families`
 
-## Current Portfolio Surface
-### Combined Keep-Family Sleeve
-- family: `combined_keep_families`
-- members: `favorite_panic_fade_v1,halftime_q3_repricing_v1,inversion,q1_repricing,q4_clutch,underdog_liftoff,winner_definition`
-- full-sample ending bankroll: `96,805.76`
-- full-sample max drawdown: `35.91%`
-- full-sample executed trades: `72`
-- interpretation: useful as a complementary sleeve reference, but still not the end-state controller for the product design
-
-### Deterministic Routed Sleeve
-- family: `statistical_routing_v1`
-- full-sample ending bankroll: `522,883.17`
-- full-sample max drawdown: `34.72%`
-- full-sample executed trades: `80`
-- opening-band map:
-  - `10-20`: `underdog_liftoff`
-  - `20-30`: `underdog_liftoff`
-  - `30-40`: `inversion`
-  - `40-50`: `inversion`
-  - `50-60`: `winner_definition`
-  - `60-70`: `q4_clutch`
-  - `70-80`: `favorite_panic_fade_v1`
-  - `80-90`: `favorite_panic_fade_v1`
-  - `90-100`: `winner_definition`
-- interpretation: still useful as a reference baseline, but it is now secondary to the confidence-based master router
-
-### Master Router Baseline
-- family: `master_strategy_router_v1`
-- core families: `winner_definition,inversion,underdog_liftoff,favorite_panic_fade_v1`
-- extra sleeves: `q1_repricing,halftime_q3_repricing_v1,comeback_reversion_v2,q4_clutch`
-- selection sample: `time_train`
-- full-sample ending bankroll: `5,396.87`
-- time-validation ending bankroll: `1,915.95`
-- random-holdout ending bankroll: `1,366,218.64`
-- current interpretation:
-  - it already beats `winner_definition` on `full_sample`, `time_validation`, and `random_holdout`
-  - it is directionally valid as the first deterministic controller for the end-product design
-  - its robustness across repeated seeds is not yet frozen as a canonical artifact
-
-## Current LLM Router Iteration
-### Expanded Restrained Variant Benchmark
-- evaluation model: `gpt-5.4-mini`
-- benchmark shape: `10` random-holdout iterations of `30` games plus a fixed `100`-game showdown replay
-- total cost recorded in the successful artifact bundle: `0.034026`
-- note: effective live spend was modestly higher because a failed pre-aggregation run warmed the local cache before the final successful rerun
-
-Current repeated-iteration leaders:
-- `master_strategy_router_v1`
-  - mean ending bankroll: `558.15`
-  - mean drawdown: `35.21%`
-- `llm_hybrid_compact_guarded_v1`
-  - mean ending bankroll: `379.51`
-  - mean drawdown: `25.90%`
-  - interpretation: best LLM variant so far; compact payload plus deterministic confidence gate
-- `llm_hybrid_compact_v1`
-  - mean ending bankroll: `330.12`
-  - mean drawdown: `21.91%`
-- `llm_hybrid_restrained_v1`
-  - mean ending bankroll: `268.89`
-  - mean drawdown: `17.68%`
-- `winner_definition`
-  - mean ending bankroll: `274.73`
-  - mean drawdown: `24.02%`
-
-Finalist showdown replay on the shared `100`-game sample:
-- `master_strategy_router_v1`: ending bankroll `1,584,212.75`, drawdown `53.97%`
-- `llm_hybrid_compact_guarded_v1`: ending bankroll `628,041.16`, drawdown `21.69%`
-- `llm_hybrid_compact_v1`: ending bankroll `568,726.74`, drawdown `21.69%`
-- `llm_hybrid_restrained_v1`: ending bankroll `378,704.45`, drawdown `18.74%`
-- `winner_definition`: ending bankroll `388,365.85`, drawdown `23.28%`
-- `llm_hybrid_compact_no_rationale_v1`: ending bankroll `423,599.61`, drawdown `53.97%`
-
-Current interpretation:
-- deterministic routing is still the top bankroll engine
-- the compact guarded LLM router is now the best LLM variant to keep tuning
-- the value of the LLM is no longer only drawdown suppression; the best restrained compact variants are now materially competitive on return
-- medium-reasoning compact routing underperformed the lighter compact variants and is not the next prompt family to prioritize
-
-### New Artifact Surface
-- `benchmark_portfolio_daily_paths`
-  - day-by-day bankroll path for each strategy and sleeve across the 100-game replay
-- `portfolio_charts/*.svg`
-  - per-strategy bankroll-path charts saved under the backtest artifact bundle
-- `benchmark_game_strategy_classification`
-  - realized best-strategy-by-game reference table for later routing and context-model work
-- `benchmark_master_router_decisions`
-  - per-game core-family decision log with routed confidence components and triggered sleeve inventory
-- `benchmark_llm_experiment_lane_summary`
-  - repeated-iteration ranking table for restrained LLM router variants
-- `benchmark_llm_experiment_showdown_summary`
-  - shared finalist showdown results across the fixed `100`-game comparison sample
-- `benchmark_llm_experiment_showdown_daily_paths`
-  - line-chart source for the six-finalist dashboard comparison
+They remain useful as historical research context only.
 
 ## Validation Snapshot
-Validated on `2026-04-21`:
+Validated on `2026-04-22`:
 - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
-  - `13 passed`
-- `python -m app.data.pipelines.daily.nba.analysis_module run_analysis_backtests --season 2025-26 --season-phase regular_season --strategy-family all --slippage-cents 0 --portfolio-initial-bankroll 10 --portfolio-position-size-fraction 1.0 --portfolio-game-limit 100 --portfolio-min-order-dollars 1 --portfolio-min-shares 5 --portfolio-max-concurrent-positions 3 --portfolio-concurrency-mode shared_cash_equal_split --llm-enable --llm-model gpt-5.4-mini --llm-iteration-games 30 --llm-iteration-count 10 --llm-max-budget-usd 8`
-  - completed successfully
-- `python -m app.data.pipelines.daily.nba.analysis_module build_analysis_report --season 2025-26 --season-phase regular_season`
-  - completed successfully
+- `python -m app.data.pipelines.daily.nba.sync_postgres --season 2025-26 --schedule-window-days 20 --skip-live-snapshots --skip-play-by-play`
+- `python -m app.data.pipelines.daily.cross_domain.sync_mappings --lookback-days 14 --lookahead-days 0`
+- `python -m app.data.pipelines.daily.nba.analysis_module build_analysis_mart --season 2025-26 --season-phase play_in --analysis-version v1_0_1 --rebuild`
+- `python -m app.data.pipelines.daily.nba.analysis_module build_analysis_mart --season 2025-26 --season-phase playoffs --analysis-version v1_0_1 --rebuild`
+- `python -m app.data.pipelines.daily.nba.analysis_module run_analysis_backtests --season 2025-26 --season-phase postseason_final_20 --season-phases play_in,playoffs --analysis-version v1_0_1 --portfolio-initial-bankroll 10 --portfolio-position-size-fraction 0.2 --portfolio-game-limit 20 --portfolio-min-order-dollars 1 --portfolio-min-shares 5 --portfolio-max-concurrent-positions 5 --portfolio-concurrency-mode shared_cash_equal_split --portfolio-random-slippage-max-cents 20 --portfolio-random-slippage-seed 20260422 --slippage-cents 0 --llm-compare-models gpt-5.4,gpt-5.4-mini`
 
 ## Current Frontend Surface
-- permanent studio routes remain read-only
-- `frontend/analysis_studio` now exposes:
-  - six-finalist dark dashboard
-  - shared finalist evolution line chart
-  - compact finalist scoreboard
-  - master-router and best-LLM comparison cards
-  - bounded family-detail pane for concrete strategy families
-- current focus is still read-only visualization against frozen artifact contracts, but the surface is now tuned for router and LLM comparison instead of broad admin-style inspection
-
-## Current Gaps
-- pregame `A` inputs remain out-of-sample untestable until a prior-season training window exists
-- the current LLM cost metrics are directionally valid but partly cache-warmed; one clean-cache benchmark pass is still useful before production budgeting
-- the compact guarded LLM router still needs explicit low-confidence routing rules before it becomes the only recommended override layer
-- the new concurrent-position engine is in place, but the current regular-season 100-game replay still rarely binds above two open positions
-- `comeback_reversion_v2` remains experimental and should not be promoted into the routed core yet
-- `model_residual_dislocation_v1` still needs a split-safe training interface
-- context models for the promoted families still need to be built and compared against deterministic routing
-- season-continuity branches for playoffs/preseason and WNBA are still pending
+- the studio remains read-only
+- it should now be tuned around the frozen final-option comparison and review queue, not around broad family-lab exploration
 
 ## Current Next Branches
 - `codex/analysis-routing-allocation`
+  - retargeted to controller hardening under the `v11` contract
 - `codex/analysis-context-models`
+  - payout policy and context models around the frozen controller
 - `codex/frontend-analysis-portfolio-viz`
-- sidecars:
-  - `codex/season-playoffs-preseason`
-  - `codex/season-wnba-bootstrap`
+  - final review dashboard for the four compared options and their internal route mix
 
 ## Output Root Convention
-- default analysis artifact root on this machine:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis`
-
-## Current Truth Sources
-- [app/docs/reference/master_execution_dependency_graph.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/master_execution_dependency_graph.md)
-- [app/docs/reference/analysis_sampling_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sampling_benchmarking_reference.md)
-- [app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md)
-- [app/docs/planning/current/roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
-- [app/docs/planning/current/branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
+- repo outputs remain read-only snapshots
+- branch-independent artifacts and quicklook material still belong under `C:\code-personal\janus-local\janus_cortex`

@@ -3,15 +3,19 @@
 Personal prediction-market data framework focused on production-grade data structures, ingestion pipelines, and service layers before strategy automation.
 
 ## Current Status
-- Active checkpoint root: `v0.8.1` with parallel implementation work through `v0.8.8`
+- Active analysis baseline: `v1_0_1` with benchmark contract `v11`
 - Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
-- Current priority: validate and expand the offline NBA analysis module into a multi-algorithm backtest program on non-live infrastructure.
-- Current scope: safe DB validation, strategy benchmarking, and read-only research consumers before any live automation.
-- Live implementation snapshot on `2026-03-14`:
-  - `nba.nba_game_feature_snapshots=52`
-  - `nba.nba_odds_coverage_audits=53`
-  - `nba.nba_team_feature_rollups=30`
-  - FastAPI API version `0.8.1`
+- Current priority: harden the offline NBA controller stack under adverse execution assumptions before any live automation.
+- Current scope: safe DB validation, research-only backtesting, controller comparison, and read-only consumers.
+- Current NBA analysis snapshot on `2026-04-22`:
+  - regular-season research-ready corpus: `1198 / 1224`
+  - postseason validation corpus: `20` games (`6` play-in + `14` playoffs), all research-ready
+  - postseason state-panel rows: `23,118`
+  - final evaluated options under the adverse postseason contract:
+    - `winner_definition`
+    - `master_strategy_router_v1`
+    - `gpt-5.4 :: llm_hybrid_freedom_compact_v1`
+    - `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1`
 
 ## Scope Definitions
 - `v0.8.*`: NBA regular-season data completion for 2025/26.
@@ -45,18 +49,23 @@ The project uses a provider/category/module split:
 - `v0.7.1` to `v0.7.6`: NBA serving layer, live context, selected-game validation, and query tuning
 
 ### In progress
-- `v0.8.1` to `v0.8.8`: regular-season feature persistence, bounded backfills, coverage auditing, serving routes, replayable refreshes, rollups, and QA are partially implemented and being closed in order
+- `v0.8.1` to `v0.8.8`: regular-season feature persistence, bounded backfills, coverage auditing, serving routes, replayable refreshes, rollups, and QA are largely complete
+- `v1.4.6`: postseason data coverage, adverse execution replay, and final 4-option showdown are now merged into the active analysis state
 
 ### Planned lanes
-1. `v0.8.*` NBA regular-season data completion
-2. `v0.9.*` NBA playoff module and 2025/26 season handoff
-3. `v1.*` sports-first stabilization, shared-sports bootstrap, and next-season operations
-4. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
+1. `v1.5.0` controller hardening under the `v11` adverse-execution contract
+2. `v1.5.1` context and payout-policy models around the frozen controller
+3. `v1.5.2` focused read-only review UI for the final controller and LLM override lane
+4. `v1.5.x` season continuity work for the remaining playoffs/preseason path and WNBA bootstrap
+5. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
 
 ## Key Planning Docs
 - `app/docs/reference/README.md`
+- `app/docs/reference/current_analysis_system_state.md`
+- `app/docs/reference/postseason_final_20_validation.md`
 - `app/docs/planning/README.md`
 - `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
+- `app/docs/planning/current/nba_analysis_next_steps.md`
 - `app/docs/development_guide.md`
 - `app/docs/local_workspace_convention.md`
 - `app/docs/scalable_db_schema_proposal.md`
@@ -89,4 +98,4 @@ Common commands:
 - Current execution planning belongs under `app/docs/planning/current`; closed execution waves belong under `app/docs/planning/archive`.
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
 - Sports-core data completeness comes before Chroma, LLM memory, or broader multi-module expansion.
-- Strategy logic remains intentionally outside the core app until the data contracts and service layers are stable.
+- Strategy logic is now frozen around the offline NBA analysis controller stack; the current goal is execution hardening and review tooling, not new family proliferation.

@@ -175,17 +175,31 @@ def load_analysis_backtest_state_panel_df(
     *,
     season: str,
     season_phase: str,
+    season_phases: tuple[str, ...] | None = None,
     analysis_version: str,
 ) -> pd.DataFrame:
-    frame = _query_df(
-        connection,
+    resolved_season_phases = tuple(str(value).strip() for value in (season_phases or ()) if str(value).strip())
+    if resolved_season_phases:
+        placeholders = ", ".join(["%s"] * len(resolved_season_phases))
+        query = f"""
+        SELECT *
+        FROM nba.nba_analysis_state_panel
+        WHERE season = %s AND season_phase IN ({placeholders}) AND analysis_version = %s
+        ORDER BY game_date ASC NULLS LAST, game_id ASC, team_side ASC, state_index ASC;
         """
+        params: tuple[Any, ...] = (season, *resolved_season_phases, analysis_version)
+    else:
+        query = """
         SELECT *
         FROM nba.nba_analysis_state_panel
         WHERE season = %s AND season_phase = %s AND analysis_version = %s
         ORDER BY game_date ASC NULLS LAST, game_id ASC, team_side ASC, state_index ASC;
-        """,
-        (season, season_phase, analysis_version),
+        """
+        params = (season, season_phase, analysis_version)
+    frame = _query_df(
+        connection,
+        query,
+        params,
     )
     return _prepare_state_panel_frame(frame)
 
@@ -588,6 +602,7 @@ def run_analysis_backtests(request: BacktestRunRequest) -> dict[str, Any]:
             connection,
             season=request.season,
             season_phase=request.season_phase,
+            season_phases=request.season_phases,
             analysis_version=request.analysis_version,
         )
     result = build_benchmark_run_result(state_df, request)

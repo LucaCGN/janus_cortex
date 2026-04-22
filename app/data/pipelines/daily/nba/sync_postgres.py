@@ -99,6 +99,18 @@ def _safe_date(value: Any) -> date | None:
         return None
 
 
+def _season_phase_from_game_id(game_id: str | None) -> str | None:
+    prefix = str(game_id or "").strip()[:3]
+    return {
+        "001": "preseason",
+        "002": "regular_season",
+        "003": "all_star",
+        "004": "playoffs",
+        "005": "play_in",
+        "006": "nba_cup",
+    }.get(prefix)
+
+
 def _extract_scoreboard_games() -> list[dict[str, Any]]:
     try:
         board = nba_live_scoreboard.ScoreBoard()
@@ -264,6 +276,7 @@ def _upsert_schedule_games(
         repo.upsert_nba_game(
             game_id=str(row.get("game_id")),
             season=season,
+            season_phase=_season_phase_from_game_id(str(row.get("game_id"))),
             game_date=game_date,
             game_start_time=game_start_time,
             game_status=_safe_int(row.get("game_status")),
@@ -330,6 +343,7 @@ def _upsert_scoreboard_games(
         repo.upsert_nba_game(
             game_id=game_id,
             season=season,
+            season_phase=_season_phase_from_game_id(game_id),
             game_date=game_date,
             game_start_time=game_start_time,
             game_status=status,
