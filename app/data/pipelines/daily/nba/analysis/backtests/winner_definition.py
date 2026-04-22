@@ -49,7 +49,7 @@ def _select_winner_definition_exit(group: pd.DataFrame, selection: TradeSelectio
 
 
 def simulate_winner_definition_trades(state_df: pd.DataFrame, *, slippage_cents: int) -> list[dict[str, Any]]:
-    return simulate_trade_loop(
+    trades = simulate_trade_loop(
         state_df,
         strategy_family="winner_definition",
         entry_rule="reach_80c",
@@ -58,6 +58,17 @@ def simulate_winner_definition_trades(state_df: pd.DataFrame, *, slippage_cents:
         entry_selector=_select_winner_definition_entry,
         exit_selector=_select_winner_definition_exit,
     )
+    if not trades:
+        return []
+    # Winner-definition is a continuation thesis, not a side-flip strategy.
+    # Keep the first qualifying signal per game and ignore later opposite-side triggers.
+    work = (
+        pd.DataFrame(trades)
+        .assign(entry_at=lambda frame: pd.to_datetime(frame["entry_at"], errors="coerce", utc=True))
+        .sort_values(["entry_at", "game_id", "team_side", "entry_state_index"], kind="mergesort", na_position="last")
+        .drop_duplicates(subset=["game_id"], keep="first")
+    )
+    return work.to_dict(orient="records")
 
 
 __all__ = ["simulate_winner_definition_trades"]

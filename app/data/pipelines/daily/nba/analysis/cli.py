@@ -20,6 +20,8 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS,
     DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
+    DEFAULT_BACKTEST_PORTFOLIO_SIZING_MODE,
+    DEFAULT_BACKTEST_PORTFOLIO_TARGET_EXPOSURE_FRACTION,
     DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS,
     DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED,
     DEFAULT_BACKTEST_ROBUSTNESS_SEEDS,
@@ -112,6 +114,15 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE,
     )
     backtest_parser.add_argument(
+        "--portfolio-sizing-mode",
+        default=DEFAULT_BACKTEST_PORTFOLIO_SIZING_MODE,
+    )
+    backtest_parser.add_argument(
+        "--portfolio-target-exposure-fraction",
+        type=float,
+        default=DEFAULT_BACKTEST_PORTFOLIO_TARGET_EXPOSURE_FRACTION,
+    )
+    backtest_parser.add_argument(
         "--portfolio-random-slippage-max-cents",
         type=int,
         default=DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS,
@@ -192,6 +203,8 @@ def dispatch_command(
                 portfolio_min_shares=args.portfolio_min_shares,
                 portfolio_max_concurrent_positions=args.portfolio_max_concurrent_positions,
                 portfolio_concurrency_mode=args.portfolio_concurrency_mode,
+                portfolio_sizing_mode=args.portfolio_sizing_mode,
+                portfolio_target_exposure_fraction=args.portfolio_target_exposure_fraction,
                 portfolio_random_slippage_max_cents=args.portfolio_random_slippage_max_cents,
                 portfolio_random_slippage_seed=args.portfolio_random_slippage_seed,
                 llm_enable=bool(args.llm_enable),

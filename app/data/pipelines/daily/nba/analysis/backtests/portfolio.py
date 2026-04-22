@@ -25,6 +25,8 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_BACKTEST_PORTFOLIO_MIN_ORDER_DOLLARS,
     DEFAULT_BACKTEST_PORTFOLIO_MIN_SHARES,
     DEFAULT_BACKTEST_PORTFOLIO_POSITION_SIZE_FRACTION,
+    DEFAULT_BACKTEST_PORTFOLIO_SIZING_MODE,
+    DEFAULT_BACKTEST_PORTFOLIO_TARGET_EXPOSURE_FRACTION,
     DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS,
     DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_SEED,
 )
@@ -61,6 +63,8 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "portfolio_min_shares",
     "portfolio_max_concurrent_positions",
     "portfolio_concurrency_mode",
+    "portfolio_sizing_mode",
+    "portfolio_target_exposure_fraction",
     "portfolio_random_slippage_max_cents",
     "portfolio_random_slippage_seed",
     "max_concurrent_positions_observed",
@@ -102,6 +106,8 @@ PORTFOLIO_STEP_COLUMNS = (
     "cash_before",
     "cash_after_entry",
     "stake_amount",
+    "target_position_fraction",
+    "concurrent_game_load",
     "minimum_required_stake",
     "share_count",
     "profit_loss_amount",
@@ -225,6 +231,20 @@ def normalize_portfolio_concurrency_mode(value: str | None) -> str:
     return DEFAULT_BACKTEST_PORTFOLIO_CONCURRENCY_MODE
 
 
+def normalize_portfolio_sizing_mode(value: str | None) -> str:
+    resolved = str(value or "").strip().lower()
+    if resolved == "dynamic_concurrent_games":
+        return resolved
+    return DEFAULT_BACKTEST_PORTFOLIO_SIZING_MODE
+
+
+def normalize_portfolio_target_exposure_fraction(value: float | None) -> float:
+    fraction = _safe_float(value)
+    if fraction is None:
+        return DEFAULT_BACKTEST_PORTFOLIO_TARGET_EXPOSURE_FRACTION
+    return max(0.0, min(1.0, fraction))
+
+
 def normalize_portfolio_random_slippage_max_cents(value: int | None) -> int:
     if value is None:
         return DEFAULT_BACKTEST_PORTFOLIO_RANDOM_SLIPPAGE_MAX_CENTS
@@ -320,6 +340,20 @@ def _resolve_trade_execution(
     return trade_return, entry_exec, exit_exec, random_entry_slippage_cents, random_exit_slippage_cents
 
 
+def _resolve_target_position_fraction(
+    *,
+    base_fraction: float,
+    sizing_mode: str,
+    target_exposure_fraction: float,
+    concurrent_game_load: int,
+) -> float:
+    if sizing_mode != "dynamic_concurrent_games":
+        return base_fraction
+    resolved_load = max(1, int(concurrent_game_load))
+    dynamic_fraction = target_exposure_fraction / resolved_load
+    return max(base_fraction, min(1.0, dynamic_fraction))
+
+
 def _apply_game_limit(trades_df: pd.DataFrame, *, game_limit: int | None) -> tuple[pd.DataFrame, dict[str, int]]:
     if trades_df.empty:
         return trades_df.copy(), {}
@@ -357,6 +391,8 @@ def simulate_trade_portfolio(
     min_shares: float | None = None,
     max_concurrent_positions: int | None = None,
     concurrency_mode: str | None = None,
+    sizing_mode: str | None = None,
+    target_exposure_fraction: float | None = None,
     random_slippage_max_cents: int | None = None,
     random_slippage_seed: int | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
@@ -367,6 +403,8 @@ def simulate_trade_portfolio(
     resolved_min_shares = normalize_portfolio_min_shares(min_shares)
     resolved_max_concurrent_positions = normalize_portfolio_max_concurrent_positions(max_concurrent_positions)
     resolved_concurrency_mode = normalize_portfolio_concurrency_mode(concurrency_mode)
+    resolved_sizing_mode = normalize_portfolio_sizing_mode(sizing_mode)
+    resolved_target_exposure_fraction = normalize_portfolio_target_exposure_fraction(target_exposure_fraction)
     resolved_random_slippage_max_cents = normalize_portfolio_random_slippage_max_cents(random_slippage_max_cents)
     resolved_random_slippage_seed = normalize_portfolio_random_slippage_seed(random_slippage_seed)
     resolved_family_members = _normalize_family_members(strategy_family, strategy_family_members)
@@ -482,9 +520,15 @@ def simulate_trade_portfolio(
         )
         selected_records = ranked_batch[:available_slots] if available_slots > 0 else []
         selected_count = len(selected_records)
-        stake_pool = cash_balance * fraction if fraction > 0 else 0.0
+        concurrent_game_load = max(1, open_positions_before + selected_count)
+        target_position_fraction = _resolve_target_position_fraction(
+            base_fraction=fraction,
+            sizing_mode=resolved_sizing_mode,
+            target_exposure_fraction=resolved_target_exposure_fraction,
+            concurrent_game_load=concurrent_game_load,
+        )
         per_trade_budget = (
-            (stake_pool / selected_count)
+            (cash_balance * target_position_fraction)
             if selected_count > 0 and resolved_concurrency_mode == "shared_cash_equal_split"
             else 0.0
         )
@@ -605,6 +649,8 @@ def simulate_trade_portfolio(
                     "cash_before": cash_before,
                     "cash_after_entry": cash_after_entry,
                     "stake_amount": stake_amount,
+                    "target_position_fraction": target_position_fraction,
+                    "concurrent_game_load": concurrent_game_load,
                     "minimum_required_stake": minimum_required_stake,
                     "share_count": share_count,
                     "profit_loss_amount": profit_loss_amount,
@@ -647,6 +693,8 @@ def simulate_trade_portfolio(
         "portfolio_min_shares": resolved_min_shares,
         "portfolio_max_concurrent_positions": resolved_max_concurrent_positions,
         "portfolio_concurrency_mode": resolved_concurrency_mode,
+        "portfolio_sizing_mode": resolved_sizing_mode,
+        "portfolio_target_exposure_fraction": resolved_target_exposure_fraction,
         "portfolio_random_slippage_max_cents": resolved_random_slippage_max_cents,
         "portfolio_random_slippage_seed": resolved_random_slippage_seed,
         "max_concurrent_positions_observed": max_concurrent_positions_observed,
@@ -673,6 +721,8 @@ def build_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    sizing_mode: str | None,
+    target_exposure_fraction: float | None,
     random_slippage_max_cents: int | None,
     random_slippage_seed: int | None,
     split_order: tuple[str, ...],
@@ -698,6 +748,8 @@ def build_portfolio_benchmark_frames(
                 min_shares=min_shares,
                 max_concurrent_positions=max_concurrent_positions,
                 concurrency_mode=concurrency_mode,
+                sizing_mode=sizing_mode,
+                target_exposure_fraction=target_exposure_fraction,
                 random_slippage_max_cents=random_slippage_max_cents,
                 random_slippage_seed=random_slippage_seed,
             )
@@ -720,6 +772,8 @@ def build_combined_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    sizing_mode: str | None = None,
+    target_exposure_fraction: float | None = None,
     random_slippage_max_cents: int | None = None,
     random_slippage_seed: int | None = None,
     split_order: tuple[str, ...],
@@ -762,6 +816,8 @@ def build_combined_portfolio_benchmark_frames(
             min_shares=min_shares,
             max_concurrent_positions=max_concurrent_positions,
             concurrency_mode=concurrency_mode,
+            sizing_mode=sizing_mode,
+            target_exposure_fraction=target_exposure_fraction,
             random_slippage_max_cents=random_slippage_max_cents,
             random_slippage_seed=random_slippage_seed,
         )
@@ -786,6 +842,8 @@ def build_routed_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    sizing_mode: str | None = None,
+    target_exposure_fraction: float | None = None,
     random_slippage_max_cents: int | None = None,
     random_slippage_seed: int | None = None,
     split_order: tuple[str, ...],
@@ -836,6 +894,8 @@ def build_routed_portfolio_benchmark_frames(
             min_shares=min_shares,
             max_concurrent_positions=max_concurrent_positions,
             concurrency_mode=concurrency_mode,
+            sizing_mode=sizing_mode,
+            target_exposure_fraction=target_exposure_fraction,
             random_slippage_max_cents=random_slippage_max_cents,
             random_slippage_seed=random_slippage_seed,
         )
@@ -858,6 +918,8 @@ def build_master_router_portfolio_benchmark_frames(
     min_shares: float | None,
     max_concurrent_positions: int | None,
     concurrency_mode: str | None,
+    sizing_mode: str | None = None,
+    target_exposure_fraction: float | None = None,
     random_slippage_max_cents: int | None = None,
     random_slippage_seed: int | None = None,
     split_order: tuple[str, ...],
@@ -909,6 +971,8 @@ def build_master_router_portfolio_benchmark_frames(
             min_shares=min_shares,
             max_concurrent_positions=max_concurrent_positions,
             concurrency_mode=concurrency_mode,
+            sizing_mode=sizing_mode,
+            target_exposure_fraction=target_exposure_fraction,
             random_slippage_max_cents=random_slippage_max_cents,
             random_slippage_seed=random_slippage_seed,
         )
@@ -1025,6 +1089,8 @@ __all__ = [
     "normalize_portfolio_min_order_dollars",
     "normalize_portfolio_min_shares",
     "normalize_portfolio_position_size_fraction",
+    "normalize_portfolio_sizing_mode",
+    "normalize_portfolio_target_exposure_fraction",
     "normalize_portfolio_random_slippage_max_cents",
     "normalize_portfolio_random_slippage_seed",
     "simulate_trade_portfolio",

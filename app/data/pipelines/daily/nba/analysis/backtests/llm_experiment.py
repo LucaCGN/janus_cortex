@@ -1292,8 +1292,11 @@ def _maybe_call_llm(
             "client_unavailable",
         )
 
-    try:
-        response_model: type[BaseModel] = _LLMSelectionResponse if include_rationale else _LLMSelectionNoRationaleResponse
+    def _execute_parse(
+        *,
+        response_model: type[BaseModel],
+        output_token_cap: int,
+    ) -> tuple[BaseModel, dict[str, int], float]:
         response = client.responses.parse(
             model=model,
             input=[
@@ -1302,7 +1305,7 @@ def _maybe_call_llm(
             ],
             text_format=response_model,
             reasoning={"effort": reasoning_effort},
-            max_output_tokens=240,
+            max_output_tokens=output_token_cap,
             store=False,
         )
         parsed = getattr(response, "output_parsed", None) or response_model()
@@ -1313,7 +1316,29 @@ def _maybe_call_llm(
             cached_input_tokens=usage["cached_input_tokens"],
             output_tokens=usage["output_tokens"],
         )
-        budget_state.spent_usd += actual_cost
+        return parsed, usage, actual_cost
+
+    try:
+        response_model: type[BaseModel] = _LLMSelectionResponse if include_rationale else _LLMSelectionNoRationaleResponse
+        output_token_cap = 320 if include_rationale and lane_mode == "llm_freedom" else 240
+        total_usage = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0}
+        total_cost = 0.0
+        try:
+            parsed, usage, actual_cost = _execute_parse(
+                response_model=response_model,
+                output_token_cap=output_token_cap,
+            )
+        except Exception:
+            if not include_rationale:
+                raise
+            parsed, usage, actual_cost = _execute_parse(
+                response_model=_LLMSelectionNoRationaleResponse,
+                output_token_cap=160,
+            )
+        for key in total_usage:
+            total_usage[key] += int(usage[key])
+        total_cost += float(actual_cost)
+        budget_state.spent_usd += total_cost
         normalized_ids = normalize_llm_selected_candidate_ids(
             parsed.selected_candidate_ids,
             available_candidates,
@@ -1331,11 +1356,11 @@ def _maybe_call_llm(
             float(parsed.confidence),
             str(getattr(parsed, "rationale", "") or ""),
             False,
-            usage["input_tokens"],
-            usage["cached_input_tokens"],
-            usage["output_tokens"],
-            usage["reasoning_tokens"],
-            actual_cost,
+            total_usage["input_tokens"],
+            total_usage["cached_input_tokens"],
+            total_usage["output_tokens"],
+            total_usage["reasoning_tokens"],
+            total_cost,
             "ok",
         )
     except Exception as exc:
@@ -1406,6 +1431,8 @@ def _run_lane_portfolio(
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        sizing_mode=request.portfolio_sizing_mode,
+        target_exposure_fraction=request.portfolio_target_exposure_fraction,
         random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
         random_slippage_seed=request.portfolio_random_slippage_seed,
     )
@@ -1434,6 +1461,8 @@ def _run_lane_portfolio_with_steps(
         min_shares=request.portfolio_min_shares,
         max_concurrent_positions=request.portfolio_max_concurrent_positions,
         concurrency_mode=request.portfolio_concurrency_mode,
+        sizing_mode=request.portfolio_sizing_mode,
+        target_exposure_fraction=request.portfolio_target_exposure_fraction,
         random_slippage_max_cents=request.portfolio_random_slippage_max_cents,
         random_slippage_seed=request.portfolio_random_slippage_seed,
     )
