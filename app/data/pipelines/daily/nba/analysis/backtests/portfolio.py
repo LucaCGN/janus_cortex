@@ -72,6 +72,7 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "portfolio_drawdown_throttle_threshold_pct",
     "portfolio_drawdown_throttle_fraction_scale",
     "portfolio_drawdown_new_entry_stop_pct",
+    "portfolio_daily_loss_new_entry_stop_pct",
     "max_concurrent_positions_observed",
     "avg_executed_trade_return_with_slippage",
     "avg_executed_share_count",
@@ -80,6 +81,7 @@ PORTFOLIO_SUMMARY_COLUMNS = (
     "skipped_concurrency_count",
     "skipped_min_order_count",
     "skipped_risk_guard_count",
+    "skipped_daily_loss_guard_count",
 )
 
 PORTFOLIO_STEP_COLUMNS = (
@@ -114,13 +116,17 @@ PORTFOLIO_STEP_COLUMNS = (
     "stake_amount",
     "target_position_fraction",
     "effective_position_fraction",
+    "position_fraction_scale_override",
+    "position_fraction_cap_override",
     "risk_fraction_scale",
     "concurrent_game_load",
     "drawdown_pct_before_batch",
+    "daily_loss_pct_before_batch",
     "peak_bankroll_before_batch",
     "runup_throttle_active",
     "drawdown_throttle_active",
     "risk_guard_active",
+    "daily_loss_guard_active",
     "minimum_required_stake",
     "share_count",
     "profit_loss_amount",
@@ -312,6 +318,13 @@ def normalize_portfolio_drawdown_new_entry_stop_pct(value: float | None) -> floa
     return max(0.0, min(1.0, threshold))
 
 
+def normalize_portfolio_daily_loss_new_entry_stop_pct(value: float | None) -> float | None:
+    threshold = _safe_float(value)
+    if threshold is None:
+        return None
+    return max(0.0, min(1.0, threshold))
+
+
 def _prepare_trade_frame(trades_df: pd.DataFrame) -> pd.DataFrame:
     if trades_df.empty:
         return pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS)
@@ -402,6 +415,22 @@ def _resolve_target_position_fraction(
     return max(base_fraction, min(1.0, dynamic_fraction))
 
 
+def _resolve_record_target_position_fraction(
+    *,
+    target_position_fraction: float,
+    record: dict[str, Any],
+) -> tuple[float, float, float | None]:
+    resolved_target = max(0.0, min(1.0, float(target_position_fraction)))
+    scale_override = _safe_float(record.get("position_fraction_scale_override"))
+    cap_override = _safe_float(record.get("position_fraction_cap_override"))
+    resolved_scale = 1.0 if scale_override is None else max(0.0, float(scale_override))
+    resolved_target *= resolved_scale
+    resolved_cap = None if cap_override is None else max(0.0, min(1.0, float(cap_override)))
+    if resolved_cap is not None:
+        resolved_target = min(resolved_target, resolved_cap)
+    return max(0.0, min(1.0, resolved_target)), resolved_scale, resolved_cap
+
+
 def _resolve_risk_adjusted_position_fraction(
     *,
     target_position_fraction: float,
@@ -485,6 +514,7 @@ def simulate_trade_portfolio(
     drawdown_throttle_threshold_pct: float | None = None,
     drawdown_throttle_fraction_scale: float | None = None,
     drawdown_new_entry_stop_pct: float | None = None,
+    daily_loss_new_entry_stop_pct: float | None = None,
 ) -> tuple[dict[str, Any], pd.DataFrame]:
     cash_balance = normalize_portfolio_initial_bankroll(initial_bankroll)
     fraction = normalize_portfolio_position_size_fraction(position_size_fraction)
@@ -502,6 +532,7 @@ def simulate_trade_portfolio(
     resolved_drawdown_throttle_threshold_pct = normalize_portfolio_drawdown_throttle_threshold_pct(drawdown_throttle_threshold_pct)
     resolved_drawdown_throttle_fraction_scale = normalize_portfolio_drawdown_throttle_fraction_scale(drawdown_throttle_fraction_scale)
     resolved_drawdown_new_entry_stop_pct = normalize_portfolio_drawdown_new_entry_stop_pct(drawdown_new_entry_stop_pct)
+    resolved_daily_loss_new_entry_stop_pct = normalize_portfolio_daily_loss_new_entry_stop_pct(daily_loss_new_entry_stop_pct)
     resolved_family_members = _normalize_family_members(strategy_family, strategy_family_members)
     serialized_family_members = ",".join(resolved_family_members)
     execution_rng = _build_execution_rng(
@@ -527,8 +558,11 @@ def simulate_trade_portfolio(
     skipped_concurrency_count = 0
     skipped_min_order_count = 0
     skipped_risk_guard_count = 0
+    skipped_daily_loss_guard_count = 0
     max_concurrent_positions_observed = 0
     settlement_sequence = 0
+    current_session_date: Any = None
+    session_start_equity = bankroll
 
     def settle_until(timestamp: pd.Timestamp | None) -> None:
         nonlocal cash_balance
@@ -617,37 +651,31 @@ def simulate_trade_portfolio(
         selected_records = ranked_batch[:available_slots] if available_slots > 0 else []
         selected_count = len(selected_records)
         concurrent_game_load = max(1, open_positions_before + selected_count)
+        entry_session_date = entry_at.date() if pd.notna(entry_at) else None
+        if entry_session_date != current_session_date:
+            current_session_date = entry_session_date
+            session_start_equity = equity_before_batch
         target_position_fraction = _resolve_target_position_fraction(
             base_fraction=fraction,
             sizing_mode=resolved_sizing_mode,
             target_exposure_fraction=resolved_target_exposure_fraction,
             concurrent_game_load=concurrent_game_load,
         )
-        (
-            effective_position_fraction,
-            risk_fraction_scale,
-            runup_throttle_active,
-            drawdown_throttle_active,
-            drawdown_pct_before_batch,
-        ) = _resolve_risk_adjusted_position_fraction(
-            target_position_fraction=target_position_fraction,
-            starting_bankroll=normalize_portfolio_initial_bankroll(initial_bankroll),
-            peak_bankroll=peak_bankroll,
-            bankroll_before_batch=equity_before_batch,
-            runup_throttle_peak_multiple=resolved_runup_throttle_peak_multiple,
-            runup_throttle_fraction_scale=resolved_runup_throttle_fraction_scale,
-            drawdown_throttle_threshold_pct=resolved_drawdown_throttle_threshold_pct,
-            drawdown_throttle_fraction_scale=resolved_drawdown_throttle_fraction_scale,
+        drawdown_pct_before_batch = max(0.0, peak_bankroll - equity_before_batch) / peak_bankroll if peak_bankroll > 0 else 0.0
+        daily_loss_pct_before_batch = (
+            max(0.0, session_start_equity - equity_before_batch) / session_start_equity
+            if session_start_equity > 0
+            else 0.0
         )
-        risk_guard_active = (
+        batch_drawdown_guard_active = (
             resolved_drawdown_new_entry_stop_pct is not None
             and drawdown_pct_before_batch >= resolved_drawdown_new_entry_stop_pct
         )
-        per_trade_budget = (
-            (cash_balance * effective_position_fraction)
-            if selected_count > 0 and resolved_concurrency_mode == "shared_cash_equal_split"
-            else 0.0
+        batch_daily_loss_guard_active = (
+            resolved_daily_loss_new_entry_stop_pct is not None
+            and daily_loss_pct_before_batch >= resolved_daily_loss_new_entry_stop_pct
         )
+        batch_cash_reference = cash_balance
         selected_keys = {id(record): rank for rank, record in enumerate(selected_records, start=1)}
 
         for batch_rank, record in enumerate(ranked_batch, start=1):
@@ -687,10 +715,35 @@ def simulate_trade_portfolio(
             open_positions_after = len(open_positions)
             settlement_value: Any = _serialise_scalar(entry_at)
             settlement_value_sequence: int | None = None
+            adjusted_target_position_fraction, position_fraction_scale_override, position_fraction_cap_override = _resolve_record_target_position_fraction(
+                target_position_fraction=target_position_fraction,
+                record=record,
+            )
+            (
+                effective_position_fraction,
+                risk_fraction_scale,
+                runup_throttle_active,
+                drawdown_throttle_active,
+                _record_drawdown_pct_before_batch,
+            ) = _resolve_risk_adjusted_position_fraction(
+                target_position_fraction=adjusted_target_position_fraction,
+                starting_bankroll=normalize_portfolio_initial_bankroll(initial_bankroll),
+                peak_bankroll=peak_bankroll,
+                bankroll_before_batch=equity_before_batch,
+                runup_throttle_peak_multiple=resolved_runup_throttle_peak_multiple,
+                runup_throttle_fraction_scale=resolved_runup_throttle_fraction_scale,
+                drawdown_throttle_threshold_pct=resolved_drawdown_throttle_threshold_pct,
+                drawdown_throttle_fraction_scale=resolved_drawdown_throttle_fraction_scale,
+            )
+            risk_guard_active = batch_drawdown_guard_active
+            daily_loss_guard_active = batch_daily_loss_guard_active
 
             if id(record) not in selected_keys:
                 skip_reason = "concurrency"
                 skipped_concurrency_count += 1
+            elif daily_loss_guard_active:
+                skip_reason = "daily_loss_guard"
+                skipped_daily_loss_guard_count += 1
             elif risk_guard_active:
                 skip_reason = "risk_guard"
                 skipped_risk_guard_count += 1
@@ -698,7 +751,7 @@ def simulate_trade_portfolio(
                 skip_reason = "bankroll"
                 skipped_bankroll_count += 1
             else:
-                target_stake = max(per_trade_budget, minimum_required_stake)
+                target_stake = max(batch_cash_reference * effective_position_fraction, minimum_required_stake)
                 if target_stake > cash_before + 1e-9:
                     skip_reason = "min_order"
                     skipped_min_order_count += 1
@@ -768,15 +821,19 @@ def simulate_trade_portfolio(
                     "cash_before": cash_before,
                     "cash_after_entry": cash_after_entry,
                     "stake_amount": stake_amount,
-                    "target_position_fraction": target_position_fraction,
+                    "target_position_fraction": adjusted_target_position_fraction,
                     "effective_position_fraction": effective_position_fraction,
+                    "position_fraction_scale_override": position_fraction_scale_override,
+                    "position_fraction_cap_override": position_fraction_cap_override,
                     "risk_fraction_scale": risk_fraction_scale,
                     "concurrent_game_load": concurrent_game_load,
                     "drawdown_pct_before_batch": drawdown_pct_before_batch,
+                    "daily_loss_pct_before_batch": daily_loss_pct_before_batch,
                     "peak_bankroll_before_batch": peak_bankroll,
                     "runup_throttle_active": runup_throttle_active,
                     "drawdown_throttle_active": drawdown_throttle_active,
                     "risk_guard_active": risk_guard_active,
+                    "daily_loss_guard_active": daily_loss_guard_active,
                     "minimum_required_stake": minimum_required_stake,
                     "share_count": share_count,
                     "profit_loss_amount": profit_loss_amount,
@@ -828,6 +885,7 @@ def simulate_trade_portfolio(
         "portfolio_drawdown_throttle_threshold_pct": resolved_drawdown_throttle_threshold_pct,
         "portfolio_drawdown_throttle_fraction_scale": resolved_drawdown_throttle_fraction_scale,
         "portfolio_drawdown_new_entry_stop_pct": resolved_drawdown_new_entry_stop_pct,
+        "portfolio_daily_loss_new_entry_stop_pct": resolved_daily_loss_new_entry_stop_pct,
         "max_concurrent_positions_observed": max_concurrent_positions_observed,
         "avg_executed_trade_return_with_slippage": (
             sum(executed_trade_returns) / len(executed_trade_returns) if executed_trade_returns else None
@@ -838,6 +896,7 @@ def simulate_trade_portfolio(
         "first_entry_at": _serialise_scalar(limited["entry_at"].min()) if not limited.empty else None,
         "last_exit_at": _serialise_scalar(limited["exit_at"].max()) if not limited.empty else None,
         "skipped_risk_guard_count": skipped_risk_guard_count,
+        "skipped_daily_loss_guard_count": skipped_daily_loss_guard_count,
     }
     return summary, pd.DataFrame(step_rows, columns=PORTFOLIO_STEP_COLUMNS)
 

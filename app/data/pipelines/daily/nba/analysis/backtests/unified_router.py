@@ -105,12 +105,19 @@ def resolve_unified_router_game_selection(
     llm_decision: dict[str, Any] | None,
     weak_confidence_threshold: float,
     llm_accept_confidence: float,
+    llm_review_min_confidence: float | None = None,
     skip_weak_when_llm_empty: bool = False,
     skip_weak_when_llm_low_confidence: bool = False,
+    skip_below_review_min_confidence: bool = False,
 ) -> dict[str, Any]:
     default_confidence = _safe_float(deterministic_decision.get("selected_confidence"))
     default_has_core = bool(deterministic_decision.get("selected_core_family"))
     default_is_weak = (not default_has_core) or default_confidence is None or default_confidence < float(weak_confidence_threshold)
+    below_review_band = (
+        default_is_weak
+        and llm_review_min_confidence is not None
+        and (default_confidence is None or default_confidence < float(llm_review_min_confidence))
+    )
 
     if not default_is_weak:
         return {
@@ -118,6 +125,14 @@ def resolve_unified_router_game_selection(
             "llm_evaluated_flag": False,
             "final_source": "deterministic_default",
             "final_selection_reason": "deterministic_confident",
+        }
+
+    if below_review_band and skip_below_review_min_confidence:
+        return {
+            "default_is_weak_flag": True,
+            "llm_evaluated_flag": False,
+            "final_source": "skip_weak_game",
+            "final_selection_reason": "weak_default_below_review_band",
         }
 
     llm_selected_count = int(llm_decision.get("selected_candidate_count") or 0) if llm_decision else 0
@@ -189,8 +204,10 @@ def build_unified_router_trade_frame(
     min_core_confidence_for_extras: float = 0.60,
     weak_confidence_threshold: float = 0.60,
     llm_accept_confidence: float = 0.60,
+    llm_review_min_confidence: float | None = None,
     skip_weak_when_llm_empty: bool = False,
     skip_weak_when_llm_low_confidence: bool = False,
+    skip_below_review_min_confidence: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     deterministic_trades_df, deterministic_decisions_df = build_master_router_trade_frame(
         sample_result,
@@ -218,9 +235,18 @@ def build_unified_router_trade_frame(
             llm_decision=None,
             weak_confidence_threshold=weak_confidence_threshold,
             llm_accept_confidence=llm_accept_confidence,
+            llm_review_min_confidence=llm_review_min_confidence,
             skip_weak_when_llm_empty=skip_weak_when_llm_empty,
             skip_weak_when_llm_low_confidence=skip_weak_when_llm_low_confidence,
+            skip_below_review_min_confidence=skip_below_review_min_confidence,
         )["default_is_weak_flag"]
+        and not (
+            llm_review_min_confidence is not None
+            and (
+                _safe_float((deterministic_decision_lookup.get(game_id) or {}).get("selected_confidence")) is None
+                or _safe_float((deterministic_decision_lookup.get(game_id) or {}).get("selected_confidence")) < float(llm_review_min_confidence)
+            )
+        )
     ]
 
     llm_trades_df = pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS)
@@ -272,8 +298,10 @@ def build_unified_router_trade_frame(
             llm_decision=llm_decision,
             weak_confidence_threshold=weak_confidence_threshold,
             llm_accept_confidence=llm_accept_confidence,
+            llm_review_min_confidence=llm_review_min_confidence,
             skip_weak_when_llm_empty=skip_weak_when_llm_empty,
             skip_weak_when_llm_low_confidence=skip_weak_when_llm_low_confidence,
+            skip_below_review_min_confidence=skip_below_review_min_confidence,
         )
 
         final_source = str(resolution["final_source"])

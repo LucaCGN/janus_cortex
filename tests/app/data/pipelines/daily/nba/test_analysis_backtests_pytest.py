@@ -1153,6 +1153,73 @@ def test_trade_portfolio_risk_controls_throttle_after_runup_and_stop_on_drawdown
     assert float(steps_df.iloc[2]["drawdown_pct_before_batch"]) == pytest.approx(0.25)
 
 
+def test_trade_portfolio_applies_position_overrides_and_daily_loss_guard() -> None:
+    trades_df = pd.DataFrame(
+        [
+            {
+                "game_id": "G1",
+                "team_side": "home",
+                "team_slug": "BOS",
+                "opponent_team_slug": "LAL",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 20, 5, tzinfo=timezone.utc),
+                "entry_price": 0.50,
+                "exit_price": 0.40,
+                "gross_return_with_slippage": -0.20,
+                "signal_strength": 0.7,
+                "position_fraction_scale_override": 0.50,
+                "position_fraction_cap_override": 0.30,
+            },
+            {
+                "game_id": "G2",
+                "team_side": "home",
+                "team_slug": "NYK",
+                "opponent_team_slug": "MIA",
+                "entry_state_index": 1,
+                "exit_state_index": 2,
+                "entry_at": datetime(2026, 2, 22, 21, 0, tzinfo=timezone.utc),
+                "exit_at": datetime(2026, 2, 22, 21, 5, tzinfo=timezone.utc),
+                "entry_price": 0.50,
+                "exit_price": 0.55,
+                "gross_return_with_slippage": 0.10,
+                "signal_strength": 0.6,
+                "position_fraction_scale_override": 1.00,
+                "position_fraction_cap_override": 0.30,
+            },
+        ]
+    )
+
+    summary, steps_df = simulate_trade_portfolio(
+        trades_df,
+        sample_name="full_sample",
+        strategy_family="controller_vnext_unified_v1",
+        initial_bankroll=10.0,
+        position_size_fraction=0.20,
+        game_limit=2,
+        min_order_dollars=1.0,
+        min_shares=5.0,
+        max_concurrent_positions=2,
+        concurrency_mode="shared_cash_equal_split",
+        sizing_mode="dynamic_concurrent_games",
+        target_exposure_fraction=0.80,
+        daily_loss_new_entry_stop_pct=0.05,
+        random_slippage_max_cents=0,
+        random_slippage_seed=20260422,
+    )
+
+    assert summary["executed_trade_count"] == 1
+    assert summary["skipped_daily_loss_guard_count"] == 1
+    assert float(steps_df.iloc[0]["target_position_fraction"]) == pytest.approx(0.30)
+    assert float(steps_df.iloc[0]["effective_position_fraction"]) == pytest.approx(0.30)
+    assert float(steps_df.iloc[0]["stake_amount"]) == pytest.approx(3.0)
+    assert list(steps_df["portfolio_action"]) == ["executed", "skipped"]
+    assert list(steps_df["skip_reason"]) == [None, "daily_loss_guard"]
+    assert bool(steps_df.iloc[1]["daily_loss_guard_active"]) is True
+    assert float(steps_df.iloc[1]["daily_loss_pct_before_batch"]) == pytest.approx(0.06)
+
+
 def test_combined_portfolio_lane_merges_keep_families_with_source_tracking() -> None:
     inversion_trades_df = pd.DataFrame(
         [
@@ -2139,3 +2206,14 @@ def test_unified_router_selection_prefers_default_then_llm_then_skip() -> None:
     )
     assert weak_skip["final_source"] == "skip_weak_game"
     assert weak_skip["final_selection_reason"] == "weak_default_llm_skip"
+
+    below_review_band = resolve_unified_router_game_selection(
+        deterministic_decision={"selected_core_family": "winner_definition", "selected_confidence": 0.41},
+        llm_decision=None,
+        weak_confidence_threshold=0.64,
+        llm_accept_confidence=0.60,
+        llm_review_min_confidence=0.46,
+        skip_below_review_min_confidence=True,
+    )
+    assert below_review_band["final_source"] == "skip_weak_game"
+    assert below_review_band["final_selection_reason"] == "weak_default_below_review_band"

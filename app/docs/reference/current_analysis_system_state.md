@@ -3,6 +3,15 @@
 ## Snapshot Date
 - `2026-04-22`
 
+## Current Playoff-Tuned Controller
+- primary live candidate: `controller_vnext_unified_v1 :: balanced`
+- deterministic fallback: `controller_vnext_deterministic_v1 :: tight`
+- current reference: [controller_vnext_final_tuning.md](C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\app\docs\reference\controller_vnext_final_tuning.md)
+
+Interpretation:
+- the older finalist controllers still have higher raw postseason upside
+- the new vNext tuned controllers are materially smoother and are now the preferred candidates for actual playoff deployment
+
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
 - benchmark contract: `v11`
@@ -32,6 +41,7 @@ Completed release wave:
 - `v1.4.4` master-router baseline and expanded family research
 - `v1.4.5` LLM router benchmarking and finalist dashboard
 - `v1.4.6` postseason event coverage, exact game-event linking, adverse slippage contract, and final 4-option showdown
+- `v1.4.7` controller-vNext playoff tuning, uncertainty-band LLM review, stop overlays, and family-aware sizing
 
 ## Current CLI Surface
 - `build_analysis_mart`
