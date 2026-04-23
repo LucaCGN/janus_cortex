@@ -10,7 +10,7 @@
     runId: DEFAULT_RUN_ID,
     pollMs: DEFAULT_POLL_MS,
     connected: false,
-    demo: true,
+    demo: false,
     timer: null,
     data: null,
     lastError: '',
@@ -237,6 +237,39 @@
         { label: 'Median delay', value: 8, suffix: 's' },
         { label: 'Stop hits', value: 1, suffix: '' },
       ],
+    };
+  }
+
+  function emptyData() {
+    return {
+      run: {
+        run_id: state.runId,
+        status: 'idle',
+        controller: 'controller_vnext_unified_v1 :: balanced',
+        fallback: 'controller_vnext_deterministic_v1 :: tight',
+        active_games: 0,
+        open_orders: 0,
+        open_positions: 0,
+        current_bankroll: null,
+        starting_bankroll: null,
+        drawdown_pct: null,
+        drawdown_amount: null,
+        last_heartbeat_at: null,
+        last_successful_cycle_at: null,
+        last_cycle_started_at: null,
+        last_cycle_completed_at: null,
+        last_cycle_duration_seconds: null,
+        cycle_count: 0,
+        last_error: null,
+        last_traceback: null,
+        run_root: null,
+        log_paths: null,
+      },
+      games: [],
+      positions: [],
+      orders: [],
+      events: [],
+      fills: [],
     };
   }
 
@@ -546,7 +579,7 @@
     } catch (error) {
       state.lastError = error.message;
       setStatus(`Polling issue: ${error.message}`, true);
-      renderAll(demoData());
+      renderAll(state.data || emptyData());
     } finally {
       if (state.timer) clearTimeout(state.timer);
       state.timer = setTimeout(tick, state.pollMs);
@@ -563,7 +596,7 @@
     setControlButtons(true);
     setHeaderState(true, demo);
     setStatus(demo ? 'Demo mode active.' : `Polling ${state.runId} at ${state.apiRoot}`);
-    renderAll(demo ? demoData() : (state.data || demoData()));
+    renderAll(demo ? demoData() : (state.data || emptyData()));
     if (state.timer) clearTimeout(state.timer);
     state.timer = setTimeout(tick, 0);
   }
@@ -626,11 +659,19 @@
   }
 
   function finishSetup() {
+    const params = new URLSearchParams(window.location.search);
     initFormDefaults();
     bindActions();
     setControlButtons(false);
-    setHeaderState(false, true);
-    renderAll(demoData());
+    setHeaderState(false, false);
+    renderAll(emptyData());
+    if (params.get('demo') === '1') {
+      connect(true);
+      return;
+    }
+    if (params.get('runId') || params.get('run_id') || q('run-id').value.trim()) {
+      connect(false);
+    }
   }
 
   bootShell();
