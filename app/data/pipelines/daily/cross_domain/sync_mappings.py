@@ -8,6 +8,7 @@ from typing import Any
 
 from psycopg2.extras import Json
 
+from app.data.databases.seed_packs.polymarket_event_seed_pack import EventProbeConfig, run_polymarket_event_seed_pack
 from app.data.databases.postgres import managed_connection
 from app.data.databases.repositories import JanusUpsertRepository
 
@@ -24,6 +25,7 @@ class MappingSyncSummary:
     games_considered: int
     links_written: int
     events_scored: int
+    missing_slugs_seeded: int = 0
     error_text: str | None = None
 
 
@@ -90,6 +92,47 @@ def _build_expected_slug(*, away_slug: str | None, home_slug: str | None, game_d
     return f"nba-{away}-{home}-{date_text}"
 
 
+def _build_nba_event_url(slug: str) -> str:
+    return f"https://polymarket.com/sports/nba/{slug}"
+
+
+def _fetch_event_ids_by_slug(connection: Any, *, slugs: list[str]) -> dict[str, str]:
+    if not slugs:
+        return {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT canonical_slug, event_id
+            FROM catalog.events
+            WHERE canonical_slug = ANY(%s);
+            """,
+            (slugs,),
+        )
+        rows = cursor.fetchall()
+    return {str(canonical_slug): str(event_id) for canonical_slug, event_id in rows}
+
+
+def _seed_missing_nba_event_slugs(*, slugs: list[str]) -> int:
+    if not slugs:
+        return 0
+    probes = [
+        EventProbeConfig(
+            step_code=f"mapping_seed_{slug}",
+            url=_build_nba_event_url(slug),
+            event_type_code="sports_nba_game",
+            history_mode="rolling_recent",
+            history_market_selector="moneyline",
+            history_interval="1m",
+            history_fidelity=10,
+            recent_lookback_days=2,
+            allow_snapshot_fallback=True,
+        )
+        for slug in slugs
+    ]
+    summary = run_polymarket_event_seed_pack(probes, persist=True)
+    return sum(1 for result in summary.results if result.status == "ok" and result.canonical_event_id)
+
+
 def _compute_event_score_fields(
     *,
     market_count: int,
@@ -137,6 +180,7 @@ def run_cross_domain_mapping_sync(*, lookback_days: int = 3, lookahead_days: int
     links_written = 0
     events_scored = 0
     games_considered = 0
+    missing_slugs_seeded = 0
     now = datetime.now(timezone.utc)
 
     with managed_connection() as connection:
@@ -182,33 +226,35 @@ def run_cross_domain_mapping_sync(*, lookback_days: int = 3, lookahead_days: int
             games_considered = len(games)
             rows_read += games_considered
 
+            game_rows: list[tuple[str, str]] = []
+            expected_slugs: list[str] = []
+            for game_id, game_date, away_slug, home_slug in games:
+                expected_slug = _build_expected_slug(
+                    away_slug=away_slug,
+                    home_slug=home_slug,
+                    game_date=game_date,
+                )
+                if not expected_slug:
+                    continue
+                game_rows.append((str(game_id), expected_slug))
+                expected_slugs.append(expected_slug)
+
+            existing_events_by_slug = _fetch_event_ids_by_slug(connection, slugs=expected_slugs)
+            missing_slugs = sorted({slug for slug in expected_slugs if slug not in existing_events_by_slug})
+            if missing_slugs:
+                missing_slugs_seeded = _seed_missing_nba_event_slugs(slugs=missing_slugs)
+                existing_events_by_slug = _fetch_event_ids_by_slug(connection, slugs=expected_slugs)
+
             linked_event_ids: set[str] = set()
             with connection.cursor() as cursor:
-                for game_id, game_date, away_slug, home_slug in games:
-                    expected_slug = _build_expected_slug(
-                        away_slug=away_slug,
-                        home_slug=home_slug,
-                        game_date=game_date,
-                    )
-                    if not expected_slug:
+                for game_id, expected_slug in game_rows:
+                    event_id = existing_events_by_slug.get(expected_slug)
+                    if not event_id:
                         continue
-                    cursor.execute(
-                        """
-                        SELECT event_id
-                        FROM catalog.events
-                        WHERE canonical_slug = %s
-                        LIMIT 1;
-                        """,
-                        (expected_slug,),
-                    )
-                    row = cursor.fetchone()
-                    if not row:
-                        continue
-                    event_id = str(row[0])
                     linked_event_ids.add(event_id)
                     link_id = repo.upsert_nba_game_event_link(
-                        nba_game_event_link_id=_uuid_for("nba_game_event_link", str(game_id), event_id),
-                        game_id=str(game_id),
+                        nba_game_event_link_id=_uuid_for("nba_game_event_link", game_id, event_id),
+                        game_id=game_id,
                         event_id=event_id,
                         confidence=1.0,
                         linked_by="slug_exact",
@@ -320,6 +366,7 @@ def run_cross_domain_mapping_sync(*, lookback_days: int = 3, lookahead_days: int
                 games_considered=games_considered,
                 links_written=links_written,
                 events_scored=events_scored,
+                missing_slugs_seeded=missing_slugs_seeded,
             )
         except Exception as exc:  # noqa: BLE001
             connection.rollback()
@@ -340,6 +387,7 @@ def run_cross_domain_mapping_sync(*, lookback_days: int = 3, lookahead_days: int
                 games_considered=games_considered,
                 links_written=links_written,
                 events_scored=events_scored,
+                missing_slugs_seeded=missing_slugs_seeded,
                 error_text=repr(exc),
             )
 
@@ -366,6 +414,7 @@ def main() -> int:
                 f"games_considered={summary.games_considered}",
                 f"links_written={summary.links_written}",
                 f"events_scored={summary.events_scored}",
+                f"missing_slugs_seeded={summary.missing_slugs_seeded}",
             ]
         )
     )
