@@ -50,18 +50,22 @@
 - `codex/frontend-analysis-comparison`
 
 ## Current Dependency Ladder
-1. `codex/analysis-sequential-portfolio-benchmarking`
-   - rerun each strategy family under a linear bankroll path and freeze the surviving candidates
-2. `codex/season-playoffs-preseason`
-   - prepare season-scope structures for play-in, playoffs, and preseason
-3. `codex/season-wnba-bootstrap`
+1. `codex/live-polymarket-executor`
+   - wire the locked controller pair into a paper/live-safe execution shell
+2. `codex/controller-decision-logging`
+   - append every candidate, route, fill, and outcome into an ML-ready contract
+3. `codex/frontend-analysis-portfolio-viz`
+   - review only the locked controller pair, route mix, and paper/live diagnostics
+4. `codex/season-playoffs-preseason`
+   - keep season-scope structures current for the remaining playoffs and preseason
+5. `codex/season-wnba-bootstrap`
    - prepare WNBA carry-over and offseason continuity work
 
 Detailed subphase plans live under:
 - [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 
 ## Branch Launch Guidance
-- do not launch sequential portfolio benchmarking before the sampling benchmark contract is stable on `main`
-- do not let sequential bankroll accounting change the underlying strategy-family math without a separate branch and explicit doc update
-- do not launch season-expansion branches before dev-db safety and validation hardening are in place
-- do not launch new strategy-refinement branches before the current offline stack has a clean validation report
+- do not launch executor work before the locked controller state is merged to clean `main`
+- do not widen the controller family set again before live or paper execution feedback exists
+- do not let decision logging and executor placement logic share the same write-heavy branch unless strictly necessary
+- do not launch season-expansion branches before executor contracts and logging fields are frozen

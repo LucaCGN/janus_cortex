@@ -1,21 +1,21 @@
 # Current Analysis System State
 
 ## Snapshot Date
-- `2026-04-22`
+- `2026-04-23`
 
-## Current Playoff-Tuned Controller
+## Locked Controllers
 - primary live candidate: `controller_vnext_unified_v1 :: balanced`
 - deterministic fallback: `controller_vnext_deterministic_v1 :: tight`
-- current reference: [controller_vnext_final_tuning.md](C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\app\docs\reference\controller_vnext_final_tuning.md)
+- controller tuning reference: [controller_vnext_final_tuning.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/controller_vnext_final_tuning.md)
 
 Interpretation:
-- the older finalist controllers still have higher raw postseason upside
-- the new vNext tuned controllers are materially smoother and are now the preferred candidates for actual playoff deployment
+- the controller stack is now locked for the NBA playoff live-execution phase
+- controller discovery is no longer the active priority
+- the next engineering lane is executor wiring, decision logging, and paper/live validation
 
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
-- benchmark contract: `v11`
-- status: regular-season corpus validated, postseason coverage wired end to end, and final 4-option adverse-execution showdown completed
+- status: regular-season corpus validated, postseason corpus validated, controller-vNext tuning completed, full-season lock check completed
 
 Completed implementation wave:
 - `A0` contracts and package split
@@ -39,15 +39,10 @@ Completed release wave:
 - `v1.4.2` refined underdog continuation and first routing lane
 - `v1.4.3` realistic execution replay and quarter-specific sleeves
 - `v1.4.4` master-router baseline and expanded family research
-- `v1.4.5` LLM router benchmarking and finalist dashboard
-- `v1.4.6` postseason event coverage, exact game-event linking, adverse slippage contract, and final 4-option showdown
+- `v1.4.5` restrained LLM router benchmark and finalist dashboard
+- `v1.4.6` postseason event coverage, exact game-event linking, and adverse slippage contract
 - `v1.4.7` controller-vNext playoff tuning, uncertainty-band LLM review, stop overlays, and family-aware sizing
-
-## Current CLI Surface
-- `build_analysis_mart`
-- `build_analysis_report`
-- `run_analysis_backtests`
-- `train_analysis_baselines`
+- `v1.4.8` full regular-season lock check for the locked controller pair
 
 ## Corpus Snapshot
 ### Regular Season
@@ -70,15 +65,15 @@ Completed release wave:
   - combined=`23,118`
 
 ## Frozen Underlying Strategy Stack
-These are the kept underlying methods that still compose the deterministic controller:
+These are the kept underlying methods that still compose the locked controllers.
 
 ### Core Families
 - `winner_definition`
-  - rule: reach `80c`, break back through `75c` or `76c`, otherwise hold to end
+  - continuation / winner-likely core
 - `inversion`
-  - rule: dynamic underdog continuation through the `45c/50c` reclaim line with exit below `49c`
+  - underdog reclaim / reclassification core
 - `underdog_liftoff`
-  - rule: sub-`42c` openers, rebound through `36c`, exit at `50c` or `-3c`
+  - underdog continuation / rebound core
 
 ### Independent Sleeves
 - `q1_repricing`
@@ -86,102 +81,83 @@ These are the kept underlying methods that still compose the deterministic contr
 - `q4_clutch`
   - late close-game continuation after repeated lead changes
 
-## Final Compared Options
-The repo is now frozen around these four externally compared options:
-- `winner_definition`
-- `master_strategy_router_v1`
-- `gpt-5.4 :: llm_hybrid_freedom_compact_v1`
-- `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1`
-
-Interpretation:
-- `winner_definition` is the definitive single-family reference
-- `master_strategy_router_v1` is the definitive deterministic controller reference
-- the two LLM freedom lanes are the final bounded controller variants that remain worth comparing against the deterministic router
-
-## Current Execution Contract
+## Locked Controller Contract
 - initial bankroll: `$10.00`
-- position size fraction: `20%`
+- base position fraction floor: `20%`
+- target exposure fraction: `80%`
 - max concurrent positions: `5`
 - concurrency mode: `shared_cash_equal_split`
-- min order: `$1.00`
-- min shares: `5`
+- sizing mode: `dynamic_concurrent_games`
+- minimum order: `$1.00`
+- minimum shares: `5`
 - deterministic slippage: `0c`
-- random adverse slippage: `0-20c`
-- random slippage seed: `20260422`
+- random adverse slippage: `0-5c`
+- primary stop overlay:
+  - `winner_definition` `5c` below entry
 
-This contract is intentionally hostile and is now the current truth for controller hardening work.
+## Locked Controller Read
+### Postseason Reference
+On the fixed `20`-game postseason slice across slippage seeds `20260422` through `20260427`:
 
-## Final Postseason Validation Result
-On the fixed chronological `20`-game postseason slice:
+- `controller_vnext_unified_v1 :: balanced`
+  - mean ending bankroll: `$13.84`
+  - median ending bankroll: `$13.81`
+  - mean max drawdown: `22.38%` / `$2.24`
+  - mean minimum bankroll: `$7.76`
 
-| Option | Ending Bankroll | Compounded Return | Max Drawdown | Trades | Avg Trade Return | LLM Cost |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `master_strategy_router_v1` | `$3.97` | `-60.25%` | `60.25%` | `11` | `-17.50%` | `$0.0000` |
-| `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1` | `$3.71` | `-62.87%` | `67.78%` | `19` | `-9.77%` | `$0.0206` |
-| `gpt-5.4 :: llm_hybrid_freedom_compact_v1` | `$3.62` | `-63.77%` | `63.77%` | `21` | `-8.18%` | `$0.0622` |
-| `winner_definition` | `$2.68` | `-73.21%` | `73.21%` | `9` | `-20.15%` | `$0.0000` |
+- `controller_vnext_deterministic_v1 :: tight`
+  - mean ending bankroll: `$14.35`
+  - median ending bankroll: `$14.33`
+  - mean max drawdown: `29.39%` / `$4.43`
+  - mean minimum bankroll: `$7.92`
 
-## Current Controller Read
-Deterministic router mix on the validated postseason slice:
-- `winner_definition`: `17`
-- `underdog_liftoff`: `2`
-- `inversion`: `1`
-- triggered `q4_clutch`: `2`
+Interpretation:
+- the primary controller is the best postseason tradeoff candidate
+- the deterministic fallback is slightly stronger on raw postseason ending bankroll, but rougher than the primary controller
 
-LLM freedom mix:
-- `gpt-5.4`
-  - `winner_definition`: `18`
-  - `underdog_liftoff`: `3`
-  - `q4_clutch`: `2`
-  - `inversion`: `1`
-- `gpt-5.4-mini`
-  - `winner_definition`: `18`
-  - `underdog_liftoff`: `3`
-  - `inversion`: `2`
-  - `q4_clutch`: `2`
+### Full Regular-Season Lock Check
+On the full all-games regular-season replay over the `1198` research-ready games, across the same `6` slippage seeds:
 
-Current interpretation:
-- the postseason slice is substantially harder than the regular-season growth runs
-- all four finalist options lose money under the `v11` adverse-execution contract
-- `master_strategy_router_v1` preserves bankroll best
-- the LLM freedom lanes do not justify promotion over the deterministic router under this contract
-- LLM value should now be treated as a selective review or override path, not as the default controller
+- `controller_vnext_unified_v1 :: balanced`
+  - median ending bankroll: `$469,835.30`
+  - mean ending bankroll: `$463,984.42`
+  - range: `$382,670.48` to `$542,845.91`
+  - mean max drawdown: `70.41%` / `$225,232.21`
+  - mean minimum bankroll: `$4.08`
+  - entered about `925` games
 
-## Archived Or Demoted Methods
-These are not part of the active stack anymore:
-- `favorite_panic_fade_v1`
-- `halftime_q3_repricing_v1`
-- `comeback_reversion_v2`
-- `model_residual_dislocation_v1`
-- `reversion`
-- `comeback_reversion`
-- `volatility_scalp`
-- `statistical_routing_v1`
-- `combined_keep_families`
+- `controller_vnext_deterministic_v1 :: tight`
+  - median ending bankroll: `$68,486.79`
+  - mean ending bankroll: `$70,940.38`
+  - range: `$63,066.40` to `$85,241.79`
+  - mean max drawdown: `71.09%` / `$29,438.87`
+  - mean minimum bankroll: `$3.59`
+  - entered about `1193` games
 
-They remain useful as historical research context only.
+Interpretation:
+- postseason tuning did not break the regular-season controller
+- the primary controller remains strongly profitable on the full regular-season corpus
+- the primary controller trades less often and remains materially less explosive than the older unified finalist, which is consistent with the intended lock behavior
 
-## Validation Snapshot
-Validated on `2026-04-22`:
+## Active Validation Commands
+Validated on `2026-04-23`:
 - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
-- `python -m app.data.pipelines.daily.nba.sync_postgres --season 2025-26 --schedule-window-days 20 --skip-live-snapshots --skip-play-by-play`
-- `python -m app.data.pipelines.daily.cross_domain.sync_mappings --lookback-days 14 --lookahead-days 0`
-- `python -m app.data.pipelines.daily.nba.analysis_module build_analysis_mart --season 2025-26 --season-phase play_in --analysis-version v1_0_1 --rebuild`
-- `python -m app.data.pipelines.daily.nba.analysis_module build_analysis_mart --season 2025-26 --season-phase playoffs --analysis-version v1_0_1 --rebuild`
-- `python -m app.data.pipelines.daily.nba.analysis_module run_analysis_backtests --season 2025-26 --season-phase postseason_final_20 --season-phases play_in,playoffs --analysis-version v1_0_1 --portfolio-initial-bankroll 10 --portfolio-position-size-fraction 0.2 --portfolio-game-limit 20 --portfolio-min-order-dollars 1 --portfolio-min-shares 5 --portfolio-max-concurrent-positions 5 --portfolio-concurrency-mode shared_cash_equal_split --portfolio-random-slippage-max-cents 20 --portfolio-random-slippage-seed 20260422 --slippage-cents 0 --llm-compare-models gpt-5.4,gpt-5.4-mini`
+- `python tools/controller_vnext_analysis.py --season 2025-26 --analysis-version v1_0_1 --llm-model gpt-5.4 --llm-budget-usd 10.0`
+- full regular-season lock check replay written under:
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games`
 
 ## Current Frontend Surface
 - the studio remains read-only
-- it should now be tuned around the frozen final-option comparison and review queue, not around broad family-lab exploration
+- it should now be tuned around the locked primary controller, the deterministic fallback, and their internal route / sleeve diagnostics
 
 ## Current Next Branches
-- `codex/analysis-routing-allocation`
-  - retargeted to controller hardening under the `v11` contract
-- `codex/analysis-context-models`
-  - payout policy and context models around the frozen controller
+- `codex/live-polymarket-executor`
+  - primary branch to wire the locked controller into paper / live-safe execution
+- `codex/controller-decision-logging`
+  - append-only decision log, executor outcomes, and ML-ready candidate dataset
 - `codex/frontend-analysis-portfolio-viz`
-  - final review dashboard for the four compared options and their internal route mix
+  - focused review dashboard for the locked controller pair
 
 ## Output Root Convention
 - repo outputs remain read-only snapshots
-- branch-independent artifacts and quicklook material still belong under `C:\code-personal\janus-local\janus_cortex`
+- branch-independent artifacts and quicklook material belong under `C:\code-personal\janus-local\janus_cortex`

@@ -3,19 +3,26 @@
 Personal prediction-market data framework focused on production-grade data structures, ingestion pipelines, and service layers before strategy automation.
 
 ## Current Status
-- Active analysis baseline: `v1_0_1` with benchmark contract `v11`
+- Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
 - Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
-- Current priority: harden the offline NBA controller stack under adverse execution assumptions before any live automation.
-- Current scope: safe DB validation, research-only backtesting, controller comparison, and read-only consumers.
-- Current NBA analysis snapshot on `2026-04-22`:
+- Current priority: move the locked NBA controller from backtest into live-safe Polymarket execution and decision logging.
+- Current scope: locked controller validation, execution integration, live-paper review, and read-only consumers.
+- Current NBA analysis snapshot on `2026-04-23`:
   - regular-season research-ready corpus: `1198 / 1224`
   - postseason validation corpus: `20` games (`6` play-in + `14` playoffs), all research-ready
-  - postseason state-panel rows: `23,118`
-  - final evaluated options under the adverse postseason contract:
-    - `winner_definition`
-    - `master_strategy_router_v1`
-    - `gpt-5.4 :: llm_hybrid_freedom_compact_v1`
-    - `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1`
+  - locked primary controller: `controller_vnext_unified_v1 :: balanced`
+  - locked no-LLM fallback: `controller_vnext_deterministic_v1 :: tight`
+  - hostile replay contract:
+    - target exposure `80%`
+    - base floor `20%`
+    - max concurrent positions `5`
+    - random adverse slippage `0-5c`
+  - full regular-season lock check:
+    - primary controller median end bankroll: `$469,835.30`
+    - deterministic fallback median end bankroll: `$68,486.79`
+  - postseason reference:
+    - primary controller median end bankroll: `$13.81`
+    - deterministic fallback median end bankroll: `$14.33`
 
 ## Scope Definitions
 - `v0.8.*`: NBA regular-season data completion for 2025/26.
@@ -50,18 +57,19 @@ The project uses a provider/category/module split:
 
 ### In progress
 - `v0.8.1` to `v0.8.8`: regular-season feature persistence, bounded backfills, coverage auditing, serving routes, replayable refreshes, rollups, and QA are largely complete
-- `v1.4.6`: postseason data coverage, adverse execution replay, and final 4-option showdown are now merged into the active analysis state
+- `v1.4.6` to `v1.4.7`: postseason coverage, adverse execution replay, and controller-vNext hardening are merged into the active analysis state
 
 ### Planned lanes
-1. `v1.5.0` controller hardening under the `v11` adverse-execution contract
-2. `v1.5.1` context and payout-policy models around the frozen controller
-3. `v1.5.2` focused read-only review UI for the final controller and LLM override lane
+1. `v1.5.0` live Polymarket executor for the locked controller pair
+2. `v1.5.1` decision logging and ML-ready candidate dataset contract
+3. `v1.5.2` focused read-only review UI for the locked controller and fallback
 4. `v1.5.x` season continuity work for the remaining playoffs/preseason path and WNBA bootstrap
 5. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
 
 ## Key Planning Docs
 - `app/docs/reference/README.md`
 - `app/docs/reference/current_analysis_system_state.md`
+- `app/docs/reference/controller_vnext_final_tuning.md`
 - `app/docs/reference/postseason_final_20_validation.md`
 - `app/docs/planning/README.md`
 - `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`

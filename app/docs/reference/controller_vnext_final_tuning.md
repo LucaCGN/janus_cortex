@@ -116,8 +116,37 @@ For the next live playoff phase:
    - stop-overlay trigger
    - final stake fraction
 
+## Full Regular-Season Lock Check
+Before locking the controller pair, both kept candidates were replayed across the full all-games `2025-26` regular-season corpus under the same contract and the same slippage seed set.
+
+### Primary controller
+- `controller_vnext_unified_v1 :: balanced`
+  - median ending bankroll: `$469,835.30`
+  - mean ending bankroll: `$463,984.42`
+  - range: `$382,670.48` to `$542,845.91`
+  - mean max drawdown: `70.41%` / `$225,232.21`
+  - mean minimum bankroll: `$4.08`
+  - entered about `925` games
+
+### Deterministic fallback
+- `controller_vnext_deterministic_v1 :: tight`
+  - median ending bankroll: `$68,486.79`
+  - mean ending bankroll: `$70,940.38`
+  - range: `$63,066.40` to `$85,241.79`
+  - mean max drawdown: `71.09%` / `$29,438.87`
+  - mean minimum bankroll: `$3.59`
+  - entered about `1193` games
+
+Interpretation:
+- the primary controller remained strongly profitable on the full regular season
+- the lock decision is not just a postseason slice overfit
+- the primary controller is now frozen for live execution work, with the deterministic tight controller kept as the explicit fallback
+
 ## Artifacts
 - local report: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_report.md`
 - regular summary: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_regular_summary.csv`
 - postseason summary: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_postseason_summary.csv`
 - overall ranking: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_overall_summary.csv`
+- full regular-season lock check:
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games\regular_full_season_all_games_report.md`
+  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games\regular_full_season_all_games_summary.csv`

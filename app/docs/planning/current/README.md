@@ -1,16 +1,16 @@
 # Current Planning
 
 ## Active Program Categories
-- deterministic routing and allocation on top of the promoted keep families
-- context-model baselines for the promoted families
-- read-only portfolio visualization after routing freezes
+- live execution integration for the locked NBA playoff controller
+- decision logging and ML-ready dataset contracts around the locked controller
+- read-only portfolio and route review for the locked controller pair
 - season-continuity preparation for playoffs, preseason, and WNBA
 
 ## Current Planning Order
-1. freeze the deterministic routed or priority portfolio baseline
-2. measure overlap cost and blocked-trade pressure
-3. train context models against that deterministic control
-4. surface the resulting portfolio and robustness outputs in read-only tooling
+1. freeze the locked controller pair on `main`
+2. wire the primary controller into a paper/live-safe Polymarket executor
+3. log every candidate, route, skip, fill, and outcome into an ML-ready contract
+4. surface the resulting live-review outputs in read-only tooling
 5. keep season-continuity work isolated as a secondary lane
 
 ## Canonical Current Planning Files

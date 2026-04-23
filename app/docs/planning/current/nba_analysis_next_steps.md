@@ -1,11 +1,11 @@
 # NBA Analysis Next Steps
 
 ## End Goal
-Turn the current offline NBA analysis stack into a repeatable trading-research system that can:
-- validate research-ready games deterministically
-- replay a small final option set under realistic execution friction
-- compare deterministic routing with bounded LLM-assisted routing
-- expose only the high-signal artifacts needed to tune controller quality
+Turn the locked NBA controller into the first live-safe Polymarket execution module with:
+- one primary controller
+- one no-LLM fallback
+- append-only decision and execution logs
+- a read-only review surface for route / sleeve diagnostics
 
 Detailed milestone and branch decomposition lives in:
 - [roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
@@ -13,23 +13,27 @@ Detailed milestone and branch decomposition lives in:
 
 ## What Is Already Done
 - `A0-A7` implementation wave completed
-- release wave completed through `v1.5.0`
-- postseason validation corpus fixed and loaded:
+- controller-vNext playoff tuning completed
+- locked primary controller:
+  - `controller_vnext_unified_v1 :: balanced`
+- locked deterministic fallback:
+  - `controller_vnext_deterministic_v1 :: tight`
+- full regular-season all-games lock check completed
+- fixed postseason validation corpus completed:
   - `6` play-in games
   - `14` playoff games
-- Polymarket event history linked for the full postseason-final-20 corpus
-- play-by-play loaded for the full postseason-final-20 corpus
-- hostile-execution benchmark contract frozen as `v11`
+- Polymarket event history linked for the full postseason corpus
+- play-by-play loaded for the full postseason corpus
 
 ## Frozen Current State
 
-### Final Compared Options
-- `winner_definition`
-- `master_strategy_router_v1`
-- `gpt-5.4 :: llm_hybrid_freedom_compact_v1`
-- `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1`
+### Locked Controllers
+- primary:
+  - `controller_vnext_unified_v1 :: balanced`
+- fallback:
+  - `controller_vnext_deterministic_v1 :: tight`
 
-### Underlying Controller Family Set
+### Underlying Family Set
 - routed core:
   - `winner_definition`
   - `inversion`
@@ -38,71 +42,90 @@ Detailed milestone and branch decomposition lives in:
   - `q1_repricing`
   - `q4_clutch`
 
-### Current Replay Contract
+### Locked Replay Contract
 - start bankroll: `$10.00`
-- position fraction: `0.20`
+- base position floor: `20%`
+- target exposure: `80%`
 - max concurrent positions: `5`
-- shared-cash equal split across overlapping positions
-- random adverse slippage: `0-20c`
+- sizing mode: `dynamic_concurrent_games`
+- min order: `$1.00`
+- min shares: `5`
+- random adverse slippage: `0-5c`
+- primary stop overlay:
+  - `winner_definition` `5c` below entry
 
-### Current Postseason Final-20 Result
-- `master_strategy_router_v1`: `$3.97`
-- `gpt-5.4-mini :: llm_hybrid_freedom_compact_v1`: `$3.71`
-- `gpt-5.4 :: llm_hybrid_freedom_compact_v1`: `$3.62`
-- `winner_definition`: `$2.68`
+### Current Validation Read
+- postseason reference:
+  - primary controller mean ending bankroll: `$13.84`
+  - primary controller mean max drawdown: `22.38%` / `$2.24`
+  - fallback mean ending bankroll: `$14.35`
+  - fallback mean max drawdown: `29.39%` / `$4.43`
+- full regular season:
+  - primary controller median ending bankroll: `$469,835.30`
+  - fallback median ending bankroll: `$68,486.79`
 
 Interpretation:
-- the hostile-execution contract is materially harsher than the earlier optimistic regular-season path tests
-- the deterministic router is currently the best capital-preservation option
-- the LLM lanes are still challengers, not the new default controller
+- the primary controller is locked because it is the best playoff tradeoff
+- the fallback remains available if no LLM should be used live
+- strategy discovery is no longer the main task
 
 ## Immediate Critical Path
 
-### 1. Deterministic Router Hardening
+### 1. Live Polymarket Executor
 Branch:
-- `codex/analysis-routing-allocation`
+- `codex/live-polymarket-executor`
 
 Why this is next:
-- the kept option set is now small enough
-- the main open question is controller quality under hostile execution, not more strategy proliferation
+- the controller is now locked
+- the highest-value missing piece is execution wiring, not more backtest exploration
 
 Target outputs:
-- refined `master_strategy_router_v1` confidence weighting
-- better use of the underlying route mix under the `v11` contract
-- clearer payout-vs-growth tradeoff policies
+- paper/live-safe executor around the locked controller pair
+- bounded order placement, cancel, replace, and risk-stop primitives
+- one clear controller selection path:
+  - primary controller by default
+  - deterministic fallback available behind config / operator switch
 
-### 2. Focused Dashboard For Finalists
+### 2. Decision Logging And ML-Ready Dataset
+Branch:
+- `codex/controller-decision-logging`
+
+Why this is next:
+- once the controller is locked, every live or paper decision should produce training-grade records
+
+Target outputs:
+- append-only candidate-decision log
+- selected family / confidence / sleeve / stop-overlay / final stake fields
+- execution outcome log:
+  - requested price
+  - filled price
+  - cancel / miss / partial-fill state
+- training-ready candidate table for later ML ranking and sizing work
+
+### 3. Focused Review Dashboard
 Branch:
 - `codex/frontend-analysis-portfolio-viz`
 
 Why this is parallel-friendly:
-- the contracts are now narrow and stable
-- the dashboard only needs to support the final four compared options plus the route mix
+- the controller set is now narrow and stable
 
 Target outputs:
-- one clear finalist comparison view
-- route-mix and drawdown diagnostics
-- explicit visibility into where the LLM differs from the deterministic router
+- primary vs fallback review surface
+- route mix and sleeve trigger diagnostics
+- live paper-review queue
+- outcome and bankroll-path inspection
 
-### 3. Season Continuity And Fresh Postseason Data
+### 4. Season Continuity
 Branch:
 - `codex/season-playoffs-preseason`
 
-Why this matters:
-- we now have a fixed postseason validation corpus, but the data workflow still has to stay healthy as new games land
-
 Target outputs:
-- reliable post-regular-season sync steps
-- clear refresh playbook for mart rebuilds and controller reruns
-
-## Questions That Still Matter
-- where exactly does the deterministic router lose most of its bankroll on the hostile postseason slice?
-- is the LLM adding value by selecting better routes, by skipping bad trades, or only by trading more often?
-- which route or sleeve decisions deserve a bounded LLM override queue later?
-- what payout policy keeps the system alive under harsh fills while preserving growth potential?
+- fresh-game sync and rebuild playbook for the remaining playoffs
+- season handoff path toward preseason and WNBA bootstrap
 
 ## What We Are Not Prioritizing Right Now
-- broad family expansion
+- new strategy-family proliferation
+- broad LLM prompt experimentation
 - free-form LLM autonomy
-- model-heavy residual approaches before the deterministic controller is harder
-- generic frontend/operator surfaces that do not help tune the final four options
+- replacing the controller with ML before live execution data exists
+- broad studio/operator pages that do not help review the locked controller pair

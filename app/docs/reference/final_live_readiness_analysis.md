@@ -1,5 +1,7 @@
 # Final Live Readiness Analysis
 
+> Superseded for live-controller selection by [controller_vnext_final_tuning.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/controller_vnext_final_tuning.md) and [current_analysis_system_state.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/current_analysis_system_state.md). Keep this document as the historical bridge between the older finalist phase and the locked controller-vNext phase.
+
 ## Scope
 
 This reference captures the final live-readiness comparison between the two finalist controllers:
