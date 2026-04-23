@@ -155,6 +155,41 @@ def _side_outcome_map(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return mapping
 
 
+def _infer_live_coverage_status(bundle: dict[str, Any]) -> tuple[str, str]:
+    feature_snapshot = bundle.get("feature_snapshot") or {}
+    coverage_status = str(feature_snapshot.get("coverage_status") or "").strip()
+
+    selected_market = bundle.get("selected_market") or {}
+    series = selected_market.get("series") or []
+    side_map = _side_outcome_map(bundle)
+    has_both_sides = all(side in side_map for side in ("home", "away"))
+    has_ticks_for_both = has_both_sides and all(bool((side_map[side].get("ticks") or [])) for side in ("home", "away"))
+    play_by_play = bundle.get("play_by_play") or {}
+    timed_items = [
+        item
+        for item in (play_by_play.get("items") or [])
+        if _parse_datetime(item.get("time_actual")) is not None
+    ]
+
+    inferred_coverage_status = "missing_feature_snapshot"
+    inferred_classification = "descriptive_only"
+    if has_ticks_for_both and timed_items:
+        inferred_coverage_status = "covered_partial"
+        inferred_classification = "research_ready"
+    elif has_ticks_for_both and series:
+        inferred_coverage_status = "pregame_only"
+    elif series:
+        inferred_coverage_status = "covered_partial"
+
+    if coverage_status in RESEARCH_READY_STATUSES:
+        return coverage_status, "research_ready"
+    if inferred_coverage_status in RESEARCH_READY_STATUSES:
+        return inferred_coverage_status, inferred_classification
+    if coverage_status and coverage_status not in {"missing_feature_snapshot", "no_matching_event", "debug_only"}:
+        return coverage_status, "research_ready" if coverage_status in RESEARCH_READY_STATUSES else "descriptive_only"
+    return inferred_coverage_status, inferred_classification
+
+
 def _parse_json_dict(value: Any) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
@@ -529,9 +564,7 @@ class LiveRunWorker:
             if bundle is None:
                 diagnostics_by_game[str(game_id)] = {"error": "game_not_found"}
                 continue
-            feature_snapshot = bundle.get("feature_snapshot") or {}
-            coverage_status = str(feature_snapshot.get("coverage_status") or "missing_feature_snapshot")
-            classification = "research_ready" if coverage_status in RESEARCH_READY_STATUSES else "descriptive_only"
+            coverage_status, classification = _infer_live_coverage_status(bundle)
             universe_row = pd.Series(
                 {
                     "season": str(bundle["game"].get("season") or "2025-26"),

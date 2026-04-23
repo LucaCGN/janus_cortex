@@ -16,6 +16,28 @@
     lastError: '',
   };
 
+  function normalizeApiRoot(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return DEFAULT_API_ROOT;
+    const withoutOrigin = raw.replace(/^https?:\/\/[^/]+/i, '');
+    const withoutRunSuffix = withoutOrigin.replace(/\/runs\/[^/]+(?:\/(?:games|orders|events|summary))?$/i, '');
+    return withoutRunSuffix || DEFAULT_API_ROOT;
+  }
+
+  function normalizeRunId(value) {
+    let raw = String(value || '').trim();
+    if (!raw) return DEFAULT_RUN_ID;
+    raw = raw.replace(/^https?:\/\/[^/]+/i, '');
+    const endpointMatch = raw.match(/\/runs\/([^/?#]+)(?:\/(?:games|orders|events|summary))?$/i);
+    if (endpointMatch && endpointMatch[1]) {
+      return decodeURIComponent(endpointMatch[1]);
+    }
+    raw = raw.replace(/^.*\/runs\//i, '');
+    raw = raw.replace(/\/(?:games|orders|events|summary)$/i, '');
+    raw = raw.replace(/^\/+|\/+$/g, '');
+    return raw || DEFAULT_RUN_ID;
+  }
+
   function bootShell() {
     const app = document.getElementById('app');
     app.innerHTML = `
@@ -587,12 +609,14 @@
   }
 
   function connect(demo) {
-    state.apiRoot = q('api-root').value.trim() || DEFAULT_API_ROOT;
-    state.runId = q('run-id').value.trim() || DEFAULT_RUN_ID;
+    state.apiRoot = normalizeApiRoot(q('api-root').value);
+    state.runId = normalizeRunId(q('run-id').value);
     state.pollMs = Math.max(2000, Number(q('poll-ms').value) || DEFAULT_POLL_MS);
     state.demo = demo;
     state.connected = true;
     state.lastError = '';
+    q('api-root').value = state.apiRoot;
+    q('run-id').value = state.runId;
     setControlButtons(true);
     setHeaderState(true, demo);
     setStatus(demo ? 'Demo mode active.' : `Polling ${state.runId} at ${state.apiRoot}`);
@@ -603,8 +627,8 @@
 
   function initFormDefaults() {
     const params = new URLSearchParams(window.location.search);
-    q('api-root').value = params.get('apiRoot') || params.get('api_root') || DEFAULT_API_ROOT;
-    q('run-id').value = params.get('runId') || params.get('run_id') || DEFAULT_RUN_ID;
+    q('api-root').value = normalizeApiRoot(params.get('apiRoot') || params.get('api_root') || DEFAULT_API_ROOT);
+    q('run-id').value = normalizeRunId(params.get('runId') || params.get('run_id') || DEFAULT_RUN_ID);
     q('poll-ms').value = params.get('pollMs') || params.get('poll_ms') || DEFAULT_POLL_MS;
     q('operator-notes').value = params.get('notes') || '';
   }
