@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import traceback
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -117,6 +118,12 @@ def _append_jsonl(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(to_jsonable(payload), ensure_ascii=True, default=_json_default) + "\n")
+
+
+def _append_text(path: Path, line: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(line.rstrip() + "\n")
 
 
 def _empty_trade_frame() -> pd.DataFrame:
@@ -315,6 +322,12 @@ class LiveRunWorker:
         self.events: deque[dict[str, Any]] = deque(maxlen=400)
         self.fill_metrics: list[dict[str, Any]] = []
         self._seen_trade_ids: set[str] = set()
+        self.cycle_count = 0
+        self.last_cycle_started_at: datetime | None = None
+        self.last_cycle_completed_at: datetime | None = None
+        self.last_cycle_duration_seconds: float | None = None
+        self.last_successful_cycle_at: datetime | None = None
+        self.last_traceback: str | None = None
         self._load_recovery_snapshot()
         _write_json(self.run_root / "run_config.json", self.config.model_dump())
 
@@ -368,7 +381,22 @@ class LiveRunWorker:
                 "drawdown_pct": None,
                 "drawdown_amount": None,
                 "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
+                "last_successful_cycle_at": self.last_successful_cycle_at.isoformat() if self.last_successful_cycle_at else None,
+                "last_cycle_started_at": self.last_cycle_started_at.isoformat() if self.last_cycle_started_at else None,
+                "last_cycle_completed_at": self.last_cycle_completed_at.isoformat() if self.last_cycle_completed_at else None,
+                "last_cycle_duration_seconds": self.last_cycle_duration_seconds,
+                "cycle_count": self.cycle_count,
                 "last_error": self.last_error,
+                "last_traceback": self.last_traceback,
+                "run_root": str(self.run_root),
+                "log_paths": {
+                    "heartbeat": str(self.run_root / "heartbeat.json"),
+                    "decisions": str(self.run_root / "decisions.jsonl"),
+                    "events": str(self.run_root / "executor_events.jsonl"),
+                    "runtime_log": str(self.run_root / "runtime.log"),
+                    "recovery_snapshot": str(self.run_root / "recovery_snapshot.json"),
+                    "last_error": str(self.run_root / "last_error.txt"),
+                },
                 "games": list(self.game_cards.values()),
             }
 
@@ -435,6 +463,9 @@ class LiveRunWorker:
         self._record_event("info", "Live run starting", f"Booting live run {self.config.run_id}.")
         while not self._stop_event.is_set():
             cycle_started = utc_now()
+            self.last_cycle_started_at = cycle_started
+            self.cycle_count += 1
+            self._write_runtime_log(f"[{cycle_started.isoformat()}] cycle_start index={self.cycle_count} entries_enabled={self.entries_enabled}")
             try:
                 with managed_connection() as connection:
                     self.account = resolve_trading_account(connection, account_id=self.config.account_id)
@@ -449,11 +480,22 @@ class LiveRunWorker:
                     mirror_account_state(connection, account=self.account)
                 self.status = "running"
                 self.last_error = None
+                self.last_traceback = None
+                self.last_successful_cycle_at = utc_now()
             except Exception as exc:  # noqa: BLE001
                 self.status = "error"
                 self.last_error = str(exc)
-                self._record_event("error", "Cycle failed", str(exc))
+                self.last_traceback = traceback.format_exc()
+                self._write_error_trace(self.last_traceback)
+                self._record_event("error", "Cycle failed", str(exc), details={"traceback_file": str(self.run_root / "last_error.txt")})
             finally:
+                cycle_finished = utc_now()
+                self.last_cycle_completed_at = cycle_finished
+                self.last_cycle_duration_seconds = max(0.0, (cycle_finished - cycle_started).total_seconds())
+                self._write_runtime_log(
+                    f"[{cycle_finished.isoformat()}] cycle_end index={self.cycle_count} status={self.status} "
+                    f"duration_s={self.last_cycle_duration_seconds:.3f} error={self.last_error or ''}"
+                )
                 self.last_heartbeat_at = cycle_started
                 self._write_heartbeat()
                 self._persist_recovery_snapshot()
@@ -823,10 +865,33 @@ class LiveRunWorker:
             best_ask = orderbook.get("best_ask")
             spread_cents = orderbook.get("spread_cents")
             if best_bid is None or best_ask is None:
-                self._record_event("warn", "Entry skipped", "Orderbook unavailable for entry.", game_id=game_id)
+                self._record_event(
+                    "warn",
+                    "Entry skipped",
+                    "Orderbook unavailable for entry.",
+                    game_id=game_id,
+                    details={
+                        "signal_id": signal_id,
+                        "team_side": team_side,
+                        "market_id": str(bundle.get("selected_market", {}).get("market_id") or ""),
+                        "outcome_id": str(outcome_meta.get("outcome_id") or ""),
+                    },
+                )
                 continue
             if spread_cents is not None and float(spread_cents) > 2.0:
-                self._record_event("warn", "Entry skipped", f"Spread {float(spread_cents):.2f}c exceeded threshold.", game_id=game_id)
+                self._record_event(
+                    "warn",
+                    "Entry skipped",
+                    f"Spread {float(spread_cents):.2f}c exceeded threshold.",
+                    game_id=game_id,
+                    details={
+                        "signal_id": signal_id,
+                        "team_side": team_side,
+                        "best_bid": best_bid,
+                        "best_ask": best_ask,
+                        "spread_cents": spread_cents,
+                    },
+                )
                 continue
             entry_price = float(best_ask)
             size = resolve_minimum_order_size(entry_price)
@@ -894,7 +959,25 @@ class LiveRunWorker:
                     "type": "limit buy",
                     "age": "00:00",
                 }
-            self._record_event("info", "Entry submitted", f"{_matchup_label(bundle['game'])} {metadata['strategy_family']} at {entry_price:.3f}.", game_id=game_id)
+            self._record_event(
+                "info",
+                "Entry submitted",
+                f"{_matchup_label(bundle['game'])} {metadata['strategy_family']} at {entry_price:.3f}.",
+                game_id=game_id,
+                details={
+                    "signal_id": signal_id,
+                    "team_side": team_side,
+                    "market_id": str(bundle.get("selected_market", {}).get("market_id") or ""),
+                    "outcome_id": str(outcome_meta.get("outcome_id") or ""),
+                    "token_id": str(outcome_meta.get("token_id") or ""),
+                    "size": size,
+                    "price": entry_price,
+                    "best_bid": best_bid,
+                    "best_ask": best_ask,
+                    "spread_cents": spread_cents,
+                    "order_policy": "limit_best_ask",
+                },
+            )
 
     def _submit_exit_order(
         self,
@@ -915,7 +998,19 @@ class LiveRunWorker:
         )
         best_bid = orderbook.get("best_bid")
         if best_bid is None:
-            self._record_event("error", "Exit pricing unavailable", "Could not price exit order from current orderbook.", game_id=str(position_state.get("game_id") or ""))
+            self._record_event(
+                "error",
+                "Exit pricing unavailable",
+                "Could not price exit order from current orderbook.",
+                game_id=str(position_state.get("game_id") or ""),
+                details={
+                    "signal_id": signal_id,
+                    "market_id": str(position_state.get("market_id") or ""),
+                    "outcome_id": str(position_state.get("outcome_id") or ""),
+                    "team_side": position_state.get("team_side"),
+                    "order_policy": order_policy,
+                },
+            )
             return
         price = max(0.01, float(best_bid))
         metadata = build_live_order_metadata(
@@ -967,6 +1062,18 @@ class LiveRunWorker:
             "Stop submitted" if stop_triggered_flag else "Exit submitted",
             f"{position_state.get('matchup')} {position_state.get('strategy_family')} exit at {price:.3f}.",
             game_id=str(position_state.get("game_id") or ""),
+            details={
+                "signal_id": signal_id,
+                "market_id": str(position_state.get("market_id") or ""),
+                "outcome_id": str(position_state.get("outcome_id") or ""),
+                "size": float(position_state.get("size") or 0.0),
+                "price": price,
+                "best_bid": best_bid,
+                "order_policy": order_policy,
+                "stop_triggered_flag": stop_triggered_flag,
+                "aggressive": aggressive,
+                "exit_reason": position_state.get("exit_reason"),
+            },
         )
 
     def _handle_trade_fill(self, order_state: dict[str, Any], trade: dict[str, Any]) -> None:
@@ -1002,13 +1109,39 @@ class LiveRunWorker:
                     "realized_pnl": None,
                     "pnl_text": "+0.00",
                 }
-            self._record_event("info", "Position opened", f"{order_state.get('matchup')} {order_state.get('strategy_family')} filled at {fill_price:.3f}.", game_id=str(order_state.get("game_id") or ""))
+            self._record_event(
+                "info",
+                "Position opened",
+                f"{order_state.get('matchup')} {order_state.get('strategy_family')} filled at {fill_price:.3f}.",
+                game_id=str(order_state.get("game_id") or ""),
+                details={
+                    "signal_id": order_state.get("signal_id"),
+                    "trade_id": trade.get("trade_id"),
+                    "fill_delay_seconds": max(0.0, (trade_time - submitted_at).total_seconds()),
+                    "slippage_vs_signal_cents": round(slippage_signal, 4),
+                    "slippage_vs_best_quote_cents": round(slippage_quote, 4) if slippage_quote is not None else None,
+                },
+            )
             return
         existing = self.active_positions.pop(str(order_state.get("signal_id")), None)
         if existing:
             entry_price = float(existing.get("entry_price") or 0.0)
             pnl_amount = (fill_price - entry_price) * size
-            self._record_event("info", "Position closed", f"{order_state.get('matchup')} exit filled at {fill_price:.3f}, pnl {pnl_amount:+.2f}.", game_id=str(order_state.get("game_id") or ""))
+            self._record_event(
+                "info",
+                "Position closed",
+                f"{order_state.get('matchup')} exit filled at {fill_price:.3f}, pnl {pnl_amount:+.2f}.",
+                game_id=str(order_state.get("game_id") or ""),
+                details={
+                    "signal_id": order_state.get("signal_id"),
+                    "trade_id": trade.get("trade_id"),
+                    "fill_delay_seconds": max(0.0, (trade_time - submitted_at).total_seconds()),
+                    "slippage_vs_signal_cents": round(slippage_signal, 4),
+                    "slippage_vs_best_quote_cents": round(slippage_quote, 4) if slippage_quote is not None else None,
+                    "realized_pnl": round(pnl_amount, 4),
+                    "stop_triggered_flag": bool(order_state.get("stop_triggered_flag")),
+                },
+            )
 
     def _latest_state_row(self, state_df: pd.DataFrame, *, game_id: str, team_side: str) -> dict[str, Any] | None:
         if state_df is None or state_df.empty:
@@ -1025,7 +1158,15 @@ class LiveRunWorker:
         with self._lock:
             return bool(self.game_cards) and all(str(card.get("state_label") or "").lower() == "final" for card in self.game_cards.values())
 
-    def _record_event(self, level: str, title: str, message: str, *, game_id: str | None = None) -> None:
+    def _record_event(
+        self,
+        level: str,
+        title: str,
+        message: str,
+        *,
+        game_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
         event = {
             "timestamp": utc_now().isoformat(),
             "time": utc_now().strftime("%H:%M:%S"),
@@ -1033,10 +1174,14 @@ class LiveRunWorker:
             "title": title,
             "message": message,
             "game_id": game_id,
+            "details": to_jsonable(details or {}),
         }
         with self._lock:
             self.events.append(event)
         _append_jsonl(self.run_root / "executor_events.jsonl", event)
+        self._write_runtime_log(
+            f"[{event['timestamp']}] event level={level} title={title} game_id={game_id or ''} message={message}"
+        )
 
     def _persist_decisions(self, decision_rows: list[dict[str, Any]]) -> None:
         for row in decision_rows:
@@ -1051,6 +1196,12 @@ class LiveRunWorker:
                 "entries_enabled": self.entries_enabled,
                 "last_heartbeat_at": self.last_heartbeat_at.isoformat() if self.last_heartbeat_at else None,
                 "last_error": self.last_error,
+                "last_traceback": self.last_traceback,
+                "last_successful_cycle_at": self.last_successful_cycle_at.isoformat() if self.last_successful_cycle_at else None,
+                "last_cycle_started_at": self.last_cycle_started_at.isoformat() if self.last_cycle_started_at else None,
+                "last_cycle_completed_at": self.last_cycle_completed_at.isoformat() if self.last_cycle_completed_at else None,
+                "last_cycle_duration_seconds": self.last_cycle_duration_seconds,
+                "cycle_count": self.cycle_count,
             },
         )
 
@@ -1060,10 +1211,16 @@ class LiveRunWorker:
                 "status": self.status,
                 "entries_enabled": self.entries_enabled,
                 "last_error": self.last_error,
+                "last_traceback": self.last_traceback,
                 "account": self.account,
                 "active_orders": self.active_orders,
                 "active_positions": self.active_positions,
                 "fill_metrics": self.fill_metrics,
+                "cycle_count": self.cycle_count,
+                "last_cycle_started_at": self.last_cycle_started_at,
+                "last_cycle_completed_at": self.last_cycle_completed_at,
+                "last_cycle_duration_seconds": self.last_cycle_duration_seconds,
+                "last_successful_cycle_at": self.last_successful_cycle_at,
             }
         _write_json(self.run_root / "recovery_snapshot.json", payload)
 
@@ -1079,6 +1236,13 @@ class LiveRunWorker:
         self.active_orders = {str(key): value for key, value in dict(payload.get("active_orders") or {}).items()}
         self.active_positions = {str(key): value for key, value in dict(payload.get("active_positions") or {}).items()}
         self.fill_metrics = list(payload.get("fill_metrics") or [])
+        self.last_traceback = payload.get("last_traceback")
+        self.cycle_count = int(payload.get("cycle_count") or 0)
+        self.last_cycle_started_at = _parse_datetime(payload.get("last_cycle_started_at"))
+        self.last_cycle_completed_at = _parse_datetime(payload.get("last_cycle_completed_at"))
+        duration_value = payload.get("last_cycle_duration_seconds")
+        self.last_cycle_duration_seconds = float(duration_value) if duration_value is not None else None
+        self.last_successful_cycle_at = _parse_datetime(payload.get("last_successful_cycle_at"))
         if isinstance(payload.get("account"), dict):
             self.account = payload["account"]
 
@@ -1088,6 +1252,14 @@ class LiveRunWorker:
                 if str(event.get("game_id") or "") == str(game_id):
                     return str(event.get("message") or "")
         return None
+
+    def _write_runtime_log(self, line: str) -> None:
+        _append_text(self.run_root / "runtime.log", line)
+
+    def _write_error_trace(self, traceback_text: str) -> None:
+        path = self.run_root / "last_error.txt"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(traceback_text, encoding="utf-8")
 
 
 def _format_age(value: Any) -> str:

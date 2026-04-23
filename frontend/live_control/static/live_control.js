@@ -320,6 +320,10 @@
       ['Controller', run.controller || '-', run.fallback ? `Fallback: ${run.fallback}` : ''],
       ['Exposure', `${run.active_games || 0} games`, `${run.open_orders || 0} open orders / ${run.open_positions || 0} open positions`],
       ['Bankroll', money(run.current_bankroll ?? run.starting_bankroll), `Start ${money(run.starting_bankroll)} | DD ${pct(run.drawdown_pct, 1)} (${money(run.drawdown_amount)})`],
+      ['Heartbeat', text(run.last_heartbeat_at, '-'), `Last good cycle ${text(run.last_successful_cycle_at, '-')}`],
+      ['Cycle', integer(run.cycle_count), `Last duration ${run.last_cycle_duration_seconds !== null && run.last_cycle_duration_seconds !== undefined ? `${Number(run.last_cycle_duration_seconds).toFixed(2)}s` : '-'}`],
+      ['Logs', text(run.run_root, '-'), run.log_paths ? `runtime.log and last_error.txt under run root` : ''],
+      ['Last Error', text(run.last_error, 'none'), run.last_traceback ? 'See last_error.txt for traceback' : ''],
     ].forEach(([label, value, caption]) => {
       const card = document.createElement('article');
       card.className = 'metric-card';
