@@ -25,6 +25,15 @@ logger = logging.getLogger(__name__)
 API_VERSION = "0.8.1"
 
 
+class NoCacheStaticFiles(StaticFiles):
+    def file_response(self, *args: Any, **kwargs: Any):  # type: ignore[override]
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Janus Cortex API",
@@ -38,13 +47,13 @@ def create_app() -> FastAPI:
     if ANALYSIS_STUDIO_STATIC_ROOT.exists():
         app.mount(
             "/analysis-studio/static",
-            StaticFiles(directory=str(ANALYSIS_STUDIO_STATIC_ROOT)),
+            NoCacheStaticFiles(directory=str(ANALYSIS_STUDIO_STATIC_ROOT)),
             name="analysis-studio-static",
         )
     if LIVE_CONTROL_STATIC_ROOT.exists():
         app.mount(
             "/live-control/static",
-            StaticFiles(directory=str(LIVE_CONTROL_STATIC_ROOT)),
+            NoCacheStaticFiles(directory=str(LIVE_CONTROL_STATIC_ROOT)),
             name="live-control-static",
         )
 

@@ -21,7 +21,14 @@ router = APIRouter(tags=["nba-live"])
 def get_live_control_page() -> FileResponse:
     if not LIVE_CONTROL_INDEX_PATH.exists():
         raise HTTPException(status_code=404, detail="live-control UI not found")
-    return FileResponse(LIVE_CONTROL_INDEX_PATH)
+    return FileResponse(
+        LIVE_CONTROL_INDEX_PATH,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 
 @router.post("/v1/nba/live/runs")
