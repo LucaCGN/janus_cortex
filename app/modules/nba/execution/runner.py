@@ -6,6 +6,7 @@ import traceback
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -39,6 +40,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.registry import build_strat
 from app.data.pipelines.daily.nba.analysis.backtests.unified_router import build_unified_router_trade_frame
 from app.data.pipelines.daily.nba.analysis.consumer_adapters import load_analysis_consumer_bundle
 from app.data.pipelines.daily.nba.analysis.contracts import AnalysisConsumerRequest, BacktestRunRequest, RESEARCH_READY_STATUSES
+from app.data.pipelines.daily.nba.analysis.bundle_loader import _build_price_snapshots_for_events
 from app.data.pipelines.daily.nba.analysis.mart_game_profiles import derive_game_rows, load_analysis_bundle
 from app.data.pipelines.daily.nba.analysis.mart_state_panel import build_state_rows_for_side
 from app.data.pipelines.daily.nba.sync_postgres import run_nba_live_game_sync
@@ -155,6 +157,59 @@ def _side_outcome_map(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return mapping
 
 
+def _overlay_live_orderbook_ticks(bundle: dict[str, Any], *, account: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+    selected_market = bundle.get("selected_market") or {}
+    market_id = str(selected_market.get("market_id") or "")
+    if not market_id or not account:
+        return {}
+    try:
+        creds = resolve_trading_account_credentials(account)
+    except Exception:
+        return {}
+
+    orderbooks_by_side: dict[str, dict[str, Any]] = {}
+    for series_item in selected_market.get("series") or []:
+        side = str(series_item.get("side") or "").strip()
+        token_id = str(series_item.get("token_id") or "")
+        if side not in {"home", "away"} or not token_id:
+            continue
+        try:
+            orderbook = fetch_latest_orderbook_summary(
+                creds=creds,
+                market_id=market_id,
+                token_id=token_id,
+            )
+        except Exception:
+            continue
+        orderbooks_by_side[side] = orderbook
+        best_bid = orderbook.get("best_bid")
+        best_ask = orderbook.get("best_ask")
+        if best_bid is None or best_ask is None:
+            continue
+        mid_price = round((float(best_bid) + float(best_ask)) / 2.0, 6)
+        timestamp = _parse_datetime(orderbook.get("timestamp")) or utc_now()
+        ticks = list(series_item.get("ticks") or [])
+        latest_tick = ticks[-1] if ticks else None
+        latest_ts = _parse_datetime((latest_tick or {}).get("ts"))
+        latest_price = _safe_float((latest_tick or {}).get("price"))
+        if latest_ts is not None and latest_ts >= timestamp and latest_price is not None and abs(latest_price - mid_price) < 1e-9:
+            continue
+        ticks.append(
+            {
+                "outcome_id": series_item.get("outcome_id"),
+                "ts": timestamp,
+                "source": "live_orderbook_mid",
+                "price": Decimal(str(mid_price)),
+                "bid": Decimal(str(float(best_bid))),
+                "ask": Decimal(str(float(best_ask))),
+                "volume": None,
+                "liquidity": None,
+            }
+        )
+        series_item["ticks"] = ticks
+    return orderbooks_by_side
+
+
 def _infer_live_coverage_status(bundle: dict[str, Any]) -> tuple[str, str]:
     feature_snapshot = bundle.get("feature_snapshot") or {}
     coverage_status = str(feature_snapshot.get("coverage_status") or "").strip()
@@ -216,6 +271,15 @@ def _parse_datetime(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _signal_id_for_trade(record: dict[str, Any]) -> str:
@@ -564,6 +628,18 @@ class LiveRunWorker:
             if bundle is None:
                 diagnostics_by_game[str(game_id)] = {"error": "game_not_found"}
                 continue
+            live_orderbooks = _overlay_live_orderbook_ticks(bundle, account=self.account)
+            selected_market = bundle.get("selected_market") or {}
+            series_by_outcome = {
+                str(item.get("outcome_id")): list(item.get("ticks") or [])
+                for item in selected_market.get("series") or []
+                if item.get("outcome_id")
+            }
+            if bundle.get("play_by_play") and series_by_outcome:
+                _build_price_snapshots_for_events(
+                    bundle["play_by_play"].get("items") or [],
+                    series_by_outcome,
+                )
             coverage_status, classification = _infer_live_coverage_status(bundle)
             universe_row = pd.Series(
                 {
@@ -582,6 +658,7 @@ class LiveRunWorker:
                 build_state_rows_for_side=build_state_rows_for_side,
             )
             bundle["derived_game_rows"] = game_rows
+            bundle["live_orderbooks"] = live_orderbooks
             bundles[str(game_id)] = bundle
             diagnostics_by_game[str(game_id)] = diagnostics
             state_rows.extend(per_game_state_rows)
