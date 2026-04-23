@@ -169,6 +169,14 @@
     return Number.isFinite(n) ? Math.round(n).toLocaleString() : '-';
   }
 
+  function nowLabel() {
+    return new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+
   function demoData() {
     return {
       run: {
