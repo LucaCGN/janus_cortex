@@ -21,7 +21,7 @@ Detailed milestone and branch decomposition lives in:
 - full regular-season all-games lock check completed
 - fixed postseason validation corpus completed:
   - `6` play-in games
-  - `14` playoff games
+  - `16` playoff games
 - Polymarket event history linked for the full postseason corpus
 - play-by-play loaded for the full postseason corpus
 
@@ -71,25 +71,40 @@ Interpretation:
 
 ## Immediate Critical Path
 
-### 1. Live Polymarket Executor
-Branch:
-- `codex/live-polymarket-executor`
+### 1. Local Live Playoff Validation Loop
 
 Why this is next:
 - the controller is now locked
 - the highest-value missing piece is execution wiring, not more backtest exploration
+- we need to validate the locked controller on live playoff conditions before broader app/deployment work
 
 Target outputs:
-- paper/live-safe executor around the locked controller pair
-- bounded order placement, cancel, replace, and risk-stop primitives
-- one clear controller selection path:
-  - primary controller by default
-  - deterministic fallback available behind config / operator switch
+- local live executor v1 around the locked controller pair
+- run-until-finished control loop over an explicit list of `game_id`s
+- bounded order placement, cancel, replace, and local stop primitives
+- separate `/live-control` surface for operator monitoring
+- restart/resume safety through local ledger + DB parity
+
+Today’s live scope:
+- games:
+  - `0042500123` `NYK@ATL`
+  - `0042500133` `CLE@TOR`
+  - `0042500163` `DEN@MIN`
+- execution profile:
+  - `v1`
+- primary controller:
+  - `controller_vnext_unified_v1 :: balanced`
+- fallback:
+  - `controller_vnext_deterministic_v1 :: tight`
+- live sizing:
+  - fixed Polymarket minimum only
+- order policy:
+  - limit entries at best ask
+  - stop-loss exits as local trigger + market-emulated sell
+- launcher:
+  - `python tools/start_live_run.py --api-root http://127.0.0.1:8010 --run-id live-2026-04-23-v1 --game-id 0042500123 --game-id 0042500133 --game-id 0042500163 --dry-run`
 
 ### 2. Decision Logging And ML-Ready Dataset
-Branch:
-- `codex/controller-decision-logging`
-
 Why this is next:
 - once the controller is locked, every live or paper decision should produce training-grade records
 
@@ -103,9 +118,6 @@ Target outputs:
 - training-ready candidate table for later ML ranking and sizing work
 
 ### 3. Focused Review Dashboard
-Branch:
-- `codex/frontend-analysis-portfolio-viz`
-
 Why this is parallel-friendly:
 - the controller set is now narrow and stable
 
@@ -116,9 +128,6 @@ Target outputs:
 - outcome and bankroll-path inspection
 
 ### 4. Season Continuity
-Branch:
-- `codex/season-playoffs-preseason`
-
 Target outputs:
 - fresh-game sync and rebuild playbook for the remaining playoffs
 - season handoff path toward preseason and WNBA bootstrap
@@ -129,3 +138,13 @@ Target outputs:
 - free-form LLM autonomy
 - replacing the controller with ML before live execution data exists
 - broad studio/operator pages that do not help review the locked controller pair
+
+## Execution Notes
+- work is now intentionally concentrated on `main` for local iteration speed
+- strategy math stays frozen unless a real live-execution issue proves otherwise
+- execution changes should version the execution profile (`v1`, `v2`, `v3`) instead of renaming the controller core
+- tonight’s acceptance gate is operational:
+  - live runner stays alive
+  - orders/events appear on `/live-control`
+  - restart/resume does not duplicate entries
+  - fill/slippage data is captured for every attempted trade

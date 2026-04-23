@@ -5,11 +5,11 @@ Personal prediction-market data framework focused on production-grade data struc
 ## Current Status
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
 - Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
-- Current priority: move the locked NBA controller from backtest into live-safe Polymarket execution and decision logging.
-- Current scope: locked controller validation, execution integration, live-paper review, and read-only consumers.
+- Current priority: run the locked NBA controller pair through the live playoff validation loop and harden the local Polymarket executor path.
+- Current scope: locked controller execution integration, live-paper review, stop-loss/order-policy testing, and decision logging.
 - Current NBA analysis snapshot on `2026-04-23`:
   - regular-season research-ready corpus: `1198 / 1224`
-  - postseason validation corpus: `20` games (`6` play-in + `14` playoffs), all research-ready
+  - postseason validation corpus: `22` games (`6` play-in + `16` playoffs), all research-ready
   - locked primary controller: `controller_vnext_unified_v1 :: balanced`
   - locked no-LLM fallback: `controller_vnext_deterministic_v1 :: tight`
   - hostile replay contract:
@@ -23,6 +23,10 @@ Personal prediction-market data framework focused on production-grade data struc
   - postseason reference:
     - primary controller median end bankroll: `$13.81`
     - deterministic fallback median end bankroll: `$14.33`
+  - live executor status:
+    - local live executor v1 mounted at `/live-control`
+    - run launcher available at `tools/start_live_run.py`
+    - controller core remains frozen; only execution profile versions iterate (`v1`, `v2`, ...)
 
 ## Scope Definitions
 - `v0.8.*`: NBA regular-season data completion for 2025/26.
@@ -60,7 +64,7 @@ The project uses a provider/category/module split:
 - `v1.4.6` to `v1.4.7`: postseason coverage, adverse execution replay, and controller-vNext hardening are merged into the active analysis state
 
 ### Planned lanes
-1. `v1.5.0` live Polymarket executor for the locked controller pair
+1. `v1.5.0` local live playoff validation loop for the locked controller pair
 2. `v1.5.1` decision logging and ML-ready candidate dataset contract
 3. `v1.5.2` focused read-only review UI for the locked controller and fallback
 4. `v1.5.x` season continuity work for the remaining playoffs/preseason path and WNBA bootstrap
@@ -70,6 +74,7 @@ The project uses a provider/category/module split:
 - `app/docs/reference/README.md`
 - `app/docs/reference/current_analysis_system_state.md`
 - `app/docs/reference/controller_vnext_final_tuning.md`
+- `app/docs/reference/live_playoff_validation_runbook.md`
 - `app/docs/reference/postseason_final_20_validation.md`
 - `app/docs/planning/README.md`
 - `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
@@ -99,6 +104,8 @@ Common commands:
 - `python -m app.data.pipelines.daily.polymarket.sync_markets --probe-set today_nba --max-finished 2 --max-live 2 --include-upcoming`
 - `python -m app.data.pipelines.daily.polymarket.backfill_retry --max-finished 2 --max-live 2 --include-upcoming --candle-timeframe 1m --candle-lookback-hours 48`
 - `uvicorn app.api.main:app --host 0.0.0.0 --port 8000 --reload`
+- `python -m uvicorn app.api.main:app --host 127.0.0.1 --port 8010`
+- `python tools/start_live_run.py --api-root http://127.0.0.1:8010 --run-id live-2026-04-23-v1 --game-id 0042500123 --game-id 0042500133 --game-id 0042500163 --dry-run`
 - `$env:JANUS_RUN_DB_TESTS='1'; python -m pytest -q tests/app/api`
 
 ## Notes
@@ -107,3 +114,4 @@ Common commands:
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
 - Sports-core data completeness comes before Chroma, LLM memory, or broader multi-module expansion.
 - Strategy logic is now frozen around the offline NBA analysis controller stack; the current goal is execution hardening and review tooling, not new family proliferation.
+- The live-control surface is a minimal operator console, not the long-horizon analysis dashboard. Use `/live-control` for tonight’s run loop and `analysis-studio` for offline review.

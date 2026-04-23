@@ -11,7 +11,7 @@
 Interpretation:
 - the controller stack is now locked for the NBA playoff live-execution phase
 - controller discovery is no longer the active priority
-- the next engineering lane is executor wiring, decision logging, and paper/live validation
+- the active engineering lane is the local live playoff validation loop, then decision logging and executor hardening
 
 ## Current Release Baseline
 - analysis module baseline: `v1_0_1`
@@ -54,15 +54,15 @@ Completed release wave:
 
 ### Postseason Validation Slice
 - phases: `play_in`, `playoffs`
-- finished games validated: `20`
+- finished games validated: `22`
 - split:
   - `play_in=6`
-  - `playoffs=14`
-- research-ready games: `20 / 20`
+  - `playoffs=16`
+- research-ready games: `22 / 22`
 - state-panel rows:
   - `play_in=7,128`
-  - `playoffs=15,990`
-  - combined=`23,118`
+  - `playoffs=18,285`
+  - combined=`25,413`
 
 ## Frozen Underlying Strategy Stack
 These are the kept underlying methods that still compose the locked controllers.
@@ -149,14 +149,58 @@ Validated on `2026-04-23`:
 ## Current Frontend Surface
 - the studio remains read-only
 - it should now be tuned around the locked primary controller, the deterministic fallback, and their internal route / sleeve diagnostics
+- a separate operator-first control surface now exists at `/live-control`
+- `/live-control` is intentionally minimal:
+  - current run status and heartbeat
+  - three game cards
+  - open positions and open orders
+  - recent executor events and slippage summary
+  - pause/resume/stop controls
 
-## Current Next Branches
-- `codex/live-polymarket-executor`
-  - primary branch to wire the locked controller into paper / live-safe execution
-- `codex/controller-decision-logging`
-  - append-only decision log, executor outcomes, and ML-ready candidate dataset
-- `codex/frontend-analysis-portfolio-viz`
-  - focused review dashboard for the locked controller pair
+## Current Live Execution Surface
+### Local live executor v1
+- location:
+  - `app/modules/nba/execution/*`
+- execution profile:
+  - `v1`
+- controller core:
+  - primary `controller_vnext_unified_v1 :: balanced`
+  - fallback `controller_vnext_deterministic_v1 :: tight`
+- current local policy:
+  - run on an explicit list of NBA `game_id`s
+  - fixed Polymarket minimum size only
+  - limit-only entries at best ask
+  - skip entry if spread is greater than `2c`
+  - local stop-loss trigger with immediate market-emulated sell
+  - non-stop exits try limit first, then one aggressive retry
+- local orchestration ledger:
+  - `C:\code-personal\janus-local\janus_cortex\tracks\live-controller\<date>\<run_id>\`
+  - files:
+    - `run_config.json`
+    - `heartbeat.json`
+    - `decisions.jsonl`
+    - `executor_events.jsonl`
+    - `recovery_snapshot.json`
+
+### Live validation note for April 23, 2026
+- target slate:
+  - `0042500123` `NYK@ATL`
+  - `0042500133` `CLE@TOR`
+  - `0042500163` `DEN@MIN`
+- local launcher:
+  - `python tools/start_live_run.py --api-root http://127.0.0.1:8010 --run-id live-2026-04-23-v1 --game-id 0042500123 --game-id 0042500133 --game-id 0042500163 --dry-run`
+- operator page:
+  - `/live-control?runId=live-2026-04-23-v1`
+- runbook:
+  - [live_playoff_validation_runbook.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/live_playoff_validation_runbook.md)
+
+## Current Next Lanes
+- immediate:
+  - validate the local live executor tonight on the locked playoff slate
+- after the live loop stabilizes:
+  - append-only decision logging and ML-ready candidate dataset contract
+  - fill-quality and slippage review
+  - executor hardening around restart/recovery and stop handling
 
 ## Output Root Convention
 - repo outputs remain read-only snapshots

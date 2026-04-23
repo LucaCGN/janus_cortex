@@ -8,10 +8,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import RequestContextMiddleware, install_exception_handlers
 from app.api.routers.analysis_studio import ANALYSIS_STUDIO_STATIC_ROOT
+from app.api.routers.nba_live import LIVE_CONTROL_STATIC_ROOT
 from app.api.routers import (
     analysis_studio_router,
     catalog_router,
     market_data_router,
+    nba_live_router,
     nba_read_router,
     portfolio_router,
     sync_router,
@@ -39,11 +41,18 @@ def create_app() -> FastAPI:
             StaticFiles(directory=str(ANALYSIS_STUDIO_STATIC_ROOT)),
             name="analysis-studio-static",
         )
+    if LIVE_CONTROL_STATIC_ROOT.exists():
+        app.mount(
+            "/live-control/static",
+            StaticFiles(directory=str(LIVE_CONTROL_STATIC_ROOT)),
+            name="live-control-static",
+        )
 
     app.include_router(analysis_studio_router)
     app.include_router(system_registry_router)
     app.include_router(catalog_router)
     app.include_router(market_data_router)
+    app.include_router(nba_live_router)
     app.include_router(portfolio_router)
     app.include_router(sync_router)
     app.include_router(nba_read_router)
