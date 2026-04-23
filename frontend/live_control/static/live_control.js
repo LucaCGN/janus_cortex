@@ -620,9 +620,11 @@
     setControlButtons(true);
     setHeaderState(true, demo);
     setStatus(demo ? 'Demo mode active.' : `Polling ${state.runId} at ${state.apiRoot}`);
+    setLastUpdate('Last update: connecting...');
+    q('run-summary-meta').textContent = 'Loading live run...';
     renderAll(demo ? demoData() : (state.data || emptyData()));
     if (state.timer) clearTimeout(state.timer);
-    state.timer = setTimeout(tick, 0);
+    void tick();
   }
 
   function initFormDefaults() {

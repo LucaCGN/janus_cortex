@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import threading
+from pathlib import Path
 from typing import Any
 
-from app.modules.nba.execution.contracts import LiveRunConfig, LiveRunCreateRequest
+from app.modules.nba.execution.contracts import LiveRunConfig, LiveRunCreateRequest, resolve_live_tracks_root
 from app.modules.nba.execution.runner import LiveRunWorker
 
 
@@ -22,9 +24,26 @@ class LiveRunService:
             worker.start()
             return worker.summary_snapshot()
 
+    def _load_worker_from_disk(self, run_id: str) -> LiveRunWorker | None:
+        tracks_root = resolve_live_tracks_root()
+        candidates = sorted(tracks_root.glob(f"*/{run_id}/run_config.json"), reverse=True)
+        for path in candidates:
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                config = LiveRunConfig(**payload)
+            except Exception:
+                continue
+            worker = LiveRunWorker(config)
+            self._runs[run_id] = worker
+            worker.start()
+            return worker
+        return None
+
     def require_run(self, run_id: str) -> LiveRunWorker:
         with self._lock:
             worker = self._runs.get(run_id)
+            if worker is None:
+                worker = self._load_worker_from_disk(run_id)
         if worker is None:
             raise KeyError(f"Live run not found: {run_id}")
         return worker
