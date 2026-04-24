@@ -801,12 +801,20 @@ class LiveRunWorker:
             active_positions = [item for item in self.active_positions.values() if str(item.get("game_id")) == str(game_id)]
             fill_state = "filled" if active_positions else "working" if active_orders else "none"
             stop_price = active_positions[0].get("stop_price") if active_positions else _extract_stop_price(selected_trade or {})
+            candidate_is_stale = bool(
+                selected_trade is not None
+                and latest_state_row is not None
+                and int(latest_state_row.get("state_index") or -1) > int((selected_trade or {}).get("entry_state_index") or -1)
+                and not _is_recent_signal(selected_trade or {}, latest_state_row)
+            )
 
             state_label = "pregame" if int(game.get("game_status") or 0) == 1 else "monitoring"
             if int(game.get("game_status") or 0) == 3:
                 state_label = "final"
             if decision.get("final_source") == "skip_weak_game" or decision.get("selected_core_family") is None:
                 state_label = "skip" if state_label != "final" else state_label
+            if candidate_is_stale and state_label not in {"final", "pregame"}:
+                state_label = "stale signal"
             if active_orders:
                 state_label = "entry queued"
             if active_positions:
@@ -818,11 +826,21 @@ class LiveRunWorker:
                 "clock": _clock_label(game, latest_state_row),
                 "controller_name": self.config.controller_name,
                 "strategy_family": str((selected_trade or {}).get("source_strategy_family") or decision.get("selected_core_family") or "skip"),
-                "selected_action": "buy limit" if selected_trade is not None and not active_positions else ("hold" if active_positions else "wait"),
+                "selected_action": (
+                    "hold"
+                    if active_positions
+                    else "buy limit"
+                    if selected_trade is not None and not candidate_is_stale
+                    else "wait"
+                ),
                 "selected_confidence": decision.get("selected_confidence") or (selected_trade or {}).get("unified_router_default_confidence"),
                 "state_label": state_label,
-                "note": self._latest_event_message_for_game(str(game_id))
-                or str(decision.get("final_selection_reason") or diagnostics.get("coverage_status") or "Monitoring live state."),
+                "note": (
+                    "entry_signal_stale"
+                    if candidate_is_stale and not active_orders and not active_positions
+                    else self._latest_event_message_for_game(str(game_id))
+                    or str(decision.get("final_selection_reason") or diagnostics.get("coverage_status") or "Monitoring live state.")
+                ),
                 "open_order_count": len(active_orders),
                 "open_position_count": len(active_positions),
                 "best_bid": (orderbook or {}).get("best_bid"),
