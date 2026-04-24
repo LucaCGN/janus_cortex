@@ -491,6 +491,7 @@ class LiveRunWorker:
                 "log_paths": {
                     "heartbeat": str(self.run_root / "heartbeat.json"),
                     "decisions": str(self.run_root / "decisions.jsonl"),
+                    "controller_trace": str(self.run_root / "controller_trace.jsonl"),
                     "events": str(self.run_root / "executor_events.jsonl"),
                     "runtime_log": str(self.run_root / "runtime.log"),
                     "recovery_snapshot": str(self.run_root / "recovery_snapshot.json"),
@@ -724,6 +725,18 @@ class LiveRunWorker:
             apply_stop_overlay(unified_trades, state_lookup=state_lookup, stop_map=DEFAULT_VNEXT_STOP_MAP),
             profile=DEFAULT_VNEXT_PROFILE,
         )
+        self._append_controller_trace(
+            "cycle_snapshot",
+            payload={
+                "game_ids": list(self.config.game_ids),
+                "state_row_count": int(len(state_df)),
+                "deterministic_trade_count": int(len(deterministic_trades)),
+                "deterministic_decision_count": int(len(deterministic_decisions)),
+                "unified_trade_count": int(len(unified_trades)),
+                "unified_decision_count": int(len(unified_decisions)),
+                "diagnostics_by_game": diagnostics_by_game,
+            },
+        )
         self._persist_decisions(
             (unified_decisions if _controller_is_unified(self.config.controller_name) else deterministic_decisions).to_dict(orient="records")
         )
@@ -820,7 +833,7 @@ class LiveRunWorker:
             if active_positions:
                 state_label = "open position"
 
-            cards[str(game_id)] = {
+            card_payload = {
                 "game_id": str(game_id),
                 "matchup": _matchup_label(game),
                 "clock": _clock_label(game, latest_state_row),
@@ -849,6 +862,27 @@ class LiveRunWorker:
                 "realized_pnl": active_positions[0].get("realized_pnl") if active_positions else None,
                 "fill_state": fill_state,
             }
+            cards[str(game_id)] = card_payload
+            self._append_controller_trace(
+                "game_card",
+                game_id=str(game_id),
+                payload={
+                    "matchup": _matchup_label(game),
+                    "coverage_status": diagnostics.get("coverage_status"),
+                    "latest_state": self._state_trace_row(latest_state_row),
+                    "decision": self._decision_trace_row(decision),
+                    "selected_trade": self._trade_trace_row(selected_trade),
+                    "candidate_is_stale": candidate_is_stale,
+                    "orderbook": {
+                        "best_bid": (orderbook or {}).get("best_bid"),
+                        "best_ask": (orderbook or {}).get("best_ask"),
+                        "spread_cents": (orderbook or {}).get("spread_cents"),
+                    },
+                    "active_order_count": len(active_orders),
+                    "active_position_count": len(active_positions),
+                    "card": card_payload,
+                },
+            )
         with self._lock:
             self.game_cards = cards
 
@@ -926,10 +960,40 @@ class LiveRunWorker:
                 team_side=str(position_state.get("team_side") or ""),
             )
             if current_state is None:
+                self._append_controller_trace(
+                    "exit_gate",
+                    game_id=str(position_state.get("game_id") or ""),
+                    payload={
+                        "result": "hold",
+                        "reason": "no_current_state",
+                        "position": self._position_trace_row(position_state),
+                    },
+                )
                 continue
             exit_reason, stop_triggered = _evaluate_exit_reason(position_state, current_state)
             if not exit_reason:
+                self._append_controller_trace(
+                    "exit_gate",
+                    game_id=str(position_state.get("game_id") or ""),
+                    payload={
+                        "result": "hold",
+                        "reason": "no_exit_signal",
+                        "position": self._position_trace_row(position_state),
+                        "current_state": self._state_trace_row(current_state),
+                    },
+                )
                 continue
+            self._append_controller_trace(
+                "exit_gate",
+                game_id=str(position_state.get("game_id") or ""),
+                payload={
+                    "result": "submit_exit",
+                    "reason": exit_reason,
+                    "stop_triggered": stop_triggered,
+                    "position": self._position_trace_row(position_state),
+                    "current_state": self._state_trace_row(current_state),
+                },
+            )
             self._submit_exit_order(
                 connection,
                 position_state={**position_state, "exit_reason": exit_reason},
@@ -962,27 +1026,110 @@ class LiveRunWorker:
             team_side = str(record.get("team_side") or "")
             signal_id = _signal_id_for_trade(record)
             if signal_id in self.active_orders or signal_id in self.active_positions:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "already_active_signal",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             bundle = snapshot["bundles"].get(game_id)
             if not bundle:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "bundle_unavailable",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             latest_state = self._latest_state_row(snapshot["state_df"], game_id=game_id, team_side=team_side)
             if latest_state is None:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "latest_state_unavailable",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             entry_state_index = int(record.get("entry_state_index") or -1)
             latest_state_index = int(latest_state.get("state_index") or -1)
             if latest_state_index < entry_state_index:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "signal_in_future",
+                        "trade": self._trade_trace_row(record),
+                        "latest_state": self._state_trace_row(latest_state),
+                    },
+                )
                 continue
             if latest_state_index > entry_state_index and not _is_recent_signal(record, latest_state):
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "stale_signal",
+                        "trade": self._trade_trace_row(record),
+                        "latest_state": self._state_trace_row(latest_state),
+                    },
+                )
                 continue
             outcome_map = _side_outcome_map(bundle)
             outcome_meta = outcome_map.get(team_side)
             if outcome_meta is None:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "outcome_meta_unavailable",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             signature = (game_id, str(outcome_meta.get("outcome_id") or ""), "buy")
             if signature in active_signatures or signature in active_position_signatures:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "active_signature_exists",
+                        "signature": signature,
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             if any(str(value.get("game_id") or "") == game_id for value in self.active_positions.values()):
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "game_position_exists",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             orderbook = fetch_latest_orderbook_summary(
                 creds=resolve_trading_account_credentials(self.account),
@@ -1005,6 +1152,16 @@ class LiveRunWorker:
                         "outcome_id": str(outcome_meta.get("outcome_id") or ""),
                     },
                 )
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "orderbook_unavailable",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
                 continue
             if spread_cents is not None and float(spread_cents) > 2.0:
                 self._record_event(
@@ -1018,6 +1175,21 @@ class LiveRunWorker:
                         "best_bid": best_bid,
                         "best_ask": best_ask,
                         "spread_cents": spread_cents,
+                    },
+                )
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "spread_too_wide",
+                        "trade": self._trade_trace_row(record),
+                        "orderbook": {
+                            "best_bid": best_bid,
+                            "best_ask": best_ask,
+                            "spread_cents": spread_cents,
+                        },
                     },
                 )
                 continue
@@ -1059,6 +1231,29 @@ class LiveRunWorker:
                 order_type="limit",
                 metadata_json=metadata,
                 dry_run=self.config.dry_run,
+            )
+            self._append_controller_trace(
+                "entry_gate",
+                game_id=game_id,
+                payload={
+                    "signal_id": signal_id,
+                    "result": "submit_entry",
+                    "trade": self._trade_trace_row(record),
+                    "latest_state": self._state_trace_row(latest_state),
+                    "orderbook": {
+                        "best_bid": best_bid,
+                        "best_ask": best_ask,
+                        "spread_cents": spread_cents,
+                    },
+                    "submitted": {
+                        "price": entry_price,
+                        "size": size,
+                        "order_policy": "limit_best_ask",
+                        "order_id": placed.get("order_id"),
+                        "external_order_id": placed.get("external_order_id"),
+                        "dry_run": self.config.dry_run,
+                    },
+                },
             )
             with self._lock:
                 self.active_orders[signal_id] = {
@@ -1380,6 +1575,84 @@ class LiveRunWorker:
                 if str(event.get("game_id") or "") == str(game_id):
                     return str(event.get("message") or "")
         return None
+
+    def _append_controller_trace(
+        self,
+        stage: str,
+        *,
+        game_id: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        row = {
+            "timestamp": utc_now().isoformat(),
+            "run_id": self.config.run_id,
+            "cycle_count": self.cycle_count,
+            "stage": stage,
+            "game_id": game_id,
+            "payload": payload or {},
+        }
+        _append_jsonl(self.run_root / "controller_trace.jsonl", row)
+
+    def _state_trace_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "state_index": row.get("state_index"),
+            "period_label": row.get("period_label"),
+            "clock": row.get("clock"),
+            "event_at": row.get("event_at"),
+            "team_side": row.get("team_side"),
+            "team_price": row.get("team_price"),
+            "score_diff": row.get("score_diff"),
+            "net_points_last_5_events": row.get("net_points_last_5_events"),
+            "seconds_to_game_end": row.get("seconds_to_game_end"),
+            "market_regime": row.get("market_regime"),
+        }
+
+    def _decision_trace_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "selected_core_family": row.get("selected_core_family"),
+            "selected_team_side": row.get("selected_team_side"),
+            "selected_confidence": row.get("selected_confidence"),
+            "final_source": row.get("final_source"),
+            "final_selection_reason": row.get("final_selection_reason"),
+            "llm_evaluated_flag": row.get("llm_evaluated_flag"),
+            "llm_action": row.get("llm_action"),
+            "llm_confidence": row.get("llm_confidence"),
+            "final_selected_trade_count": row.get("final_selected_trade_count"),
+            "weak_game_flag": row.get("weak_game_flag"),
+        }
+
+    def _trade_trace_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "source_strategy_family": row.get("source_strategy_family") or row.get("strategy_family"),
+            "team_side": row.get("team_side"),
+            "team_slug": row.get("team_slug"),
+            "opponent_team_slug": row.get("opponent_team_slug"),
+            "entry_state_index": row.get("entry_state_index"),
+            "entry_at": row.get("entry_at"),
+            "entry_price": row.get("entry_price"),
+            "stop_price": _extract_stop_price(row),
+            "signal_id": _signal_id_for_trade(row),
+        }
+
+    def _position_trace_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
+        if not row:
+            return None
+        return {
+            "signal_id": row.get("signal_id"),
+            "strategy_family": row.get("strategy_family"),
+            "team_side": row.get("team_side"),
+            "entry_price": row.get("entry_price"),
+            "stop_price": row.get("stop_price"),
+            "size": row.get("size"),
+            "entry_at": row.get("entry_at"),
+            "exit_reason": row.get("exit_reason"),
+        }
 
     def _write_runtime_log(self, line: str) -> None:
         _append_text(self.run_root / "runtime.log", line)
