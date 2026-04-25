@@ -59,6 +59,11 @@ from app.modules.nba.execution.adapter import (
     resolve_trading_account,
 )
 from app.modules.nba.execution.contracts import LiveRunConfig, build_live_order_metadata, utc_now
+from app.modules.nba.execution.shadow import (
+    SHADOW_SNAPSHOT_CSV_NAME,
+    SHADOW_SNAPSHOT_JSON_NAME,
+    build_live_shadow_snapshot,
+)
 
 
 LIVE_MASTER_ROUTER_KWARGS = {
@@ -427,6 +432,7 @@ class LiveRunWorker:
         self.last_cycle_duration_seconds: float | None = None
         self.last_successful_cycle_at: datetime | None = None
         self.last_traceback: str | None = None
+        self.latest_cycle_snapshot: dict[str, Any] | None = None
         self._load_recovery_snapshot()
         _write_json(self.run_root / "run_config.json", self.config.model_dump())
 
@@ -496,6 +502,8 @@ class LiveRunWorker:
                     "runtime_log": str(self.run_root / "runtime.log"),
                     "recovery_snapshot": str(self.run_root / "recovery_snapshot.json"),
                     "last_error": str(self.run_root / "last_error.txt"),
+                    "shadow_snapshot_json": str(self.run_root / SHADOW_SNAPSHOT_JSON_NAME),
+                    "shadow_snapshot_csv": str(self.run_root / SHADOW_SNAPSHOT_CSV_NAME),
                 },
                 "games": list(self.game_cards.values()),
             }
@@ -539,6 +547,32 @@ class LiveRunWorker:
         with self._lock:
             return list(self.events)[-50:]
 
+    def capture_shadow_snapshot(
+        self,
+        *,
+        game_ids: list[str] | None = None,
+        families: list[str] | None = None,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        snapshot = self.latest_cycle_snapshot
+        if snapshot is None:
+            with managed_connection() as connection:
+                self.account = resolve_trading_account(connection, account_id=self.config.account_id)
+                snapshot = self._build_cycle_snapshot(connection)
+            with self._lock:
+                self.latest_cycle_snapshot = snapshot
+        with self._lock:
+            controller_cards = list(self.game_cards.values())
+        return build_live_shadow_snapshot(
+            run_id=self.config.run_id,
+            run_root=self.run_root,
+            snapshot=snapshot,
+            controller_cards=controller_cards,
+            game_ids=game_ids or list(self.config.game_ids),
+            families=families,
+            persist=persist,
+        )
+
     def fills_summary(self) -> list[dict[str, Any]]:
         with self._lock:
             attempted = len([event for event in self.events if event.get("title") in {"Entry submitted", "Exit submitted", "Stop submitted"}])
@@ -571,6 +605,8 @@ class LiveRunWorker:
                     self.account = resolve_trading_account(connection, account_id=self.config.account_id)
                     mirror_account_state(connection, account=self.account)
                     snapshot = self._build_cycle_snapshot(connection)
+                    with self._lock:
+                        self.latest_cycle_snapshot = snapshot
                     self._reconcile_runtime_state(connection)
                     self._process_open_positions(connection, snapshot=snapshot)
                     self._process_open_orders(connection, snapshot=snapshot)

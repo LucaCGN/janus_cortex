@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 
 from app.modules.nba.execution import LiveRunCreateRequest, get_live_run_service
@@ -72,6 +72,24 @@ def get_live_run_events(run_id: str) -> dict[str, Any]:
 def get_live_run_summary_cards(run_id: str) -> dict[str, Any]:
     try:
         return get_live_run_service().get_run_summary_cards(run_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/v1/nba/live/runs/{run_id}/shadow")
+def get_live_run_shadow(
+    run_id: str,
+    game_id: list[str] | None = Query(default=None),
+    family: list[str] | None = Query(default=None),
+    persist: bool = Query(default=True),
+) -> dict[str, Any]:
+    try:
+        return get_live_run_service().capture_run_shadow(
+            run_id,
+            game_ids=game_id,
+            families=family,
+            persist=persist,
+        )
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

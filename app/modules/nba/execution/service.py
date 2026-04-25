@@ -64,6 +64,20 @@ class LiveRunService:
     def get_run_summary_cards(self, run_id: str) -> dict[str, Any]:
         return {"fills": self.require_run(run_id).fills_summary()}
 
+    def capture_run_shadow(
+        self,
+        run_id: str,
+        *,
+        game_ids: list[str] | None = None,
+        families: list[str] | None = None,
+        persist: bool = True,
+    ) -> dict[str, Any]:
+        return self.require_run(run_id).capture_shadow_snapshot(
+            game_ids=game_ids,
+            families=families,
+            persist=persist,
+        )
+
     def pause_entries(self, run_id: str) -> dict[str, Any]:
         worker = self.require_run(run_id)
         worker.pause_entries()

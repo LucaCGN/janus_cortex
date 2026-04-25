@@ -7,6 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.api.db import to_jsonable
 from app.data.pipelines.daily.nba.analysis.contracts import WINDOWS_LOCAL_ROOT
 
 
@@ -106,7 +107,7 @@ def build_live_order_metadata(
     }
     if extra:
         payload.update(extra)
-    return payload
+    return to_jsonable(payload)
 
 
 __all__ = [
