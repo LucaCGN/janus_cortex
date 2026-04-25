@@ -10,13 +10,18 @@ This document is reference, not planning. It describes what the frontend is allo
 - the first implementation uses the existing FastAPI runtime and serves static assets directly
 - `F1` does not introduce a Node or separate JS build toolchain because the repository does not currently own one
 - the frontend consumes the analysis consumer snapshot contract instead of loading raw artifact JSONs independently
+- the default studio page now also consumes a dedicated unified benchmark dashboard payload for shared lane comparison
+- the benchmark dashboard now treats replay as the realism baseline and separates standard backtest, replay result, and live observed views explicitly
 - local operator run control also stays in the existing FastAPI runtime for now, but it is limited to whitelisted commands and local workspace paths
 - `F3a` adds a mart-backed game explorer through thin read-only API routes, so the frontend still does not parse analysis artifacts directly
 - `F4a` adds a read-only family comparison surface, and the studio now consumes a separate backtest detail contract for that view
+- `F4b` repurposes the main `/analysis-studio` page into the benchmark-control dashboard while keeping the bounded detail APIs available
 
 ## Stable Read Surface
 - page route:
   - `GET /analysis-studio`
+- unified dashboard route:
+  - `GET /v1/analysis/studio/benchmark-dashboard`
 - read-only snapshot route:
   - `GET /v1/analysis/studio/snapshot`
 - control-plane route:
@@ -42,13 +47,17 @@ Query parameters for the snapshot route align with `AnalysisConsumerRequest`:
 
 ## Dependency Rules
 The frontend should read:
+- `build_unified_benchmark_dashboard`
 - `load_analysis_consumer_snapshot`
 - `AnalysisConsumerRequest`
+- normalized shared benchmark submission manifests or synthesized shared replay artifacts through the API layer
+- normalized result-mode views instead of inferring replay or live semantics from flat counts alone
 - static report and benchmark information already normalized by the adapter layer
 - the studio game explorer routes for finished-game profile and state-panel inspection
 - the studio backtest comparison routes for family index and bounded detail reads
 
 The frontend should not read:
+- shared replay, ML, or LLM artifacts directly from the browser
 - raw ingest tables
 - report, backtest, or model JSON files directly
 - `nba_analysis_game_team_profiles` or `nba_analysis_state_panel` files directly from the browser
@@ -84,9 +93,11 @@ The frontend should not read:
   - `F2` added run control, validation visibility, and local operator state
   - `F3a` added mart-backed game explorer routes plus frontend game index/detail panels
   - `F4a` added read-only family comparison routes and studio views
+- `F4b` added the unified benchmark-control dashboard over the shared replay contract and future lane submissions
+- `F4b` now also exposes lane ranking, compare-ready ranking, replay compare-ready/shadow/bench splits, explicit realism-gap metrics, and strict submission example paths for future ML and LLM manifests
 - deferred:
   - `F3b` richer overlays only if the current explorer proves insufficient
-  - `F4b` richer comparison UX refinements, if needed, after the read-only comparison contract is stable
+  - `F4c` richer comparison UX refinements, if needed, after ML and LLM lanes publish their first shared submissions
   - `F5` operator hardening after the comparison surface settles
 
 ## Constraint

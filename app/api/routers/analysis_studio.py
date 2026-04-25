@@ -20,6 +20,10 @@ from app.data.pipelines.daily.nba.analysis.consumer_adapters import (
     load_analysis_backtest_index,
     load_analysis_consumer_snapshot,
 )
+from app.data.pipelines.daily.nba.analysis.benchmark_integration import (
+    UnifiedBenchmarkRequest,
+    build_unified_benchmark_dashboard,
+)
 from app.data.pipelines.daily.nba.analysis.contracts import (
     ANALYSIS_VERSION,
     DEFAULT_LOCAL_ROOT_ENV_VAR,
@@ -721,6 +725,22 @@ def get_analysis_studio_control(
         "recent_validations": validations,
         "recent_runs": _list_run_records(),
     }
+
+
+@router.get("/v1/analysis/studio/benchmark-dashboard")
+def get_analysis_studio_benchmark_dashboard(
+    season: str = Query(default=DEFAULT_SEASON),
+    replay_artifact_name: str = Query(default="postseason_execution_replay"),
+    shared_root: str | None = Query(default=None),
+    finalist_limit: int = Query(default=6, ge=2, le=12),
+) -> dict[str, Any]:
+    request = UnifiedBenchmarkRequest(
+        season=season,
+        replay_artifact_name=replay_artifact_name,
+        shared_root=shared_root,
+        finalist_limit=finalist_limit,
+    )
+    return build_unified_benchmark_dashboard(request)
 
 
 @router.get("/v1/analysis/studio/games")

@@ -9,6 +9,7 @@ Turn the locked NBA controller into the first live-safe Polymarket execution mod
 
 Detailed milestone and branch decomposition lives in:
 - [roadmap_to_multi_algo_backtests.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/roadmap_to_multi_algo_backtests.md)
+- [benchmark_integration_roadmap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/benchmark_integration_roadmap.md)
 - [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 
 ## What Is Already Done
@@ -127,6 +128,23 @@ Target outputs:
 - live paper-review queue
 - outcome and bankroll-path inspection
 
+### 3b. Unified Benchmark Control
+Why this is parallel-friendly:
+- replay, ML, and LLM lanes need one comparison layer before they can merge cleanly
+
+Target outputs:
+- one shared benchmark contract above lane-specific artifacts
+- one dashboard that shows baselines, replay realism gap, deterministic and HF candidates, ML candidates, and LLM candidates
+- explicit standard backtest vs replay result vs live observed views
+- explicit stale-signal suppression metrics so replay realism does not drift back into vague trade-count summaries
+- one merge gate for when a lane is mature enough to compare globally
+- one shared export snapshot under the Codex coordination space
+
+Current read:
+- replay is the realism baseline
+- `signal_stale` is the dominant divergence cause
+- `quarter_open_reprice` is the clearest promising replay-aware HF family
+
 ### 4. Season Continuity
 Target outputs:
 - fresh-game sync and rebuild playbook for the remaining playoffs
@@ -137,13 +155,14 @@ Target outputs:
 - broad LLM prompt experimentation
 - free-form LLM autonomy
 - replacing the controller with ML before live execution data exists
-- broad studio/operator pages that do not help review the locked controller pair
+- broad studio or operator pages that do not help review the locked controller pair
+- lane-specific scorecards that fork the benchmark semantics
 
 ## Execution Notes
 - work is now intentionally concentrated on `main` for local iteration speed
 - strategy math stays frozen unless a real live-execution issue proves otherwise
 - execution changes should version the execution profile (`v1`, `v2`, `v3`) instead of renaming the controller core
-- tonight’s acceptance gate is operational:
+- tonight's acceptance gate is operational:
   - live runner stays alive
   - orders/events appear on `/live-control`
   - restart/resume does not duplicate entries

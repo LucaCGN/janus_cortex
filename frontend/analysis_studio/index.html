@@ -3,41 +3,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Janus Cortex NBA Analysis Studio</title>
+  <title>Janus Cortex Unified Benchmark Dashboard</title>
   <link rel="stylesheet" href="/analysis-studio/static/analysis_studio.css">
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
       <div class="brand-block">
-        <p class="eyebrow">Janus Cortex / NBA Analysis</p>
-        <h1>Master router finalists</h1>
+        <p class="eyebrow">Janus Cortex / Benchmark Control</p>
+        <h1>Unified benchmark dashboard</h1>
         <p class="lede">
-          Six finalists only. The surface is limited to the benchmark lanes that matter now: one main
-          evolution chart, a compact comparison area, and bounded tables for planning and review.
+          One comparison layer for the locked baselines, replay realism gap, deterministic and higher-frequency
+          challengers, and future ML or LLM lane submissions. The page only elevates candidates that are actually
+          published under the shared contract.
         </p>
       </div>
 
-      <form id="snapshot-form" class="toolbar">
+      <form id="dashboard-form" class="toolbar">
         <label>
           <span>Season</span>
           <input id="season" name="season" value="2025-26" required>
         </label>
         <label>
-          <span>Phase</span>
-          <input id="season_phase" name="season_phase" value="regular_season" required>
+          <span>Replay Artifact</span>
+          <input id="replay_artifact_name" name="replay_artifact_name" value="postseason_execution_replay" required>
         </label>
         <label>
-          <span>Analysis Version</span>
-          <input id="analysis_version" name="analysis_version" placeholder="latest if blank">
+          <span>Finalist Limit</span>
+          <input id="finalist_limit" name="finalist_limit" type="number" min="2" max="12" value="6" required>
         </label>
         <label class="toolbar-span">
-          <span>Output Root</span>
-          <input id="output_root" name="output_root" placeholder="optional local root override">
+          <span>Shared Root Override</span>
+          <input id="shared_root" name="shared_root" placeholder="optional shared root override">
         </label>
         <div class="toolbar-actions">
-          <button id="load-button" type="submit">Load dashboard</button>
-          <p id="status-line" class="status-line">Waiting for the first snapshot request.</p>
+          <button id="load-button" type="submit">Load benchmark dashboard</button>
+          <p id="status-line" class="status-line">Waiting for the first unified benchmark snapshot.</p>
         </div>
       </form>
     </header>
@@ -45,95 +46,269 @@
     <p id="error-line" class="error-line" hidden></p>
 
     <main class="dashboard">
-      <section class="panel chart-panel">
+      <section class="panel">
         <div class="section-header">
           <div>
-            <p class="section-kicker">Benchmark slices</p>
-            <h2>Strategy evolution across time</h2>
+            <p class="section-kicker">Contract status</p>
+            <h2>Shared benchmark snapshot</h2>
           </div>
-          <p id="snapshot-meta" class="section-meta">No snapshot loaded yet.</p>
+          <p id="snapshot-meta" class="section-meta">No shared benchmark snapshot loaded yet.</p>
         </div>
-        <div id="strategy-line-chart" class="chart-shell empty-state">Load a snapshot to render the finalists and the master router.</div>
-        <div id="strategy-line-legend" class="legend-row"></div>
+        <div id="summary-cards" class="metric-grid empty-state">Load a snapshot to inspect lane readiness and replay coverage.</div>
       </section>
 
       <section class="panel">
         <div class="section-header">
           <div>
-            <p class="section-kicker">Finalists</p>
-            <h2>Ranked comparison and router alignment</h2>
+            <p class="section-kicker">Result modes</p>
+            <h2>Standard vs replay vs live observed</h2>
           </div>
-          <p class="section-meta">Only the six benchmark finalists plus the master router are shown here.</p>
+          <p class="section-meta">Replay is the realism baseline. Live observed stays separate so missing live runs are not mislabeled as zeros.</p>
         </div>
-        <div class="split-panel finalists-layout">
-          <article class="subpanel">
-            <div class="subpanel-header">
-              <p class="section-kicker">Ranking</p>
-              <h3>Finalist scoreboard</h3>
-            </div>
-            <div id="finalist-ranking-table" class="table-wrap empty-state">Load a snapshot to inspect the six finalists.</div>
-          </article>
-          <article class="subpanel">
-            <div class="subpanel-header">
-              <p class="section-kicker">Router</p>
-              <h3>Master alignment</h3>
-            </div>
-            <div id="master-router-summary" class="metric-grid small-grid empty-state">Master-router cards appear here after loading.</div>
-            <div id="route-band-table" class="table-wrap empty-state">Opening-band routing appears here after loading.</div>
-            <div id="llm-variant-table" class="table-wrap empty-state">LLM variant summary appears here after loading.</div>
-          </article>
-        </div>
+        <div id="mode-cards" class="metric-grid empty-state">Result mode summary will appear here after loading.</div>
       </section>
 
       <section class="panel">
         <div class="section-header">
           <div>
-            <p class="section-kicker">LLM planning</p>
-            <h2>Bounded family detail</h2>
+            <p class="section-kicker">Daily live validation</p>
+            <h2>Today’s live slate posture</h2>
           </div>
-          <p class="section-meta">Select one finalist for the bounded summary, best/worst trades, and context slice.</p>
+          <p class="section-meta">This is the current operator truth for the live slate, separate from replay ranking and compare-ready status.</p>
         </div>
-        <form id="comparison-form" class="toolbar compact-toolbar">
-          <label>
-            <span>Finalist</span>
-            <select id="comparison_family" name="comparison_family" disabled>
-              <option value="">load a snapshot first</option>
-            </select>
-          </label>
-          <label>
-            <span>Trade Limit</span>
-            <input id="comparison_trade_limit" name="trade_limit" type="number" min="1" max="20" value="5">
-          </label>
-          <label>
-            <span>Context Limit</span>
-            <input id="comparison_context_limit" name="context_limit" type="number" min="1" max="40" value="10">
-          </label>
-          <label>
-            <span>Trace Limit</span>
-            <input id="comparison_trace_limit" name="trace_limit" type="number" min="1" max="12" value="3">
-          </label>
-          <div class="toolbar-actions">
-            <button id="comparison-button" type="submit">Load family detail</button>
-            <p id="comparison-status-line" class="status-line">Load a snapshot to inspect family detail.</p>
-          </div>
-        </form>
+        <div id="daily-live-list" class="stack-list empty-state">Daily live validation details will appear here after loading.</div>
+      </section>
 
-        <div class="family-layout">
+      <section class="panel">
+        <div class="section-header">
           <div>
-            <div class="subpanel-header">
-              <p class="section-kicker">Finalists</p>
-              <h3>Compact comparison list</h3>
-            </div>
-            <div id="comparison-index" class="stack-list empty-state">No strategy families loaded yet.</div>
+            <p class="section-kicker">Lane readiness</p>
+            <h2>Who can compare globally right now</h2>
           </div>
-          <div>
-            <div class="subpanel-header">
-              <p class="section-kicker">Detail</p>
-              <h3>Bounded trade and context preview</h3>
-            </div>
-            <div id="comparison-detail" class="stack-list empty-state">Choose a family to inspect detail.</div>
-          </div>
+          <p class="section-meta">Lanes stay pending until they publish a shared benchmark submission or synthesized shared artifact package.</p>
         </div>
+        <div id="lane-status-table" class="table-wrap empty-state">Lane readiness will appear here after loading.</div>
+      </section>
+
+      <section class="split-panel">
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Lane ranking</p>
+              <h2>Current lane order</h2>
+            </div>
+            <p class="section-meta">Compare-ready and mixed lanes stay ahead of shadow-only or bench-only publication states.</p>
+          </div>
+          <div id="lane-ranking-table" class="table-wrap empty-state">Lane ranking will appear here after loading.</div>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Compare-ready ranking</p>
+              <h2>Global replay-aware challenger order</h2>
+            </div>
+            <p class="section-meta">This is the main cross-lane ranking surface for candidates that can compare on the unified replay-aware contract.</p>
+          </div>
+          <div id="compare-ready-table" class="table-wrap empty-state">Global compare-ready ranking will appear here after loading.</div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Locked baselines</p>
+            <h2>Controller anchors</h2>
+          </div>
+          <p class="section-meta">The locked controller pair is always shown, even when challengers are not compare-ready yet.</p>
+        </div>
+        <div id="baseline-table" class="table-wrap empty-state">Locked baseline controllers will appear here after loading.</div>
+      </section>
+
+      <section class="split-panel">
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Replay compare-ready</p>
+              <h2>Deterministic and HF challengers</h2>
+            </div>
+            <p class="section-meta">These replay-backed challengers can sit beside the locked baselines without drifting away from executable realism.</p>
+          </div>
+          <div id="hf-table" class="table-wrap empty-state">Replay compare-ready challengers will appear here after loading.</div>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Replay shadow-only</p>
+              <h2>Visible, but not finalist-eligible</h2>
+            </div>
+            <p class="section-meta">These replay candidates have enough evidence to stay on-screen, but not enough priority to join the compare-ready finalist surface.</p>
+          </div>
+          <div id="hf-shadow-table" class="table-wrap empty-state">Replay shadow-only candidates will appear here after loading.</div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Replay bench-only</p>
+            <h2>Published families that should wait</h2>
+          </div>
+          <p class="section-meta">Bench-only replay families remain visible for audit, but the merge layer should not promote them yet.</p>
+        </div>
+        <div id="hf-bench-table" class="table-wrap empty-state">Replay bench-only candidates will appear here after loading.</div>
+      </section>
+
+      <section class="split-panel">
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">ML lane</p>
+              <h2>Published ML candidates</h2>
+            </div>
+            <p class="section-meta">Empty means the lane has not published a shared submission yet.</p>
+          </div>
+          <div id="ml-table" class="table-wrap empty-state">No ML candidates loaded yet.</div>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">LLM lane</p>
+              <h2>Published LLM candidates</h2>
+            </div>
+            <p class="section-meta">This surface only compares current shared submissions, not superseded historical variants.</p>
+          </div>
+          <div id="llm-table" class="table-wrap empty-state">No LLM candidates loaded yet.</div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Current promoted stack</p>
+            <h2>Operator note and promotion buckets</h2>
+          </div>
+          <p class="section-meta">Compare-ready is the research gate. Promotion buckets show what is live-ready, probe-ready, shadow-only, or bench-only right now.</p>
+        </div>
+        <div id="promoted-stack-note" class="stack-list empty-state">The current promoted stack note will appear here after loading.</div>
+      </section>
+
+      <section class="split-panel">
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Live-ready bucket</p>
+              <h2>Current live controller stack</h2>
+            </div>
+            <p class="section-meta">These candidates are the only ones promoted all the way to live-ready today.</p>
+          </div>
+          <div id="live-ready-table" class="table-wrap empty-state">Live-ready candidates will appear here after loading.</div>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Live-probe bucket</p>
+              <h2>Replay-backed probe tier</h2>
+            </div>
+            <p class="section-meta">These candidates are replay-backed enough to probe next, even when the current executor can only keep them in shadow.</p>
+          </div>
+          <div id="live-probe-table" class="table-wrap empty-state">Live-probe candidates will appear here after loading.</div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Compare-ready finalists</p>
+            <h2>Top research-ranked candidates</h2>
+          </div>
+          <p class="section-meta">This stays separate from operator promotion so shadow-only compare-ready lanes still rank cleanly.</p>
+        </div>
+        <div id="finalist-table" class="table-wrap empty-state">Compare-ready finalists will appear here after loading.</div>
+      </section>
+
+      <section class="split-panel">
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Shadow-only bucket</p>
+              <h2>Published shadow candidates</h2>
+            </div>
+            <p class="section-meta">These rows are compare-ready or observable, but they stay outside live-ready or live-probe promotion.</p>
+          </div>
+          <div id="shadow-only-table" class="table-wrap empty-state">Shadow-only candidates will appear here after loading.</div>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Bench-only bucket</p>
+              <h2>Published bench candidates</h2>
+            </div>
+            <p class="section-meta">These rows remain visible for audit, but the promoted stack should not consume them.</p>
+          </div>
+          <div id="bench-only-table" class="table-wrap empty-state">Bench-only candidates will appear here after loading.</div>
+        </article>
+      </section>
+
+      <section class="split-panel">
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Divergence</p>
+              <h2>Top no-trade causes</h2>
+            </div>
+            <p class="section-meta">This is the current realism gap pressure point across published replay artifacts.</p>
+          </div>
+          <div id="divergence-table" class="table-wrap empty-state">Top divergence causes will appear here after loading.</div>
+        </article>
+
+        <article class="panel">
+          <div class="section-header">
+            <div>
+              <p class="section-kicker">Per-game gaps</p>
+              <h2>Where finalists lose executable trades</h2>
+            </div>
+            <p class="section-meta">Game-level gaps stay bounded to the finalist set so reviewers can inspect merge readiness quickly.</p>
+          </div>
+          <div id="game-gap-table" class="table-wrap empty-state">Per-game gap rows will appear here after loading.</div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Merge control</p>
+            <h2>What should merge now vs wait</h2>
+          </div>
+          <p class="section-meta">The benchmark lane does not invent strategy logic here. It only makes cross-lane merge posture explicit.</p>
+        </div>
+        <div id="merge-plan-list" class="stack-list empty-state">Merge recommendations will appear here after loading.</div>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Global compare gate</p>
+            <h2>Exact compare-ready criteria</h2>
+          </div>
+          <p class="section-meta">These gates keep the benchmark contract unified instead of letting each branch define its own success metrics.</p>
+        </div>
+        <div id="criteria-list" class="stack-list empty-state">Global compare criteria will appear here after loading.</div>
+      </section>
+
+      <section class="panel">
+        <div class="section-header">
+          <div>
+            <p class="section-kicker">Submission examples</p>
+            <h2>Strict ML and LLM manifest examples</h2>
+          </div>
+          <p class="section-meta">These file locations are the schema examples other lanes should copy instead of inventing a local scorecard.</p>
+        </div>
+        <div id="submission-example-list" class="stack-list empty-state">Submission example files will appear here after loading.</div>
       </section>
     </main>
   </div>

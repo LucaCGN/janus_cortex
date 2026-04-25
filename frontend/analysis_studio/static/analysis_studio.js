@@ -1,263 +1,132 @@
 'use strict';
 
 (function () {
-  const API_ROOT = '/v1/analysis/studio';
-  const FINALIST_LIMIT = 6;
+  const API_ROOT = '/v1/analysis/studio/benchmark-dashboard';
 
   const els = {
-    form: document.getElementById('snapshot-form'),
+    form: document.getElementById('dashboard-form'),
     season: document.getElementById('season'),
-    seasonPhase: document.getElementById('season_phase'),
-    analysisVersion: document.getElementById('analysis_version'),
-    outputRoot: document.getElementById('output_root'),
+    replayArtifactName: document.getElementById('replay_artifact_name'),
+    finalistLimit: document.getElementById('finalist_limit'),
+    sharedRoot: document.getElementById('shared_root'),
     loadButton: document.getElementById('load-button'),
     statusLine: document.getElementById('status-line'),
     errorLine: document.getElementById('error-line'),
-    meta: document.getElementById('snapshot-meta'),
-    chart: document.getElementById('strategy-line-chart'),
-    legend: document.getElementById('strategy-line-legend'),
-    rankingTable: document.getElementById('finalist-ranking-table'),
-    masterSummary: document.getElementById('master-router-summary'),
-    routeBandTable: document.getElementById('route-band-table'),
-    llmVariantTable: document.getElementById('llm-variant-table'),
-    comparisonForm: document.getElementById('comparison-form'),
-    comparisonFamily: document.getElementById('comparison_family'),
-    comparisonTradeLimit: document.getElementById('comparison_trade_limit'),
-    comparisonContextLimit: document.getElementById('comparison_context_limit'),
-    comparisonTraceLimit: document.getElementById('comparison_trace_limit'),
-    comparisonButton: document.getElementById('comparison-button'),
-    comparisonStatusLine: document.getElementById('comparison-status-line'),
-    comparisonIndex: document.getElementById('comparison-index'),
-    comparisonDetail: document.getElementById('comparison-detail'),
+    snapshotMeta: document.getElementById('snapshot-meta'),
+    summaryCards: document.getElementById('summary-cards'),
+    modeCards: document.getElementById('mode-cards'),
+    dailyLiveList: document.getElementById('daily-live-list'),
+    laneStatusTable: document.getElementById('lane-status-table'),
+    laneRankingTable: document.getElementById('lane-ranking-table'),
+    compareReadyTable: document.getElementById('compare-ready-table'),
+    baselineTable: document.getElementById('baseline-table'),
+    hfTable: document.getElementById('hf-table'),
+    hfShadowTable: document.getElementById('hf-shadow-table'),
+    hfBenchTable: document.getElementById('hf-bench-table'),
+    mlTable: document.getElementById('ml-table'),
+    llmTable: document.getElementById('llm-table'),
+    promotedStackNote: document.getElementById('promoted-stack-note'),
+    liveReadyTable: document.getElementById('live-ready-table'),
+    liveProbeTable: document.getElementById('live-probe-table'),
+    finalistTable: document.getElementById('finalist-table'),
+    shadowOnlyTable: document.getElementById('shadow-only-table'),
+    benchOnlyTable: document.getElementById('bench-only-table'),
+    divergenceTable: document.getElementById('divergence-table'),
+    gameGapTable: document.getElementById('game-gap-table'),
+    mergePlanList: document.getElementById('merge-plan-list'),
+    criteriaList: document.getElementById('criteria-list'),
+    submissionExampleList: document.getElementById('submission-example-list'),
   };
 
-  const state = {
-    snapshot: null,
-    finalists: [],
-    selectedFamily: '',
-  };
+  function cleanString(value) {
+    if (value === null || value === undefined) return '';
+    return String(value).trim();
+  }
 
   function toNumber(value) {
-    if (value === null || value === undefined || value === '') {
-      return null;
-    }
+    if (value === null || value === undefined || value === '') return null;
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : null;
   }
 
+  function fallbackText(value) {
+    const text = cleanString(value);
+    return text || '-';
+  }
+
   function formatNumber(value, digits = 2) {
     const parsed = toNumber(value);
-    return parsed === null ? '—' : parsed.toFixed(digits);
+    return parsed === null ? '-' : parsed.toFixed(digits);
   }
 
   function formatInteger(value) {
     const parsed = toNumber(value);
-    return parsed === null ? '—' : Math.round(parsed).toLocaleString();
+    return parsed === null ? '-' : Math.round(parsed).toLocaleString();
   }
 
   function formatPercent(value, digits = 1) {
     const parsed = toNumber(value);
-    return parsed === null ? '—' : `${(parsed * 100).toFixed(digits)}%`;
+    return parsed === null ? '-' : `${(parsed * 100).toFixed(digits)}%`;
   }
 
   function formatMetric(value, kind) {
-    if (kind === 'percent') {
-      return formatPercent(value);
-    }
-    if (kind === 'money') {
-      return formatNumber(value, 2);
-    }
-    if (kind === 'integer') {
-      return formatInteger(value);
-    }
-    return value === null || value === undefined || value === '' ? '—' : String(value);
-  }
-
-  function cleanString(value) {
-    if (value === null || value === undefined) {
-      return '';
-    }
-    return String(value).trim();
-  }
-
-  function isTruthy(value) {
-    if (typeof value === 'boolean') return value;
-    const text = cleanString(value).toLowerCase();
-    return text === '1' || text === 'true' || text === 'yes' || text === 'y';
-  }
-
-  function setStatus(message, isError = false) {
-    if (els.statusLine) {
-      els.statusLine.textContent = message;
-    }
-    if (els.errorLine) {
-      els.errorLine.hidden = !isError;
-      els.errorLine.textContent = isError ? message : '';
-    }
-  }
-
-  function buildQuery(params) {
-    const query = new URLSearchParams();
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== null && value !== undefined && String(value).trim() !== '') {
-        query.set(key, String(value));
-      }
-    });
-    const queryString = query.toString();
-    return queryString ? `?${queryString}` : '';
-  }
-
-  async function fetchJson(path) {
-    const response = await fetch(path, { headers: { Accept: 'application/json' } });
-    if (!response.ok) {
-      let detail = response.statusText;
-      try {
-        const payload = await response.json();
-        detail = payload?.detail || payload?.message || detail;
-      } catch (error) {
-        // ignore json parse fallback
-      }
-      throw new Error(detail || `Request failed with status ${response.status}`);
-    }
-    return response.json();
+    if (kind === 'integer') return formatInteger(value);
+    if (kind === 'percent') return formatPercent(value);
+    if (kind === 'money') return formatNumber(value, 2);
+    return fallbackText(value);
   }
 
   function asArray(value) {
     return Array.isArray(value) ? value : [];
   }
 
-  function getBenchmark(snapshot) {
-    return snapshot?.benchmark || {};
-  }
-
-  function getStudio(snapshot) {
-    return getBenchmark(snapshot)?.studio_dashboard || {};
-  }
-
-  function getFinalists(snapshot) {
-    const studio = getStudio(snapshot);
-    const finalists = asArray(studio.finalists);
-    if (finalists.length > 0) {
-      return finalists.slice(0, FINALIST_LIMIT);
-    }
-
-    const benchmark = getBenchmark(snapshot);
-    const sources = [
-      asArray(benchmark.individual_strategy_rankings),
-      asArray(benchmark.portfolio_rankings),
-      asArray(benchmark.strategy_rankings),
-    ];
-    const merged = [];
-    const seen = new Set();
-    for (const source of sources) {
-      for (const row of source) {
-        const key = cleanString(row.finalist_id || row.strategy_family || row.lane_name || row.portfolio_scope);
-        if (!key || seen.has(key)) continue;
-        seen.add(key);
-        merged.push(row);
-      }
-    }
-    return merged.slice(0, FINALIST_LIMIT);
-  }
-
-  function detailCapableFamilies(snapshot) {
-    const rows = asArray(getBenchmark(snapshot)?.strategy_rankings);
-    const names = new Set();
-    rows.forEach((row) => {
-      const family = cleanString(row.strategy_family);
-      if (family) {
-        names.add(family);
+  function buildQuery(params) {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== null && value !== undefined && cleanString(value) !== '') {
+        query.set(key, cleanString(value));
       }
     });
-    return names;
+    const queryString = query.toString();
+    return queryString ? `?${queryString}` : '';
   }
 
-  function isDetailCapableFamily(snapshot, family) {
-    const target = cleanString(family);
-    return target !== '' && detailCapableFamilies(snapshot).has(target);
-  }
-
-  function getSeriesRows(snapshot) {
-    const studio = getStudio(snapshot);
-    const rows = asArray(studio.finalist_series);
-    return rows.map((entry, index) => {
-      const family = cleanString(entry.strategy_family || entry.lane_name || entry.finalist_id);
-      const points = asArray(entry.rows).map((row, pointIndex) => ({
-        raw: row,
-        x: row.x ?? row.x_index ?? row.state_index ?? pointIndex,
-        y: row.y ?? row.value ?? row.ending_bankroll ?? row.compounded_return ?? row.bankroll ?? row.score,
-        label: row.label ?? row.x_label ?? row.event_at ?? row.game_date ?? `${pointIndex + 1}`,
-      }));
-      return {
-        finalist_id: cleanString(entry.finalist_id || family || index),
-        strategy_family: family,
-        family_type: cleanString(entry.family_type || entry.source_name || ''),
-        source_name: cleanString(entry.source_name || ''),
-        points,
-      };
-    });
-  }
-
-  function finalistLabel(row) {
-    return cleanString(
-      row.lane_name ||
-        row.variant_name ||
-        row.controller_name ||
-        row.strategy_family ||
-        row.family_name ||
-        row.portfolio_scope ||
-        row.finalist_id ||
-        'unknown'
-    );
-  }
-
-  function getFinalistSeriesByFamily(seriesRows, strategyFamily) {
-    return seriesRows.find((entry) => {
-      const matchesFamily = cleanString(entry.strategy_family) === cleanString(strategyFamily);
-      const matchesId = cleanString(entry.finalist_id) === cleanString(strategyFamily);
-      return matchesFamily || matchesId;
-    }) || null;
-  }
-
-  function createCard(label, value, caption, tone = '') {
-    const card = document.createElement('article');
-    card.className = `metric-card ${tone}`.trim();
-    const labelNode = document.createElement('span');
-    labelNode.className = 'metric-label';
-    labelNode.textContent = label;
-    const valueNode = document.createElement('strong');
-    valueNode.className = 'metric-value';
-    valueNode.textContent = value;
-    card.append(labelNode, valueNode);
-    if (caption) {
-      const captionNode = document.createElement('span');
-      captionNode.className = 'metric-caption';
-      captionNode.textContent = caption;
-      card.appendChild(captionNode);
+  async function fetchJson(url) {
+    const response = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const payload = await response.json();
+        detail = payload?.error?.message || payload?.detail || payload?.message || detail;
+      } catch (_error) {
+        // ignore fallback
+      }
+      throw new Error(detail || `Request failed with status ${response.status}`);
     }
-    return card;
+    return response.json();
   }
 
-  function renderEmpty(container, text) {
-    container.className = `${container.className.replace(/\bempty-state\b/g, '').trim()} empty-state`;
-    container.textContent = text;
+  function setStatus(message, isError = false) {
+    els.statusLine.textContent = message;
+    els.errorLine.hidden = !isError;
+    els.errorLine.textContent = isError ? message : '';
+  }
+
+  function setEmptyState(container, message) {
+    container.innerHTML = '';
+    container.className = 'empty-state';
+    container.textContent = message;
   }
 
   function renderTable(container, columns, rows, options = {}) {
-    const { dense = true, selectableKey = null, selectedValue = null } = options;
     container.innerHTML = '';
-
     if (!rows.length) {
-      renderEmpty(container, options.emptyText || 'No rows available.');
+      setEmptyState(container, options.emptyText || 'No rows available.');
       return;
     }
 
     container.className = 'table-wrap';
     const table = document.createElement('table');
-    if (dense) {
-      table.className = 'dense-table';
-    }
-
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     columns.forEach((column) => {
@@ -270,13 +139,13 @@
     const tbody = document.createElement('tbody');
     rows.forEach((row) => {
       const tr = document.createElement('tr');
-      if (selectableKey && selectedValue !== null && cleanString(row[selectableKey]) === cleanString(selectedValue)) {
+      if (row.baseline_locked_flag || row.comparison_ready_flag) {
         tr.classList.add('selected-row');
       }
       columns.forEach((column) => {
         const td = document.createElement('td');
-        const value = column.getter ? column.getter(row) : row[column.key];
-        td.textContent = formatMetric(value, column.kind);
+        const rawValue = column.getter ? column.getter(row) : row[column.key];
+        td.textContent = formatMetric(rawValue, column.kind);
         tr.appendChild(td);
       });
       tbody.appendChild(tr);
@@ -286,670 +155,552 @@
     container.appendChild(table);
   }
 
-  function renderLegend(legend, finalists, selectedFamily) {
-    legend.innerHTML = '';
-    finalists.forEach((row, index) => {
-      const chip = document.createElement('span');
-      chip.className = 'legend-chip';
-      if (cleanString(row.strategy_family) === cleanString(selectedFamily)) {
-        chip.classList.add('selected-card');
-      }
-      const score = row.score ?? row.mean_ending_bankroll ?? row.ending_bankroll ?? row.compounded_return;
-      chip.textContent = `${index + 1}. ${finalistLabel(row)} · ${formatNumber(score, 2)}`;
-      legend.appendChild(chip);
-    });
+  function createCard(label, value, caption, tone = '') {
+    const card = document.createElement('article');
+    card.className = `metric-card ${tone}`.trim();
+    const labelNode = document.createElement('span');
+    labelNode.className = 'metric-label';
+    labelNode.textContent = label;
+    const valueNode = document.createElement('strong');
+    valueNode.className = 'metric-value';
+    valueNode.textContent = value;
+    const captionNode = document.createElement('span');
+    captionNode.className = 'metric-caption';
+    captionNode.textContent = caption;
+    card.append(labelNode, valueNode, captionNode);
+    return card;
   }
 
-  function renderFinalistsTable(rows, selectedFamily) {
-    const columns = [
-      { label: 'Rank', getter: (row) => row.rank ?? '—', kind: 'integer' },
-      { label: 'Finalist', getter: finalistLabel },
-      { label: 'Score', getter: (row) => row.score ?? row.mean_ending_bankroll ?? row.ending_bankroll, kind: 'money' },
-      { label: 'Mean Bankroll', getter: (row) => row.mean_ending_bankroll ?? row.ending_bankroll, kind: 'money' },
-      { label: 'Positive Seeds', getter: (row) => row.positive_seed_rate, kind: 'percent' },
-      { label: 'Drawdown', getter: (row) => row.max_drawdown_pct, kind: 'percent' },
-      { label: 'Label', getter: (row) => row.candidate_label || row.robustness_label || row.label_reason || '—' },
-    ];
-    renderTable(els.rankingTable, columns, rows, {
-      selectedValue: selectedFamily,
-      selectableKey: 'strategy_family',
-      emptyText: 'The finalists table will appear after loading a snapshot.',
-    });
-  }
-
-  function renderMasterRouter(masterRouter, llmVariants) {
-    els.masterSummary.className = 'metric-grid small-grid';
-    els.masterSummary.innerHTML = '';
-    const comparisonRows = asArray(masterRouter.comparison_rows);
-    const routeRows = asArray(masterRouter.route_summary);
-    const lowConfidenceRows = asArray(masterRouter.low_confidence_summary);
-    const coreFamilies = asArray(masterRouter.core_families);
-    const extraFamilies = asArray(masterRouter.extra_families);
-
-    const cards = [
-      createCard('Router family', cleanString(masterRouter.family_name || '—'), cleanString(masterRouter.selection_sample_name || 'selection sample')),
-      createCard('Core families', formatInteger(coreFamilies.length), coreFamilies.join(' · ') || 'No core families reported'),
-      createCard('Extra families', formatInteger(extraFamilies.length), extraFamilies.join(' · ') || 'No extra families reported'),
-      createCard('Comparison rows', formatInteger(comparisonRows.length), 'Full sample, time validation, and holdout comparisons'),
-    ];
-    if (routeRows.length || lowConfidenceRows.length) {
-      cards.push(createCard('Routing rows', formatInteger(routeRows.length), `Low-confidence cases: ${formatInteger(lowConfidenceRows.reduce((total, row) => total + (toNumber(row.decision_count) || 0), 0))}`));
-    }
-    cards.forEach((card) => els.masterSummary.appendChild(card));
-
-    renderTable(
-      els.routeBandTable,
-      [
-        { label: 'Sample', key: 'sample_name' },
-        { label: 'Family', key: 'strategy_family' },
-        { label: 'Scope', key: 'portfolio_scope' },
-        { label: 'Bankroll', key: 'ending_bankroll', kind: 'money' },
-        { label: 'Return', key: 'compounded_return', kind: 'percent' },
-        { label: 'Drawdown', key: 'max_drawdown_pct', kind: 'percent' },
-        { label: 'Trades', key: 'executed_trade_count', kind: 'integer' },
-      ],
-      comparisonRows,
-      {
-        emptyText: 'Master-router comparisons will appear here after loading a snapshot.',
-      }
-    );
-
-    renderTable(
-      els.llmVariantTable,
-      [
-        { label: 'Rank', key: 'rank', kind: 'integer' },
-        { label: 'Variant', getter: finalistLabel },
-        { label: 'Score', key: 'score', kind: 'money' },
-        { label: 'Mean Bankroll', key: 'mean_ending_bankroll', kind: 'money' },
-        { label: 'Positive Seeds', key: 'positive_seed_rate', kind: 'percent' },
-        { label: 'Drawdown', key: 'max_drawdown_pct', kind: 'percent' },
-      ],
-      asArray(llmVariants),
-      {
-        emptyText: 'LLM variant summary will appear here after loading a snapshot.',
-      }
-    );
-  }
-
-  function getPointDomain(seriesRows) {
-    let min = Infinity;
-    let max = -Infinity;
-    let maxPoints = 0;
-    seriesRows.forEach((series) => {
-      maxPoints = Math.max(maxPoints, series.points.length);
-      series.points.forEach((point, index) => {
-        const xValue = toNumber(point.x);
-        const numeric = xValue === null ? index : xValue;
-        if (numeric < min) min = numeric;
-        if (numeric > max) max = numeric;
-      });
-    });
-    if (!Number.isFinite(min) || !Number.isFinite(max)) {
-      min = 0;
-      max = Math.max(maxPoints - 1, 1);
-    }
-    if (min === max) {
-      max = min + 1;
-    }
-    return { min, max, maxPoints };
-  }
-
-  function chartCoordinate(value, domainMin, domainMax, span, offset) {
-    return offset + ((value - domainMin) / (domainMax - domainMin)) * span;
-  }
-
-  function renderChart(snapshot) {
-    const seriesRows = getSeriesRows(snapshot);
-    els.chart.innerHTML = '';
-    if (!seriesRows.length) {
-      renderEmpty(els.chart, 'No finalist series were found in the current snapshot.');
-      els.legend.innerHTML = '';
+  function renderStackItems(container, rows, options = {}) {
+    container.innerHTML = '';
+    if (!rows.length) {
+      setEmptyState(container, options.emptyText || 'No rows available.');
       return;
     }
 
-    els.chart.className = 'chart-shell';
-    const width = 1200;
-    const height = 440;
-    const padding = { top: 18, right: 24, bottom: 42, left: 56 };
-    const innerWidth = width - padding.left - padding.right;
-    const innerHeight = height - padding.top - padding.bottom;
-    const { min, max, maxPoints } = getPointDomain(seriesRows);
+    container.className = 'stack-list';
+    rows.forEach((row) => {
+      const card = document.createElement('article');
+      card.className = 'stack-item';
+      const kicker = document.createElement('p');
+      kicker.className = 'section-kicker';
+      kicker.textContent = row.title || 'item';
+      const body = document.createElement('p');
+      body.className = 'meta';
+      body.textContent = cleanString(row.body) || '-';
+      card.append(kicker, body);
+      container.appendChild(card);
+    });
+  }
 
-    let yMin = Infinity;
-    let yMax = -Infinity;
-    seriesRows.forEach((series) => {
-      series.points.forEach((point) => {
-        const value = toNumber(point.y);
-        if (value === null) return;
-        if (value < yMin) yMin = value;
-        if (value > yMax) yMax = value;
+  function liveState(row) {
+    return (row.live_observed_result || {}).live_observed_flag ? 'observed' : 'not observed';
+  }
+
+  function comparisonColumns(options = {}) {
+    const columns = [];
+    if (options.includeRank) {
+      columns.push({
+        label: 'Rank',
+        getter: (row) => row[options.rankKey || 'challenger_rank'],
+        kind: 'integer',
       });
-    });
-    if (!Number.isFinite(yMin) || !Number.isFinite(yMax)) {
-      yMin = 0;
-      yMax = 1;
     }
-    if (yMin === yMax) {
-      yMax = yMin + 1;
+    columns.push(
+      { label: 'Candidate', getter: (row) => row.display_name || row.candidate_id }
+    );
+    if (options.includeLane) {
+      columns.push({ label: 'Lane', getter: (row) => row.lane_label || row.lane_id });
     }
-    const yPadding = (yMax - yMin) * 0.1 || 1;
-    yMin -= yPadding;
-    yMax += yPadding;
-
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    svg.setAttribute('role', 'img');
-    svg.setAttribute('aria-label', 'Strategy evolution chart');
-
-    const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    background.setAttribute('x', '0');
-    background.setAttribute('y', '0');
-    background.setAttribute('width', width);
-    background.setAttribute('height', height);
-    background.setAttribute('fill', 'transparent');
-    svg.appendChild(background);
-
-    for (let index = 0; index <= 5; index += 1) {
-      const y = padding.top + (innerHeight / 5) * index;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', padding.left);
-      line.setAttribute('x2', width - padding.right);
-      line.setAttribute('y1', y);
-      line.setAttribute('y2', y);
-      line.setAttribute('class', 'chart-grid-line');
-      svg.appendChild(line);
-
-      const value = yMax - ((yMax - yMin) / 5) * index;
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', 10);
-      label.setAttribute('y', y + 4);
-      label.setAttribute('class', 'chart-axis-label');
-      label.textContent = formatNumber(value, 1);
-      svg.appendChild(label);
+    if (options.includeBucket) {
+      columns.push({ label: 'Bucket', getter: (row) => row.visibility_bucket || row.lane_bucket });
     }
-
-    for (let index = 0; index <= Math.max(maxPoints - 1, 1); index += 1) {
-      const x = padding.left + (innerWidth / Math.max(maxPoints - 1, 1)) * index;
-      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('y1', padding.top);
-      line.setAttribute('y2', height - padding.bottom);
-      line.setAttribute('x1', x);
-      line.setAttribute('x2', x);
-      line.setAttribute('class', 'chart-grid-line chart-grid-line-vertical');
-      svg.appendChild(line);
+    if (options.includePromotion) {
+      columns.push({ label: 'Promotion', getter: (row) => row.promotion_bucket || '-' });
+      columns.push({ label: 'Today', getter: (row) => row.today_execution_mode || '-' });
     }
+    columns.push(
+      { label: 'Std trades', key: 'standard_trade_count', kind: 'integer' },
+      { label: 'Replay trades', key: 'replay_trade_count', kind: 'integer' },
+      { label: 'Exec rate', key: 'execution_rate', kind: 'percent' },
+      { label: 'Realism gap', key: 'realism_gap_trade_rate', kind: 'percent' },
+      { label: 'Replay bankroll', key: 'replay_ending_bankroll', kind: 'money' },
+      { label: 'Replay DD', key: 'replay_max_drawdown_pct', kind: 'percent' },
+      { label: 'Live state', getter: (row) => liveState(row) },
+      { label: 'Live trades', key: 'live_trade_count', kind: 'integer' },
+      { label: 'Stale count', key: 'stale_signal_suppressed_count', kind: 'integer' },
+      { label: 'Stale rate', key: 'stale_signal_suppression_rate', kind: 'percent' }
+    );
+    if (options.includeMissing) {
+      columns.push({
+        label: 'Missing',
+        getter: (row) => asArray((row.compare_ready_checks || {}).missing_requirements).join(', ') || '-',
+      });
+    }
+    if (options.includeReason) {
+      columns.push({
+        label: 'Reason',
+        getter: (row) => row.visibility_bucket_reason || row.finalist_reason || '-',
+      });
+    } else if (!options.includeMissing) {
+      columns.push({ label: 'Top no-trade', key: 'top_no_trade_reason' });
+    }
+    return columns;
+  }
 
-    const palette = ['#f7f7f7', '#ff3b3b', '#b9c0ca', '#f0f0f0', '#ff7373', '#8b96a8'];
-    seriesRows.forEach((series, seriesIndex) => {
-      const color = palette[seriesIndex % palette.length];
-      const points = series.points
-        .map((point, pointIndex) => {
-          const xBase = toNumber(point.x);
-          const xValue = xBase === null ? pointIndex : xBase;
-          const yValue = toNumber(point.y);
-          if (yValue === null) return null;
-          const x = chartCoordinate(xValue, min, max, innerWidth, padding.left);
-          const y = padding.top + innerHeight - ((yValue - yMin) / (yMax - yMin)) * innerHeight;
-          return { x, y, label: point.label };
-        })
-        .filter(Boolean);
-      if (!points.length) {
-        return;
-      }
-      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      path.setAttribute(
-        'd',
-        points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')
+  function renderSummary(snapshot) {
+    const summary = snapshot.summary || {};
+    const replay = snapshot.replay_contract || {};
+
+    els.summaryCards.innerHTML = '';
+    els.summaryCards.className = 'metric-grid';
+    [
+      createCard('Published lanes', formatInteger(summary.published_lane_count), `Compare-ready lanes: ${formatInteger(summary.compare_ready_lane_count)}`, 'warning'),
+      createCard('Published candidates', formatInteger(summary.published_candidate_count), `Compare-ready candidates: ${formatInteger(summary.compare_ready_candidate_count)}`),
+      createCard('Live-ready', formatInteger(summary.live_ready_candidate_count), `Live-probe: ${formatInteger(summary.live_probe_candidate_count)}`, 'positive'),
+      createCard('Replay challengers', formatInteger(summary.replay_compare_ready_challenger_count), `Replay pending: ${formatInteger(summary.replay_pending_candidate_count)}`),
+      createCard('Finished postseason games', formatInteger(replay.finished_game_count), `State-panel games: ${formatInteger(replay.state_panel_game_count)}`),
+      createCard('Mean execution rate', formatPercent(summary.mean_execution_rate), `Mean realism gap: ${formatPercent(summary.mean_realism_gap_trade_rate)}`, 'positive'),
+      createCard('Mean stale suppression', formatPercent(summary.mean_stale_signal_suppression_rate), `Shadow-only candidates: ${formatInteger(summary.shadow_only_candidate_count)}`),
+      createCard('Bench-only candidates', formatInteger(summary.bench_only_candidate_count), `Live observed candidates: ${formatInteger(summary.live_observed_candidate_count)}`),
+      createCard('Daily live', fallbackText(summary.daily_live_status), `Session ${fallbackText(summary.daily_live_session_date)}`)
+    ].forEach((card) => els.summaryCards.appendChild(card));
+  }
+
+  function renderResultModes(resultModes) {
+    els.modeCards.innerHTML = '';
+    const rows = asArray(resultModes);
+    if (!rows.length) {
+      setEmptyState(els.modeCards, 'Result mode summary unavailable.');
+      return;
+    }
+    els.modeCards.className = 'metric-grid';
+    rows.forEach((row, index) => {
+      const tone = index === 1 ? 'positive' : '';
+      els.modeCards.appendChild(
+        createCard(
+          row.label || row.id || 'mode',
+          row.headline || '-',
+          row.description || '',
+          tone
+        )
       );
-      path.setAttribute('fill', 'none');
-      path.setAttribute('stroke', color);
-      path.setAttribute('stroke-width', seriesIndex === 0 ? '2.8' : '1.8');
-      path.setAttribute('stroke-linecap', 'round');
-      path.setAttribute('stroke-linejoin', 'round');
-      path.setAttribute('class', 'chart-series-line');
-      svg.appendChild(path);
-
-      const lastPoint = points[points.length - 1];
-      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-      marker.setAttribute('cx', lastPoint.x.toFixed(2));
-      marker.setAttribute('cy', lastPoint.y.toFixed(2));
-      marker.setAttribute('r', seriesIndex === 0 ? '4' : '3');
-      marker.setAttribute('fill', color);
-      marker.setAttribute('class', 'chart-point');
-      svg.appendChild(marker);
-
-      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      label.setAttribute('x', lastPoint.x + 8);
-      label.setAttribute('y', lastPoint.y - 8);
-      label.setAttribute('class', 'chart-series-label');
-      label.textContent = finalistLabel(series);
-      svg.appendChild(label);
     });
+  }
 
-    const xLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    xLabel.setAttribute('x', width - padding.right);
-    xLabel.setAttribute('y', height - 10);
-    xLabel.setAttribute('text-anchor', 'end');
-    xLabel.setAttribute('class', 'chart-axis-label');
-    xLabel.textContent = 'benchmark progression';
-    svg.appendChild(xLabel);
+  function renderDailyLiveValidation(dailyLiveValidation) {
+    const summary = dailyLiveValidation.summary || {};
+    const control = summary.control || {};
+    const harness = summary.harness_capabilities || {};
+    const currentTruth = summary.current_live_truth || {};
+    const plannedProbes = asArray(summary.planned_probes).map((row) => ({
+      title: `probe / ${row.candidate_id || '-'}`,
+      body: [
+        cleanString(row.today_execution),
+        cleanString(row.compare_ready_state),
+        cleanString(row.reason),
+      ].filter(Boolean).join(' | '),
+    }));
 
-    els.chart.appendChild(svg);
-    renderLegend(els.legend, state.finalists, state.selectedFamily);
+    const rows = [
+      {
+        title: 'session',
+        body: [
+          cleanString(dailyLiveValidation.session_date),
+          cleanString(dailyLiveValidation.status),
+          cleanString(dailyLiveValidation.snapshot_published_at),
+        ].filter(Boolean).join(' | '),
+      },
+      {
+        title: 'control',
+        body: [
+          `primary ${fallbackText(control.primary_controller)}`,
+          `fallback ${fallbackText(control.fallback_controller)}`,
+          `mode ${fallbackText(control.mode)}`,
+        ].join(' | '),
+      },
+      {
+        title: 'harness',
+        body: [
+          `probe routing ${fallbackText(harness.supports_standalone_probe_candidates)}`,
+          `ML sidecar ${fallbackText(harness.supports_ml_sidecar_live_routing)}`,
+          `LLM sidecar ${fallbackText(harness.supports_llm_sidecar_live_routing)}`,
+        ].join(' | '),
+      },
+      {
+        title: 'current live truth',
+        body: [
+          `run ${fallbackText(currentTruth.run_status)}`,
+          `cycles ${formatInteger(currentTruth.cycle_count)}`,
+          `open orders ${formatInteger(currentTruth.open_orders)}`,
+          `open positions ${formatInteger(currentTruth.open_positions)}`,
+        ].join(' | '),
+      },
+      ...plannedProbes,
+    ];
+
+    renderStackItems(els.dailyLiveList, rows, {
+      emptyText: 'Daily live validation details were not published yet.',
+    });
+  }
+
+  function renderLaneStatuses(rows) {
+    renderTable(
+      els.laneStatusTable,
+      [
+        { label: 'Lane', getter: (row) => row.lane_label || row.lane_id },
+        { label: 'State', key: 'publication_state' },
+        { label: 'Published', key: 'published_subject_count', kind: 'integer' },
+        { label: 'Criteria-ready', key: 'criteria_ready_subject_count', kind: 'integer' },
+        { label: 'Compare-ready', key: 'compare_ready_subject_count', kind: 'integer' },
+        { label: 'Live-ready', key: 'live_ready_subject_count', kind: 'integer' },
+        { label: 'Live-probe', key: 'live_probe_subject_count', kind: 'integer' },
+        { label: 'Shadow-only', key: 'shadow_only_subject_count', kind: 'integer' },
+        { label: 'Bench-only', key: 'bench_only_subject_count', kind: 'integer' },
+        { label: 'Bucket', key: 'lane_bucket' },
+        { label: 'Notes', getter: (row) => asArray(row.notes).join(' | ') || '-' },
+      ],
+      rows,
+      { emptyText: 'No lane status rows were returned.' }
+    );
+  }
+
+  function renderLaneRankings(rows) {
+    renderTable(
+      els.laneRankingTable,
+      [
+        { label: 'Rank', key: 'lane_rank', kind: 'integer' },
+        { label: 'Lane', getter: (row) => row.lane_label || row.lane_id },
+        { label: 'Bucket', key: 'lane_bucket' },
+        { label: 'Top candidate', key: 'top_candidate_name' },
+        { label: 'Top promotion', key: 'top_candidate_promotion_bucket' },
+        { label: 'Replay bankroll', key: 'top_candidate_replay_ending_bankroll', kind: 'money' },
+        { label: 'Exec rate', key: 'top_candidate_execution_rate', kind: 'percent' },
+        { label: 'Realism gap', key: 'top_candidate_realism_gap_trade_rate', kind: 'percent' },
+        { label: 'Compare-ready', key: 'compare_ready_subject_count', kind: 'integer' },
+        { label: 'Live-ready', key: 'live_ready_subject_count', kind: 'integer' },
+        { label: 'Live-probe', key: 'live_probe_subject_count', kind: 'integer' },
+        { label: 'Shadow-only', key: 'shadow_only_subject_count', kind: 'integer' },
+        { label: 'Bench-only', key: 'bench_only_subject_count', kind: 'integer' },
+      ],
+      rows,
+      { emptyText: 'No lane ranking rows were returned.' }
+    );
+  }
+
+  function renderCompareReadyRanking(rows) {
+    renderTable(
+      els.compareReadyTable,
+      comparisonColumns({
+        includeRank: true,
+        rankKey: 'global_rank',
+        includeLane: true,
+        includePromotion: true,
+        includeReason: true,
+      }),
+      rows,
+      { emptyText: 'No compare-ready ranking rows were returned.' }
+    );
+  }
+
+  function renderCandidates(snapshot) {
+    renderTable(els.baselineTable, comparisonColumns({ includePromotion: true }), asArray(snapshot.baseline_controllers), {
+      emptyText: 'No locked baseline rows were returned.',
+    });
+    renderTable(els.hfTable, comparisonColumns({ includeRank: true, includePromotion: true }), asArray(snapshot.deterministic_hf_compare_ready), {
+      emptyText: 'No replay compare-ready challengers were returned.',
+    });
+    renderTable(els.hfShadowTable, comparisonColumns({ includePromotion: true, includeReason: true }), asArray(snapshot.deterministic_hf_shadow_only), {
+      emptyText: 'No replay shadow-only candidates were returned.',
+    });
+    renderTable(els.hfBenchTable, comparisonColumns({ includePromotion: true, includeMissing: true, includeReason: true }), asArray(snapshot.deterministic_hf_bench_only), {
+      emptyText: 'No replay bench-only candidates were returned.',
+    });
+    renderTable(els.mlTable, comparisonColumns({ includeBucket: true, includePromotion: true, includeReason: true }), asArray(snapshot.ml_candidates), {
+      emptyText: 'The ML lane has not published a strict compare-ready submission yet.',
+    });
+    renderTable(els.llmTable, comparisonColumns({ includeBucket: true, includePromotion: true, includeReason: true }), asArray(snapshot.llm_candidates), {
+      emptyText: 'The LLM lane has not published a strict compare-ready submission yet.',
+    });
+  }
+
+  function renderPromotedStack(promotedStack) {
+    const rows = [];
+    if (cleanString(promotedStack.operator_note)) {
+      rows.push({ title: 'operator note', body: cleanString(promotedStack.operator_note) });
+    }
+    if (asArray(promotedStack.live_ready).length) {
+      rows.push({
+        title: 'live-ready',
+        body: asArray(promotedStack.live_ready).map((row) => row.candidate_id || row.display_name).join(' | '),
+      });
+    }
+    if (asArray(promotedStack.live_probe).length) {
+      rows.push({
+        title: 'live-probe',
+        body: asArray(promotedStack.live_probe).map((row) => row.candidate_id || row.display_name).join(' | '),
+      });
+    }
+    if (asArray(promotedStack.shadow_only).length) {
+      rows.push({
+        title: 'shadow-only',
+        body: asArray(promotedStack.shadow_only).slice(0, 8).map((row) => row.candidate_id || row.display_name).join(' | '),
+      });
+    }
+    renderStackItems(els.promotedStackNote, rows, {
+      emptyText: 'The promoted stack note is unavailable.',
+    });
+  }
+
+  function renderPromotionBuckets(snapshot) {
+    renderTable(
+      els.liveReadyTable,
+      comparisonColumns({ includePromotion: true, includeReason: true }),
+      asArray(snapshot.live_ready_ranking),
+      { emptyText: 'No live-ready candidates were returned.' }
+    );
+    renderTable(
+      els.liveProbeTable,
+      comparisonColumns({ includePromotion: true, includeReason: true }),
+      asArray(snapshot.live_probe_ranking),
+      { emptyText: 'No live-probe candidates were returned.' }
+    );
+    renderTable(
+      els.shadowOnlyTable,
+      comparisonColumns({ includeLane: true, includePromotion: true, includeReason: true }),
+      asArray(snapshot.promotion_shadow_only_ranking || snapshot.shadow_only_candidates),
+      { emptyText: 'No shadow-only candidates were returned.' }
+    );
+    renderTable(
+      els.benchOnlyTable,
+      comparisonColumns({ includeLane: true, includePromotion: true, includeMissing: true, includeReason: true }),
+      asArray(snapshot.promotion_bench_only_ranking || snapshot.bench_only_candidates),
+      { emptyText: 'No bench-only candidates were returned.' }
+    );
+  }
+
+  function renderFinalists(rows) {
+    renderTable(
+      els.finalistTable,
+      [
+        { label: 'Rank', key: 'finalist_rank', kind: 'integer' },
+        { label: 'Candidate', getter: (row) => row.display_name || row.candidate_id },
+        { label: 'Promotion', key: 'promotion_bucket' },
+        { label: 'Reason', key: 'finalist_reason' },
+        { label: 'Replay bankroll', key: 'replay_ending_bankroll', kind: 'money' },
+        { label: 'Execution', key: 'execution_rate', kind: 'percent' },
+        { label: 'Stale rate', key: 'stale_signal_suppression_rate', kind: 'percent' },
+        { label: 'Replay DD', key: 'replay_max_drawdown_pct', kind: 'percent' },
+      ],
+      rows,
+      { emptyText: 'No compare-ready finalists are available yet.' }
+    );
+  }
+
+  function renderDivergence(rows) {
+    renderTable(
+      els.divergenceTable,
+      [
+        { label: 'Candidate', key: 'subject_name' },
+        { label: 'Type', key: 'subject_type' },
+        { label: 'No-trade reason', key: 'no_trade_reason' },
+        { label: 'Signals', key: 'signal_count', kind: 'integer' },
+      ],
+      rows,
+      { emptyText: 'No divergence summary was returned.' }
+    );
+  }
+
+  function renderGameGaps(rows) {
+    renderTable(
+      els.gameGapTable,
+      [
+        { label: 'Candidate', key: 'subject_name' },
+        { label: 'Game', key: 'game_id' },
+        { label: 'Std trades', key: 'standard_trade_count', kind: 'integer' },
+        { label: 'Replay trades', key: 'replay_trade_count', kind: 'integer' },
+        { label: 'Gap', key: 'trade_gap', kind: 'integer' },
+        { label: 'Reason', key: 'top_no_trade_reason' },
+      ],
+      rows,
+      { emptyText: 'No finalist game-gap rows were returned.' }
+    );
+  }
+
+  function renderCriteria(criteria) {
+    els.criteriaList.innerHTML = '';
+    const candidateRequirements = asArray(criteria.candidate_requirements);
+    if (!candidateRequirements.length) {
+      setEmptyState(els.criteriaList, 'No compare-ready criteria were returned.');
+      return;
+    }
+
+    els.criteriaList.className = 'stack-list';
+    [
+      { title: 'Lane requirements', rows: asArray(criteria.lane_requirements) },
+      { title: 'Candidate requirements', rows: candidateRequirements },
+      { title: 'Finalist rule', rows: asArray(criteria.finalist_rule).map((value) => ({ description: value })) },
+    ].forEach((section) => {
+      const card = document.createElement('article');
+      card.className = 'stack-item';
+      const kicker = document.createElement('p');
+      kicker.className = 'section-kicker';
+      kicker.textContent = section.title;
+      const body = document.createElement('p');
+      body.className = 'meta';
+      body.textContent = section.rows.map((row) => cleanString(row.description)).join(' | ');
+      card.append(kicker, body);
+      els.criteriaList.appendChild(card);
+    });
+  }
+
+  function renderSubmissionExamples(submissionExamples) {
+    els.submissionExampleList.innerHTML = '';
+    const examplePaths = submissionExamples.example_file_paths || {};
+    const examples = submissionExamples.examples || {};
+    if (!Object.keys(examplePaths).length) {
+      setEmptyState(els.submissionExampleList, 'No submission example files were returned.');
+      return;
+    }
+
+    els.submissionExampleList.className = 'stack-list';
+    Object.entries(examplePaths).forEach(([laneId, path]) => {
+      const example = examples[laneId] || {};
+      const firstSubject = asArray(example.subjects)[0] || {};
+      const card = document.createElement('article');
+      card.className = 'stack-item';
+      const kicker = document.createElement('p');
+      kicker.className = 'section-kicker';
+      kicker.textContent = laneId;
+      const body = document.createElement('p');
+      body.className = 'meta';
+      body.textContent = [
+        cleanString(path),
+        cleanString(firstSubject.candidate_id || firstSubject.display_name),
+        cleanString(example.schema_version),
+      ].filter(Boolean).join(' | ');
+      card.append(kicker, body);
+      els.submissionExampleList.appendChild(card);
+    });
+  }
+
+  function renderMergeRecommendations(mergeRecommendation) {
+    els.mergePlanList.innerHTML = '';
+    const mergeOrder = asArray(mergeRecommendation.merge_order);
+    const mergeNow = asArray(mergeRecommendation.merge_now);
+    const waitRows = asArray(mergeRecommendation.wait);
+    const rows = [
+      ...mergeOrder.map((row) => ({ ...row, section: `Order #${fallbackText(row.priority)}` })),
+      ...mergeNow.map((row) => ({ ...row, section: 'Merge now' })),
+      ...waitRows.map((row) => ({ ...row, section: 'Wait' })),
+    ];
+    if (!rows.length) {
+      setEmptyState(els.mergePlanList, 'No merge recommendations were returned.');
+      return;
+    }
+
+    els.mergePlanList.className = 'stack-list';
+    rows.forEach((row) => {
+      const card = document.createElement('article');
+      card.className = 'stack-item';
+      const kicker = document.createElement('p');
+      kicker.className = 'section-kicker';
+      kicker.textContent = `${row.section} / ${row.lane_id || 'lane'}`;
+      const body = document.createElement('p');
+      body.className = 'meta';
+      body.textContent = [
+        cleanString(row.recommendation),
+        cleanString(row.status),
+        cleanString(row.scope),
+        cleanString(row.rationale || row.reason),
+      ].filter(Boolean).join(' | ');
+      card.append(kicker, body);
+      els.mergePlanList.appendChild(card);
+    });
   }
 
   function renderSnapshot(snapshot) {
-    state.snapshot = snapshot;
-    state.finalists = getFinalists(snapshot).map((row, index) => ({
-      ...row,
-      rank: row.rank ?? index + 1,
-    }));
-    const detailFirst = state.finalists.find((row) => isDetailCapableFamily(snapshot, row.strategy_family));
-    state.selectedFamily = cleanString(detailFirst?.strategy_family || '');
+    const replay = snapshot.replay_contract || {};
+    const live = snapshot.daily_live_validation || {};
+    els.snapshotMeta.textContent = [
+      cleanString(snapshot.season),
+      cleanString(snapshot.schema_version),
+      cleanString(replay.replay_contract_maturity),
+      cleanString(live.session_date),
+      cleanString(live.status),
+      `${formatInteger(replay.finished_game_count)} finished games`,
+    ].filter(Boolean).join(' | ');
 
-    const benchmark = getBenchmark(snapshot);
-    const studio = getStudio(snapshot);
-    const metadataBits = [
-      snapshot.season,
-      snapshot.season_phase,
-      snapshot.analysis_version,
-      `${state.finalists.length} finalists`,
-      `${asArray(benchmark.master_router?.comparison_rows).length || 0} comparisons`,
-    ].filter(Boolean);
-    els.meta.textContent = metadataBits.join(' · ');
-
-    renderFinalistsTable(state.finalists, state.selectedFamily);
-    renderMasterRouter(benchmark.master_router || {}, studio.llm_variant_rankings || benchmark.llm_variant_summary || []);
-    renderChart(snapshot);
-    renderComparisonIndex(studio);
-    populateComparisonFamilySelect();
-    if (state.selectedFamily) {
-      els.comparisonFamily.value = state.selectedFamily;
-    }
+    renderSummary(snapshot);
+    renderResultModes(snapshot.result_modes);
+    renderDailyLiveValidation(snapshot.daily_live_validation || {});
+    renderLaneStatuses(asArray(snapshot.lane_statuses));
+    renderLaneRankings(asArray(snapshot.lane_rankings));
+    renderCompareReadyRanking(asArray(snapshot.compare_ready_ranking));
+    renderCandidates(snapshot);
+    renderPromotedStack(snapshot.current_promoted_stack || {});
+    renderPromotionBuckets(snapshot);
+    renderFinalists(asArray(snapshot.finalists));
+    renderDivergence(asArray(snapshot.divergence_summary));
+    renderGameGaps(asArray(snapshot.game_gap_summary));
+    renderMergeRecommendations(snapshot.merge_recommendation || {});
+    renderCriteria(snapshot.compare_ready_criteria || {});
+    renderSubmissionExamples(snapshot.submission_examples || {});
   }
 
-  function populateComparisonFamilySelect() {
-    els.comparisonFamily.innerHTML = '';
-    const detailFamilies = state.finalists.filter((row) => isDetailCapableFamily(state.snapshot, row.strategy_family));
-    if (!detailFamilies.length) {
-      const option = document.createElement('option');
-      option.value = '';
-      option.textContent = 'no direct family detail for finalists';
-      els.comparisonFamily.appendChild(option);
-      els.comparisonFamily.disabled = true;
-      return;
-    }
+  function renderFailure() {
+    setEmptyState(els.summaryCards, 'Unified benchmark load failed.');
+    setEmptyState(els.modeCards, 'Result mode summary unavailable.');
+    setEmptyState(els.dailyLiveList, 'Daily live validation unavailable.');
+    setEmptyState(els.laneStatusTable, 'Lane readiness unavailable.');
+    setEmptyState(els.laneRankingTable, 'Lane ranking unavailable.');
+    setEmptyState(els.compareReadyTable, 'Compare-ready ranking unavailable.');
+    setEmptyState(els.baselineTable, 'Baseline controller data unavailable.');
+    setEmptyState(els.hfTable, 'Replay compare-ready challenger data unavailable.');
+    setEmptyState(els.hfShadowTable, 'Replay shadow-only candidate data unavailable.');
+    setEmptyState(els.hfBenchTable, 'Replay bench-only candidate data unavailable.');
+    setEmptyState(els.mlTable, 'ML lane data unavailable.');
+    setEmptyState(els.llmTable, 'LLM lane data unavailable.');
+    setEmptyState(els.promotedStackNote, 'Promoted stack note unavailable.');
+    setEmptyState(els.liveReadyTable, 'Live-ready candidates unavailable.');
+    setEmptyState(els.liveProbeTable, 'Live-probe candidates unavailable.');
+    setEmptyState(els.finalistTable, 'Compare-ready finalists unavailable.');
+    setEmptyState(els.shadowOnlyTable, 'Shadow-only candidates unavailable.');
+    setEmptyState(els.benchOnlyTable, 'Bench-only candidates unavailable.');
+    setEmptyState(els.divergenceTable, 'Divergence summary unavailable.');
+    setEmptyState(els.gameGapTable, 'Game gap summary unavailable.');
+    setEmptyState(els.mergePlanList, 'Merge recommendations unavailable.');
+    setEmptyState(els.criteriaList, 'Compare-ready criteria unavailable.');
+    setEmptyState(els.submissionExampleList, 'Submission example files unavailable.');
+  }
 
-    detailFamilies.forEach((row) => {
-      const option = document.createElement('option');
-      option.value = cleanString(row.strategy_family || row.finalist_id);
-      option.textContent = finalistLabel(row);
-      els.comparisonFamily.appendChild(option);
+  async function loadUnifiedBenchmarkDashboard() {
+    const url = API_ROOT + buildQuery({
+      season: els.season.value,
+      replay_artifact_name: els.replayArtifactName.value,
+      finalist_limit: els.finalistLimit.value,
+      shared_root: els.sharedRoot.value,
     });
-    els.comparisonFamily.disabled = false;
-  }
 
-  function renderComparisonIndex(studio) {
-    els.comparisonIndex.className = 'stack-list';
-    els.comparisonIndex.innerHTML = '';
-
-    const finalists = state.finalists.length ? state.finalists : getFinalists({ benchmark: { studio_dashboard: studio } });
-    if (!finalists.length) {
-      renderEmpty(els.comparisonIndex, 'No finalists are available for comparison.');
-      return;
-    }
-
-    finalists.forEach((row, index) => {
-      const card = document.createElement('article');
-      card.className = 'stack-item';
-      if (cleanString(row.strategy_family) === cleanString(state.selectedFamily)) {
-        card.classList.add('selected-card');
-      }
-
-      const head = document.createElement('div');
-      head.className = 'stack-head';
-      const titleWrap = document.createElement('div');
-      const kicker = document.createElement('p');
-      kicker.className = 'section-kicker';
-      kicker.textContent = `Finalist ${index + 1}`;
-      const title = document.createElement('h4');
-      title.style.margin = '0';
-      title.textContent = finalistLabel(row);
-      titleWrap.append(kicker, title);
-
-      const scorePill = document.createElement('span');
-      scorePill.className = 'pill';
-      scorePill.textContent = formatNumber(row.score ?? row.mean_ending_bankroll ?? row.ending_bankroll, 2);
-      head.append(titleWrap, scorePill);
-
-      const meta = document.createElement('p');
-      meta.className = 'meta';
-      meta.textContent = [
-        row.family_type || 'strategy',
-        row.source_name || 'deterministic',
-        row.candidate_label || row.robustness_label || row.label_reason || 'no label',
-      ]
-        .filter(Boolean)
-        .join(' · ');
-
-      const tags = document.createElement('div');
-      tags.className = 'tag-row';
-      const primaryTags = [
-        `Rank ${row.rank ?? index + 1}`,
-        `Mean ${formatNumber(row.mean_ending_bankroll ?? row.ending_bankroll, 2)}`,
-        `Seeds ${formatPercent(row.positive_seed_rate)}`,
-        `DD ${formatPercent(row.max_drawdown_pct)}`,
-      ];
-      primaryTags.forEach((text) => {
-        const tag = document.createElement('span');
-        tag.className = 'tag';
-        tag.textContent = text;
-        tags.appendChild(tag);
-      });
-
-      card.append(head, meta, tags);
-      els.comparisonIndex.appendChild(card);
-    });
-  }
-
-  function renderMetricGrid(container, rows) {
-    const grid = document.createElement('div');
-    grid.className = 'metric-grid small-grid';
-    rows.forEach((row) => {
-      grid.appendChild(createCard(row.label, row.value, row.caption, row.tone || ''));
-    });
-    container.appendChild(grid);
-  }
-
-  function renderNamedTable(container, title, rows, columns, emptyText) {
-    const block = document.createElement('article');
-    block.className = 'stack-item';
-    const header = document.createElement('div');
-    header.className = 'subpanel-header';
-    const labelWrap = document.createElement('div');
-    const kicker = document.createElement('p');
-    kicker.className = 'section-kicker';
-    kicker.textContent = title;
-    const heading = document.createElement('h4');
-    heading.style.margin = '0';
-    heading.textContent = title;
-    labelWrap.append(kicker, heading);
-    header.appendChild(labelWrap);
-    block.appendChild(header);
-
-    const wrap = document.createElement('div');
-    block.appendChild(wrap);
-    renderTable(wrap, columns, rows, { emptyText: emptyText || `No ${title.toLowerCase()} rows.` });
-    container.appendChild(block);
-  }
-
-  function renderFamilyDetail(detail) {
-    els.comparisonDetail.className = 'stack-list';
-    els.comparisonDetail.innerHTML = '';
-
-    if (!detail) {
-      renderEmpty(els.comparisonDetail, 'Choose a finalist to inspect the bounded family detail.');
-      return;
-    }
-
-    const summary = detail.summary || {};
-    const candidate = detail.candidate_freeze || {};
-    const ranking = detail.individual_ranking || {};
-    const summaryBlock = document.createElement('article');
-    summaryBlock.className = 'stack-item selected-card';
-    const header = document.createElement('div');
-    header.className = 'stack-head';
-    const titleWrap = document.createElement('div');
-    const kicker = document.createElement('p');
-    kicker.className = 'section-kicker';
-    kicker.textContent = 'Selected finalist';
-    const title = document.createElement('h4');
-    title.style.margin = '0';
-    title.textContent = finalistLabel(summary) || cleanString(detail.strategy_family);
-    titleWrap.append(kicker, title);
-    const label = document.createElement('span');
-    label.className = 'pill';
-    label.textContent = summary.candidate_label || candidate.candidate_label || ranking.robustness_label || 'analysis ready';
-    header.append(titleWrap, label);
-
-    const meta = document.createElement('p');
-    meta.className = 'meta';
-    meta.textContent = [
-      summary.strategy_family || detail.strategy_family,
-      summary.portfolio_scope || ranking.portfolio_scope,
-      summary.label_reason || candidate.label_reason,
-    ]
-      .filter(Boolean)
-      .join(' · ');
-
-    summaryBlock.append(header, meta);
-    els.comparisonDetail.appendChild(summaryBlock);
-
-    renderMetricGrid(els.comparisonDetail, [
-      {
-        label: 'Mean ending bankroll',
-        value: formatNumber(summary.mean_ending_bankroll ?? summary.ending_bankroll, 2),
-        caption: 'Benchmark selector value',
-      },
-      {
-        label: 'Positive seed rate',
-        value: formatPercent(summary.positive_seed_rate ?? ranking.positive_seed_rate),
-        caption: 'Robustness check',
-      },
-      {
-        label: 'Max drawdown',
-        value: formatPercent(summary.max_drawdown_pct ?? ranking.max_drawdown_pct),
-        caption: 'Observed risk',
-      },
-      {
-        label: 'Trade count',
-        value: formatInteger(summary.trade_count ?? ranking.executed_trade_count),
-        caption: 'Filtered family sample',
-      },
-    ]);
-
-    renderNamedTable(
-      els.comparisonDetail,
-      'Best trades',
-      asArray(detail.best_trades),
-      [
-        { label: 'Game', key: 'game_id' },
-        { label: 'Entry', key: 'entry_at' },
-        { label: 'Exit', key: 'exit_at' },
-        { label: 'Return', key: 'gross_return_with_slippage', kind: 'percent' },
-        { label: 'Hold', key: 'hold_time_seconds', kind: 'integer' },
-      ],
-      'No best-trade rows were returned.'
-    );
-
-    renderNamedTable(
-      els.comparisonDetail,
-      'Worst trades',
-      asArray(detail.worst_trades),
-      [
-        { label: 'Game', key: 'game_id' },
-        { label: 'Entry', key: 'entry_at' },
-        { label: 'Exit', key: 'exit_at' },
-        { label: 'Return', key: 'gross_return_with_slippage', kind: 'percent' },
-        { label: 'Hold', key: 'hold_time_seconds', kind: 'integer' },
-      ],
-      'No worst-trade rows were returned.'
-    );
-
-    renderNamedTable(
-      els.comparisonDetail,
-      'Context summary',
-      asArray(detail.context_summary),
-      [
-        { label: 'Context', key: 'context_bucket' },
-        { label: 'Trades', key: 'trade_count', kind: 'integer' },
-        { label: 'Win rate', key: 'win_rate', kind: 'percent' },
-        { label: 'Avg return', key: 'avg_gross_return_with_slippage', kind: 'percent' },
-        { label: 'Drawdown', key: 'max_drawdown_pct', kind: 'percent' },
-      ],
-      'No context rows were returned.'
-    );
-  }
-
-  async function loadSnapshot() {
-    const season = cleanString(els.season.value);
-    const seasonPhase = cleanString(els.seasonPhase.value);
-    const analysisVersion = cleanString(els.analysisVersion.value);
-    const outputRoot = cleanString(els.outputRoot.value);
-    const url =
-      `${API_ROOT}/snapshot` +
-      buildQuery({
-        season,
-        season_phase: seasonPhase,
-        analysis_version: analysisVersion,
-        output_root: outputRoot,
-      });
-
-    setStatus('Loading benchmark snapshot...');
+    setStatus('Loading unified benchmark dashboard...');
     els.loadButton.disabled = true;
     try {
       const snapshot = await fetchJson(url);
       renderSnapshot(snapshot);
-      setStatus(`Loaded ${snapshot.season} ${snapshot.season_phase} · ${snapshot.analysis_version}`);
-      if (state.selectedFamily && isDetailCapableFamily(snapshot, state.selectedFamily)) {
-        loadFamilyDetail(state.selectedFamily).catch(() => {});
-      }
+      setStatus(`Loaded shared benchmark snapshot for ${snapshot.season}`);
     } catch (error) {
-      setStatus(error.message || 'Failed to load snapshot.', true);
-      els.chart.className = 'chart-shell empty-state';
-      els.chart.textContent = 'Snapshot load failed.';
-      els.legend.innerHTML = '';
-      els.rankingTable.innerHTML = '';
-      els.masterSummary.innerHTML = '';
-      els.routeBandTable.innerHTML = '';
-      els.llmVariantTable.innerHTML = '';
-      els.comparisonIndex.innerHTML = '';
-      els.comparisonDetail.innerHTML = '';
-      throw error;
+      renderFailure();
+      setStatus(error.message || 'Failed to load unified benchmark dashboard.', true);
     } finally {
       els.loadButton.disabled = false;
     }
   }
 
-  async function loadFamilyDetail(strategyFamily) {
-    const family = cleanString(strategyFamily);
-    if (!family) {
-      renderFamilyDetail(null);
-      return;
-    }
-    if (!state.snapshot) {
-      return;
-    }
-    if (!isDetailCapableFamily(state.snapshot, family)) {
-      renderFamilyDetail({
-        summary: { strategy_family: family, note: 'Bounded family detail is only available for concrete strategy families.' },
-        best_trades: [],
-        worst_trades: [],
-        context_summary: [],
-      });
-      return;
-    }
-
-    const season = cleanString(els.season.value);
-    const seasonPhase = cleanString(els.seasonPhase.value);
-    const analysisVersion = cleanString(els.analysisVersion.value);
-    const outputRoot = cleanString(els.outputRoot.value);
-    const tradeLimit = cleanString(els.comparisonTradeLimit.value) || '5';
-    const contextLimit = cleanString(els.comparisonContextLimit.value) || '10';
-    const traceLimit = cleanString(els.comparisonTraceLimit.value) || '3';
-    const url =
-      `${API_ROOT}/backtests/${encodeURIComponent(family)}` +
-      buildQuery({
-        season,
-        season_phase: seasonPhase,
-        analysis_version: analysisVersion,
-        output_root: outputRoot,
-        trade_limit: tradeLimit,
-        context_limit: contextLimit,
-        trace_limit: traceLimit,
-      });
-
-    setStatus(`Loading ${family} detail...`);
-    els.comparisonButton.disabled = true;
-    try {
-      const detail = await fetchJson(url);
-      renderFamilyDetail(detail);
-      setStatus(`Loaded ${family} detail`);
-    } catch (error) {
-      setStatus(error.message || `Failed to load ${family} detail.`, true);
-      renderFamilyDetail(null);
-      throw error;
-    } finally {
-      els.comparisonButton.disabled = false;
-    }
-  }
-
   els.form.addEventListener('submit', async (event) => {
     event.preventDefault();
-    try {
-      await loadSnapshot();
-    } catch (error) {
-      // error already surfaced
-    }
+    await loadUnifiedBenchmarkDashboard();
   });
 
-  els.comparisonForm.addEventListener('submit', async (event) => {
-    event.preventDefault();
-    try {
-      await loadFamilyDetail(els.comparisonFamily.value);
-    } catch (error) {
-      // error already surfaced
-    }
-  });
-
-  els.comparisonFamily.addEventListener('change', () => {
-    state.selectedFamily = cleanString(els.comparisonFamily.value);
-    renderFinalistsTable(state.finalists, state.selectedFamily);
-    renderLegend(els.legend, state.finalists, state.selectedFamily);
-    if (isDetailCapableFamily(state.snapshot, state.selectedFamily)) {
-      loadFamilyDetail(state.selectedFamily).catch(() => {});
-    }
-  });
-
-  document.addEventListener('click', (event) => {
-    const card = event.target.closest?.('.stack-item');
-    if (!card || !els.comparisonIndex.contains(card)) {
-      return;
-    }
-    const cards = Array.from(els.comparisonIndex.querySelectorAll('.stack-item'));
-    const index = cards.indexOf(card);
-    const finalist = state.finalists[index];
-    if (!finalist) {
-      return;
-    }
-    state.selectedFamily = cleanString(finalist.strategy_family || finalist.finalist_id);
-    if (isDetailCapableFamily(state.snapshot, state.selectedFamily)) {
-      els.comparisonFamily.value = state.selectedFamily;
-    }
-    renderFinalistsTable(state.finalists, state.selectedFamily);
-    renderComparisonIndex(getStudio(state.snapshot || {}));
-    renderLegend(els.legend, state.finalists, state.selectedFamily);
-    if (isDetailCapableFamily(state.snapshot, state.selectedFamily)) {
-      loadFamilyDetail(state.selectedFamily).catch(() => {});
-    } else {
-      renderFamilyDetail({
-        summary: { strategy_family: state.selectedFamily, note: 'This finalist is a router or LLM lane. Use the chart and finalist tables for comparison.' },
-        best_trades: [],
-        worst_trades: [],
-        context_summary: [],
-      });
-    }
-  });
-
-  if (state.finalists.length === 0) {
-    renderEmpty(els.chart, 'Load a snapshot to render the finalists and the master-router comparison.');
-    renderEmpty(els.rankingTable, 'Load a snapshot to inspect the finalists ranking.');
-    renderEmpty(els.masterSummary, 'Master-router cards appear here after loading.');
-    renderEmpty(els.routeBandTable, 'Opening-band routing appears here after loading.');
-    renderEmpty(els.llmVariantTable, 'LLM variant summary appears here after loading.');
-    renderEmpty(els.comparisonIndex, 'No strategy families loaded yet.');
-    renderEmpty(els.comparisonDetail, 'Choose a family to inspect detail.');
-  }
-
-  loadSnapshot().catch(() => {});
+  renderFailure();
+  loadUnifiedBenchmarkDashboard().catch(() => {});
 })();

@@ -6,7 +6,7 @@ Personal prediction-market data framework focused on production-grade data struc
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
 - Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
 - Current priority: run the locked NBA controller pair through the live playoff validation loop and harden the local Polymarket executor path.
-- Current scope: locked controller execution integration, live-paper review, stop-loss/order-policy testing, and decision logging.
+- Current scope: locked controller execution integration, live-paper review, stop-loss/order-policy testing, decision logging, and unified benchmark control across replay, ML, and LLM lanes.
 - Current NBA analysis snapshot on `2026-04-23`:
   - regular-season research-ready corpus: `1198 / 1224`
   - postseason validation corpus: `22` games (`6` play-in + `16` playoffs), all research-ready
@@ -27,6 +27,17 @@ Personal prediction-market data framework focused on production-grade data struc
     - local live executor v1 mounted at `/live-control`
     - run launcher available at `tools/start_live_run.py`
     - controller core remains frozen; only execution profile versions iterate (`v1`, `v2`, ...)
+- Current benchmark integration snapshot on `2026-04-24`:
+  - replay-engine shared contract now published at `C:\code-personal\janus-local\janus_cortex\shared\benchmark_contract\replay_contract_current.md`
+  - unified comparison dashboard now mounted at `/analysis-studio`
+  - shared export command now available at `python tools/export_benchmark_dashboard.py`
+  - replay is now the realism baseline; standard backtest, replay result, and live observed remain separate result views
+  - current compare-ready lanes are `locked-baselines`, `replay-engine-hf`, `ml-trading`, and `llm-strategy`
+  - current live-ready stack is still only the locked controller pair: `controller_vnext_unified_v1 :: balanced` and `controller_vnext_deterministic_v1 :: tight`
+  - current live-probe tier is `quarter_open_reprice` plus `micro_momentum_continuation`, but today they still execute as shadow because live executor v1 cannot route standalone probes
+  - current replay shadow set includes `inversion` and `lead_fragility`, while replay bench-only families remain visible but not promotable
+  - ML v2 is compare-ready as sidecar ranking/calibration only and is recommended to merge behind a bounded sidecar scope, not as hard routing or sizing
+  - LLM v2 is compare-ready in constrained select/gate/compile mode, but current recommendation remains shadow-only until more validation clears
 
 ## Scope Definitions
 - `v0.8.*`: NBA regular-season data completion for 2025/26.
@@ -74,10 +85,12 @@ The project uses a provider/category/module split:
 - `app/docs/reference/README.md`
 - `app/docs/reference/current_analysis_system_state.md`
 - `app/docs/reference/controller_vnext_final_tuning.md`
+- `app/docs/reference/unified_benchmark_contract.md`
 - `app/docs/reference/live_playoff_validation_runbook.md`
 - `app/docs/reference/postseason_final_20_validation.md`
 - `app/docs/planning/README.md`
 - `app/docs/planning/current/roadmap_to_multi_algo_backtests.md`
+- `app/docs/planning/current/benchmark_integration_roadmap.md`
 - `app/docs/planning/current/nba_analysis_next_steps.md`
 - `app/docs/development_guide.md`
 - `app/docs/local_workspace_convention.md`
@@ -114,4 +127,4 @@ Common commands:
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
 - Sports-core data completeness comes before Chroma, LLM memory, or broader multi-module expansion.
 - Strategy logic is now frozen around the offline NBA analysis controller stack; the current goal is execution hardening and review tooling, not new family proliferation.
-- The live-control surface is a minimal operator console, not the long-horizon analysis dashboard. Use `/live-control` for tonight’s run loop and `analysis-studio` for offline review.
+- The live-control surface is a minimal operator console, not the long-horizon analysis dashboard. Use `/live-control` for tonight's run loop and `analysis-studio` for offline review.

@@ -29,6 +29,8 @@ Use planning docs for:
 - [analysis_sampling_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sampling_benchmarking_reference.md)
 - [analysis_consumer_adapters_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_consumer_adapters_reference.md)
 - [analysis_studio_frontend_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_studio_frontend_reference.md)
+- [unified_benchmark_contract.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/unified_benchmark_contract.md)
+- [benchmark_compare_ready_criteria.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/benchmark_compare_ready_criteria.md)
 
 ### Sequential Portfolio Benchmarking
 - [analysis_sequential_portfolio_benchmarking_reference.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/analysis_sequential_portfolio_benchmarking_reference.md)

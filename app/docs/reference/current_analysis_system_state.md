@@ -1,7 +1,7 @@
 # Current Analysis System State
 
 ## Snapshot Date
-- `2026-04-23`
+- `2026-04-24`
 
 ## Locked Controllers
 - primary live candidate: `controller_vnext_unified_v1 :: balanced`
@@ -148,7 +148,13 @@ Validated on `2026-04-23`:
 
 ## Current Frontend Surface
 - the studio remains read-only
-- it should now be tuned around the locked primary controller, the deterministic fallback, and their internal route / sleeve diagnostics
+- `/analysis-studio` now serves as the unified benchmark-control dashboard
+- the dashboard is tuned around:
+  - locked baseline controllers
+  - replay realism gap
+  - deterministic and higher-frequency challengers
+  - future ML and LLM lane submissions once they publish the shared contract
+- the old route and family-detail APIs remain available, but the default page is no longer a broad finalist-only strategy-lab surface
 - a separate operator-first control surface now exists at `/live-control`
 - `/live-control` is intentionally minimal:
   - current run status and heartbeat
@@ -156,6 +162,67 @@ Validated on `2026-04-23`:
   - open positions and open orders
   - recent executor events and slippage summary
   - pause/resume/stop controls
+
+## Unified Benchmark Integration Status
+### Shared contract state
+- replay-engine lane published the first shared replay contract on `2026-04-24`
+- shared contract path:
+  - `C:\code-personal\janus-local\janus_cortex\shared\benchmark_contract\replay_contract_current.md`
+- current maturity:
+  - `execution_replay_v1_2`
+- unified comparison contract layered above it:
+  - [unified_benchmark_contract.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/unified_benchmark_contract.md)
+- exact compare-ready gate:
+  - [benchmark_compare_ready_criteria.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/benchmark_compare_ready_criteria.md)
+- result-mode split:
+  - `standard_backtest`
+  - `replay_result`
+  - `live_observed`
+- dominant replay divergence cause:
+  - `signal_stale`
+
+### Published compare-ready set
+- locked baselines:
+  - `controller_vnext_unified_v1 :: balanced`
+  - `controller_vnext_deterministic_v1 :: tight`
+- current promoted live-ready stack:
+  - `controller_vnext_unified_v1 :: balanced`
+  - `controller_vnext_deterministic_v1 :: tight`
+- replay and deterministic/HF publication:
+  - compare-ready now flows through the shared replay artifact package and the replay lane's own live-probe ranking
+  - current replay compare-ready families are `inversion`, `quarter_open_reprice`, `micro_momentum_continuation`, `lead_fragility`, and `winner_definition`
+  - current replay live-probe tier is `quarter_open_reprice` plus `micro_momentum_continuation`
+  - current replay shadow set is `inversion` plus `lead_fragility`
+  - current replay bench-only families still visible on the dashboard include `winner_definition`, `halftime_gap_fill`, `panic_fade_fast`, `q4_clutch`, and `underdog_liftoff`
+- strongest currently published replay challenger:
+  - `inversion`
+- clearest new higher-frequency challenger with positive replay evidence:
+  - `quarter_open_reprice`
+- ML lane:
+  - compare-ready shared submissions are visible on the unified dashboard
+  - current role remains sidecar ranking and calibration only; skip/gate and sizing stay outside hard routing
+  - current promotion bucket remains `shadow_only`
+- LLM lane:
+  - compare-ready constrained submissions are now visible on the unified dashboard
+  - strongest current shared candidate is `llm_template_compiler_core_windows_v2`
+  - current deployment recommendation remains `shadow_only`
+
+### Shared export surfaces
+- dashboard route:
+  - `GET /v1/analysis/studio/benchmark-dashboard`
+- export command:
+  - `python tools/export_benchmark_dashboard.py`
+- shared integration artifact root:
+  - `C:\code-personal\janus-local\janus_cortex\shared\artifacts\benchmark-integration\`
+- shared compare-ready criteria export:
+  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\compare_ready_criteria.md`
+- shared promoted-stack note:
+  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\current_promoted_stack.md`
+- shared merge-plan memo:
+  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\milestone_merge_plan.md`
+- shared submission example exports:
+  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
+  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
 
 ## Current Live Execution Surface
 ### Local live executor v1
