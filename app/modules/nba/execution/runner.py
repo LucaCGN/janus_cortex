@@ -559,6 +559,7 @@ class LiveRunWorker:
             with managed_connection() as connection:
                 self.account = resolve_trading_account(connection, account_id=self.config.account_id)
                 snapshot = self._build_cycle_snapshot(connection)
+            self._refresh_game_cards(snapshot)
             with self._lock:
                 self.latest_cycle_snapshot = snapshot
         with self._lock:
