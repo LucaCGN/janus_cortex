@@ -39,9 +39,18 @@ class BenchmarkRunResult:
     benchmark_frames: dict[str, pd.DataFrame]
 
 
+@dataclass(slots=True)
+class ReplayRunResult:
+    payload: dict[str, Any]
+    standard_trade_frames: dict[str, pd.DataFrame]
+    replay_trade_frames: dict[str, pd.DataFrame]
+    benchmark_frames: dict[str, pd.DataFrame]
+
+
 __all__ = [
     "BacktestResult",
     "BenchmarkRunResult",
+    "ReplayRunResult",
     "StrategyDefinition",
     "TradeSelection",
 ]

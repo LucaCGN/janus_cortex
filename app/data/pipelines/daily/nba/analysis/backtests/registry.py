@@ -1,6 +1,13 @@
 from __future__ import annotations
 
+from app.data.pipelines.daily.nba.analysis.backtests.halftime_gap_fill import simulate_halftime_gap_fill_trades
 from app.data.pipelines.daily.nba.analysis.backtests.inversion import simulate_inversion_trades
+from app.data.pipelines.daily.nba.analysis.backtests.lead_fragility import simulate_lead_fragility_trades
+from app.data.pipelines.daily.nba.analysis.backtests.micro_momentum_continuation import (
+    simulate_micro_momentum_continuation_trades,
+)
+from app.data.pipelines.daily.nba.analysis.backtests.panic_fade_fast import simulate_panic_fade_fast_trades
+from app.data.pipelines.daily.nba.analysis.backtests.quarter_open_reprice import simulate_quarter_open_reprice_trades
 from app.data.pipelines.daily.nba.analysis.backtests.q1_repricing import simulate_q1_repricing_trades
 from app.data.pipelines.daily.nba.analysis.backtests.q4_clutch import simulate_q4_clutch_trades
 from app.data.pipelines.daily.nba.analysis.backtests.specs import StrategyDefinition
@@ -8,7 +15,11 @@ from app.data.pipelines.daily.nba.analysis.backtests.underdog_liftoff import sim
 from app.data.pipelines.daily.nba.analysis.backtests.winner_definition import simulate_winner_definition_trades
 
 
-def build_strategy_registry() -> dict[str, StrategyDefinition]:
+DEFAULT_STRATEGY_GROUP = "default"
+REPLAY_HF_STRATEGY_GROUP = "replay_hf"
+
+
+def build_strategy_registry(*, strategy_group: str = DEFAULT_STRATEGY_GROUP) -> dict[str, StrategyDefinition]:
     definitions = [
         StrategyDefinition(
             family="inversion",
@@ -56,11 +67,65 @@ def build_strategy_registry() -> dict[str, StrategyDefinition]:
             simulator=simulate_q4_clutch_trades,
         ),
     ]
+    if str(strategy_group).strip() == REPLAY_HF_STRATEGY_GROUP:
+        definitions.extend(
+            [
+                StrategyDefinition(
+                    family="micro_momentum_continuation",
+                    entry_rule="q1_cross_plus_3c_with_fast_momentum_below_70c",
+                    exit_rule="plus_4p5c_or_minus_3c_or_within_8_states",
+                    description="Short-hold continuation that stays in Q1 and below 70c so the signal can survive replay before the stale window closes.",
+                    comparator_group="higher_frequency_continuation",
+                    tags=("higher_frequency", "momentum", "short_hold"),
+                    simulator=simulate_micro_momentum_continuation_trades,
+                ),
+                StrategyDefinition(
+                    family="panic_fade_fast",
+                    entry_rule="favorite_recross_after_10c_panic",
+                    exit_rule="recover_to_58c_or_plus_6c_or_minus_4c_or_end",
+                    description="Fast favorite panic fade that buys a broader Q2-Q4 recross after a 10c collapse and keeps the setup explicit for replay testing.",
+                    comparator_group="higher_frequency_recovery",
+                    tags=("higher_frequency", "favorite", "panic_fade"),
+                    simulator=simulate_panic_fade_fast_trades,
+                ),
+                StrategyDefinition(
+                    family="quarter_open_reprice",
+                    entry_rule="q1_cross_plus_3c_with_early_support_below_72c",
+                    exit_rule="plus_6c_or_minus_4c_or_end_of_q1",
+                    description="Quarter-open repricing that avoids late high-80c favorite entries and stays inside the Q1 window that survives replay.",
+                    comparator_group="higher_frequency_opening_band",
+                    tags=("higher_frequency", "q1", "repricing"),
+                    simulator=simulate_quarter_open_reprice_trades,
+                ),
+                StrategyDefinition(
+                    family="halftime_gap_fill",
+                    entry_rule="early_q3_cross_plus_3c_over_halftime_anchor",
+                    exit_rule="plus_5c_or_minus_4c_or_end_of_q3",
+                    description="Halftime gap-fill continuation that keys off the halftime close and only trades the first seven minutes of Q3.",
+                    comparator_group="higher_frequency_halftime",
+                    tags=("higher_frequency", "q3", "gap_fill"),
+                    simulator=simulate_halftime_gap_fill_trades,
+                ),
+                StrategyDefinition(
+                    family="lead_fragility",
+                    entry_rule="fragile_q3_rebound_entry_38c_to_48c",
+                    exit_rule="plus_6c_or_minus_4c_or_end",
+                    description="Fragile-lead rebound narrowed to early Q3 and 38c-48c entries so it can stay on the replay-friendly side of the stale gate.",
+                    comparator_group="higher_frequency_fragility",
+                    tags=("higher_frequency", "fragility", "rebound"),
+                    simulator=simulate_lead_fragility_trades,
+                ),
+            ]
+        )
     return {definition.family: definition for definition in definitions}
 
 
-def resolve_strategy_registry(strategy_family: str) -> dict[str, StrategyDefinition]:
-    registry = build_strategy_registry()
+def resolve_strategy_registry(
+    strategy_family: str,
+    *,
+    strategy_group: str = DEFAULT_STRATEGY_GROUP,
+) -> dict[str, StrategyDefinition]:
+    registry = build_strategy_registry(strategy_group=strategy_group)
     if strategy_family == "all":
         return registry
     definition = registry.get(strategy_family)
@@ -70,6 +135,8 @@ def resolve_strategy_registry(strategy_family: str) -> dict[str, StrategyDefinit
 
 
 __all__ = [
+    "DEFAULT_STRATEGY_GROUP",
+    "REPLAY_HF_STRATEGY_GROUP",
     "build_strategy_registry",
     "resolve_strategy_registry",
 ]

@@ -114,6 +114,14 @@ DEFAULT_BACKTEST_LLM_MODEL = "gpt-5.4-mini"
 DEFAULT_BACKTEST_LLM_ITERATION_GAMES = 20
 DEFAULT_BACKTEST_LLM_ITERATION_COUNT = 5
 DEFAULT_BACKTEST_LLM_MAX_BUDGET_USD = 20.0
+DEFAULT_BACKTEST_STRATEGY_GROUP = "default"
+DEFAULT_REPLAY_SIGNAL_MAX_AGE_SECONDS = 60.0
+DEFAULT_REPLAY_QUOTE_MAX_AGE_SECONDS = 30.0
+DEFAULT_REPLAY_POLL_INTERVAL_SECONDS = 5.0
+DEFAULT_REPLAY_MAX_SPREAD_CENTS = 2.0
+DEFAULT_REPLAY_PROXY_MIN_SPREAD_CENTS = 1.0
+DEFAULT_REPLAY_PROXY_MAX_SPREAD_CENTS = 6.0
+DEFAULT_REPLAY_AGGRESSIVE_EXIT_SLIPPAGE_CENTS = 1.0
 DEFAULT_OPENING_BAND_SIZE = 10
 REGULATION_PERIOD_SECONDS = 12 * 60
 OVERTIME_PERIOD_SECONDS = 5 * 60
@@ -339,6 +347,7 @@ class BacktestRunRequest:
     season_phase: str = DEFAULT_SEASON_PHASE
     season_phases: tuple[str, ...] | None = None
     strategy_family: str = "all"
+    strategy_group: str = DEFAULT_BACKTEST_STRATEGY_GROUP
     entry_rule: str | None = None
     exit_rule: str | None = None
     slippage_cents: int = 0
@@ -366,6 +375,22 @@ class BacktestRunRequest:
     llm_max_budget_usd: float = DEFAULT_BACKTEST_LLM_MAX_BUDGET_USD
     analysis_version: str = ANALYSIS_VERSION
     output_root: str | None = None
+
+
+@dataclass(slots=True)
+class ReplayRunRequest(BacktestRunRequest):
+    poll_interval_seconds: float = DEFAULT_REPLAY_POLL_INTERVAL_SECONDS
+    signal_max_age_seconds: float = DEFAULT_REPLAY_SIGNAL_MAX_AGE_SECONDS
+    quote_max_age_seconds: float = DEFAULT_REPLAY_QUOTE_MAX_AGE_SECONDS
+    max_spread_cents: float = DEFAULT_REPLAY_MAX_SPREAD_CENTS
+    proxy_min_spread_cents: float = DEFAULT_REPLAY_PROXY_MIN_SPREAD_CENTS
+    proxy_max_spread_cents: float = DEFAULT_REPLAY_PROXY_MAX_SPREAD_CENTS
+    aggressive_exit_slippage_cents: float = DEFAULT_REPLAY_AGGRESSIVE_EXIT_SLIPPAGE_CENTS
+    quote_source_mode: str = "historical_bidask_l1"
+    quote_source_fallback_mode: str = "cross_side_last_trade"
+    quote_proxy: str = "cross_side_last_trade"
+    include_finished_only: bool = True
+    include_live_run_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

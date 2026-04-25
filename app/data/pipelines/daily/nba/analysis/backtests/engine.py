@@ -499,7 +499,7 @@ def build_backtest_result(state_df: pd.DataFrame, request: BacktestRunRequest) -
     from app.data.pipelines.daily.nba.analysis.backtests.registry import resolve_strategy_registry
 
     work = _prepare_state_panel_frame(state_df)
-    strategy_registry = resolve_strategy_registry(request.strategy_family)
+    strategy_registry = resolve_strategy_registry(request.strategy_family, strategy_group=request.strategy_group)
     if work.empty:
         payload = {
             "season": request.season,
