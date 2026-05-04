@@ -72,51 +72,41 @@ Interpretation:
 
 ## Immediate Critical Path
 
-### 1. Local Live Playoff Validation Loop
+### 1. Second-Round Live Playoff Validation Loop
 
 Why this is next:
-- the controller is now locked
-- the highest-value missing piece is execution wiring, not more backtest exploration
-- we need to validate the locked controller on live playoff conditions before broader app/deployment work
+- the executor, replay, benchmark, ML, and LLM lanes are now merged to `main`
+- the highest-value missing piece is repeatable live/shadow evidence under second-round conditions
+- the live branch should make only minimal operational adjustments while comparing promoted probes and sidecars
 
 Target outputs:
-- local live executor v1 around the locked controller pair
-- run-until-finished control loop over an explicit list of `game_id`s
-- bounded order placement, cancel, replace, and local stop primitives
-- separate `/live-control` surface for operator monitoring
-- restart/resume safety through local ledger + DB parity
+- daily preflight, live-test plan, in-game monitoring, and postgame truth
+- one entries-enabled path per slate when preflight is green
+- all non-selected controllers/probes/sidecars in dry-run or shadow
+- strict live budget:
+  - `$1` target entry
+  - `2` entries maximum per game
+  - `$2` requested notional maximum per game
+- mandatory `95%` take-profit
+- blocker attribution for every non-trade
 
-Today’s live scope:
-- games:
-  - `0042500123` `NYK@ATL`
-  - `0042500133` `CLE@TOR`
-  - `0042500163` `DEN@MIN`
-- execution profile:
-  - `v1`
-- primary controller:
-  - `controller_vnext_unified_v1 :: balanced`
-- fallback:
-  - `controller_vnext_deterministic_v1 :: tight`
-- live sizing:
-  - fixed Polymarket minimum only
-- order policy:
-  - limit entries at best ask
-  - stop-loss exits as local trigger + market-emulated sell
-- launcher:
-  - `python tools/start_live_run.py --api-root http://127.0.0.1:8010 --run-id live-2026-04-23-v1 --game-id 0042500123 --game-id 0042500133 --game-id 0042500163 --dry-run`
+Branch plan:
+- [branches/ops_second_round_live_validation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/ops_second_round_live_validation.md)
 
-### 2. Decision Logging And ML-Ready Dataset
+### 2. Expanded ML Replay Sample And Neural Sidecar
 Why this is next:
-- once the controller is locked, every live or paper decision should produce training-grade records
+- the database has the raw regular-season game volume, but the ML lane still needs denser replay labels
+- the next ML step is full regular-season replay labeling, not immediate neural execution authority
 
 Target outputs:
-- append-only candidate-decision log
-- selected family / confidence / sleeve / stop-overlay / final stake fields
-- execution outcome log:
-  - requested price
-  - filled price
-  - cancel / miss / partial-fill state
-- training-ready candidate table for later ML ranking and sizing work
+- `full_regular_execution_replay_v1`
+- expanded all-family candidate labels
+- current ML reranker/calibrator rerun on expanded labels
+- small PyTorch neural sidecar benchmarked as shadow-only
+- optional state-window scalping labels if candidate density remains thin
+
+Branch plan:
+- [branches/analysis_ml_replay_expansion_nn.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_ml_replay_expansion_nn.md)
 
 ### 3. Focused Review Dashboard
 Why this is parallel-friendly:

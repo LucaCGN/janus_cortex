@@ -50,12 +50,12 @@
 - `codex/frontend-analysis-comparison`
 
 ## Current Dependency Ladder
-1. `codex/live-polymarket-executor`
-   - wire the locked controller pair into a paper/live-safe execution shell
-2. `codex/controller-decision-logging`
-   - append every candidate, route, fill, and outcome into an ML-ready contract
+1. `codex/ops-second-round-live-validation`
+   - run second-round live testing with one bounded entries-enabled path per slate and all other candidates shadow-only
+2. `codex/analysis-ml-replay-expansion-nn`
+   - expand regular-season replay-labeled samples and test ML/neural sidecars without execution authority
 3. `codex/frontend-analysis-portfolio-viz`
-   - review only the locked controller pair, route mix, and paper/live diagnostics
+   - review live/shadow route mix and portfolio diagnostics after the live-validation contract stabilizes
 4. `codex/season-playoffs-preseason`
    - keep season-scope structures current for the remaining playoffs and preseason
 5. `codex/season-wnba-bootstrap`
@@ -65,7 +65,8 @@ Detailed subphase plans live under:
 - [branches/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/README.md)
 
 ## Branch Launch Guidance
-- do not launch executor work before the locked controller state is merged to clean `main`
-- do not widen the controller family set again before live or paper execution feedback exists
-- do not let decision logging and executor placement logic share the same write-heavy branch unless strictly necessary
-- do not launch season-expansion branches before executor contracts and logging fields are frozen
+- launch second-round live validation from clean `main`; keep code changes operational and minimal
+- launch ML replay expansion from clean `main`; keep it separate from live order placement
+- do not let the ML branch change live routing, budgets, or promotion buckets
+- do not let the live branch add neural models or broaden replay training samples
+- do not widen the entries-enabled set before replay plus live/shadow evidence justifies it
