@@ -48,6 +48,13 @@ This branch expands the replay-labeled ML sample before testing neural methods. 
   - `ml_sidecar_union_v2`: replay bankroll `29.5087`, replay trades `5`, shadow-only
   - `ml_controller_focus_calibrator_v2`: replay bankroll `18.1158`, replay trades `2`, shadow-only
 
+## Progress
+- `2026-05-04`: built `shared/artifacts/replay-engine-hf/2025-26/full_regular_execution_replay_v1`.
+- Expanded regular-season replay labels from `743` focused rows to `4976` rows across `12` subjects.
+- Expanded artifact coverage: `1224` finished regular-season games, `1198` state-panel games, `26` derived-bundle games.
+- Replay engine full-regular run now uses cached per-game state/tick lookups to avoid repeated per-poll table scans.
+- ML handoff report: `shared/reports/ml-trading-lane/sample_coverage_report.md`.
+
 ## Subphases
 1. `sample_audit`
    - count finished games, linked markets, state-panel games, standard candidates, replay-labeled candidates, and blockers by phase
@@ -55,7 +62,7 @@ This branch expands the replay-labeled ML sample before testing neural methods. 
 2. `full_regular_replay_labels`
    - build `full_regular_execution_replay_v1`
    - include all deterministic families and controller candidates, not just the focused families
-   - keep resumable output and avoid rerunning completed game/family blocks
+   - keep output reproducible through explicit family/controller scope flags
 3. `candidate_level_ml`
    - rerun current logistic/OLS sidecars on the expanded sample
    - compare against the current `ml_*_v2` sidecars and deterministic replay families

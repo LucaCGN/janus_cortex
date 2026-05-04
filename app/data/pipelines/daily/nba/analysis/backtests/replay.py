@@ -1240,17 +1240,41 @@ def _build_tick_lookup(bundle: dict[str, Any]) -> dict[str, pd.DataFrame]:
             if ts is None or price is None:
                 continue
             rows.append({"ts": ts, "price": float(price)})
-        lookup[side] = pd.DataFrame(rows).sort_values("ts", kind="mergesort").reset_index(drop=True) if rows else pd.DataFrame(columns=["ts", "price"])
+        if rows:
+            frame = pd.DataFrame(rows)
+            frame["ts"] = pd.to_datetime(frame["ts"], errors="coerce", utc=True)
+            frame = frame.dropna(subset=["ts"]).sort_values("ts", kind="mergesort").reset_index(drop=True)
+            lookup[side] = frame
+        else:
+            lookup[side] = pd.DataFrame(columns=["ts", "price"])
     return lookup
+
+
+def _as_utc_timestamp(value: Any) -> pd.Timestamp | None:
+    if value is None:
+        return None
+    try:
+        timestamp = pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return None
+    if pd.isna(timestamp):
+        return None
+    if timestamp.tzinfo is None:
+        return timestamp.tz_localize("UTC")
+    return timestamp.tz_convert("UTC")
 
 
 def _latest_tick_before(frame: pd.DataFrame, *, cycle_at: datetime) -> dict[str, Any] | None:
     if frame.empty:
         return None
-    work = frame[frame["ts"] <= cycle_at]
-    if work.empty:
+    cycle_ts = _as_utc_timestamp(cycle_at)
+    if cycle_ts is None:
         return None
-    return work.iloc[-1].to_dict()
+    ts_series = frame["ts"] if pd.api.types.is_datetime64_any_dtype(frame["ts"]) else pd.to_datetime(frame["ts"], errors="coerce", utc=True)
+    position = int(ts_series.searchsorted(cycle_ts, side="right")) - 1
+    if position < 0:
+        return None
+    return frame.iloc[position].to_dict()
 
 
 def _latest_historical_bidask_row_before(
@@ -1450,16 +1474,43 @@ def _next_poll_at_or_after(anchor_at: datetime, target_at: datetime, *, poll_int
     return anchor_at + timedelta(seconds=steps * poll_interval_seconds)
 
 
-def _latest_state_before(state_df: pd.DataFrame, *, team_side: str, cycle_at: datetime) -> dict[str, Any] | None:
-    if state_df.empty:
+def _build_replay_state_lookup(state_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    if state_df.empty or "team_side" not in state_df.columns or "event_at" not in state_df.columns:
+        return {}
+    lookup: dict[str, pd.DataFrame] = {}
+    for side, side_frame in state_df.groupby(state_df["team_side"].astype(str), sort=False):
+        work = side_frame.copy()
+        work["event_at"] = pd.to_datetime(work["event_at"], errors="coerce", utc=True)
+        work = work.dropna(subset=["event_at"]).sort_values(["event_at", "state_index"], kind="mergesort").reset_index(drop=True)
+        if not work.empty:
+            lookup[str(side)] = work
+    return lookup
+
+
+def _latest_state_before(
+    state_df: pd.DataFrame,
+    *,
+    team_side: str,
+    cycle_at: datetime,
+    state_lookup: dict[str, pd.DataFrame] | None = None,
+) -> dict[str, Any] | None:
+    cycle_ts = _as_utc_timestamp(cycle_at)
+    if cycle_ts is None:
         return None
-    work = state_df[
-        (state_df["team_side"].astype(str) == str(team_side))
-        & (pd.to_datetime(state_df["event_at"], errors="coerce", utc=True) <= cycle_at)
-    ]
-    if work.empty:
+    if state_lookup is None:
+        state_lookup = _build_replay_state_lookup(state_df)
+    work = state_lookup.get(str(team_side))
+    if work is None or work.empty:
         return None
-    return work.sort_values(["event_at", "state_index"], kind="mergesort").iloc[-1].to_dict()
+    event_series = (
+        work["event_at"]
+        if pd.api.types.is_datetime64_any_dtype(work["event_at"])
+        else pd.to_datetime(work["event_at"], errors="coerce", utc=True)
+    )
+    position = int(event_series.searchsorted(cycle_ts, side="right")) - 1
+    if position < 0:
+        return None
+    return work.iloc[position].to_dict()
 
 
 def _evaluate_entry_attempt(
@@ -1474,13 +1525,14 @@ def _evaluate_entry_attempt(
     attempt_index: int,
     signal_context: dict[str, Any],
     tick_lookup: dict[str, pd.DataFrame] | None = None,
+    state_lookup: dict[str, pd.DataFrame] | None = None,
 ) -> dict[str, Any]:
     team_side = str(record.get("team_side") or "")
     entry_at = _parse_datetime(record.get("entry_at")) or cycle_at
     exit_at = _parse_datetime(record.get("exit_at")) or cycle_at
     entry_state_index = _safe_int(record.get("entry_state_index"))
     exit_state_index = _safe_int(record.get("exit_state_index"), default=entry_state_index)
-    latest_state = _latest_state_before(context.state_df, team_side=team_side, cycle_at=cycle_at)
+    latest_state = _latest_state_before(context.state_df, team_side=team_side, cycle_at=cycle_at, state_lookup=state_lookup)
     latest_state_index = _safe_int((latest_state or {}).get("state_index"))
     latest_state_at = _parse_datetime((latest_state or {}).get("event_at"))
     state_signal_age = (
@@ -1554,6 +1606,7 @@ def _replay_exit(
     fill_price: float,
     request: ReplayRunRequest,
     attempt_rows: list[dict[str, Any]],
+    tick_lookup: dict[str, pd.DataFrame] | None = None,
 ) -> tuple[datetime, float, float, str]:
     exit_at = _parse_datetime(record.get("exit_at")) or fill_at
     cycle_at = _next_poll_at_or_after(context.anchor_at, max(fill_at, exit_at), poll_interval_seconds=request.poll_interval_seconds)
@@ -1565,7 +1618,13 @@ def _replay_exit(
     )
     attempt_index = 0
     while cycle_at <= end_limit:
-        quote = _build_quote_snapshot(context, team_side=str(record.get("team_side") or ""), cycle_at=cycle_at, request=request)
+        quote = _build_quote_snapshot(
+            context,
+            team_side=str(record.get("team_side") or ""),
+            cycle_at=cycle_at,
+            request=request,
+            tick_lookup=tick_lookup,
+        )
         attempt_rows.append(
             {
                 "subject_name": str(record.get("subject_name") or ""),
@@ -1658,6 +1717,8 @@ def _replay_single_signal(
     request: ReplayRunRequest,
     subject_name: str,
     subject_type: str,
+    tick_lookup: dict[str, pd.DataFrame] | None = None,
+    state_lookup: dict[str, pd.DataFrame] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any] | None]:
     attempt_rows: list[dict[str, Any]] = []
     entry_at = _parse_datetime(record.get("entry_at"))
@@ -1690,7 +1751,8 @@ def _replay_single_signal(
     attempt_index = 0
     last_retry_reason: str | None = None
     signal_context = _signal_context_fields(context, record)
-    tick_lookup = _build_tick_lookup(context.bundle)
+    tick_lookup = tick_lookup or _build_tick_lookup(context.bundle)
+    state_lookup = state_lookup or _build_replay_state_lookup(context.state_df)
     while cycle_at <= context.end_at + timedelta(seconds=request.poll_interval_seconds):
         attempt_row = _evaluate_entry_attempt(
             context,
@@ -1703,6 +1765,7 @@ def _replay_single_signal(
             attempt_index=attempt_index,
             signal_context=signal_context,
             tick_lookup=tick_lookup,
+            state_lookup=state_lookup,
         )
         result = str(attempt_row.get("result") or "")
         reason = str(attempt_row.get("reason") or "")
@@ -1719,6 +1782,7 @@ def _replay_single_signal(
                 fill_price=fill_price,
                 request=request,
                 attempt_rows=attempt_rows,
+                tick_lookup=tick_lookup,
             )
             trade_row = _build_replay_trade_row(
                 {**record, "subject_name": subject_name, "subject_type": subject_type},
@@ -1838,6 +1902,8 @@ def simulate_replay_trade_frames(
                     )
                 continue
             game_has_executed_trade = False
+            state_lookup = _build_replay_state_lookup(context.state_df)
+            tick_lookup = _build_tick_lookup(context.bundle)
             for record in game_rows.to_dict(orient="records"):
                 if game_has_executed_trade:
                     signal_id = _signal_id_for_trade({**record, "subject_name": subject.subject_name})
@@ -1868,6 +1934,8 @@ def simulate_replay_trade_frames(
                     request=request,
                     subject_name=subject.subject_name,
                     subject_type=subject.subject_type,
+                    tick_lookup=tick_lookup,
+                    state_lookup=state_lookup,
                 )
                 signal_rows.append(summary_row)
                 attempt_rows.extend(candidate_attempts)
@@ -2521,10 +2589,12 @@ def _render_replay_markdown(payload: dict[str, Any]) -> str:
     divergence_rows = benchmark.get("divergence_summary") or []
     live_rows = benchmark.get("live_summary") or []
     quote_coverage_rows = benchmark.get("quote_coverage_summary") or []
+    phase_label = payload.get("season_phase") or ",".join(payload.get("season_phases") or []) or "replay"
     lines = [
-        "# Postseason Replay Comparison",
+        f"# {str(phase_label).replace('_', ' ').title()} Replay Comparison",
         "",
         f"- Season: `{payload.get('season')}`",
+        f"- Season phase: `{phase_label}`",
         f"- Analysis version: `{payload.get('analysis_version')}`",
         f"- Finished games replayed: `{payload.get('finished_game_count')}`",
         f"- Poll cadence: `{payload.get('replay_contract', {}).get('poll_interval_seconds')}` seconds",
