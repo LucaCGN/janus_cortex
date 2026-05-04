@@ -122,6 +122,7 @@ DEFAULT_REPLAY_MAX_SPREAD_CENTS = 2.0
 DEFAULT_REPLAY_PROXY_MIN_SPREAD_CENTS = 1.0
 DEFAULT_REPLAY_PROXY_MAX_SPREAD_CENTS = 6.0
 DEFAULT_REPLAY_AGGRESSIVE_EXIT_SLIPPAGE_CENTS = 1.0
+DEFAULT_TAKE_PROFIT_EXIT_PRICE = 0.95
 DEFAULT_OPENING_BAND_SIZE = 10
 REGULATION_PERIOD_SECONDS = 12 * 60
 OVERTIME_PERIOD_SECONDS = 5 * 60
@@ -175,6 +176,11 @@ GAME_PROFILE_COLUMNS = (
     "winner_stable_80_clock_elapsed_seconds",
     "winner_stable_90_clock_elapsed_seconds",
     "winner_stable_95_clock_elapsed_seconds",
+    "stakes_score",
+    "stakes_deterministic_score",
+    "stakes_llm_score",
+    "stakes_bucket",
+    "stakes_reason",
     "notes_json",
 )
 
@@ -237,6 +243,11 @@ STATE_PANEL_COLUMNS = (
     "winner_stable_80_after_state_flag",
     "winner_stable_90_after_state_flag",
     "winner_stable_95_after_state_flag",
+    "stakes_score",
+    "stakes_deterministic_score",
+    "stakes_llm_score",
+    "stakes_bucket",
+    "stakes_reason",
 )
 
 TEAM_SEASON_PROFILE_COLUMNS = (

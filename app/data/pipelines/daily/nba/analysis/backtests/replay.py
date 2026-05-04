@@ -278,6 +278,33 @@ REPLAY_CANDIDATE_LIFECYCLE_COLUMNS = (
     "state_source",
 )
 
+REPLAY_SLATE_EXPECTATION_COLUMNS = (
+    "candidate_id",
+    "subject_name",
+    "subject_type",
+    "game_id",
+    "state_source",
+    "standard_trade_count",
+    "replay_signal_count",
+    "replay_trade_count",
+    "replay_expected_trade",
+    "replay_expected_reason",
+    "replay_signal_id",
+    "replay_signal_timestamp",
+    "period_label",
+    "entry_window_label",
+    "first_visible_at",
+    "first_executable_event_at",
+    "first_executable_poll_at",
+    "stale_at",
+    "replay_blocker_class",
+    "replay_blocker_detail",
+    "cadence_vs_stale_blocker",
+    "quote_source_mode",
+    "quote_resolution_status",
+    "capture_source",
+)
+
 REPLAY_BLOCKER_SUMMARY_COLUMNS = (
     "subject_name",
     "subject_type",
@@ -1003,10 +1030,39 @@ def build_controller_context(cache_path: Path) -> ControllerContext:
     )
 
 
-def _query_finished_postseason_games(connection: Any, *, season: str) -> list[dict[str, Any]]:
+def _resolve_replay_season_phases(request: ReplayRunRequest) -> tuple[str, ...]:
+    resolved = tuple(str(value).strip() for value in (request.season_phases or ()) if str(value).strip())
+    if resolved:
+        return resolved
+    season_phase = str(request.season_phase or "").strip()
+    if season_phase == "postseason_to_date":
+        return ("play_in", "playoffs")
+    if season_phase:
+        return (season_phase,)
+    return ("play_in", "playoffs")
+
+
+def _resolve_replay_phase_label(request: ReplayRunRequest) -> str:
+    season_phase = str(request.season_phase or "").strip()
+    if season_phase:
+        return season_phase
+    phases = _resolve_replay_season_phases(request)
+    return ",".join(phases) if phases else "postseason_to_date"
+
+
+def _query_finished_games(
+    connection: Any,
+    *,
+    season: str,
+    season_phases: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    resolved_phases = tuple(str(value).strip() for value in season_phases if str(value).strip())
+    if not resolved_phases:
+        return []
+    placeholders = ", ".join(["%s"] * len(resolved_phases))
     with cursor_dict(connection) as cursor:
         cursor.execute(
-            """
+            f"""
             SELECT
                 game_id,
                 season_phase,
@@ -1018,27 +1074,36 @@ def _query_finished_postseason_games(connection: Any, *, season: str) -> list[di
                 away_team_slug
             FROM nba.nba_games
             WHERE season = %s
-              AND season_phase IN ('play_in', 'playoffs')
+              AND season_phase IN ({placeholders})
               AND game_status = 3
             ORDER BY game_date ASC, game_id ASC;
             """,
-            (season,),
+            (season, *resolved_phases),
         )
         return fetchall_dicts(cursor)
 
 
-def load_finished_postseason_replay_contexts(
+def _query_finished_postseason_games(connection: Any, *, season: str) -> list[dict[str, Any]]:
+    return _query_finished_games(connection, season=season, season_phases=("play_in", "playoffs"))
+
+
+def load_finished_replay_contexts(
     *,
     season: str,
     analysis_version: str,
+    season_phase: str = "postseason_to_date",
+    season_phases: tuple[str, ...] = ("play_in", "playoffs"),
 ) -> tuple[dict[str, ReplayGameContext], pd.DataFrame, pd.DataFrame]:
+    resolved_phases = tuple(str(value).strip() for value in season_phases if str(value).strip())
+    if not resolved_phases:
+        resolved_phases = ("play_in", "playoffs") if season_phase == "postseason_to_date" else (season_phase,)
     with managed_connection() as connection:
-        finished_games = _query_finished_postseason_games(connection, season=season)
+        finished_games = _query_finished_games(connection, season=season, season_phases=resolved_phases)
         canonical_state_df = load_analysis_backtest_state_panel_df(
             connection,
             season=season,
-            season_phase="playoffs",
-            season_phases=("play_in", "playoffs"),
+            season_phase=season_phase,
+            season_phases=resolved_phases,
             analysis_version=analysis_version,
         )
         state_lookup = _build_state_lookup_by_game(canonical_state_df)
@@ -1146,6 +1211,19 @@ def load_finished_postseason_replay_contexts(
     combined_state_df = pd.concat(state_frames, ignore_index=True) if state_frames else pd.DataFrame()
     manifest_df = pd.DataFrame(manifest_rows).sort_values(["game_date", "game_id"], kind="mergesort").reset_index(drop=True)
     return contexts, combined_state_df, manifest_df
+
+
+def load_finished_postseason_replay_contexts(
+    *,
+    season: str,
+    analysis_version: str,
+) -> tuple[dict[str, ReplayGameContext], pd.DataFrame, pd.DataFrame]:
+    return load_finished_replay_contexts(
+        season=season,
+        analysis_version=analysis_version,
+        season_phase="postseason_to_date",
+        season_phases=("play_in", "playoffs"),
+    )
 
 
 def _build_tick_lookup(bundle: dict[str, Any]) -> dict[str, pd.DataFrame]:
@@ -1812,11 +1890,13 @@ def _build_subjects(
     output_dir: Path,
 ) -> tuple[list[ReplaySubject], dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, Any]]:
     request_payload = asdict(request)
+    replay_phase_label = _resolve_replay_phase_label(request)
+    replay_season_phases = _resolve_replay_season_phases(request)
     extended_request = ReplayRunRequest(
         **{
             **request_payload,
-            "season_phase": "postseason_to_date",
-            "season_phases": ("play_in", "playoffs"),
+            "season_phase": replay_phase_label,
+            "season_phases": replay_season_phases,
             "strategy_group": REPLAY_HF_STRATEGY_GROUP,
         }
     )
@@ -1826,8 +1906,8 @@ def _build_subjects(
     controller_request = ReplayRunRequest(
         **{
             **request_payload,
-            "season_phase": "postseason_to_date",
-            "season_phases": ("play_in", "playoffs"),
+            "season_phase": replay_phase_label,
+            "season_phases": replay_season_phases,
             "strategy_group": "default",
         }
     )
@@ -1836,7 +1916,7 @@ def _build_subjects(
 
     deterministic_trades, deterministic_decisions = build_master_router_trade_frame(
         controller_result,
-        sample_name="postseason_to_date",
+        sample_name=replay_phase_label,
         selection_sample_name=controller_context.selection_sample_name,
         priors=controller_context.priors,
         core_strategy_families=DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
@@ -1850,7 +1930,7 @@ def _build_subjects(
 
     unified_trades, unified_decisions, unified_token_totals = build_unified_router_trade_frame(
         controller_result,
-        sample_name="postseason_to_date",
+        sample_name=replay_phase_label,
         selection_sample_name=controller_context.selection_sample_name,
         priors=controller_context.priors,
         family_profiles=controller_context.family_profiles,
@@ -2304,6 +2384,100 @@ def _candidate_lifecycle_frame(signal_summary_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=REPLAY_CANDIDATE_LIFECYCLE_COLUMNS)
 
 
+def build_replay_slate_expectation_frame(
+    *,
+    game_gap_df: pd.DataFrame,
+    signal_summary_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if game_gap_df.empty:
+        return pd.DataFrame(columns=REPLAY_SLATE_EXPECTATION_COLUMNS)
+
+    grouped_signals: dict[tuple[str, str], pd.DataFrame] = {}
+    if not signal_summary_df.empty:
+        work = signal_summary_df.copy()
+        work["_signal_entry_at_sort"] = pd.to_datetime(work["signal_entry_at"], errors="coerce", utc=True)
+        work["_first_visible_at_sort"] = pd.to_datetime(work["first_visible_at"], errors="coerce", utc=True)
+        work["_executed_sort"] = work["executed_flag"].fillna(False).astype(bool).astype(int)
+        work = work.sort_values(
+            [
+                "subject_name",
+                "game_id",
+                "_executed_sort",
+                "_signal_entry_at_sort",
+                "_first_visible_at_sort",
+                "signal_id",
+            ],
+            ascending=[True, True, False, True, True, True],
+            kind="mergesort",
+            na_position="last",
+        ).reset_index(drop=True)
+        grouped_signals = {
+            (str(subject_name), str(game_id)): group.reset_index(drop=True)
+            for (subject_name, game_id), group in work.groupby(["subject_name", "game_id"], sort=False)
+        }
+
+    rows: list[dict[str, Any]] = []
+    for record in game_gap_df.to_dict(orient="records"):
+        subject_name = str(record.get("subject_name") or "")
+        game_id = str(record.get("game_id") or "")
+        signal_group = grouped_signals.get((subject_name, game_id), pd.DataFrame())
+        replay_signal_count = int(len(signal_group)) if not signal_group.empty else 0
+        replay_trade_count = int(record.get("replay_trade_count") or 0)
+        standard_trade_count = int(record.get("standard_trade_count") or 0)
+        primary_signal: dict[str, Any] = {}
+        replay_expected_trade = replay_trade_count > 0
+        replay_expected_reason = None
+
+        if not signal_group.empty:
+            if replay_expected_trade:
+                primary_signal = signal_group[signal_group["executed_flag"].fillna(False).astype(bool)].iloc[0].to_dict()
+                replay_expected_reason = "executed"
+            else:
+                primary_signal = signal_group.iloc[0].to_dict()
+                replay_expected_reason = (
+                    primary_signal.get("no_trade_reason")
+                    or primary_signal.get("terminal_no_trade_reason")
+                    or primary_signal.get("replay_blocker_class")
+                    or record.get("top_no_trade_reason")
+                    or "no_trade"
+                )
+        elif standard_trade_count <= 0:
+            replay_expected_reason = "no_standard_candidate"
+        else:
+            replay_expected_reason = record.get("top_no_trade_reason") or "missing_signal_trace"
+
+        rows.append(
+            {
+                "candidate_id": subject_name,
+                "subject_name": subject_name,
+                "subject_type": str(record.get("subject_type") or ""),
+                "game_id": game_id,
+                "state_source": record.get("state_source"),
+                "standard_trade_count": standard_trade_count,
+                "replay_signal_count": replay_signal_count,
+                "replay_trade_count": replay_trade_count,
+                "replay_expected_trade": replay_expected_trade,
+                "replay_expected_reason": replay_expected_reason,
+                "replay_signal_id": primary_signal.get("signal_id"),
+                "replay_signal_timestamp": primary_signal.get("signal_entry_at"),
+                "period_label": primary_signal.get("period_label"),
+                "entry_window_label": primary_signal.get("entry_window_label"),
+                "first_visible_at": primary_signal.get("first_visible_at"),
+                "first_executable_event_at": primary_signal.get("first_executable_event_at"),
+                "first_executable_poll_at": primary_signal.get("first_executable_poll_at"),
+                "stale_at": primary_signal.get("stale_at"),
+                "replay_blocker_class": primary_signal.get("replay_blocker_class"),
+                "replay_blocker_detail": primary_signal.get("replay_blocker_detail"),
+                "cadence_vs_stale_blocker": primary_signal.get("cadence_vs_stale_blocker"),
+                "quote_source_mode": primary_signal.get("quote_source_mode"),
+                "quote_resolution_status": primary_signal.get("quote_resolution_status"),
+                "capture_source": primary_signal.get("capture_source"),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=REPLAY_SLATE_EXPECTATION_COLUMNS)
+
+
 def _blocker_summary_frame(signal_summary_df: pd.DataFrame) -> pd.DataFrame:
     if signal_summary_df.empty:
         return pd.DataFrame(columns=REPLAY_BLOCKER_SUMMARY_COLUMNS)
@@ -2458,15 +2632,28 @@ def run_postseason_execution_replay(
     request: ReplayRunRequest,
     output_dir: Path,
 ) -> ReplayRunResult:
-    contexts, combined_state_df, manifest_df = load_finished_postseason_replay_contexts(
+    replay_phase_label = _resolve_replay_phase_label(request)
+    replay_season_phases = _resolve_replay_season_phases(request)
+    contexts, combined_state_df, manifest_df = load_finished_replay_contexts(
         season=request.season,
         analysis_version=request.analysis_version,
+        season_phase=replay_phase_label,
+        season_phases=replay_season_phases,
     )
-    historical_bidask_by_game, historical_bidask_df, quote_coverage_df = build_historical_bidask_samples(
-        contexts=contexts,
-        season=request.season,
-        request=request,
-    )
+    bidask_required = "historical_bidask_l1" in {
+        str(request.quote_source_mode or ""),
+        str(request.quote_source_fallback_mode or ""),
+    }
+    if bidask_required:
+        historical_bidask_by_game, historical_bidask_df, quote_coverage_df = build_historical_bidask_samples(
+            contexts=contexts,
+            season=request.season,
+            request=request,
+        )
+    else:
+        historical_bidask_by_game = {}
+        historical_bidask_df = pd.DataFrame(columns=REPLAY_HISTORICAL_BIDASK_COLUMNS)
+        quote_coverage_df = pd.DataFrame(columns=REPLAY_QUOTE_COVERAGE_COLUMNS)
     coverage_lookup = quote_coverage_df.set_index("game_id").to_dict(orient="index") if not quote_coverage_df.empty else {}
     for game_id, context in contexts.items():
         context.historical_bidask_df = historical_bidask_by_game.get(game_id, pd.DataFrame(columns=REPLAY_HISTORICAL_BIDASK_COLUMNS))
@@ -2509,12 +2696,17 @@ def run_postseason_execution_replay(
     )
     window_summary_df = _window_summary_frame(signal_summary_df)
     candidate_lifecycle_df = _candidate_lifecycle_frame(signal_summary_df)
+    slate_expectation_df = build_replay_slate_expectation_frame(
+        game_gap_df=game_gap_df,
+        signal_summary_df=signal_summary_df,
+    )
     blocker_summary_df = _blocker_summary_frame(signal_summary_df)
     portfolio_summary_df = pd.concat([standard_portfolio_df, replay_portfolio_df], ignore_index=True, sort=False)
 
     payload = {
         "season": request.season,
-        "season_phase": "postseason_to_date",
+        "season_phase": replay_phase_label,
+        "season_phases": list(replay_season_phases),
         "analysis_version": request.analysis_version,
         "finished_game_count": int(len(contexts)),
         "state_panel_game_count": int((manifest_df["state_source"] == "state_panel").sum()) if not manifest_df.empty else 0,
@@ -2540,6 +2732,7 @@ def run_postseason_execution_replay(
             "quarter_summary": to_jsonable(quarter_summary_df.to_dict(orient="records")),
             "window_summary": to_jsonable(window_summary_df.to_dict(orient="records")),
             "candidate_lifecycle": to_jsonable(candidate_lifecycle_df.to_dict(orient="records")),
+            "slate_expectation": to_jsonable(slate_expectation_df.to_dict(orient="records")),
             "blocker_summary": to_jsonable(blocker_summary_df.to_dict(orient="records")),
             "historical_bidask_l1": to_jsonable(historical_bidask_df.to_dict(orient="records")),
             "quote_coverage_summary": to_jsonable(quote_coverage_df.to_dict(orient="records")),
@@ -2566,6 +2759,7 @@ def run_postseason_execution_replay(
             "quarter_summary": quarter_summary_df,
             "window_summary": window_summary_df,
             "candidate_lifecycle": candidate_lifecycle_df,
+            "slate_expectation": slate_expectation_df,
             "blocker_summary": blocker_summary_df,
             "historical_bidask_l1": historical_bidask_df,
             "quote_coverage_summary": quote_coverage_df,
@@ -2585,10 +2779,13 @@ __all__ = [
     "REPLAY_QUOTE_COVERAGE_COLUMNS",
     "REPLAY_QUARTER_SUMMARY_COLUMNS",
     "REPLAY_SIGNAL_SUMMARY_COLUMNS",
+    "REPLAY_SLATE_EXPECTATION_COLUMNS",
     "REPLAY_SUBJECT_SUMMARY_COLUMNS",
     "REPLAY_WINDOW_SUMMARY_COLUMNS",
     "ReplayGameContext",
+    "build_replay_slate_expectation_frame",
     "build_controller_context",
+    "load_finished_replay_contexts",
     "load_finished_postseason_replay_contexts",
     "run_postseason_execution_replay",
     "write_replay_artifacts",

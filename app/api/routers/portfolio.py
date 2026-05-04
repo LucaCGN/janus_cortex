@@ -242,6 +242,8 @@ def get_portfolio_summary(
     if query.account_id is not None:
         conditions.append("a.account_id = %s")
         params.append(str(query.account_id))
+    else:
+        conditions.append("a.is_active = TRUE")
     where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
     params.append(query.limit)
 
@@ -303,7 +305,7 @@ def get_portfolio_summary(
             LEFT JOIN latest_vals lv ON lv.account_id = a.account_id
             LEFT JOIN position_agg pa ON pa.account_id = a.account_id
             {where_sql}
-            ORDER BY a.created_at DESC
+            ORDER BY COALESCE(lv.captured_at, a.updated_at, a.created_at) DESC
             LIMIT %s;
             """,
             tuple(params),

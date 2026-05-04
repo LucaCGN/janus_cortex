@@ -13,7 +13,12 @@ from app.data.pipelines.daily.nba.analysis.backtests.micro_momentum_continuation
 from app.data.pipelines.daily.nba.analysis.backtests.panic_fade_fast import simulate_panic_fade_fast_trades
 from app.data.pipelines.daily.nba.analysis.backtests.quarter_open_reprice import simulate_quarter_open_reprice_trades
 from app.data.pipelines.daily.nba.analysis.backtests.registry import REPLAY_HF_STRATEGY_GROUP, build_strategy_registry
-from app.data.pipelines.daily.nba.analysis.backtests.replay import ReplayGameContext, ReplaySubject, simulate_replay_trade_frames
+from app.data.pipelines.daily.nba.analysis.backtests.replay import (
+    ReplayGameContext,
+    ReplaySubject,
+    build_replay_slate_expectation_frame,
+    simulate_replay_trade_frames,
+)
 from app.data.pipelines.daily.nba.analysis.contracts import ANALYSIS_VERSION, ReplayRunRequest
 
 
@@ -511,6 +516,110 @@ def test_replay_runner_uses_historical_bidask_row_before_proxy_fallback() -> Non
     assert signal_summary_df.iloc[0]["quote_resolution_status"] == "direct_bidask"
     assert signal_summary_df.iloc[0]["capture_source"] == "clob_prices_history"
     assert float(signal_summary_df.iloc[0]["entry_fill_price"]) == 0.56
+
+
+def test_build_replay_slate_expectation_frame_emits_first_party_candidate_surface() -> None:
+    game_gap_df = pd.DataFrame(
+        [
+            {
+                "subject_name": "quarter_open_reprice",
+                "subject_type": "family",
+                "game_id": "G-QOR",
+                "state_source": "state_panel",
+                "standard_trade_count": 1,
+                "replay_trade_count": 1,
+                "trade_gap": 0,
+                "top_no_trade_reason": None,
+            },
+            {
+                "subject_name": "inversion",
+                "subject_type": "family",
+                "game_id": "G-INV",
+                "state_source": "derived_bundle",
+                "standard_trade_count": 1,
+                "replay_trade_count": 0,
+                "trade_gap": -1,
+                "top_no_trade_reason": "quote_stale",
+            },
+            {
+                "subject_name": "halftime_gap_fill",
+                "subject_type": "family",
+                "game_id": "G-HALF-NO",
+                "state_source": "state_panel",
+                "standard_trade_count": 0,
+                "replay_trade_count": 0,
+                "trade_gap": 0,
+                "top_no_trade_reason": None,
+            },
+        ]
+    )
+    signal_summary_df = pd.DataFrame(
+        [
+            {
+                "subject_name": "quarter_open_reprice",
+                "subject_type": "family",
+                "game_id": "G-QOR",
+                "signal_id": "quarter_open_reprice|G-QOR|home|0",
+                "signal_entry_at": datetime(2026, 4, 24, 20, 0, 10, tzinfo=timezone.utc),
+                "period_label": "Q1",
+                "entry_window_label": "opening_0_60",
+                "executed_flag": True,
+                "no_trade_reason": None,
+                "terminal_no_trade_reason": None,
+                "replay_blocker_class": "executed",
+                "replay_blocker_detail": "filled",
+                "cadence_vs_stale_blocker": None,
+                "first_visible_at": datetime(2026, 4, 24, 20, 0, 10, tzinfo=timezone.utc),
+                "first_executable_event_at": datetime(2026, 4, 24, 20, 0, 10, tzinfo=timezone.utc),
+                "first_executable_poll_at": datetime(2026, 4, 24, 20, 0, 12, tzinfo=timezone.utc),
+                "stale_at": None,
+                "quote_source_mode": "historical_bidask_l1",
+                "quote_resolution_status": "synthetic_cross_side",
+                "capture_source": "clob_prices_history",
+            },
+            {
+                "subject_name": "inversion",
+                "subject_type": "family",
+                "game_id": "G-INV",
+                "signal_id": "inversion|G-INV|away|8",
+                "signal_entry_at": datetime(2026, 4, 24, 21, 0, 10, tzinfo=timezone.utc),
+                "period_label": "Q4",
+                "entry_window_label": "mid_360_720",
+                "executed_flag": False,
+                "no_trade_reason": "quote_stale",
+                "terminal_no_trade_reason": "entry_after_exit_signal",
+                "replay_blocker_class": "quote_freshness",
+                "replay_blocker_detail": "quote_stale",
+                "cadence_vs_stale_blocker": "signal_stale",
+                "first_visible_at": datetime(2026, 4, 24, 21, 0, 10, tzinfo=timezone.utc),
+                "first_executable_event_at": None,
+                "first_executable_poll_at": None,
+                "stale_at": datetime(2026, 4, 24, 21, 1, 10, tzinfo=timezone.utc),
+                "quote_source_mode": "historical_bidask_l1",
+                "quote_resolution_status": "synthetic_cross_side",
+                "capture_source": "clob_prices_history",
+            },
+        ]
+    )
+
+    slate_df = build_replay_slate_expectation_frame(
+        game_gap_df=game_gap_df,
+        signal_summary_df=signal_summary_df,
+    )
+
+    executed_row = slate_df[slate_df["candidate_id"].astype(str) == "quarter_open_reprice"].iloc[0].to_dict()
+    assert bool(executed_row["replay_expected_trade"]) is True
+    assert executed_row["replay_expected_reason"] == "executed"
+    assert executed_row["replay_signal_id"] == "quarter_open_reprice|G-QOR|home|0"
+
+    blocked_row = slate_df[slate_df["candidate_id"].astype(str) == "inversion"].iloc[0].to_dict()
+    assert bool(blocked_row["replay_expected_trade"]) is False
+    assert blocked_row["replay_expected_reason"] == "quote_stale"
+    assert blocked_row["replay_blocker_class"] == "quote_freshness"
+
+    no_signal_row = slate_df[slate_df["candidate_id"].astype(str) == "halftime_gap_fill"].iloc[0].to_dict()
+    assert bool(no_signal_row["replay_expected_trade"]) is False
+    assert no_signal_row["replay_expected_reason"] == "no_standard_candidate"
 
 
 def test_replay_runner_flags_poll_cadence_when_event_level_opportunity_dies_stale() -> None:

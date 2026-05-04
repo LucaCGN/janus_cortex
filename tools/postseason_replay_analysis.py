@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,7 +25,7 @@ from app.data.pipelines.daily.nba.analysis.contracts import ReplayRunRequest
 
 DEFAULT_ARTIFACTS_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex\shared\artifacts\replay-engine-hf")
 DEFAULT_REPORTS_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex\shared\reports\replay-engine-hf")
-DEFAULT_LIVE_RUN_IDS = ("live-2026-04-23-v1",)
+DEFAULT_LIVE_RUN_IDS: tuple[str, ...] = ()
 REPLAY_ENGINE_LANE_ID = "replay-engine-hf"
 LOCKED_BASELINE_SUBJECTS = (
     "controller_vnext_unified_v1 :: balanced",
@@ -88,6 +89,42 @@ QUOTE_SOURCE_COMPARISON_COLUMNS = (
     "bidask_live_test_recommendation",
     "shortlist_changed_flag",
 )
+SLATE_EXPECTATION_COLUMNS = (
+    "candidate_id",
+    "subject_name",
+    "subject_type",
+    "game_id",
+    "state_source",
+    "live_test_recommendation",
+    "probe_priority_rank",
+    "replay_rank",
+    "focus_rank",
+    "replay_survival_rate",
+    "stale_signal_rate",
+    "cadence_blocked_rate",
+    "replay_ending_bankroll",
+    "replay_path_quality_score",
+    "standard_trade_count",
+    "replay_signal_count",
+    "replay_trade_count",
+    "replay_expected_trade",
+    "replay_expected_reason",
+    "replay_signal_id",
+    "replay_signal_timestamp",
+    "period_label",
+    "entry_window_label",
+    "first_visible_at",
+    "first_executable_event_at",
+    "first_executable_poll_at",
+    "stale_at",
+    "replay_blocker_class",
+    "replay_blocker_detail",
+    "cadence_vs_stale_blocker",
+    "quote_source_mode",
+    "quote_resolution_status",
+    "capture_source",
+)
+LIVE_SLATE_EXPECTATION_COLUMNS = ("run_id",) + SLATE_EXPECTATION_COLUMNS
 
 
 def _parse_args() -> argparse.Namespace:
@@ -106,7 +143,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--quote-source-mode", default="historical_bidask_l1")
     parser.add_argument("--quote-source-fallback-mode", default="cross_side_last_trade")
     parser.add_argument("--compare-against-quote-source", default="cross_side_last_trade")
-    parser.add_argument("--live-run-id", action="append", default=list(DEFAULT_LIVE_RUN_IDS))
+    parser.add_argument("--skip-quote-source-comparison", action="store_true")
+    parser.add_argument("--live-run-id", action="append", default=[])
     return parser.parse_args()
 
 
@@ -116,6 +154,25 @@ def _published_at_iso() -> str:
 
 def _shared_root_from_reports(reports_root: Path) -> Path:
     return reports_root.parents[1]
+
+
+def _resolve_live_run_ids(*, explicit_run_ids: list[str] | tuple[str, ...], shared_root: Path) -> tuple[str, ...]:
+    resolved = tuple(str(value).strip() for value in explicit_run_ids if str(value).strip())
+    if resolved:
+        return resolved
+    postgame_root = shared_root / "reports" / "daily-live-validation"
+    run_id_pattern = re.compile(r"^- run id: `([^`]+)`", flags=re.MULTILINE)
+    if postgame_root.exists():
+        for report_path in sorted(postgame_root.glob("postgame_report_*.md"), key=lambda item: item.name, reverse=True):
+            try:
+                match = run_id_pattern.search(report_path.read_text(encoding="utf-8"))
+            except OSError:
+                continue
+            if match:
+                run_id = str(match.group(1) or "").strip()
+                if run_id:
+                    return (run_id,)
+    return DEFAULT_LIVE_RUN_IDS
 
 
 def _as_markdown_num(value: Any, *, digits: int = 2) -> str:
@@ -205,7 +262,7 @@ def _build_ranking_frame(subject_summary_df: pd.DataFrame) -> pd.DataFrame:
         if (
             subject_name in PRIORITY_HF_FAMILIES
             and replay_survival_rate >= best_controller_survival
-            and stale_signal_rate <= best_controller_stale
+            and stale_signal_rate <= min(best_controller_stale, 0.25)
             and cadence_blocked_rate <= best_controller_cadence
             and replay_path_quality_score >= best_controller_path
         ):
@@ -214,11 +271,14 @@ def _build_ranking_frame(subject_summary_df: pd.DataFrame) -> pd.DataFrame:
         if (
             subject_name in PRIORITY_HF_FAMILIES
             and replay_survival_rate >= 0.25
-            and stale_signal_rate <= 0.50
+            and stale_signal_rate <= 0.25
             and cadence_blocked_rate <= 0.25
             and replay_path_quality_score >= best_controller_path
         ):
             recommendations.append("live_probe")
+            continue
+        if subject_name == "inversion" and replay_trade_count > 0:
+            recommendations.append("shadow_only")
             continue
         if replay_survival_rate >= best_controller_survival and replay_path_quality_score >= 0.0:
             recommendations.append("shadow_only")
@@ -504,6 +564,58 @@ def _build_quote_source_comparison_frame(
     return work[list(QUOTE_SOURCE_COMPARISON_COLUMNS)]
 
 
+def _build_slate_expectation_frame(
+    *,
+    slate_expectation_df: pd.DataFrame,
+    ranking_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if slate_expectation_df.empty:
+        return pd.DataFrame(columns=SLATE_EXPECTATION_COLUMNS)
+    ranking_columns = [
+        "subject_name",
+        "subject_type",
+        "live_test_recommendation",
+        "probe_priority_rank",
+        "replay_rank",
+        "focus_rank",
+        "replay_survival_rate",
+        "stale_signal_rate",
+        "cadence_blocked_rate",
+        "replay_ending_bankroll",
+        "replay_path_quality_score",
+    ]
+    ranking_slice = ranking_df[ranking_columns].copy() if not ranking_df.empty else pd.DataFrame(columns=ranking_columns)
+    work = slate_expectation_df.merge(ranking_slice, on=["subject_name", "subject_type"], how="left")
+    work["candidate_id"] = work["candidate_id"].fillna(work["subject_name"]).astype(str)
+    work = work.sort_values(
+        ["game_id", "probe_priority_rank", "replay_rank", "subject_name"],
+        ascending=[True, True, True, True],
+        kind="mergesort",
+        na_position="last",
+    ).reset_index(drop=True)
+    return work[[column for column in SLATE_EXPECTATION_COLUMNS if column in work.columns]]
+
+
+def _build_live_slate_expectation_frame(
+    *,
+    slate_expectation_df: pd.DataFrame,
+    live_summary_df: pd.DataFrame,
+) -> pd.DataFrame:
+    if slate_expectation_df.empty or live_summary_df.empty:
+        return pd.DataFrame(columns=LIVE_SLATE_EXPECTATION_COLUMNS)
+    run_game_df = live_summary_df[["run_id", "game_id"]].drop_duplicates().copy()
+    run_game_df["run_id"] = run_game_df["run_id"].astype(str)
+    run_game_df["game_id"] = run_game_df["game_id"].astype(str)
+    work = run_game_df.merge(slate_expectation_df, on="game_id", how="left")
+    work = work.sort_values(
+        ["run_id", "game_id", "probe_priority_rank", "replay_rank", "subject_name"],
+        ascending=[True, True, True, True, True],
+        kind="mergesort",
+        na_position="last",
+    ).reset_index(drop=True)
+    return work[[column for column in LIVE_SLATE_EXPECTATION_COLUMNS if column in work.columns]]
+
+
 def _render_bidask_change_report(
     *,
     payload: dict[str, Any],
@@ -568,6 +680,8 @@ def _build_ranked_memo(
     shortlist_summary: dict[str, Any],
     ranking_df: pd.DataFrame,
     bidask_design_path: Path,
+    slate_expectation_path: Path,
+    live_run_ids: tuple[str, ...],
 ) -> str:
     focus_rows = _build_focus_family_rows(ranking_df)
     controller_rows = ranking_df[ranking_df["subject_type"].astype(str) == "controller"].copy()
@@ -707,6 +821,9 @@ def _build_ranked_memo(
     lines.extend(["", "## Bid/Ask Next", ""])
     lines.append(
         f"- Historical bid/ask capture is the next realism layer: {bidask_design_path.as_posix()}"
+    )
+    lines.append(
+        f"- Daily replay expectation extract: `{slate_expectation_path}` | live runs `{', '.join(live_run_ids) or 'none resolved'}`"
     )
     lines.append("- Merge the replay runner, HF family refinements, lifecycle diagnostics, and benchmark submission manifest together. They form one compare-ready execution package.")
     lines.append("- Keep the locked controller pair unchanged as live baselines; any live testing from this lane should be a narrow probe, not a controller swap.")
@@ -888,6 +1005,8 @@ def _render_status(
     replay_output_dir: Path,
     reports_root: Path,
     submission_path: Path,
+    live_run_ids: tuple[str, ...],
+    slate_expectation_path: Path,
     tests_command: str,
 ) -> str:
     focus_rows = _build_focus_family_rows(ranking_df)
@@ -901,6 +1020,8 @@ def _render_status(
             f"- replay artifact root: `{replay_output_dir}`",
             f"- shared report root: `{reports_root}`",
             f"- benchmark submission: `{submission_path}`",
+            f"- live runs compared: `{', '.join(live_run_ids) or 'none resolved'}`",
+            f"- replay slate expectation: `{slate_expectation_path}`",
             f"- focused validation: `{tests_command}`",
             "",
             "## Current Findings",
@@ -943,6 +1064,7 @@ def _render_live_probe_recommendations(ranking_df: pd.DataFrame, *, shortlist_su
             if shortlist_summary.get("changed_flag")
             else "- Live-probe shortlist is unchanged after bid/ask-aware replay."
         ),
+        "- First-party replay expectation extract is now published for downstream daily reconciliation.",
         "",
         "## Live Probe",
         "",
@@ -1007,6 +1129,8 @@ def _build_benchmark_submission(
     ranking_artifacts: dict[str, str],
     bidask_report_path: Path,
     promotion_table_path: Path,
+    slate_expectation_path: Path,
+    live_slate_expectation_path: Path,
     live_probe_report_path: Path,
     bidask_change_report_path: Path,
     comparison_artifact_path: Path,
@@ -1037,6 +1161,8 @@ def _build_benchmark_submission(
             notes.append("priority replay-aware HF focus family")
         if str(row.get("live_test_recommendation") or "") == "live_probe":
             notes.append("best current replay-backed candidate for a narrow live probe")
+        if subject_name == "inversion":
+            notes.append("benchmark comparison line; keep in shadow diagnostics, not live probe")
         comparison = comparison_lookup.get(subject_name) or {}
         subjects.append(
             {
@@ -1086,6 +1212,8 @@ def _build_benchmark_submission(
                     "game_gap_csv": artifact_lookup.get("game_gap_csv"),
                     "ranking_csv": ranking_artifacts.get("csv"),
                     "promotion_table_csv": str(promotion_table_path),
+                    "replay_slate_expectation_csv": str(slate_expectation_path),
+                    "replay_live_slate_expectation_csv": str(live_slate_expectation_path),
                     "live_probe_recommendations": str(live_probe_report_path),
                     "bidask_replay_change": str(bidask_change_report_path),
                     "quote_source_comparison_csv": str(comparison_artifact_path),
@@ -1111,6 +1239,8 @@ def _build_benchmark_submission(
         },
         "replay_artifact_root": str(replay_output_dir),
         "promotion_table": str(promotion_table_path),
+        "replay_slate_expectation_csv": str(slate_expectation_path),
+        "replay_live_slate_expectation_csv": str(live_slate_expectation_path),
         "live_probe_recommendations": str(live_probe_report_path),
         "bidask_replay_change": str(bidask_change_report_path),
         "quote_source_comparison_csv": str(comparison_artifact_path),
@@ -1132,6 +1262,7 @@ def main() -> None:
     handoff_root = shared_root / "handoffs" / REPLAY_ENGINE_LANE_ID
     handoff_root.mkdir(parents=True, exist_ok=True)
     (shared_root / "benchmark_contract").mkdir(parents=True, exist_ok=True)
+    live_run_ids = _resolve_live_run_ids(explicit_run_ids=args.live_run_id, shared_root=shared_root)
 
     request = ReplayRunRequest(
         season=args.season,
@@ -1146,17 +1277,10 @@ def main() -> None:
         aggressive_exit_slippage_cents=args.aggressive_exit_slippage_cents,
         quote_source_mode=args.quote_source_mode,
         quote_source_fallback_mode=args.quote_source_fallback_mode,
-        include_live_run_ids=tuple(args.live_run_id),
+        include_live_run_ids=live_run_ids,
     )
-    proxy_request = replace(
-        request,
-        quote_source_mode=args.compare_against_quote_source,
-        quote_source_fallback_mode="",
-    )
-
     result = run_postseason_execution_replay(request=request, output_dir=replay_output_dir)
     payload = write_replay_artifacts(result, replay_output_dir)
-    proxy_result = run_postseason_execution_replay(request=proxy_request, output_dir=replay_output_dir)
 
     subject_summary_df = result.benchmark_frames.get("subject_summary", pd.DataFrame())
     divergence_df = result.benchmark_frames.get("divergence_summary", pd.DataFrame())
@@ -1164,8 +1288,17 @@ def main() -> None:
     window_summary_df = result.benchmark_frames.get("window_summary", pd.DataFrame())
     blocker_summary_df = result.benchmark_frames.get("blocker_summary", pd.DataFrame())
     quote_coverage_df = result.benchmark_frames.get("quote_coverage_summary", pd.DataFrame())
+    live_summary_df = result.benchmark_frames.get("live_summary", pd.DataFrame())
     ranking_df = _build_ranking_frame(subject_summary_df)
-    proxy_ranking_df = _build_ranking_frame(proxy_result.benchmark_frames.get("subject_summary", pd.DataFrame()))
+    proxy_ranking_df = pd.DataFrame(columns=RANKING_COLUMNS)
+    if not args.skip_quote_source_comparison and str(args.compare_against_quote_source or "").strip():
+        proxy_request = replace(
+            request,
+            quote_source_mode=args.compare_against_quote_source,
+            quote_source_fallback_mode="",
+        )
+        proxy_result = run_postseason_execution_replay(request=proxy_request, output_dir=replay_output_dir)
+        proxy_ranking_df = _build_ranking_frame(proxy_result.benchmark_frames.get("subject_summary", pd.DataFrame()))
     shortlist_summary = _shortlist_change_summary(
         bidask_ranking_df=ranking_df,
         proxy_ranking_df=proxy_ranking_df,
@@ -1182,6 +1315,25 @@ def main() -> None:
     promotion_artifacts = write_frame(replay_output_dir / "replay_promotion_table", promotion_df)
     payload.setdefault("artifacts", {}).update(
         {f"promotion_table_{key}": value for key, value in promotion_artifacts.items()}
+    )
+    slate_expectation_df = _build_slate_expectation_frame(
+        slate_expectation_df=result.benchmark_frames.get("slate_expectation", pd.DataFrame()),
+        ranking_df=ranking_df,
+    )
+    slate_expectation_artifacts = write_frame(replay_output_dir / "replay_slate_expectation", slate_expectation_df)
+    payload.setdefault("artifacts", {}).update(
+        {f"slate_expectation_{key}": value for key, value in slate_expectation_artifacts.items()}
+    )
+    live_slate_expectation_df = _build_live_slate_expectation_frame(
+        slate_expectation_df=slate_expectation_df,
+        live_summary_df=live_summary_df,
+    )
+    live_slate_expectation_artifacts = write_frame(
+        replay_output_dir / "replay_live_slate_expectation",
+        live_slate_expectation_df,
+    )
+    payload.setdefault("artifacts", {}).update(
+        {f"live_slate_expectation_{key}": value for key, value in live_slate_expectation_artifacts.items()}
     )
     comparison_artifacts = write_frame(replay_output_dir / "quote_source_comparison", comparison_df)
     payload.setdefault("artifacts", {}).update(
@@ -1214,6 +1366,8 @@ def main() -> None:
         ranking_artifacts=ranking_artifacts,
         bidask_report_path=bidask_design_path,
         promotion_table_path=Path(str(promotion_artifacts.get("csv") or (replay_output_dir / "replay_promotion_table.csv"))),
+        slate_expectation_path=Path(str(slate_expectation_artifacts.get("csv") or (replay_output_dir / "replay_slate_expectation.csv"))),
+        live_slate_expectation_path=Path(str(live_slate_expectation_artifacts.get("csv") or (replay_output_dir / "replay_live_slate_expectation.csv"))),
         live_probe_report_path=live_probe_report_path,
         bidask_change_report_path=bidask_change_report_path,
         comparison_artifact_path=Path(str(comparison_artifacts.get("csv") or (replay_output_dir / "quote_source_comparison.csv"))),
@@ -1234,6 +1388,8 @@ def main() -> None:
         shortlist_summary=shortlist_summary,
         ranking_df=ranking_df,
         bidask_design_path=bidask_design_path,
+        slate_expectation_path=Path(str(slate_expectation_artifacts.get("csv") or (replay_output_dir / "replay_slate_expectation.csv"))),
+        live_run_ids=live_run_ids,
     )
     memo_path = reports_root / "ranked_memo.md"
     write_markdown(memo_path, memo_body)
@@ -1267,6 +1423,8 @@ def main() -> None:
             replay_output_dir=replay_output_dir,
             reports_root=reports_root,
             submission_path=submission_path,
+            live_run_ids=live_run_ids,
+            slate_expectation_path=Path(str(slate_expectation_artifacts.get("csv") or (replay_output_dir / "replay_slate_expectation.csv"))),
             tests_command=tests_command,
         ),
     )
@@ -1283,9 +1441,12 @@ def main() -> None:
         "bidask_replay_change": str(bidask_change_report_path),
         "live_probe_recommendations": str(live_probe_report_path),
         "promotion_table_csv": str(promotion_artifacts.get("csv") or ""),
+        "replay_slate_expectation_csv": str(slate_expectation_artifacts.get("csv") or ""),
+        "replay_live_slate_expectation_csv": str(live_slate_expectation_artifacts.get("csv") or ""),
         "quote_source_comparison_csv": str(comparison_artifacts.get("csv") or ""),
         "replay_contract": str(contract_path),
         "handoff_status": str(status_path),
+        "live_run_ids": list(live_run_ids),
         "finished_game_count": payload.get("finished_game_count"),
         "state_panel_game_count": payload.get("state_panel_game_count"),
         "derived_bundle_game_count": payload.get("derived_bundle_game_count"),

@@ -55,9 +55,9 @@ from typing import Any, List, Optional
 import pandas as pd
 import requests
 from pydantic import BaseModel, Field
-from py_clob_client.client import ClobClient
-from py_clob_client.clob_types import ApiCreds, OrderArgs
-from py_clob_client.constants import POLYGON
+from py_clob_client_v2.client import ClobClient
+from py_clob_client_v2.clob_types import ApiCreds, OrderArgs, OrderPayload, OrderType as ClobOrderType
+from py_clob_client_v2.constants import POLYGON
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +167,13 @@ class PolymarketCredentials(BaseModel):
         - funder_address, se não definido, cai no próprio wallet_address.
         - signature_type vem de POLY_SIGNATURE_TYPE / POLYMARKET_SIGNATURE_TYPE (default=1).
         """
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv()
+        except Exception:
+            pass
+
         # --- chaves CLOB ---
         pk = os.getenv("PK") or os.getenv("POLIMARKET_PRIVATE_KEY")
         api_key = os.getenv("CLOB_API_KEY") or os.getenv("POLIMARKET_API_KEY")
@@ -375,7 +382,7 @@ def view_orders(creds: PolymarketCredentials, *, open_only: bool = True) -> List
             except Exception as e:  # noqa: BLE001
                 logger.warning("[view_orders] Falha ao setar API Creds: %s", e)
 
-        resp = client.get_orders()
+        resp = client.get_open_orders()
         logger.info("[view_orders] Raw CLOB response: %s", resp)
 
         orders: List[OpenOrder] = []
@@ -385,13 +392,13 @@ def view_orders(creds: PolymarketCredentials, *, open_only: bool = True) -> List
         for raw in raw_list:
             try:
                 o = OpenOrder(
-                    id=str(raw.get("orderID") or raw.get("id")),
+                    id=str(raw.get("orderID") or raw.get("orderID") or raw.get("id")),
                     market=str(raw.get("market", "")),
                     asset_id=str(raw.get("asset_id", "")),
                     side=str(raw.get("side")),
                     size=float(raw.get("size", 0) or 0.0),
                     price=float(raw.get("price", 0) or 0.0),
-                    filled_size=float(raw.get("filledSize") or raw.get("filled_size") or 0.0),
+                    filled_size=float(raw.get("filledSize") or raw.get("filled_size") or raw.get("size_matched") or 0.0),
                     status=str(raw.get("status", "OPEN")),
                     created_at=int(raw.get("timestamp") or raw.get("created_at") or 0),
                     token_id=str(raw.get("asset_id") or raw.get("token_id") or ""),
@@ -490,7 +497,7 @@ def place_new_order(creds: PolymarketCredentials, request: PlaceOrderRequest) ->
         signed_order = client.create_order(order_args)
 
         logger.info("[place_new_order] Enviando ordem assinada (POST)...")
-        resp = client.post_order(signed_order)
+        resp = client.post_order(signed_order, order_type=ClobOrderType.GTC)
 
         logger.info("[place_new_order] Sucesso: %s", resp)
         return PlaceOrderResult(success=True, raw=resp)
@@ -528,7 +535,7 @@ def cancel_order(creds: PolymarketCredentials, order_id: str) -> PlaceOrderResul
                 logger.warning("[cancel_order] Falha ao setar API Creds: %s", e)
 
         logger.info("[cancel_order] Cancelando ordem %s...", order_id)
-        resp = client.cancel(order_id)
+        resp = client.cancel_order(OrderPayload(orderID=str(order_id)))
         logger.info("[cancel_order] Sucesso: %s", resp)
         
         return PlaceOrderResult(success=True, raw=resp)
@@ -570,7 +577,7 @@ def view_trades(creds: PolymarketCredentials) -> List[Trade]:
         )
         if creds.api_key and creds.secret and creds.passphrase:
              try:
-                 from py_clob_client.clob_types import ApiCreds
+                 from py_clob_client_v2.clob_types import ApiCreds
                  client.set_api_creds(ApiCreds(creds.api_key, creds.secret, creds.passphrase))
              except:
                  pass

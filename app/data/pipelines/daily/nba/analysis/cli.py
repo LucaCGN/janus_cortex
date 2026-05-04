@@ -84,6 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     backtest_parser.add_argument("--season-phases", default=None)
     backtest_parser.add_argument("--analysis-version", default=ANALYSIS_VERSION)
     backtest_parser.add_argument("--strategy-family", default="all")
+    backtest_parser.add_argument("--strategy-group", default="default")
     backtest_parser.add_argument("--entry-rule", default=None)
     backtest_parser.add_argument("--exit-rule", default=None)
     backtest_parser.add_argument("--slippage-cents", type=int, default=0)
@@ -185,6 +186,7 @@ def dispatch_command(
                 season_phase=args.season_phase,
                 season_phases=_parse_str_csv(args.season_phases) or None,
                 strategy_family=args.strategy_family,
+                strategy_group=args.strategy_group,
                 entry_rule=args.entry_rule,
                 exit_rule=args.exit_rule,
                 slippage_cents=args.slippage_cents,

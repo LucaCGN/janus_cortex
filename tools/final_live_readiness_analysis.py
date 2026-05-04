@@ -62,7 +62,7 @@ MASTER_FINALIST = {
 }
 
 LLM_BASELINE = {
-    "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1",
+    "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1",
     "lane_name": "llm_hybrid_freedom_compact_v1",
     "lane_group": "llm_finalist",
     "lane_mode": "llm_freedom",
@@ -77,17 +77,17 @@ LLM_BASELINE = {
 LLM_CONTEXT_VARIANTS: tuple[dict[str, Any], ...] = (
     {
         **LLM_BASELINE,
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_risk_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_risk_v1",
         "lane_name": "llm_hybrid_freedom_compact_risk_v1",
     },
     {
         **LLM_BASELINE,
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_postseason_context_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_postseason_context_v1",
         "lane_name": "llm_hybrid_freedom_compact_postseason_context_v1",
     },
     {
         **LLM_BASELINE,
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_anchor_postseason_context_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_anchor_postseason_context_v1",
         "lane_name": "llm_hybrid_freedom_anchor_postseason_context_v1",
         "prompt_profile": "compact_anchor",
         "max_selected_candidates": 2,
@@ -151,7 +151,7 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir",
         default=r"C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_live_readiness",
     )
-    parser.add_argument("--llm-model", default="gpt-5.4")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-budget-usd", type=float, default=10.0)
     return parser.parse_args()
 
@@ -681,19 +681,19 @@ def main() -> None:
     llm_variants = (
         {
             **LLM_BASELINE,
-            "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1 :: current",
+            "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1 :: current",
         },
         {
             **LLM_CONTEXT_VARIANTS[0],
-            "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1 :: improved_risk_only",
+            "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1 :: improved_risk_only",
         },
         {
             **LLM_CONTEXT_VARIANTS[1],
-            "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1 :: improved_postseason_context",
+            "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1 :: improved_postseason_context",
         },
         {
             **LLM_CONTEXT_VARIANTS[2],
-            "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1 :: improved_postseason_anchor",
+            "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1 :: improved_postseason_anchor",
         },
     )
     for lane in llm_variants:

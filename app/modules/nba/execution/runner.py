@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import traceback
+import uuid
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -12,9 +13,11 @@ from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
+import requests
 
-from app.api.db import cursor_dict, fetchall_dicts, to_jsonable
+from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.data.databases.postgres import managed_connection
+from app.data.pipelines.canonical.id_rules import build_event_id, build_market_id, build_outcome_id, normalize_slug
 from app.data.pipelines.daily.nba.analysis.backtests.controller_vnext import (
     DEFAULT_VNEXT_PROFILE,
     DEFAULT_VNEXT_STOP_MAP,
@@ -36,10 +39,16 @@ from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
     build_master_router_selection_priors,
     build_master_router_trade_frame,
 )
-from app.data.pipelines.daily.nba.analysis.backtests.registry import build_strategy_registry
+from app.data.pipelines.daily.nba.analysis.backtests.registry import REPLAY_HF_STRATEGY_GROUP, build_strategy_registry
 from app.data.pipelines.daily.nba.analysis.backtests.unified_router import build_unified_router_trade_frame
 from app.data.pipelines.daily.nba.analysis.consumer_adapters import load_analysis_consumer_bundle
-from app.data.pipelines.daily.nba.analysis.contracts import AnalysisConsumerRequest, BacktestRunRequest, RESEARCH_READY_STATUSES
+from app.data.pipelines.daily.nba.analysis.contracts import (
+    DEFAULT_BACKTEST_LLM_MODEL,
+    DEFAULT_TAKE_PROFIT_EXIT_PRICE,
+    AnalysisConsumerRequest,
+    BacktestRunRequest,
+    RESEARCH_READY_STATUSES,
+)
 from app.data.pipelines.daily.nba.analysis.bundle_loader import _build_price_snapshots_for_events
 from app.data.pipelines.daily.nba.analysis.mart_game_profiles import derive_game_rows, load_analysis_bundle
 from app.data.pipelines.daily.nba.analysis.mart_state_panel import build_state_rows_for_side
@@ -49,13 +58,14 @@ from app.modules.nba.execution.adapter import (
     cancel_live_order,
     create_live_order,
     fetch_account_summary,
+    fetch_clob_collateral_status,
     fetch_latest_orderbook_summary,
     list_active_run_signatures,
     list_latest_positions,
     list_run_orders,
     list_run_trades,
     mirror_account_state,
-    resolve_minimum_order_size,
+    resolve_entry_order_size,
     resolve_trading_account,
 )
 from app.modules.nba.execution.contracts import LiveRunConfig, build_live_order_metadata, utc_now
@@ -80,6 +90,17 @@ LIVE_UNIFIED_KWARGS = {
     "skip_weak_when_llm_low_confidence": True,
     "skip_below_review_min_confidence": True,
 }
+
+GAMMA_API_BASE_URL = "https://gamma-api.polymarket.com"
+LIVE_SERIES_SLUG_PREFIX = "nba-playoffs-who-will-win-series"
+LIVE_OUTCOME_LABEL_ALIASES = {
+    "cavs": "Cavaliers",
+    "sixers": "76ers",
+    "wolves": "Timberwolves",
+    "mavs": "Mavericks",
+    "blazers": "Trail Blazers",
+    "clips": "Clippers",
+}
 LIVE_UNIFIED_LLM_LANE = {
     "lane_name": "llm_hybrid_vnext_meta_review_v1",
     "lane_group": "live_controller",
@@ -95,6 +116,7 @@ LIVE_UNIFIED_LLM_LANE = {
     "max_extra_candidates": 1,
     "require_core_for_extra": True,
 }
+LIVE_FEED_STALL_THRESHOLD_SECONDS = 180.0
 
 
 @dataclass(slots=True)
@@ -106,6 +128,59 @@ class ControllerContext:
     llm_client: Any
     llm_cache_store: Any
     llm_budget_state: _LLMBudgetState
+
+
+@dataclass(slots=True)
+class GameEntryBudgetState:
+    entry_order_count: int
+    entry_requested_notional_usd: float
+
+
+_ENTRY_BUDGET_IGNORED_STATUSES = {"submit_error", "rejected", "failed", "error"}
+
+
+def _safe_float_or_none(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _run_game_entry_budget_state(
+    orders: list[dict[str, Any]],
+    *,
+    game_id: str,
+    execution_profile_version: str,
+) -> GameEntryBudgetState:
+    entry_order_count = 0
+    requested_notional = 0.0
+    for row in orders:
+        if str(row.get("side") or "").lower() != "buy":
+            continue
+        if str(row.get("status") or "").lower() in _ENTRY_BUDGET_IGNORED_STATUSES:
+            continue
+        metadata = row.get("metadata_json") or {}
+        if not isinstance(metadata, dict):
+            continue
+        if str(metadata.get("game_id") or "") != str(game_id):
+            continue
+        if str(metadata.get("execution_profile_version") or "") != str(execution_profile_version):
+            continue
+        entry_order_count += 1
+        metadata_notional = _safe_float_or_none(metadata.get("required_notional_usd"))
+        if metadata_notional is not None:
+            requested_notional += metadata_notional
+            continue
+        price = _safe_float_or_none(row.get("limit_price"))
+        size = _safe_float_or_none(row.get("size"))
+        if price is not None and size is not None:
+            requested_notional += price * size
+    return GameEntryBudgetState(
+        entry_order_count=entry_order_count,
+        entry_requested_notional_usd=round(requested_notional, 8),
+    )
 
 
 def _json_default(value: Any) -> Any:
@@ -141,6 +216,421 @@ def _matchup_label(game: dict[str, Any]) -> str:
     away = str(game.get("away_team_slug") or game.get("away_team_name") or "Away")
     home = str(game.get("home_team_slug") or game.get("home_team_name") or "Home")
     return f"{away} at {home}"
+
+
+def _live_event_slug_candidates(game: dict[str, Any]) -> list[str]:
+    away = str(game.get("away_team_slug") or "").strip().lower()
+    home = str(game.get("home_team_slug") or "").strip().lower()
+    game_date = str(game.get("game_date") or "").strip()[:10]
+    if not away or not home or len(game_date) != 10:
+        return []
+    return [
+        f"nba-{away}-{home}-{game_date}",
+        f"nba-{home}-{away}-{game_date}",
+    ]
+
+
+def _live_series_event_slug_candidates(game: dict[str, Any]) -> list[str]:
+    away = normalize_slug(str(game.get("away_team_name") or "").strip())
+    home = normalize_slug(str(game.get("home_team_name") or "").strip())
+    if not away or not home:
+        return []
+    return [
+        f"{LIVE_SERIES_SLUG_PREFIX}-{away}-vs-{home}",
+        f"{LIVE_SERIES_SLUG_PREFIX}-{home}-vs-{away}",
+    ]
+
+
+def _gamma_slug_payload(path: str, slug: str) -> dict[str, Any] | None:
+    try:
+        response = requests.get(
+            f"{GAMMA_API_BASE_URL}{path}",
+            params={"slug": slug},
+            timeout=15,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None
+    if isinstance(payload, list) and payload:
+        return payload[0] if isinstance(payload[0], dict) else None
+    if isinstance(payload, dict):
+        rows = payload.get("data") or payload.get("events") or payload.get("markets") or []
+        if isinstance(rows, list) and rows:
+            return rows[0] if isinstance(rows[0], dict) else None
+    return None
+
+
+def _json_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
+    return []
+
+
+def _live_outcome_label(label: Any) -> str:
+    raw = str(label or "").strip()
+    return LIVE_OUTCOME_LABEL_ALIASES.get(raw.lower(), raw)
+
+
+def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str, Any] | None:
+    event_payload = _gamma_slug_payload("/events", slug)
+    market_payload = _gamma_slug_payload("/markets", slug)
+    if not event_payload or not market_payload:
+        return None
+
+    provider_event_id = str(event_payload.get("id") or "")
+    provider_market_id = str(market_payload.get("id") or "")
+    question = str(market_payload.get("question") or event_payload.get("title") or slug).strip()
+    if not provider_event_id or not provider_market_id or not question:
+        return None
+
+    outcomes = _json_list(market_payload.get("outcomes"))
+    token_ids = _json_list(market_payload.get("clobTokenIds") or market_payload.get("clobTokenIDs"))
+    outcome_prices = _json_list(market_payload.get("outcomePrices"))
+    if len(outcomes) < 2 or len(token_ids) < 2:
+        return None
+
+    start_time = _parse_datetime(event_payload.get("startDate") or market_payload.get("startDate"))
+    end_time = _parse_datetime(event_payload.get("endDate") or market_payload.get("endDate"))
+    canonical_event_id = build_event_id(
+        canonical_slug=slug,
+        start_time=start_time,
+        provider_code="gamma",
+        external_id=provider_event_id,
+    )
+    canonical_market_id = build_market_id(
+        canonical_event_id=canonical_event_id,
+        question=question,
+        market_kind="moneyline",
+        provider_code="gamma",
+        external_market_id=provider_market_id,
+    )
+    now = utc_now()
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT event_type_id
+            FROM catalog.event_types
+            WHERE code = 'sports_nba_game'
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """
+        )
+        event_type_row = fetchone_dict(cursor)
+    if event_type_row is None:
+        return None
+
+    event_metadata = {
+        "provider_event_id": provider_event_id,
+        "provider_slug": slug,
+        "source": "gamma_live_series_market",
+        "volume": _safe_float(event_payload.get("volume")),
+        "liquidity": _safe_float(event_payload.get("liquidity")),
+    }
+    market_metadata = {
+        "provider_event_id": provider_event_id,
+        "provider_market_id": provider_market_id,
+        "provider_slug": slug,
+        "source": "gamma_live_series_market",
+        "volume": _safe_float(market_payload.get("volume")),
+        "liquidity": _safe_float(market_payload.get("liquidity")),
+        "active": market_payload.get("active"),
+        "closed": market_payload.get("closed"),
+        "archived": market_payload.get("archived"),
+    }
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO catalog.events (
+                event_id, event_type_id, title, canonical_slug, status,
+                start_time, end_time, metadata_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (event_id)
+            DO UPDATE SET
+                title = EXCLUDED.title,
+                canonical_slug = EXCLUDED.canonical_slug,
+                status = EXCLUDED.status,
+                start_time = EXCLUDED.start_time,
+                end_time = EXCLUDED.end_time,
+                metadata_json = EXCLUDED.metadata_json,
+                updated_at = now();
+            """,
+            (
+                canonical_event_id,
+                str(event_type_row["event_type_id"]),
+                str(event_payload.get("title") or question),
+                slug,
+                "closed" if bool(event_payload.get("closed")) else "open",
+                start_time,
+                end_time,
+                json.dumps(to_jsonable(event_metadata)),
+            ),
+        )
+        cursor.execute(
+            """
+            INSERT INTO catalog.markets (
+                market_id, event_id, question, market_type, condition_id,
+                market_slug, open_time, close_time, settlement_status, metadata_json
+            )
+            VALUES (%s, %s, %s, 'moneyline', %s, %s, %s, %s, %s, %s::jsonb)
+            ON CONFLICT (market_id)
+            DO UPDATE SET
+                question = EXCLUDED.question,
+                market_type = EXCLUDED.market_type,
+                condition_id = EXCLUDED.condition_id,
+                market_slug = EXCLUDED.market_slug,
+                open_time = EXCLUDED.open_time,
+                close_time = EXCLUDED.close_time,
+                settlement_status = EXCLUDED.settlement_status,
+                metadata_json = EXCLUDED.metadata_json,
+                updated_at = now();
+            """,
+            (
+                canonical_market_id,
+                canonical_event_id,
+                question,
+                str(market_payload.get("conditionId") or ""),
+                slug,
+                start_time,
+                end_time,
+                "closed" if bool(market_payload.get("closed")) else "open",
+                json.dumps(to_jsonable(market_metadata)),
+            ),
+        )
+        for index, raw_label in enumerate(outcomes):
+            token_id = str(token_ids[index] or "") if index < len(token_ids) else ""
+            if not token_id:
+                continue
+            label = _live_outcome_label(raw_label)
+            outcome_id = build_outcome_id(canonical_market_id, label, token_id)
+            outcome_metadata = {
+                "provider_market_id": provider_market_id,
+                "provider_slug": slug,
+                "source": "gamma_live_series_market",
+                "raw_label": str(raw_label or ""),
+            }
+            cursor.execute(
+                """
+                INSERT INTO catalog.outcomes (
+                    outcome_id, market_id, outcome_index, outcome_label, token_id, metadata_json
+                )
+                VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                ON CONFLICT (outcome_id)
+                DO UPDATE SET
+                    outcome_index = EXCLUDED.outcome_index,
+                    outcome_label = EXCLUDED.outcome_label,
+                    token_id = EXCLUDED.token_id,
+                    metadata_json = EXCLUDED.metadata_json,
+                    updated_at = now();
+                """,
+                (
+                    outcome_id,
+                    canonical_market_id,
+                    index,
+                    label,
+                    token_id,
+                    json.dumps(to_jsonable(outcome_metadata)),
+                ),
+            )
+            price = _safe_float(outcome_prices[index] if index < len(outcome_prices) else None)
+            if price is not None:
+                cursor.execute(
+                    """
+                    INSERT INTO market_data.outcome_price_ticks (
+                        outcome_id, ts, source, price, bid, ask, volume, liquidity, raw_json
+                    )
+                    VALUES (%s, %s, 'gamma_live_series_snapshot', %s, NULL, NULL, %s, %s, %s::jsonb)
+                    ON CONFLICT (outcome_id, ts, source)
+                    DO UPDATE SET
+                        price = EXCLUDED.price,
+                        volume = EXCLUDED.volume,
+                        liquidity = EXCLUDED.liquidity,
+                        raw_json = EXCLUDED.raw_json;
+                    """,
+                    (
+                        outcome_id,
+                        now,
+                        price,
+                        _safe_float(market_payload.get("volume")),
+                        _safe_float(market_payload.get("liquidity")),
+                        json.dumps(
+                            to_jsonable(
+                                {
+                                    "source": "gamma_live_series_market",
+                                    "provider_market_id": provider_market_id,
+                                    "provider_slug": slug,
+                                }
+                            )
+                        ),
+                    ),
+                )
+
+    return {
+        "event_id": canonical_event_id,
+        "market_id": canonical_market_id,
+        "canonical_slug": slug,
+    }
+
+
+def _select_live_event_link_candidate(
+    candidates: list[dict[str, Any]],
+    *,
+    exact_slugs: list[str],
+) -> dict[str, Any] | None:
+    if not candidates:
+        return None
+    exact_slug_set = {str(value) for value in exact_slugs if value}
+    exact_candidates = [
+        row for row in candidates if str(row.get("canonical_slug") or "") in exact_slug_set
+    ]
+    if not exact_candidates:
+        return None
+    exact_slug_order = {str(value): index for index, value in enumerate(exact_slugs) if value}
+
+    def sort_key(row: dict[str, Any]) -> tuple[int, int, float]:
+        slug = str(row.get("canonical_slug") or "")
+        status = str(row.get("status") or "").strip().lower()
+        start_time = _parse_datetime(row.get("start_time"))
+        exact_rank = exact_slug_order.get(slug, len(exact_slug_order))
+        status_rank = 0 if status == "open" else 1 if status == "closed" else 2
+        start_rank = -(start_time.timestamp() if start_time is not None else 0.0)
+        return exact_rank, status_rank, start_rank
+
+    return sorted(exact_candidates, key=sort_key)[0]
+
+
+def _ensure_live_game_event_link(connection: Any, *, game_id: str) -> dict[str, Any] | None:
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                g.game_id,
+                g.game_date,
+                g.away_team_slug,
+                g.home_team_slug,
+                at.team_name AS away_team_name,
+                ht.team_name AS home_team_name
+            FROM nba.nba_games g
+            LEFT JOIN nba.nba_teams at ON at.team_id = g.away_team_id
+            LEFT JOIN nba.nba_teams ht ON ht.team_id = g.home_team_id
+            WHERE g.game_id = %s
+            LIMIT 1;
+            """,
+            (game_id,),
+        )
+        game = fetchone_dict(cursor)
+    if not game:
+        return None
+
+    game_slugs = _live_event_slug_candidates(game)
+    series_slugs = _live_series_event_slug_candidates(game)
+    exact_slugs = [*series_slugs, *game_slugs]
+    if not exact_slugs:
+        return None
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                l.nba_game_event_link_id,
+                l.linked_by,
+                e.canonical_slug
+            FROM nba.nba_game_event_links l
+            JOIN catalog.events e ON e.event_id = l.event_id
+            WHERE l.game_id = %s
+            ORDER BY l.linked_at DESC
+            """,
+            (game_id,),
+        )
+        existing_links = fetchall_dicts(cursor)
+    exact_slug_set = set(exact_slugs)
+    if any(str(link.get("canonical_slug") or "") in exact_slug_set for link in existing_links):
+        return None
+    stale_live_link_ids = [
+        str(link["nba_game_event_link_id"])
+        for link in existing_links
+        if str(link.get("linked_by") or "") == "live_slug_pair_fallback"
+        and str(link.get("canonical_slug") or "") not in exact_slug_set
+        and link.get("nba_game_event_link_id") is not None
+    ]
+    if stale_live_link_ids:
+        with cursor_dict(connection) as cursor:
+            cursor.execute(
+                """
+                DELETE FROM nba.nba_game_event_links
+                WHERE nba_game_event_link_id = ANY(%s::uuid[]);
+                """,
+                (stale_live_link_ids,),
+            )
+
+    for series_slug in series_slugs:
+        _ensure_gamma_live_series_market(connection, slug=series_slug)
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                e.event_id,
+                e.title,
+                e.canonical_slug,
+                e.status,
+                e.start_time
+            FROM catalog.events e
+            WHERE e.canonical_slug = ANY(%s)
+            AND EXISTS (
+                SELECT 1
+                FROM catalog.markets m
+                WHERE m.event_id = e.event_id
+                  AND m.market_type = 'moneyline'
+            );
+            """,
+            (exact_slugs,),
+        )
+        candidates = fetchall_dicts(cursor)
+
+    candidate = _select_live_event_link_candidate(candidates, exact_slugs=exact_slugs)
+    if candidate is None:
+        return None
+
+    slug = str(candidate.get("canonical_slug") or "")
+    if slug in series_slugs:
+        linked_by = "live_series_slug_exact"
+        confidence = 0.9
+    elif slug == game_slugs[0]:
+        linked_by = "live_slug_exact"
+        confidence = 1.0
+    elif len(game_slugs) > 1 and slug == game_slugs[1]:
+        linked_by = "live_slug_reverse_exact"
+        confidence = 0.95
+    else:
+        return None
+
+    from app.data.databases.repositories import JanusUpsertRepository
+
+    repo = JanusUpsertRepository(connection)
+    repo.upsert_nba_game_event_link(
+        nba_game_event_link_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"live-link|{game_id}|{candidate['event_id']}")),
+        game_id=game_id,
+        event_id=str(candidate["event_id"]),
+        confidence=confidence,
+        linked_by=linked_by,
+        linked_at=utc_now(),
+    )
+    return {
+        "event_id": str(candidate["event_id"]),
+        "canonical_slug": slug,
+        "linked_by": linked_by,
+        "confidence": confidence,
+    }
 
 
 def _clock_label(game: dict[str, Any], latest_state_row: dict[str, Any] | None) -> str:
@@ -215,6 +705,41 @@ def _overlay_live_orderbook_ticks(bundle: dict[str, Any], *, account: dict[str, 
     return orderbooks_by_side
 
 
+def _apply_live_orderbook_to_latest_state_rows(
+    per_game_state_rows: list[dict[str, Any]],
+    live_orderbooks: dict[str, dict[str, Any]],
+) -> None:
+    if not per_game_state_rows or not live_orderbooks:
+        return
+    latest_index_by_side: dict[str, int] = {}
+    for index, row in enumerate(per_game_state_rows):
+        side = str(row.get("team_side") or "")
+        if side not in {"away", "home"}:
+            continue
+        current_index = latest_index_by_side.get(side)
+        if current_index is None or int(row.get("state_index") or -1) >= int(per_game_state_rows[current_index].get("state_index") or -1):
+            latest_index_by_side[side] = index
+
+    for side, row_index in latest_index_by_side.items():
+        orderbook = live_orderbooks.get(side) or {}
+        best_bid = _safe_float(orderbook.get("best_bid"))
+        best_ask = _safe_float(orderbook.get("best_ask"))
+        if best_bid is None or best_ask is None:
+            continue
+        live_mid = round((best_bid + best_ask) / 2.0, 6)
+        row = per_game_state_rows[row_index]
+        opening_price = _safe_float(row.get("opening_price"))
+        row["team_price"] = live_mid
+        row["price_mode"] = "live_orderbook_mid"
+        row["live_best_bid"] = best_bid
+        row["live_best_ask"] = best_ask
+        row["live_spread_cents"] = _safe_float(orderbook.get("spread_cents"))
+        row["live_orderbook_timestamp"] = orderbook.get("timestamp")
+        if opening_price is not None:
+            row["price_delta_from_open"] = live_mid - opening_price
+            row["abs_price_delta_from_open"] = abs(live_mid - opening_price)
+
+
 def _infer_live_coverage_status(bundle: dict[str, Any]) -> tuple[str, str]:
     feature_snapshot = bundle.get("feature_snapshot") or {}
     coverage_status = str(feature_snapshot.get("coverage_status") or "").strip()
@@ -266,6 +791,36 @@ def _controller_is_unified(name: str) -> bool:
     return str(name or "").strip().startswith("controller_vnext_unified_v1")
 
 
+def _controller_probe_family(name: str) -> str | None:
+    controller_name = str(name or "").strip()
+    if not controller_name or controller_name.startswith("controller_vnext_"):
+        return None
+    registry = build_strategy_registry(strategy_group=REPLAY_HF_STRATEGY_GROUP)
+    if controller_name in registry:
+        return controller_name
+    return None
+
+
+def _select_live_trade_and_decision_frames(
+    snapshot: dict[str, Any],
+    *,
+    controller_name: str,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    probe_family = _controller_probe_family(controller_name)
+    if probe_family is not None:
+        return snapshot.get("probe_trades", _empty_trade_frame()), snapshot.get("probe_decisions", pd.DataFrame())
+    if _controller_is_unified(controller_name):
+        return snapshot.get("unified_trades", _empty_trade_frame()), snapshot.get("unified_decisions", pd.DataFrame())
+    return snapshot.get("deterministic_trades", _empty_trade_frame()), snapshot.get("deterministic_decisions", pd.DataFrame())
+
+
+def _controller_source_name(controller_name: str) -> str:
+    probe_family = _controller_probe_family(controller_name)
+    if probe_family is not None:
+        return "probe_family"
+    return "primary" if _controller_is_unified(controller_name) else "deterministic"
+
+
 def _parse_datetime(value: Any) -> datetime | None:
     if value is None or value == "":
         return None
@@ -276,6 +831,64 @@ def _parse_datetime(value: Any) -> datetime | None:
     except ValueError:
         return None
     return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def _is_feed_break_state(label: Any) -> bool:
+    text = " ".join(str(label or "").strip().lower().split())
+    if not text:
+        return False
+    return "half" in text or text.startswith("end q") or text.startswith("end of q")
+
+
+def _latest_live_event_at(bundle: dict[str, Any], *, per_game_state_rows: list[dict[str, Any]]) -> datetime | None:
+    latest_event_at: datetime | None = None
+
+    def consider(value: Any) -> None:
+        nonlocal latest_event_at
+        parsed = _parse_datetime(value)
+        if parsed is None:
+            return
+        if latest_event_at is None or parsed > latest_event_at:
+            latest_event_at = parsed
+
+    for row in per_game_state_rows:
+        consider(row.get("event_at"))
+
+    play_by_play = bundle.get("play_by_play") or {}
+    consider((play_by_play.get("summary") or {}).get("last_event_at"))
+    for item in play_by_play.get("items") or []:
+        consider(item.get("time_actual"))
+    return latest_event_at
+
+
+def _detect_live_feed_stall(
+    bundle: dict[str, Any],
+    *,
+    per_game_state_rows: list[dict[str, Any]],
+    observed_at: datetime,
+    threshold_seconds: float = LIVE_FEED_STALL_THRESHOLD_SECONDS,
+) -> dict[str, Any]:
+    game = bundle.get("game") or {}
+    game_status = int(game.get("game_status") or 0)
+    live_clock = str(game.get("game_status_text") or game.get("game_clock") or "").strip()
+    latest_event_at = _latest_live_event_at(bundle, per_game_state_rows=per_game_state_rows)
+    feed_stall_age_seconds = None
+    if latest_event_at is not None:
+        feed_stall_age_seconds = max(0.0, (observed_at - latest_event_at).total_seconds())
+    feed_stalled_flag = bool(
+        game_status == 2
+        and latest_event_at is not None
+        and feed_stall_age_seconds is not None
+        and feed_stall_age_seconds > float(threshold_seconds)
+        and not _is_feed_break_state(live_clock)
+    )
+    return {
+        "feed_stalled_flag": feed_stalled_flag,
+        "feed_stall_age_seconds": round(feed_stall_age_seconds, 3) if feed_stall_age_seconds is not None else None,
+        "feed_stall_threshold_seconds": float(threshold_seconds),
+        "last_live_event_at": latest_event_at.isoformat() if latest_event_at is not None else None,
+        "live_clock_label": live_clock or None,
+    }
 
 
 def _safe_float(value: Any) -> float | None:
@@ -326,6 +939,8 @@ def _evaluate_exit_reason(position_state: dict[str, Any], current_state: dict[st
     stop_price = position_state.get("stop_price") if position_state.get("stop_price") is not None else metadata.get("stop_price")
     exit_threshold = metadata.get("exit_threshold")
 
+    if current_price >= DEFAULT_TAKE_PROFIT_EXIT_PRICE:
+        return "take_profit_95", False
     if family in {"winner_definition", "inversion"} and exit_threshold is not None and current_price <= float(exit_threshold):
         return "threshold_break", True
     if family in {"underdog_liftoff", "q1_repricing", "q4_clutch"}:
@@ -406,9 +1021,9 @@ def build_controller_context(run_root: Path) -> ControllerContext:
 
 
 class LiveRunWorker:
-    def __init__(self, config: LiveRunConfig) -> None:
+    def __init__(self, config: LiveRunConfig, *, run_root: Path | None = None) -> None:
         self.config = config
-        self.run_root = config.run_root()
+        self.run_root = run_root or config.run_root()
         self.run_root.mkdir(parents=True, exist_ok=True)
         self.controller_context = build_controller_context(self.run_root)
         self._lock = threading.RLock()
@@ -440,6 +1055,7 @@ class LiveRunWorker:
         with self._lock:
             if self._thread and self._thread.is_alive():
                 return
+            self._stop_event.clear()
             self._thread = threading.Thread(
                 target=self._run_loop,
                 name=f"live-run-{self.config.run_id}",
@@ -449,6 +1065,14 @@ class LiveRunWorker:
 
     def request_stop(self) -> None:
         self._stop_event.set()
+
+    def mark_restored_inactive(self) -> None:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return
+            if self.status in {"starting", "running"}:
+                self.status = "stopped"
+                self._persist_recovery_snapshot()
 
     def pause_entries(self) -> None:
         with self._lock:
@@ -464,11 +1088,29 @@ class LiveRunWorker:
 
     def summary_snapshot(self) -> dict[str, Any]:
         account_summary = None
+        clob_balance_usd = None
         if self.account:
             with managed_connection() as connection:
                 account_summary = fetch_account_summary(connection, account_id=str(self.account["account_id"]))
+            try:
+                clob_status = fetch_clob_collateral_status(
+                    resolve_trading_account_credentials(self.account),
+                    required_notional_usd=0.0,
+                )
+                if clob_status.get("balance_usd") is not None:
+                    clob_balance_usd = float(clob_status["balance_usd"])
+            except Exception:
+                clob_balance_usd = None
+
+        positions_value_usd = float(account_summary.get("positions_value_usd") or 0.0) if account_summary else 0.0
         current_bankroll = float(account_summary.get("equity_usd") or 0.0) if account_summary else None
         starting_bankroll = float(account_summary.get("cash_usd") or current_bankroll or 0.0) if account_summary else None
+        if clob_balance_usd is not None:
+            clob_equity_usd = clob_balance_usd + positions_value_usd
+            if current_bankroll is None or current_bankroll <= 0.0:
+                current_bankroll = clob_equity_usd
+            if starting_bankroll is None or starting_bankroll <= 0.0:
+                starting_bankroll = clob_balance_usd
         with self._lock:
             return {
                 "run_id": self.config.run_id,
@@ -481,6 +1123,9 @@ class LiveRunWorker:
                 "open_positions": len(self.active_positions),
                 "entries_enabled": self.entries_enabled,
                 "dry_run": self.config.dry_run,
+                "entry_target_notional_usd": self.config.entry_target_notional_usd,
+                "max_entry_orders_per_game": self.config.max_entry_orders_per_game,
+                "max_entry_notional_per_game_usd": self.config.max_entry_notional_per_game_usd,
                 "current_bankroll": current_bankroll,
                 "starting_bankroll": starting_bankroll,
                 "drawdown_pct": None,
@@ -659,10 +1304,15 @@ class LiveRunWorker:
         state_rows: list[dict[str, Any]] = []
         bundles: dict[str, dict[str, Any]] = {}
         diagnostics_by_game: dict[str, dict[str, Any]] = {}
+        snapshot_observed_at = utc_now()
 
         for game_id in self.config.game_ids:
             run_nba_live_game_sync(game_id=str(game_id), include_live_snapshots=True, include_play_by_play=True)
+            ensured_link = _ensure_live_game_event_link(connection, game_id=str(game_id))
             bundle = load_analysis_bundle(connection, game_id=str(game_id))
+            if bundle is not None and not (bundle.get("selected_market") or {}).get("series"):
+                ensured_link = ensured_link or _ensure_live_game_event_link(connection, game_id=str(game_id))
+                bundle = load_analysis_bundle(connection, game_id=str(game_id))
             if bundle is None:
                 diagnostics_by_game[str(game_id)] = {"error": "game_not_found"}
                 continue
@@ -692,13 +1342,23 @@ class LiveRunWorker:
                 universe_row=universe_row,
                 bundle=bundle,
                 analysis_version="v1_0_1",
-                computed_at=utc_now(),
+                computed_at=snapshot_observed_at,
                 build_state_rows_for_side=build_state_rows_for_side,
             )
+            _apply_live_orderbook_to_latest_state_rows(per_game_state_rows, live_orderbooks)
             bundle["derived_game_rows"] = game_rows
             bundle["live_orderbooks"] = live_orderbooks
             bundles[str(game_id)] = bundle
+            diagnostics.update(
+                _detect_live_feed_stall(
+                    bundle,
+                    per_game_state_rows=per_game_state_rows,
+                    observed_at=snapshot_observed_at,
+                )
+            )
             diagnostics_by_game[str(game_id)] = diagnostics
+            if ensured_link is not None:
+                diagnostics_by_game[str(game_id)]["ensured_event_link"] = ensured_link
             state_rows.extend(per_game_state_rows)
 
         state_df = pd.DataFrame(state_rows)
@@ -716,6 +1376,8 @@ class LiveRunWorker:
                 "deterministic_decisions": pd.DataFrame(),
                 "unified_trades": _empty_trade_frame(),
                 "unified_decisions": pd.DataFrame(),
+                "probe_trades": _empty_trade_frame(),
+                "probe_decisions": pd.DataFrame(),
             }
 
         request = BacktestRunRequest(
@@ -724,7 +1386,7 @@ class LiveRunWorker:
             portfolio_game_limit=None,
             slippage_cents=0,
             llm_enable=True,
-            llm_model="gpt-5.4",
+            llm_model=DEFAULT_BACKTEST_LLM_MODEL,
             llm_max_budget_usd=2.0,
         )
         sample_result = build_backtest_result(state_df, request)
@@ -762,6 +1424,20 @@ class LiveRunWorker:
             apply_stop_overlay(unified_trades, state_lookup=state_lookup, stop_map=DEFAULT_VNEXT_STOP_MAP),
             profile=DEFAULT_VNEXT_PROFILE,
         )
+        probe_trades = _empty_trade_frame()
+        probe_decisions = pd.DataFrame()
+        probe_family = _controller_probe_family(self.config.controller_name)
+        if probe_family is not None:
+            registry = build_strategy_registry(strategy_group=REPLAY_HF_STRATEGY_GROUP)
+            definition = registry.get(probe_family)
+            if definition is not None:
+                probe_records = definition.simulator(state_df, slippage_cents=0)
+                probe_trades = pd.DataFrame(probe_records or [])
+                if not probe_trades.empty:
+                    probe_trades = decorate_trade_frame_with_vnext_sizing(
+                        apply_stop_overlay(probe_trades, state_lookup=state_lookup, stop_map=DEFAULT_VNEXT_STOP_MAP),
+                        profile=DEFAULT_VNEXT_PROFILE,
+                    )
         self._append_controller_trace(
             "cycle_snapshot",
             payload={
@@ -771,11 +1447,20 @@ class LiveRunWorker:
                 "deterministic_decision_count": int(len(deterministic_decisions)),
                 "unified_trade_count": int(len(unified_trades)),
                 "unified_decision_count": int(len(unified_decisions)),
+                "probe_family": probe_family,
+                "probe_trade_count": int(len(probe_trades)),
                 "diagnostics_by_game": diagnostics_by_game,
             },
         )
         self._persist_decisions(
-            (unified_decisions if _controller_is_unified(self.config.controller_name) else deterministic_decisions).to_dict(orient="records")
+            _select_live_trade_and_decision_frames(snapshot={
+                "probe_trades": probe_trades,
+                "probe_decisions": probe_decisions,
+                "unified_trades": unified_trades,
+                "unified_decisions": unified_decisions,
+                "deterministic_trades": deterministic_trades,
+                "deterministic_decisions": deterministic_decisions,
+            }, controller_name=self.config.controller_name)[1].to_dict(orient="records")
         )
         return {
             "bundles": bundles,
@@ -786,12 +1471,16 @@ class LiveRunWorker:
             "deterministic_decisions": deterministic_decisions,
             "unified_trades": unified_trades,
             "unified_decisions": unified_decisions,
+            "probe_trades": probe_trades,
+            "probe_decisions": probe_decisions,
         }
 
     def _refresh_game_cards(self, snapshot: dict[str, Any]) -> None:
         cards: dict[str, dict[str, Any]] = {}
-        trade_frame = snapshot["unified_trades"] if _controller_is_unified(self.config.controller_name) else snapshot["deterministic_trades"]
-        decisions_frame = snapshot["unified_decisions"] if _controller_is_unified(self.config.controller_name) else snapshot["deterministic_decisions"]
+        trade_frame, decisions_frame = _select_live_trade_and_decision_frames(
+            snapshot,
+            controller_name=self.config.controller_name,
+        )
         decision_lookup = {
             str(row["game_id"]): row
             for row in decisions_frame.to_dict(orient="records")
@@ -857,13 +1546,16 @@ class LiveRunWorker:
                 and int(latest_state_row.get("state_index") or -1) > int((selected_trade or {}).get("entry_state_index") or -1)
                 and not _is_recent_signal(selected_trade or {}, latest_state_row)
             )
+            feed_stalled_flag = bool(diagnostics.get("feed_stalled_flag"))
 
             state_label = "pregame" if int(game.get("game_status") or 0) == 1 else "monitoring"
             if int(game.get("game_status") or 0) == 3:
                 state_label = "final"
             if decision.get("final_source") == "skip_weak_game" or decision.get("selected_core_family") is None:
                 state_label = "skip" if state_label != "final" else state_label
-            if candidate_is_stale and state_label not in {"final", "pregame"}:
+            if feed_stalled_flag and state_label not in {"final", "pregame"}:
+                state_label = "feed stalled"
+            if candidate_is_stale and not feed_stalled_flag and state_label not in {"final", "pregame"}:
                 state_label = "stale signal"
             if active_orders:
                 state_label = "entry queued"
@@ -886,6 +1578,9 @@ class LiveRunWorker:
                 "selected_confidence": decision.get("selected_confidence") or (selected_trade or {}).get("unified_router_default_confidence"),
                 "state_label": state_label,
                 "note": (
+                    "feed_stalled"
+                    if feed_stalled_flag and not active_orders and not active_positions
+                    else
                     "entry_signal_stale"
                     if candidate_is_stale and not active_orders and not active_positions
                     else self._latest_event_message_for_game(str(game_id))
@@ -910,6 +1605,9 @@ class LiveRunWorker:
                     "decision": self._decision_trace_row(decision),
                     "selected_trade": self._trade_trace_row(selected_trade),
                     "candidate_is_stale": candidate_is_stale,
+                    "feed_stalled_flag": feed_stalled_flag,
+                    "feed_stall_age_seconds": diagnostics.get("feed_stall_age_seconds"),
+                    "last_live_event_at": diagnostics.get("last_live_event_at"),
                     "orderbook": {
                         "best_bid": (orderbook or {}).get("best_bid"),
                         "best_ask": (orderbook or {}).get("best_ask"),
@@ -1040,10 +1738,18 @@ class LiveRunWorker:
             )
 
     def _process_new_entries(self, connection: Any, *, snapshot: dict[str, Any]) -> None:
-        trade_frame = snapshot["unified_trades"] if _controller_is_unified(self.config.controller_name) else snapshot["deterministic_trades"]
-        decisions_frame = snapshot["unified_decisions"] if _controller_is_unified(self.config.controller_name) else snapshot["deterministic_decisions"]
+        trade_frame, decisions_frame = _select_live_trade_and_decision_frames(
+            snapshot,
+            controller_name=self.config.controller_name,
+        )
         if trade_frame is None or trade_frame.empty:
             return
+        account_id = str(self.account.get("account_id") or "") if self.account else None
+        run_orders = list_run_orders(
+            connection,
+            run_id=self.config.run_id,
+            account_id=account_id or None,
+        )
         active_signatures = list_active_run_signatures(
             connection,
             run_id=self.config.run_id,
@@ -1062,6 +1768,7 @@ class LiveRunWorker:
             game_id = str(record.get("game_id") or "")
             team_side = str(record.get("team_side") or "")
             signal_id = _signal_id_for_trade(record)
+            diagnostics = snapshot["diagnostics_by_game"].get(game_id) or {}
             if signal_id in self.active_orders or signal_id in self.active_positions:
                 self._append_controller_trace(
                     "entry_gate",
@@ -1070,6 +1777,20 @@ class LiveRunWorker:
                         "signal_id": signal_id,
                         "result": "skip",
                         "reason": "already_active_signal",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
+                continue
+            if bool(diagnostics.get("feed_stalled_flag")):
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "feed_stalled",
+                        "feed_stall_age_seconds": diagnostics.get("feed_stall_age_seconds"),
+                        "last_live_event_at": diagnostics.get("last_live_event_at"),
                         "trade": self._trade_trace_row(record),
                     },
                 )
@@ -1156,6 +1877,18 @@ class LiveRunWorker:
                     },
                 )
                 continue
+            if any(str(value.get("game_id") or "") == game_id for value in self.active_orders.values()):
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "game_entry_order_exists",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
+                continue
             if any(str(value.get("game_id") or "") == game_id for value in self.active_positions.values()):
                 self._append_controller_trace(
                     "entry_gate",
@@ -1164,6 +1897,39 @@ class LiveRunWorker:
                         "signal_id": signal_id,
                         "result": "skip",
                         "reason": "game_position_exists",
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
+                continue
+            budget_state = _run_game_entry_budget_state(
+                run_orders,
+                game_id=game_id,
+                execution_profile_version=self.config.execution_profile_version,
+            )
+            if budget_state.entry_order_count >= self.config.max_entry_orders_per_game:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "game_entry_order_count_budget_exhausted",
+                        "entry_order_count": budget_state.entry_order_count,
+                        "max_entry_orders_per_game": self.config.max_entry_orders_per_game,
+                        "trade": self._trade_trace_row(record),
+                    },
+                )
+                continue
+            if budget_state.entry_requested_notional_usd >= self.config.max_entry_notional_per_game_usd:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": "game_entry_notional_budget_exhausted",
+                        "entry_requested_notional_usd": budget_state.entry_requested_notional_usd,
+                        "max_entry_notional_per_game_usd": self.config.max_entry_notional_per_game_usd,
                         "trade": self._trade_trace_row(record),
                     },
                 )
@@ -1231,11 +1997,56 @@ class LiveRunWorker:
                 )
                 continue
             entry_price = float(best_ask)
-            size = resolve_minimum_order_size(entry_price)
+            orderbook_meta = orderbook
+            sizing = resolve_entry_order_size(
+                entry_price,
+                min_order_size=orderbook_meta.get("min_order_size"),
+                target_notional_usd=self.config.entry_target_notional_usd,
+            )
+            size = sizing.get("size")
+            if size is None:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "decision": "skip",
+                        "reason": str(sizing.get("blocked_reason") or "size_blocked"),
+                        "entry_price": entry_price,
+                        "best_bid": best_bid,
+                        "best_ask": best_ask,
+                        "spread_cents": spread_cents,
+                        "min_order_size": orderbook_meta.get("min_order_size"),
+                        "target_notional_usd": self.config.entry_target_notional_usd,
+                        "required_notional_usd": sizing.get("required_notional_usd"),
+                        "sizing_mode": sizing.get("sizing_mode"),
+                    },
+                )
+                continue
+            required_notional = float(sizing.get("required_notional_usd") or (entry_price * float(size)))
+            projected_notional = budget_state.entry_requested_notional_usd + required_notional
+            if projected_notional > self.config.max_entry_notional_per_game_usd + 0.000001:
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "decision": "skip",
+                        "reason": "game_entry_notional_budget_exceeded",
+                        "entry_requested_notional_usd": budget_state.entry_requested_notional_usd,
+                        "required_notional_usd": required_notional,
+                        "projected_notional_usd": projected_notional,
+                        "max_entry_notional_per_game_usd": self.config.max_entry_notional_per_game_usd,
+                        "entry_price": entry_price,
+                        "size": size,
+                        "sizing_mode": sizing.get("sizing_mode"),
+                    },
+                )
+                continue
             metadata = build_live_order_metadata(
                 config=self.config,
                 controller_name=self.config.controller_name,
-                controller_source="primary" if _controller_is_unified(self.config.controller_name) else "deterministic",
+                controller_source=_controller_source_name(self.config.controller_name),
                 game_id=game_id,
                 market_id=str(bundle.get("selected_market", {}).get("market_id") or ""),
                 outcome_id=str(outcome_meta.get("outcome_id") or ""),
@@ -1254,6 +2065,12 @@ class LiveRunWorker:
                     "best_bid": best_bid,
                     "best_ask": best_ask,
                     "spread_cents": spread_cents,
+                    "min_order_size": orderbook_meta.get("min_order_size"),
+                    "target_notional_usd": self.config.entry_target_notional_usd,
+                    "required_notional_usd": sizing.get("required_notional_usd"),
+                    "sizing_mode": sizing.get("sizing_mode"),
+                    "max_entry_orders_per_game": self.config.max_entry_orders_per_game,
+                    "max_entry_notional_per_game_usd": self.config.max_entry_notional_per_game_usd,
                 },
             )
             placed = create_live_order(
@@ -1269,6 +2086,48 @@ class LiveRunWorker:
                 metadata_json=metadata,
                 dry_run=self.config.dry_run,
             )
+            placed_status = str(placed.get("status") or "")
+            if placed_status not in OPEN_ORDER_STATUSES:
+                execution_meta = dict(placed.get("metadata_json", {}).get("execution") or {})
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "entry_not_submitted",
+                        "reason": execution_meta.get("blocked_reason") or placed.get("event_type") or placed_status,
+                        "trade": self._trade_trace_row(record),
+                        "latest_state": self._state_trace_row(latest_state),
+                        "submitted": {
+                            "price": entry_price,
+                            "size": size,
+                            "order_policy": "limit_best_ask",
+                            "order_id": placed.get("order_id"),
+                            "external_order_id": placed.get("external_order_id"),
+                            "status": placed_status,
+                            "event_type": placed.get("event_type"),
+                            "dry_run": self.config.dry_run,
+                            "target_notional_usd": self.config.entry_target_notional_usd,
+                            "required_notional_usd": sizing.get("required_notional_usd"),
+                            "sizing_mode": sizing.get("sizing_mode"),
+                            "clob_collateral": execution_meta.get("clob_collateral"),
+                        },
+                    },
+                )
+                self._record_event(
+                    "error",
+                    "Entry not submitted",
+                    f"{_matchup_label(bundle['game'])} {metadata['strategy_family']} blocked before active order tracking.",
+                    game_id=game_id,
+                    details={
+                        "signal_id": signal_id,
+                        "status": placed_status,
+                        "event_type": placed.get("event_type"),
+                        "blocked_reason": execution_meta.get("blocked_reason"),
+                        "clob_collateral": execution_meta.get("clob_collateral"),
+                    },
+                )
+                continue
             self._append_controller_trace(
                 "entry_gate",
                 game_id=game_id,
@@ -1289,6 +2148,12 @@ class LiveRunWorker:
                         "order_id": placed.get("order_id"),
                         "external_order_id": placed.get("external_order_id"),
                         "dry_run": self.config.dry_run,
+                        "target_notional_usd": self.config.entry_target_notional_usd,
+                        "required_notional_usd": sizing.get("required_notional_usd"),
+                        "sizing_mode": sizing.get("sizing_mode"),
+                        "entry_requested_notional_usd": budget_state.entry_requested_notional_usd,
+                        "max_entry_orders_per_game": self.config.max_entry_orders_per_game,
+                        "max_entry_notional_per_game_usd": self.config.max_entry_notional_per_game_usd,
                     },
                 },
             )
@@ -1592,10 +2457,14 @@ class LiveRunWorker:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
             return
+        status_value = payload.get("status")
+        if status_value:
+            self.status = str(status_value)
         self.entries_enabled = bool(payload.get("entries_enabled", self.entries_enabled))
         self.active_orders = {str(key): value for key, value in dict(payload.get("active_orders") or {}).items()}
         self.active_positions = {str(key): value for key, value in dict(payload.get("active_positions") or {}).items()}
         self.fill_metrics = list(payload.get("fill_metrics") or [])
+        self.last_error = payload.get("last_error")
         self.last_traceback = payload.get("last_traceback")
         self.cycle_count = int(payload.get("cycle_count") or 0)
         self.last_cycle_started_at = _parse_datetime(payload.get("last_cycle_started_at"))

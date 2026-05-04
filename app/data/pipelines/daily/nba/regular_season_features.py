@@ -387,15 +387,22 @@ def _resolve_catalog_refs(
     event_ids_by_slug: dict[str, str],
     outcome_lookup: dict[str, dict[str, str | None]],
 ) -> dict[str, str | None]:
-    event_id = event_ids_by_slug.get(expected_slug)
+    row_event_id = str(moneyline_row.get("event_id") or "").strip() or None
+    row_market_id = str(moneyline_row.get("market_uuid") or "").strip() or None
+    row_outcome_id = str(moneyline_row.get("outcome_id") or "").strip() or None
+    event_id = event_ids_by_slug.get(expected_slug) or row_event_id
     external_market_id = str(moneyline_row.get("market_id") or "").strip()
     token_id = str(moneyline_row.get("token_id") or "").strip()
     outcome_label_lower = str(moneyline_row.get("outcome") or "").strip().lower()
     refs = dict(outcome_lookup.get("|".join([expected_slug, external_market_id, token_id, outcome_label_lower])) or {})
     if not refs:
-        refs = {"event_id": event_id, "market_id": None, "outcome_id": None}
+        refs = {"event_id": event_id, "market_id": row_market_id, "outcome_id": row_outcome_id}
     elif refs.get("event_id") is None:
         refs["event_id"] = event_id
+    if refs.get("market_id") is None and row_market_id:
+        refs["market_id"] = row_market_id
+    if refs.get("outcome_id") is None and row_outcome_id:
+        refs["outcome_id"] = row_outcome_id
     return refs
 
 
@@ -475,6 +482,98 @@ def _collect_catalog_moneyline_df(connection: Any, *, expected_slugs: list[str])
         return rows
 
     records = [_catalog_moneyline_row_to_record(row) for _, row in rows.iterrows()]
+    out = pd.DataFrame(records)
+    if out.empty:
+        return out
+    out["event_slug"] = out["event_slug"].astype(str).str.lower()
+    return out.drop_duplicates(subset=["event_slug", "market_id", "outcome", "token_id"])
+
+
+def _collect_linked_game_moneyline_df(connection: Any, *, games_df: pd.DataFrame) -> pd.DataFrame:
+    if games_df.empty or "game_id" not in games_df.columns:
+        return pd.DataFrame()
+
+    game_ids = sorted({str(value).strip() for value in games_df["game_id"].dropna().tolist() if str(value).strip()})
+    if not game_ids:
+        return pd.DataFrame()
+
+    latest_tick_query = """
+        WITH latest_ticks AS (
+            SELECT DISTINCT ON (outcome_id)
+                outcome_id,
+                ts,
+                price
+            FROM market_data.outcome_price_ticks
+            ORDER BY outcome_id, ts DESC
+        )
+        SELECT
+            g.game_id,
+            g.game_date,
+            g.away_team_slug,
+            g.home_team_slug,
+            away.team_name AS away_team_name,
+            home.team_name AS home_team_name,
+            e.event_id,
+            e.canonical_slug AS actual_event_slug,
+            m.market_id AS market_uuid,
+            mer.external_market_id,
+            m.question,
+            m.market_type,
+            o.outcome_id,
+            o.outcome_label AS outcome,
+            o.token_id,
+            lt.price AS last_price
+        FROM nba.nba_game_event_links l
+        JOIN nba.nba_games g ON g.game_id = l.game_id
+        JOIN catalog.events e ON e.event_id = l.event_id
+        JOIN catalog.markets m ON m.event_id = e.event_id
+        LEFT JOIN catalog.market_external_refs mer ON mer.market_id = m.market_id
+        JOIN catalog.outcomes o ON o.market_id = m.market_id
+        LEFT JOIN nba.nba_teams away ON away.team_id = g.away_team_id
+        LEFT JOIN nba.nba_teams home ON home.team_id = g.home_team_id
+        LEFT JOIN latest_ticks lt ON lt.outcome_id = o.outcome_id
+        WHERE g.game_id = ANY(%s)
+          AND lower(COALESCE(m.market_type, '')) = 'moneyline';
+    """
+    rows = _query_df(connection, latest_tick_query, (game_ids,))
+    if rows.empty:
+        return rows
+
+    expected_by_game = {
+        str(row.get("game_id")): _expected_slug_for_game(row)
+        for _, row in games_df.iterrows()
+    }
+    records: list[dict[str, Any]] = []
+    for _, row in rows.iterrows():
+        game_id = str(row.get("game_id") or "").strip()
+        expected_slug = expected_by_game.get(game_id, "")
+        outcome = str(row.get("outcome") or "").strip()
+        outcome_key = outcome.lower()
+        away_slug = str(row.get("away_team_slug") or "").strip().upper()
+        home_slug = str(row.get("home_team_slug") or "").strip().upper()
+        away_name = str(row.get("away_team_name") or "").strip().lower()
+        home_name = str(row.get("home_team_name") or "").strip().lower()
+        team_abbr: str | None = None
+        if outcome_key and outcome_key in {away_slug.lower(), away_name}:
+            team_abbr = away_slug
+        elif outcome_key and outcome_key in {home_slug.lower(), home_name}:
+            team_abbr = home_slug
+        records.append(
+            {
+                "event_slug": expected_slug,
+                "actual_event_slug": str(row.get("actual_event_slug") or "").strip().lower() or None,
+                "event_id": str(row.get("event_id") or "").strip() or None,
+                "market_uuid": str(row.get("market_uuid") or "").strip() or None,
+                "outcome_id": str(row.get("outcome_id") or "").strip() or None,
+                "market_id": str(row.get("external_market_id") or row.get("market_uuid") or "").strip() or None,
+                "outcome": outcome,
+                "token_id": str(row.get("token_id") or "").strip() or None,
+                "team_abbr": team_abbr,
+                "last_price": _safe_float(row.get("last_price")),
+                "ingestion_source": "linked_catalog_fallback",
+            }
+        )
+
     out = pd.DataFrame(records)
     if out.empty:
         return out
@@ -863,6 +962,15 @@ def materialize_regular_season_features(
             max_pages=moneyline_max_pages,
             expected_slugs=games_df["expected_slug"].dropna().astype(str).tolist(),
         )
+    linked_moneyline_df = _collect_linked_game_moneyline_df(connection, games_df=games_df)
+    if not linked_moneyline_df.empty:
+        moneyline_df = (
+            linked_moneyline_df
+            if moneyline_df.empty
+            else pd.concat([moneyline_df, linked_moneyline_df], ignore_index=True, sort=False)
+        )
+        moneyline_df["event_slug"] = moneyline_df["event_slug"].astype(str).str.lower()
+        moneyline_df = moneyline_df.drop_duplicates(subset=["event_slug", "market_id", "outcome", "token_id"])
 
     feature_snapshots_written = 0
     pbp_backfilled_games = 0

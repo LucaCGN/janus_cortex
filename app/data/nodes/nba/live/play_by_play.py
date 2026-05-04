@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -21,6 +22,8 @@ from nba_api.live.nba.endpoints import playbyplay
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+_PROVIDER_ERROR_LOG_COOLDOWN_SEC = 300.0
+_PROVIDER_ERROR_LOG_STATE: dict[str, float] = {}
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -60,6 +63,29 @@ def _extract_actions(payload: Any) -> list[dict[str, Any]]:
     return [row for row in actions if isinstance(row, dict)]
 
 
+def _is_transient_provider_decode_error(exc: Exception) -> bool:
+    message = str(exc or "")
+    name = exc.__class__.__name__
+    return "JSONDecodeError" in name or "Expecting value" in message
+
+
+def _log_provider_fetch_error(*, game_id: str, exc: Exception) -> None:
+    if not _is_transient_provider_decode_error(exc):
+        logger.error("fetch_play_by_play_df: provider error game_id=%s error=%r", game_id, exc)
+        return
+    now = time.monotonic()
+    last_logged_at = _PROVIDER_ERROR_LOG_STATE.get(game_id)
+    if last_logged_at is None or (now - last_logged_at) >= _PROVIDER_ERROR_LOG_COOLDOWN_SEC:
+        _PROVIDER_ERROR_LOG_STATE[game_id] = now
+        logger.warning(
+            "fetch_play_by_play_df: transient decode failure game_id=%s; keeping poll loop alive and retrying: %s",
+            game_id,
+            exc,
+        )
+        return
+    logger.debug("fetch_play_by_play_df: transient decode failure suppressed game_id=%s error=%r", game_id, exc)
+
+
 class PlayByPlayRequest(BaseModel):
     """Request params for live PbP."""
 
@@ -95,7 +121,7 @@ def fetch_play_by_play_df(request: PlayByPlayRequest) -> pd.DataFrame:
     try:
         payload = playbyplay.PlayByPlay(request.game_id).get_dict()
     except Exception as exc:  # noqa: BLE001
-        logger.error("fetch_play_by_play_df: provider error game_id=%s error=%r", request.game_id, exc)
+        _log_provider_fetch_error(game_id=request.game_id, exc=exc)
         return pd.DataFrame()
 
     actions = _extract_actions(payload)

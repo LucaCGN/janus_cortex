@@ -27,12 +27,8 @@ def _select_q1_repricing_entry(group: pd.DataFrame) -> TradeSelection | None:
     prices = pd.to_numeric(group["team_price"], errors="coerce").tolist()
     for index, price in enumerate(prices):
         if price is None or pd.isna(price):
-            previous_price = price
             continue
         resolved_price = float(price)
-        if index == 0:
-            previous_price = resolved_price
-            continue
         row = group.iloc[index]
         if str(row["period_label"]) != "Q1":
             previous_price = resolved_price
@@ -40,7 +36,8 @@ def _select_q1_repricing_entry(group: pd.DataFrame) -> TradeSelection | None:
         if float(row["clock_elapsed_seconds"]) > DEFAULT_Q1_REPRICING_MAX_CLOCK_ELAPSED:
             previous_price = resolved_price
             continue
-        if previous_price < threshold <= resolved_price:
+        crossed_threshold = previous_price < threshold <= resolved_price
+        if crossed_threshold:
             if float(row["net_points_last_5_events"]) < DEFAULT_Q1_REPRICING_MIN_MOMENTUM:
                 previous_price = resolved_price
                 continue

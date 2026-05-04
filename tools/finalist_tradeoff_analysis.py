@@ -96,7 +96,7 @@ MASTER_VARIANTS: tuple[dict[str, Any], ...] = (
 
 LLM_VARIANTS: tuple[dict[str, Any], ...] = (
     {
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1",
         "lane_name": "llm_hybrid_freedom_compact_v1",
         "lane_group": "llm_finalist",
         "lane_mode": "llm_freedom",
@@ -108,7 +108,7 @@ LLM_VARIANTS: tuple[dict[str, Any], ...] = (
         "use_confidence_gate": False,
     },
     {
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_cap1_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_cap1_v1",
         "lane_name": "llm_hybrid_freedom_compact_cap1_v1",
         "lane_group": "llm_tuned",
         "lane_mode": "llm_freedom",
@@ -123,7 +123,7 @@ LLM_VARIANTS: tuple[dict[str, Any], ...] = (
         "max_extra_candidates": 0,
     },
     {
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_anchor_cap1_guarded_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_anchor_cap1_guarded_v1",
         "lane_name": "llm_hybrid_freedom_anchor_cap1_guarded_v1",
         "lane_group": "llm_tuned",
         "lane_mode": "llm_freedom",
@@ -140,7 +140,7 @@ LLM_VARIANTS: tuple[dict[str, Any], ...] = (
         "max_extra_candidates": 0,
     },
     {
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_anchor_cap2_guarded_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_anchor_cap2_guarded_v1",
         "lane_name": "llm_hybrid_freedom_anchor_cap2_guarded_v1",
         "lane_group": "llm_tuned",
         "lane_mode": "llm_freedom",
@@ -158,7 +158,7 @@ LLM_VARIANTS: tuple[dict[str, Any], ...] = (
         "require_core_for_extra": True,
     },
     {
-        "variant_name": "gpt-5.4 :: llm_hybrid_freedom_anchor_soft_cap2_v1",
+        "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_anchor_soft_cap2_v1",
         "lane_name": "llm_hybrid_freedom_anchor_soft_cap2_v1",
         "lane_group": "llm_tuned",
         "lane_mode": "llm_freedom",
@@ -186,7 +186,7 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir",
         default=r"C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_finalist_tradeoff",
     )
-    parser.add_argument("--llm-model", default="gpt-5.4")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-budget-usd", type=float, default=9.0)
     parser.add_argument("--tuning-iterations", type=int, default=TUNING_ITERATIONS)
     parser.add_argument("--confirmation-iterations", type=int, default=CONFIRMATION_ITERATIONS)
@@ -421,11 +421,11 @@ def _rank_variants(aggregate_df: pd.DataFrame) -> pd.DataFrame:
 
 def _pick_best_variants(ranked_df: pd.DataFrame) -> tuple[str, str]:
     if ranked_df.empty:
-        return MASTER_ROUTER_PORTFOLIO, "gpt-5.4 :: llm_hybrid_freedom_compact_v1"
+        return MASTER_ROUTER_PORTFOLIO, "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1"
     master_row = ranked_df[ranked_df["lane_group"] == "master_router"].head(1)
     llm_row = ranked_df[ranked_df["lane_group"].str.startswith("llm")].head(1)
     best_master = str(master_row.iloc[0]["variant_name"]) if not master_row.empty else MASTER_ROUTER_PORTFOLIO
-    best_llm = str(llm_row.iloc[0]["variant_name"]) if not llm_row.empty else "gpt-5.4 :: llm_hybrid_freedom_compact_v1"
+    best_llm = str(llm_row.iloc[0]["variant_name"]) if not llm_row.empty else "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1"
     return best_master, best_llm
 
 
@@ -639,7 +639,7 @@ def main() -> None:
     ]
     confirmation_llm_variants = [
         _find_llm_variant(name)
-        for name in dict.fromkeys(["gpt-5.4 :: llm_hybrid_freedom_compact_v1", best_llm_name]).keys()
+        for name in dict.fromkeys(["gpt-5.4-mini :: llm_hybrid_freedom_compact_v1", best_llm_name]).keys()
     ]
 
     confirmation_rows: list[dict[str, Any]] = []

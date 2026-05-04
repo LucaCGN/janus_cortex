@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+import requests
 from psycopg2.extras import Json
 
 from app.data.databases.postgres import managed_connection
@@ -18,6 +19,16 @@ from app.data.nodes.polymarket.gamma.gamma_client import PolymarketDataClient
 
 
 _NAMESPACE = uuid.UUID("44ecb08d-f092-4a67-b542-c944bcf1c352")
+POLYGON_RPC_URLS = (
+    "https://polygon-bor-rpc.publicnode.com",
+    "https://polygon.drpc.org",
+    "https://1rpc.io/matic",
+    "https://polygon-rpc.com",
+)
+POLYGON_USDC_TOKENS = {
+    "usdc_e": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+    "usdc": "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359",
+}
 
 
 @dataclass
@@ -87,6 +98,115 @@ def _safe_dt(value: Any, *, default: datetime | None = None) -> datetime:
         except ValueError:
             pass
     return default or datetime.now(timezone.utc)
+
+
+def _safe_sum(rows: list[dict[str, Any]], keys: tuple[str, ...]) -> float | None:
+    total = 0.0
+    found = False
+    for row in rows:
+        for key in keys:
+            value = _safe_float(row.get(key))
+            if value is not None:
+                total += value
+                found = True
+                break
+    return total if found else None
+
+
+def _fetch_erc20_balance(
+    *,
+    rpc_url: str,
+    token_address: str,
+    wallet_address: str,
+    timeout_seconds: float = 20.0,
+) -> float:
+    clean_wallet = str(wallet_address or "").strip().lower()
+    if not clean_wallet.startswith("0x") or len(clean_wallet) < 42:
+        return 0.0
+    data = "0x70a08231" + clean_wallet.replace("0x", "")[:40].rjust(64, "0")
+    response = requests.post(
+        rpc_url,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_call",
+            "params": [{"to": token_address, "data": data}, "latest"],
+        },
+        timeout=timeout_seconds,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    result = payload.get("result")
+    if not result:
+        raise RuntimeError(str(payload.get("error") or "missing eth_call result"))
+    return int(str(result), 16) / 1_000_000
+
+
+def _fetch_polygon_cash_balances(wallet_address: str) -> dict[str, Any]:
+    errors: list[str] = []
+    for rpc_url in POLYGON_RPC_URLS:
+        try:
+            balances = {
+                token_name: _fetch_erc20_balance(
+                    rpc_url=rpc_url,
+                    token_address=token_address,
+                    wallet_address=wallet_address,
+                )
+                for token_name, token_address in POLYGON_USDC_TOKENS.items()
+            }
+            return {
+                "status": "success",
+                "rpc_url": rpc_url,
+                "wallet_address": wallet_address,
+                "balances": balances,
+                "total_usd": sum(float(value or 0.0) for value in balances.values()),
+            }
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{rpc_url}: {exc!r}")
+    return {
+        "status": "error",
+        "wallet_address": wallet_address,
+        "balances": {},
+        "total_usd": None,
+        "errors": errors,
+    }
+
+
+def _insert_valuation_snapshot(
+    connection: Any,
+    *,
+    account_id: str,
+    captured_at: datetime,
+    cash_usd: float | None,
+    positions_value_usd: float | None,
+    realized_pnl_usd: float | None,
+    unrealized_pnl_usd: float | None,
+    raw_json: dict[str, Any],
+) -> None:
+    equity_usd = None
+    if cash_usd is not None or positions_value_usd is not None:
+        equity_usd = float(cash_usd or 0.0) + float(positions_value_usd or 0.0)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO portfolio.valuation_snapshots (
+                account_id, captured_at, equity_usd, cash_usd, positions_value_usd,
+                realized_pnl_usd, unrealized_pnl_usd, raw_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (account_id, captured_at) DO NOTHING;
+            """,
+            (
+                account_id,
+                captured_at,
+                equity_usd,
+                cash_usd,
+                positions_value_usd,
+                realized_pnl_usd,
+                unrealized_pnl_usd,
+                Json(raw_json),
+            ),
+        )
 
 
 def _first_present(raw: dict[str, Any], keys: list[str]) -> str | None:
@@ -298,6 +418,10 @@ def run_portfolio_mirror_sync(
     limit: int = 250,
     payload_override: dict[str, list[dict[str, Any]]] | None = None,
     data_client: PolymarketDataClient | None = None,
+    account_id: str | None = None,
+    account_label: str | None = None,
+    proxy_wallet_address: str | None = None,
+    chain_id: int = 137,
 ) -> PortfolioMirrorSummary:
     client = data_client or PolymarketDataClient()
     now = datetime.now(timezone.utc)
@@ -328,13 +452,16 @@ def run_portfolio_mirror_sync(
             description="Data API portfolio mirror ingestion pipeline",
             owner="janus",
         )
+        resolved_account_id = account_id or _uuid_for("account", wallet_address)
+        resolved_account_label = account_label or f"wallet:{wallet_address[:10]}"
+        resolved_proxy_wallet = proxy_wallet_address or wallet_address
         account_id = repo.upsert_trading_account(
-            account_id=_uuid_for("account", wallet_address),
+            account_id=resolved_account_id,
             provider_id=provider_id,
-            account_label=f"wallet:{wallet_address[:10]}",
+            account_label=resolved_account_label,
             wallet_address=wallet_address,
-            proxy_wallet_address=wallet_address,
-            chain_id=137,
+            proxy_wallet_address=resolved_proxy_wallet,
+            chain_id=chain_id,
             is_active=True,
         )
         sync_run_id = _insert_sync_run(
@@ -350,6 +477,30 @@ def run_portfolio_mirror_sync(
                 data_client=client,
                 wallet_address=wallet_address,
                 limit=limit,
+            )
+            open_position_rows = payload.get("open_positions", [])
+            closed_position_rows = payload.get("closed_positions", [])
+            cash_balances = _fetch_polygon_cash_balances(resolved_proxy_wallet or wallet_address)
+            cash_usd = _safe_float(cash_balances.get("total_usd"))
+            positions_value_usd = _safe_sum(open_position_rows, ("currentValue", "current_value"))
+            unrealized_pnl_usd = _safe_sum(open_position_rows, ("cashPnl", "unrealizedPnl", "unrealized_pnl"))
+            realized_pnl_usd = _safe_sum(closed_position_rows, ("realizedPnl", "realized_pnl"))
+            _insert_valuation_snapshot(
+                connection,
+                account_id=account_id,
+                captured_at=now,
+                cash_usd=cash_usd,
+                positions_value_usd=positions_value_usd,
+                realized_pnl_usd=realized_pnl_usd,
+                unrealized_pnl_usd=unrealized_pnl_usd,
+                raw_json={
+                    "source": "portfolio_mirror_wallet_balance",
+                    "cash_balances": cash_balances,
+                    "open_position_count": len(open_position_rows),
+                    "closed_position_count": len(closed_position_rows),
+                    "order_count": len(payload.get("orders", [])),
+                    "trade_count": len(payload.get("trades", [])),
+                },
             )
             _insert_raw_payload(
                 connection,

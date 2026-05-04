@@ -35,12 +35,8 @@ def _select_micro_momentum_continuation_entry(group: pd.DataFrame) -> TradeSelec
     prices = pd.to_numeric(group["team_price"], errors="coerce").tolist()
     for index, price in enumerate(prices):
         if price is None or pd.isna(price):
-            previous_price = price
             continue
         resolved_price = float(price)
-        if index == 0:
-            previous_price = resolved_price
-            continue
         row = group.iloc[index]
         period_label = str(row["period_label"])
         if period_label not in _ACTIVE_PERIODS:
@@ -57,7 +53,8 @@ def _select_micro_momentum_continuation_entry(group: pd.DataFrame) -> TradeSelec
         if resolved_price > _ENTRY_PRICE_MAX:
             previous_price = resolved_price
             continue
-        if float(previous_price) < threshold <= resolved_price:
+        crossed_threshold = float(previous_price) < threshold <= resolved_price
+        if crossed_threshold:
             if float(row["net_points_last_5_events"]) < _MIN_MOMENTUM:
                 previous_price = resolved_price
                 continue

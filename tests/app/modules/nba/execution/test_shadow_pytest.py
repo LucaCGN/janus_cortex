@@ -4,8 +4,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from app.modules.nba.execution.contracts import LiveRunConfig, build_live_order_metadata
+from app.modules.nba.execution.runner import (
+    _controller_probe_family,
+    _controller_source_name,
+    _apply_live_orderbook_to_latest_state_rows,
+    _detect_live_feed_stall,
+    _live_event_slug_candidates,
+    _live_series_event_slug_candidates,
+    _select_live_trade_and_decision_frames,
+    _select_live_event_link_candidate,
+)
 from app.modules.nba.execution.shadow import (
     SHADOW_SNAPSHOT_CSV_NAME,
     SHADOW_SNAPSHOT_JSON_NAME,
@@ -254,6 +265,144 @@ def test_build_live_shadow_snapshot_marks_stale_signal_pytest(tmp_path: Path) ->
     assert blocked[0]["shadow_action"] == "wait"
 
 
+def test_probe_family_controller_uses_probe_frames_pytest() -> None:
+    probe_trades = pd.DataFrame([{"game_id": "G1", "strategy_family": "quarter_open_reprice"}])
+    probe_decisions = pd.DataFrame([{"game_id": "G1", "selected_core_family": "quarter_open_reprice"}])
+    unified_trades = pd.DataFrame([{"game_id": "G2", "strategy_family": "winner_definition"}])
+    deterministic_trades = pd.DataFrame([{"game_id": "G3", "strategy_family": "winner_definition"}])
+    snapshot = {
+        "probe_trades": probe_trades,
+        "probe_decisions": probe_decisions,
+        "unified_trades": unified_trades,
+        "unified_decisions": pd.DataFrame([{"game_id": "G2"}]),
+        "deterministic_trades": deterministic_trades,
+        "deterministic_decisions": pd.DataFrame([{"game_id": "G3"}]),
+    }
+
+    selected_trades, selected_decisions = _select_live_trade_and_decision_frames(
+        snapshot,
+        controller_name="quarter_open_reprice",
+    )
+
+    assert _controller_probe_family("quarter_open_reprice") == "quarter_open_reprice"
+    assert _controller_source_name("quarter_open_reprice") == "probe_family"
+    assert selected_trades.equals(probe_trades)
+    assert selected_decisions.equals(probe_decisions)
+
+
+def test_apply_live_orderbook_updates_latest_state_price_only_pytest() -> None:
+    base = datetime(2026, 4, 28, 20, 0, tzinfo=timezone.utc)
+    rows = [
+        _build_state_row(
+            game_id="G-LIVE",
+            team_side="away",
+            state_index=0,
+            event_at=base,
+            opening_price=0.24,
+            team_price=0.16,
+            period_label="Q2",
+            clock_elapsed_seconds=720.0,
+            score_diff=-12,
+            net_points_last_5_events=0,
+        ),
+        _build_state_row(
+            game_id="G-LIVE",
+            team_side="away",
+            state_index=1,
+            event_at=base + timedelta(seconds=20),
+            opening_price=0.24,
+            team_price=0.16,
+            period_label="Q2",
+            clock_elapsed_seconds=740.0,
+            score_diff=-10,
+            net_points_last_5_events=2,
+        ),
+    ]
+
+    _apply_live_orderbook_to_latest_state_rows(
+        rows,
+        {
+            "away": {
+                "best_bid": 0.11,
+                "best_ask": 0.12,
+                "spread_cents": 1.0,
+                "timestamp": (base + timedelta(seconds=30)).isoformat(),
+            }
+        },
+    )
+
+    assert rows[0]["team_price"] == 0.16
+    assert rows[1]["team_price"] == 0.115
+    assert rows[1]["price_mode"] == "live_orderbook_mid"
+    assert rows[1]["live_best_bid"] == 0.11
+    assert rows[1]["live_best_ask"] == 0.12
+    assert rows[1]["price_delta_from_open"] == pytest.approx(-0.125)
+
+
+def test_probe_family_controller_defaults_to_empty_frames_when_probe_keys_missing_pytest() -> None:
+    selected_trades, selected_decisions = _select_live_trade_and_decision_frames(
+        {
+            "unified_trades": pd.DataFrame([{"game_id": "G2"}]),
+            "unified_decisions": pd.DataFrame([{"game_id": "G2"}]),
+        },
+        controller_name="quarter_open_reprice",
+    )
+
+    assert selected_trades.empty
+    assert selected_decisions.empty
+
+
+def test_live_event_slug_candidates_include_both_team_orders_pytest() -> None:
+    slugs = _live_event_slug_candidates(
+        {
+            "game_date": "2026-05-02",
+            "away_team_slug": "MIN",
+            "home_team_slug": "DEN",
+        }
+    )
+
+    assert slugs == [
+        "nba-min-den-2026-05-02",
+        "nba-den-min-2026-05-02",
+    ]
+
+
+def test_live_series_event_slug_candidates_use_team_names_pytest() -> None:
+    slugs = _live_series_event_slug_candidates(
+        {
+            "away_team_name": "Rockets",
+            "home_team_name": "Lakers",
+        }
+    )
+
+    assert slugs == [
+        "nba-playoffs-who-will-win-series-rockets-vs-lakers",
+        "nba-playoffs-who-will-win-series-lakers-vs-rockets",
+    ]
+
+
+def test_select_live_event_link_candidate_rejects_stale_series_fallback_pytest() -> None:
+    candidate = _select_live_event_link_candidate(
+        [
+            {
+                "event_id": "older-closed",
+                "canonical_slug": "nba-min-den-2026-04-20",
+                "status": "closed",
+                "start_time": "2026-04-15T22:10:48+00:00",
+            },
+            {
+                "event_id": "series-open",
+                "canonical_slug": "nba-den-min-2026-04-25",
+                "status": "open",
+                "start_time": "2026-04-19T14:08:14+00:00",
+            },
+        ],
+        exact_slugs=["nba-min-den-2026-05-02", "nba-den-min-2026-05-02"],
+    )
+
+    assert candidate is None
+
+
 def test_build_live_order_metadata_sanitizes_pandas_timestamp_pytest() -> None:
     config = LiveRunConfig(run_id="live-demo")
     metadata = build_live_order_metadata(
@@ -275,3 +424,44 @@ def test_build_live_order_metadata_sanitizes_pandas_timestamp_pytest() -> None:
 
     assert metadata["signal_timestamp"] == "2026-04-25T01:02:03+00:00"
     assert metadata["entry_metadata"]["captured_at"] == "2026-04-25T01:02:05+00:00"
+
+
+def test_detect_live_feed_stall_marks_active_clock_freeze_pytest() -> None:
+    observed_at = datetime(2026, 4, 28, 4, 25, tzinfo=timezone.utc)
+    last_event_at = observed_at - timedelta(minutes=11)
+
+    diagnostics = _detect_live_feed_stall(
+        {
+            "game": {"game_status": 2, "game_status_text": "Q2 4:43"},
+            "play_by_play": {
+                "summary": {"last_event_at": last_event_at.isoformat()},
+                "items": [{"time_actual": last_event_at.isoformat()}],
+            },
+        },
+        per_game_state_rows=[],
+        observed_at=observed_at,
+    )
+
+    assert diagnostics["feed_stalled_flag"] is True
+    assert diagnostics["feed_stall_age_seconds"] == 660.0
+    assert diagnostics["last_live_event_at"] == last_event_at.isoformat()
+
+
+def test_detect_live_feed_stall_ignores_halftime_gap_pytest() -> None:
+    observed_at = datetime(2026, 4, 28, 4, 25, tzinfo=timezone.utc)
+    last_event_at = observed_at - timedelta(minutes=11)
+
+    diagnostics = _detect_live_feed_stall(
+        {
+            "game": {"game_status": 2, "game_status_text": "Half"},
+            "play_by_play": {
+                "summary": {"last_event_at": last_event_at.isoformat()},
+                "items": [{"time_actual": last_event_at.isoformat()}],
+            },
+        },
+        per_game_state_rows=[],
+        observed_at=observed_at,
+    )
+
+    assert diagnostics["feed_stalled_flag"] is False
+    assert diagnostics["feed_stall_age_seconds"] == 660.0

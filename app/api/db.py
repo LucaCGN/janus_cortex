@@ -35,6 +35,11 @@ def to_jsonable(value: Any) -> Any:
         return float(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    if hasattr(value, "isoformat") and callable(value.isoformat):
+        try:
+            return value.isoformat()
+        except Exception:
+            pass
     if isinstance(value, UUID):
         return str(value)
     return value

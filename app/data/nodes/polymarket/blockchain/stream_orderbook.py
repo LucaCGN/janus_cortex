@@ -15,11 +15,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, List, Optional
 
-from py_clob_client.client import ClobClient
+from py_clob_client_v2.client import ClobClient
+from py_clob_client_v2.exceptions import PolyApiException
 
 from app.data.nodes.polymarket.blockchain.manage_portfolio import PolymarketCredentials
 
 logger = logging.getLogger(__name__)
+_ORDERBOOK_WARNING_LOG_COOLDOWN_SEC = 300.0
+_ORDERBOOK_WARNING_LOG_STATE: dict[str, float] = {}
 
 
 @dataclass
@@ -34,6 +37,8 @@ class OrderbookSnapshot:
     token_id: str = ""
     bids: List[OrderbookLevel] = field(default_factory=list)
     asks: List[OrderbookLevel] = field(default_factory=list)
+    min_order_size: float | None = None
+    tick_size: float | None = None
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -74,12 +79,41 @@ def _extract_levels(raw_levels: Any) -> List[OrderbookLevel]:
     return out
 
 
+def _raw_orderbook_value(raw: Any, key: str, default: Any = None) -> Any:
+    if isinstance(raw, dict):
+        return raw.get(key, default)
+    return getattr(raw, key, default)
+
+
 def _build_client(creds: PolymarketCredentials, client_factory: Any = ClobClient) -> Any:
     return client_factory(
         host=creds.clob_host or "https://clob.polymarket.com",
         key=creds.private_key,
         chain_id=creds.chain_id or 137,
     )
+
+
+def _is_missing_orderbook_exception(exc: Exception) -> bool:
+    if not isinstance(exc, PolyApiException):
+        return False
+    message = str(getattr(exc, "error_msg", exc) or "").lower()
+    return int(getattr(exc, "status_code", 0) or 0) == 404 and "no orderbook exists" in message
+
+
+def _log_missing_orderbook_once(*, token_id: str, market_id: Optional[str], exc: Exception) -> None:
+    now = time.monotonic()
+    cache_key = str(token_id or "")
+    last_logged_at = _ORDERBOOK_WARNING_LOG_STATE.get(cache_key)
+    if last_logged_at is None or (now - last_logged_at) >= _ORDERBOOK_WARNING_LOG_COOLDOWN_SEC:
+        _ORDERBOOK_WARNING_LOG_STATE[cache_key] = now
+        logger.warning(
+            "fetch_orderbook: missing orderbook token_id=%s market_id=%s; treating as unavailable quote and retrying later: %s",
+            token_id,
+            market_id,
+            exc,
+        )
+        return
+    logger.debug("fetch_orderbook: missing orderbook suppressed token_id=%s market_id=%s error=%r", token_id, market_id, exc)
 
 
 def fetch_orderbook(
@@ -98,8 +132,8 @@ def fetch_orderbook(
         client = _build_client(creds, client_factory=client_factory)
         raw = client.get_order_book(token_id)
 
-        bids = _extract_levels(getattr(raw, "bids", []))
-        asks = _extract_levels(getattr(raw, "asks", []))
+        bids = _extract_levels(_raw_orderbook_value(raw, "bids", []))
+        asks = _extract_levels(_raw_orderbook_value(raw, "asks", []))
 
         bids.sort(key=lambda x: x.price, reverse=True)
         asks.sort(key=lambda x: x.price)
@@ -109,8 +143,13 @@ def fetch_orderbook(
             token_id=token_id,
             bids=bids,
             asks=asks,
+            min_order_size=_to_float(_raw_orderbook_value(raw, "min_order_size"), default=0.0) or None,
+            tick_size=_to_float(_raw_orderbook_value(raw, "tick_size"), default=0.0) or None,
         )
     except Exception as exc:  # noqa: BLE001
+        if _is_missing_orderbook_exception(exc):
+            _log_missing_orderbook_once(token_id=token_id, market_id=market_id, exc=exc)
+            return OrderbookSnapshot(market_id=market_id, token_id=token_id, bids=[], asks=[])
         logger.error("fetch_orderbook: failed token_id=%s error=%r", token_id, exc)
         raise
 

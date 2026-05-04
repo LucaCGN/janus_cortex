@@ -57,7 +57,7 @@ MASTER_ROUTER_KWARGS = {
     "min_core_confidence_for_extras": 0.60,
 }
 LLM_LANE = {
-    "variant_name": "gpt-5.4 :: llm_hybrid_freedom_compact_v1 :: improved_postseason_context",
+    "variant_name": "gpt-5.4-mini :: llm_hybrid_freedom_compact_v1 :: improved_postseason_context",
     "lane_name": "llm_hybrid_freedom_compact_postseason_context_v1",
     "lane_group": "llm_finalist",
     "lane_mode": "llm_freedom",
@@ -108,7 +108,7 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir",
         default=r"C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_unified_router",
     )
-    parser.add_argument("--llm-model", default="gpt-5.4")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-budget-usd", type=float, default=10.0)
     return parser.parse_args()
 

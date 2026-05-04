@@ -33,9 +33,10 @@ class LiveRunService:
                 config = LiveRunConfig(**payload)
             except Exception:
                 continue
-            worker = LiveRunWorker(config)
+            worker = LiveRunWorker(config, run_root=path.parent)
+            if hasattr(worker, "mark_restored_inactive"):
+                worker.mark_restored_inactive()
             self._runs[run_id] = worker
-            worker.start()
             return worker
         return None
 

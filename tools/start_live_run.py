@@ -16,6 +16,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--execution-profile-version", default="v1")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--disable-entries", action="store_true")
+    parser.add_argument("--entry-target-notional-usd", type=float, default=0.0)
+    parser.add_argument("--max-entry-orders-per-game", type=int, default=2)
+    parser.add_argument("--max-entry-notional-per-game-usd", type=float, default=10.0)
     parser.add_argument("--poll-live-sec", type=float, default=5.0)
     parser.add_argument("--poll-idle-sec", type=float, default=15.0)
     parser.add_argument("--notes", default=None)
@@ -32,6 +35,9 @@ def main() -> int:
         "game_ids": args.game_ids,
         "dry_run": bool(args.dry_run),
         "entries_enabled": not bool(args.disable_entries),
+        "entry_target_notional_usd": float(args.entry_target_notional_usd),
+        "max_entry_orders_per_game": int(args.max_entry_orders_per_game),
+        "max_entry_notional_per_game_usd": float(args.max_entry_notional_per_game_usd),
         "poll_interval_live_sec": float(args.poll_live_sec),
         "poll_interval_idle_sec": float(args.poll_idle_sec),
         "stop_loss_mode": "market_on_local_trigger",

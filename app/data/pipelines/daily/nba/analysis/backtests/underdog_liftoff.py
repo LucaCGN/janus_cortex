@@ -28,13 +28,10 @@ def _select_underdog_liftoff_entry(group: pd.DataFrame) -> TradeSelection | None
     prices = pd.to_numeric(group["team_price"], errors="coerce").tolist()
     for index, price in enumerate(prices):
         if price is None or pd.isna(price):
-            previous_price = price
             continue
         resolved_price = float(price)
-        if index == 0:
-            previous_price = resolved_price
-            continue
-        if previous_price < DEFAULT_UNDERDOG_LIFTOFF_ENTRY_THRESHOLD <= resolved_price:
+        crossed_threshold = previous_price < DEFAULT_UNDERDOG_LIFTOFF_ENTRY_THRESHOLD <= resolved_price
+        if crossed_threshold:
             row = group.iloc[index]
             if str(row["period_label"]) not in _ACTIVE_PERIODS:
                 previous_price = resolved_price

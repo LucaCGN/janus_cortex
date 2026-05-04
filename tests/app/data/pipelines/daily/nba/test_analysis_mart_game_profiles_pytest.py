@@ -12,6 +12,7 @@ from app.data.databases.repositories import JanusUpsertRepository
 import app.data.pipelines.daily.nba.analysis.mart_aggregates as aggregates_mod
 import app.data.pipelines.daily.nba.analysis.mart_game_profiles as game_profiles_mod
 import app.data.pipelines.daily.nba.analysis_module as mod
+from app.data.pipelines.daily.nba.analysis.stakes import evaluate_game_stakes
 
 
 pytestmark = pytest.mark.postgres_live
@@ -322,6 +323,9 @@ def test_extracted_game_profile_rows_pytest(seeded_game_id: str) -> None:
     assert home_row["max_adverse_excursion"] == pytest.approx(0.14)
     assert home_row["inversion_count"] == 0
     assert home_row["winner_stable_70_clock_elapsed_seconds"] == pytest.approx(900.0)
+    assert home_row["stakes_score"] == pytest.approx(45.0)
+    assert home_row["stakes_bucket"] == "medium"
+    assert "stakes" in home_row["notes_json"]
 
     assert away_row["team_slug"] == "LAL"
     assert away_row["research_ready_flag"] is True
@@ -338,6 +342,26 @@ def test_opening_band_helper_edges_pytest() -> None:
     assert game_profiles_mod.opening_band_for_price(0.10) == ("10-20", 1)
     assert game_profiles_mod.opening_band_for_price(0.72) == ("70-80", 7)
     assert game_profiles_mod.opening_band_for_price(0.999999) == ("90-100", 9)
+
+
+def test_evaluate_game_stakes_scores_playoff_balance_and_playin_pytest() -> None:
+    playoff = evaluate_game_stakes(
+        season_phase="playoffs",
+        game_date="2026-04-20",
+        home_opening_price=0.52,
+        away_opening_price=0.48,
+    )
+    play_in = evaluate_game_stakes(season_phase="play_in", game_date="2026-04-15")
+    locked = evaluate_game_stakes(
+        season_phase="regular_season",
+        game_date="2026-04-10",
+        context={"position_mathematically_locked_flag": True},
+    )
+
+    assert playoff.stakes_score == pytest.approx(94.2)
+    assert playoff.stakes_bucket == "critical"
+    assert play_in.stakes_score == pytest.approx(100.0)
+    assert locked.stakes_score == pytest.approx(0.0)
 
 
 def test_derive_game_rows_preserves_non_research_ready_semantics_pytest() -> None:

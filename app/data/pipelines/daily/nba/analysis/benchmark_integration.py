@@ -1226,11 +1226,14 @@ def _build_current_promoted_stack(
 ) -> dict[str, Any]:
     summary = daily_live_snapshot.get("summary") if isinstance(daily_live_snapshot.get("summary"), dict) else {}
     control = summary.get("control") if isinstance(summary.get("control"), dict) else {}
+    harness = summary.get("harness_capabilities") if isinstance(summary.get("harness_capabilities"), dict) else {}
     live_ready_ids = [str(row.get("candidate_id")) for row in live_ready_rows]
     live_probe_ids = [str(row.get("candidate_id")) for row in live_probe_rows]
     ml_shadow = [str(row.get("candidate_id")) for row in shadow_rows if row.get("lane_id") == "ml-trading"]
     llm_shadow = [str(row.get("candidate_id")) for row in shadow_rows if row.get("lane_id") == "llm-strategy"]
     replay_shadow = [str(row.get("candidate_id")) for row in shadow_rows if row.get("lane_id") == "replay-engine-hf"]
+    next_recommended_mode = str(control.get("next_recommended_mode") or "").strip() or None
+    material_incident_gate = str(harness.get("material_incident_gate") or "").strip() or None
 
     note_parts = [
         "Live-ready now: "
@@ -1243,12 +1246,18 @@ def _build_current_promoted_stack(
         note_parts.append("keep ML v2 sidecars in shadow: " + ", ".join(ml_shadow))
     if llm_shadow:
         note_parts.append("keep LLM v2 in shadow: " + ", ".join(llm_shadow))
+    if next_recommended_mode:
+        note_parts.append("operational deployment gate: " + next_recommended_mode)
+    if material_incident_gate:
+        note_parts.append(material_incident_gate)
 
     return {
         "session_date": daily_live_snapshot.get("session_date"),
         "live_status": daily_live_snapshot.get("status"),
         "control_primary": control.get("primary_controller"),
         "control_fallback": control.get("fallback_controller"),
+        "next_recommended_mode": next_recommended_mode,
+        "material_incident_gate": material_incident_gate,
         "live_ready": live_ready_rows,
         "live_probe": live_probe_rows,
         "shadow_only": shadow_rows,
@@ -2744,14 +2753,28 @@ def render_current_promoted_stack_markdown(snapshot: dict[str, Any]) -> str:
         f"- live status: `{promoted_stack.get('live_status')}`",
         f"- primary controller: `{promoted_stack.get('control_primary')}`",
         f"- fallback controller: `{promoted_stack.get('control_fallback')}`",
+        f"- next recommended mode: `{promoted_stack.get('next_recommended_mode')}`",
         "",
         "## Operator Note",
         "",
         f"- {promoted_stack.get('operator_note')}",
+    ]
+    if promoted_stack.get("material_incident_gate"):
+        lines.extend(
+            [
+                "",
+                "## Operational Gate",
+                "",
+                f"- {promoted_stack.get('material_incident_gate')}",
+            ]
+        )
+    lines.extend(
+        [
         "",
         "## Buckets",
         "",
-    ]
+        ]
+    )
     for label, rows in (
         ("live-ready", promoted_stack.get("live_ready") or []),
         ("live-probe", promoted_stack.get("live_probe") or []),
@@ -2773,6 +2796,11 @@ def render_milestone_merge_plan_markdown(snapshot: dict[str, Any]) -> str:
         f"- generated at: `{snapshot.get('generated_at')}`",
         f"- season: `{snapshot.get('season')}`",
         f"- daily live session: `{(snapshot.get('summary') or {}).get('daily_live_session_date')}`",
+        "",
+        "## Operational Gate",
+        "",
+        f"- next recommended mode: `{promoted_stack.get('next_recommended_mode')}`",
+        f"- gate: {promoted_stack.get('material_incident_gate') or 'none'}",
         "",
         "## Current Promoted Stack",
         "",
@@ -2822,6 +2850,11 @@ def render_benchmark_integration_status_markdown(
         f"- shadow-only candidates: `{summary.get('shadow_only_candidate_count')}`",
         f"- bench-only candidates: `{summary.get('bench_only_candidate_count')}`",
         f"- daily live session: `{summary.get('daily_live_session_date')}` / `{summary.get('daily_live_status')}`",
+        "",
+        "## Operational Gate",
+        "",
+        f"- next recommended mode: `{promoted_stack.get('next_recommended_mode')}`",
+        f"- gate: {promoted_stack.get('material_incident_gate') or 'none'}",
         "",
         "## Operator Stack",
         "",
@@ -2900,11 +2933,14 @@ def render_unified_benchmark_markdown(snapshot: dict[str, Any]) -> str:
                 f"- status: `{daily_live.get('status')}`",
                 f"- primary controller: `{control.get('primary_controller')}`",
                 f"- fallback controller: `{control.get('fallback_controller')}`",
+                f"- next recommended mode: `{control.get('next_recommended_mode')}`",
                 f"- standalone probe routing supported: `{harness.get('supports_standalone_probe_candidates')}`",
                 f"- ML sidecar live routing supported: `{harness.get('supports_ml_sidecar_live_routing')}`",
                 f"- LLM sidecar live routing supported: `{harness.get('supports_llm_sidecar_live_routing')}`",
             ]
         )
+        if harness.get("material_incident_gate"):
+            lines.append(f"- operational gate: {harness.get('material_incident_gate')}")
 
     lines.extend(["", "## Lane Status", ""])
     for row in lane_statuses:

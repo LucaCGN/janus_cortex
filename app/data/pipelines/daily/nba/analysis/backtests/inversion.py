@@ -31,13 +31,10 @@ def _select_inversion_entry(group: pd.DataFrame) -> TradeSelection | None:
     prices = pd.to_numeric(group["team_price"], errors="coerce").tolist()
     for index, price in enumerate(prices):
         if price is None or pd.isna(price):
-            previous_price = price
-            continue
-        if index == 0:
-            previous_price = float(price)
             continue
         row = group.iloc[index]
-        if previous_price < entry_threshold and float(price) >= entry_threshold:
+        crossed_threshold = previous_price < entry_threshold <= float(price)
+        if crossed_threshold:
             if float(row["net_points_last_5_events"]) < DEFAULT_DYNAMIC_INVERSION_MIN_MOMENTUM:
                 previous_price = float(price)
                 continue

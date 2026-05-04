@@ -231,7 +231,7 @@ def _parse_args() -> argparse.Namespace:
         "--output-dir",
         default=r"C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext",
     )
-    parser.add_argument("--llm-model", default="gpt-5.4")
+    parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-budget-usd", type=float, default=10.0)
     return parser.parse_args()
 

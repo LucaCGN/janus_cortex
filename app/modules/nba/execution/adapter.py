@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
+import time
 from typing import Any
 
 from psycopg2.extensions import connection as PsycopgConnection
+from py_clob_client_v2.client import ClobClient
+from py_clob_client_v2.clob_types import ApiCreds, AssetType, BalanceAllowanceParams
+from py_clob_client_v2.constants import POLYGON
 
 from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.data.databases.repositories import JanusUpsertRepository
@@ -24,6 +29,8 @@ POLYMARKET_PROVIDER_CODE = "polymarket"
 _PROVIDER_NAMESPACE = uuid.UUID("41395777-ed5f-474f-a5b7-c97567f5ca56")
 _ACCOUNT_NAMESPACE = uuid.UUID("0b28a9b6-a9a7-4f05-a4f9-9925434fd1e0")
 OPEN_ORDER_STATUSES = {"open", "submitted", "working", "pending"}
+_MISSING_ORDERBOOK_CACHE_TTL_SEC = 300.0
+_MISSING_ORDERBOOK_CACHE: dict[tuple[str, str], float] = {}
 
 
 def _provider_uuid_for(code: str) -> str:
@@ -92,6 +99,32 @@ def _fetch_account(connection: PsycopgConnection, *, account_id: str) -> dict[st
     return row
 
 
+def _deactivate_duplicate_wallet_accounts(
+    connection: PsycopgConnection,
+    *,
+    canonical_account_id: str,
+    wallet_address: str,
+    proxy_wallet_address: str | None,
+) -> None:
+    wallet_key = str(wallet_address or "").strip().lower()
+    proxy_key = str(proxy_wallet_address or "").strip().lower()
+    if not wallet_key:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE portfolio.trading_accounts
+            SET is_active = FALSE,
+                updated_at = now()
+            WHERE account_id <> %s
+              AND lower(COALESCE(wallet_address, '')) = %s
+              AND lower(COALESCE(proxy_wallet_address, '')) = %s
+              AND is_active = TRUE;
+            """,
+            (canonical_account_id, wallet_key, proxy_key),
+        )
+
+
 def resolve_trading_account(
     connection: PsycopgConnection,
     *,
@@ -114,6 +147,12 @@ def resolve_trading_account(
 
     existing = _fetch_account(connection, account_id=resolved_account_id)
     if existing is not None:
+        _deactivate_duplicate_wallet_accounts(
+            connection,
+            canonical_account_id=resolved_account_id,
+            wallet_address=wallet_address,
+            proxy_wallet_address=proxy_wallet_address,
+        )
         return existing
 
     provider_id = _resolve_provider_id(connection, provider_code=POLYMARKET_PROVIDER_CODE)
@@ -130,6 +169,12 @@ def resolve_trading_account(
     created = _fetch_account(connection, account_id=resolved_account_id)
     if created is None:
         raise RuntimeError("Failed to provision default Polymarket trading account")
+    _deactivate_duplicate_wallet_accounts(
+        connection,
+        canonical_account_id=resolved_account_id,
+        wallet_address=wallet_address,
+        proxy_wallet_address=proxy_wallet_address,
+    )
     return created
 
 
@@ -150,13 +195,144 @@ def mirror_account_state(connection: PsycopgConnection, *, account: dict[str, An
     wallet = str(account.get("wallet_address") or "").strip()
     if not wallet:
         return {"mirrored": False, "reason": "wallet_missing"}
-    summary = run_portfolio_mirror_sync(wallet_address=wallet)
+    summary = run_portfolio_mirror_sync(
+        wallet_address=wallet,
+        account_id=str(account.get("account_id") or "").strip() or None,
+        account_label=str(account.get("account_label") or "").strip() or None,
+        proxy_wallet_address=str(account.get("proxy_wallet_address") or "").strip() or None,
+        chain_id=int(account.get("chain_id") or 137),
+    )
     return to_jsonable(summary.__dict__ if hasattr(summary, "__dict__") else summary)
 
 
+DEFAULT_ENTRY_MIN_SHARES = 5.0
+_USDC_BASE_UNITS = Decimal("1000000")
+
+
 def resolve_minimum_order_size(price: float) -> float:
+    return DEFAULT_ENTRY_MIN_SHARES
+
+
+def resolve_entry_order_size(
+    price: float,
+    *,
+    min_order_size: float | None = None,
+    target_notional_usd: float = 1.0,
+) -> dict[str, Any]:
     safe_price = max(0.01, float(price))
-    return round(max(5.0, 1.0 / safe_price), 4)
+    min_size = max(DEFAULT_ENTRY_MIN_SHARES, float(min_order_size or 0.0))
+    size = min_size
+    return {
+        "size": round(size, 4),
+        "blocked_reason": None,
+        "target_notional_usd": round(float(target_notional_usd), 4),
+        "required_notional_usd": round(size * safe_price, 4),
+        "min_order_size": round(min_size, 4),
+        "price": round(safe_price, 6),
+        "sizing_mode": "minimum_shares",
+    }
+
+
+def _parse_clob_usdc_base_units(value: Any) -> float | None:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return float(parsed / _USDC_BASE_UNITS)
+
+
+def fetch_clob_collateral_status(
+    creds: PolymarketCredentials,
+    *,
+    required_notional_usd: float = 0.0,
+) -> dict[str, Any]:
+    required = max(0.0, float(required_notional_usd))
+    try:
+        client = ClobClient(
+            host=creds.clob_host or "https://clob.polymarket.com",
+            key=creds.private_key,
+            chain_id=creds.chain_id or POLYGON,
+            signature_type=creds.signature_type,
+            funder=creds.funder_address or creds.wallet_address,
+        )
+        if creds.api_key and creds.secret and creds.passphrase:
+            client.set_api_creds(
+                ApiCreds(
+                    api_key=creds.api_key,
+                    api_secret=creds.secret,
+                    api_passphrase=creds.passphrase,
+                )
+            )
+        raw = client.get_balance_allowance(
+            BalanceAllowanceParams(
+                asset_type=AssetType.COLLATERAL,
+                signature_type=creds.signature_type,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ready": False,
+            "reason": "clob_collateral_check_failed",
+            "required_notional_usd": round(required, 4),
+            "error": str(exc),
+        }
+
+    raw_balance = raw.get("balance") if isinstance(raw, dict) else None
+    raw_allowances = raw.get("allowances") if isinstance(raw, dict) else None
+    raw_allowance = raw.get("allowance") if isinstance(raw, dict) else None
+    balance_usd = _parse_clob_usdc_base_units(raw_balance)
+    allowance_usd_by_address = {
+        str(address): _parse_clob_usdc_base_units(amount)
+        for address, amount in dict(raw_allowances or {}).items()
+    }
+    allowance_values = [amount for amount in allowance_usd_by_address.values() if amount is not None]
+    parsed_allowance = _parse_clob_usdc_base_units(raw_allowance)
+    if parsed_allowance is not None:
+        allowance_values.append(parsed_allowance)
+    max_allowance_usd = max(allowance_values) if allowance_values else None
+    balance_ok = balance_usd is not None and balance_usd + 0.000001 >= required
+    allowance_ok = max_allowance_usd is not None and max_allowance_usd + 0.000001 >= required
+    if not balance_ok:
+        reason = "clob_collateral_balance_too_low"
+    elif not allowance_ok:
+        reason = "clob_collateral_allowance_too_low"
+    else:
+        reason = None
+    return {
+        "ready": bool(balance_ok and allowance_ok),
+        "reason": reason,
+        "required_notional_usd": round(required, 4),
+        "balance_usd": round(balance_usd, 6) if balance_usd is not None else None,
+        "max_allowance_usd": round(max_allowance_usd, 6) if max_allowance_usd is not None else None,
+        "allowances_usd": {
+            address: round(amount, 6) if amount is not None else None
+            for address, amount in allowance_usd_by_address.items()
+        },
+        "allowance_usd": round(parsed_allowance, 6) if parsed_allowance is not None else None,
+    }
+
+
+def _missing_orderbook_cache_key(*, market_id: str, token_id: str) -> tuple[str, str]:
+    return str(market_id or ""), str(token_id or "")
+
+
+def _is_missing_orderbook_cached(*, market_id: str, token_id: str) -> bool:
+    key = _missing_orderbook_cache_key(market_id=market_id, token_id=token_id)
+    last_seen_at = _MISSING_ORDERBOOK_CACHE.get(key)
+    if last_seen_at is None:
+        return False
+    if (time.monotonic() - last_seen_at) < _MISSING_ORDERBOOK_CACHE_TTL_SEC:
+        return True
+    _MISSING_ORDERBOOK_CACHE.pop(key, None)
+    return False
+
+
+def _mark_missing_orderbook_cached(*, market_id: str, token_id: str) -> None:
+    _MISSING_ORDERBOOK_CACHE[_missing_orderbook_cache_key(market_id=market_id, token_id=token_id)] = time.monotonic()
+
+
+def _clear_missing_orderbook_cache(*, market_id: str, token_id: str) -> None:
+    _MISSING_ORDERBOOK_CACHE.pop(_missing_orderbook_cache_key(market_id=market_id, token_id=token_id), None)
 
 
 def fetch_latest_orderbook_summary(
@@ -165,7 +341,25 @@ def fetch_latest_orderbook_summary(
     market_id: str,
     token_id: str,
 ) -> dict[str, Any]:
+    if _is_missing_orderbook_cached(market_id=market_id, token_id=token_id):
+        return {
+            "market_id": market_id,
+            "token_id": token_id,
+            "best_bid": None,
+            "best_ask": None,
+            "min_order_size": None,
+            "tick_size": None,
+            "spread_cents": None,
+            "bid_size": None,
+            "ask_size": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "quote_status": "missing_orderbook_cached",
+        }
     snapshot = fetch_orderbook(creds=creds, token_id=token_id, market_id=market_id)
+    if not snapshot.bids and not snapshot.asks and snapshot.min_order_size is None and snapshot.tick_size is None:
+        _mark_missing_orderbook_cached(market_id=market_id, token_id=token_id)
+    else:
+        _clear_missing_orderbook_cache(market_id=market_id, token_id=token_id)
     best_bid = snapshot.bids[0].price if snapshot.bids else None
     best_ask = snapshot.asks[0].price if snapshot.asks else None
     spread_cents = None
@@ -176,10 +370,13 @@ def fetch_latest_orderbook_summary(
         "token_id": token_id,
         "best_bid": best_bid,
         "best_ask": best_ask,
+        "min_order_size": snapshot.min_order_size,
+        "tick_size": snapshot.tick_size,
         "spread_cents": spread_cents,
         "bid_size": snapshot.bids[0].size if snapshot.bids else None,
         "ask_size": snapshot.asks[0].size if snapshot.asks else None,
         "timestamp": snapshot.timestamp.isoformat(),
+        "quote_status": "live_orderbook",
     }
 
 
@@ -213,31 +410,72 @@ def create_live_order(
             "order_type": order_type,
         },
     }
+    merged_metadata = to_jsonable(dict(metadata_json))
+    merged_metadata["execution"] = to_jsonable(execution_payload)
+
+    initial_status = "open" if dry_run else "pending_submit"
+    repo.upsert_order(
+        order_id=order_id,
+        account_id=str(account["account_id"]),
+        market_id=str(market_id),
+        outcome_id=str(outcome_id),
+        side=str(side).lower(),
+        order_type=str(order_type).lower(),
+        status=initial_status,
+        placed_at=now,
+        updated_at=now,
+        external_order_id=None,
+        client_order_id=None,
+        time_in_force=time_in_force,
+        limit_price=float(price),
+        size=float(size),
+        metadata_json=merged_metadata,
+    )
+    repo.insert_order_event(
+        order_event_id=str(uuid.uuid4()),
+        order_id=order_id,
+        event_time=now,
+        event_type="live_place_requested" if not dry_run else "live_place_dry_run",
+        filled_size_delta=None,
+        filled_notional_delta=None,
+        raw_json=to_jsonable(execution_payload),
+        ignore_duplicates=True,
+    )
 
     if not dry_run:
         creds = build_live_creds(account)
-        place_result = place_new_order(
-            creds,
-            PlaceOrderRequest(
-                market_id=str(market_id),
-                token_id=str(token_id),
-                side=OrderSide.BUY if str(side).lower() == "buy" else OrderSide.SELL,
-                size=float(size),
-                price=float(price),
-                order_type=OrderType.LIMIT if str(order_type).lower() == "limit" else OrderType.MARKET,
-            ),
-        )
-        execution_payload["clob_response"] = to_jsonable(place_result.raw)
-        external_order_id = _extract_external_order_id(place_result.raw)
-        if place_result.success:
-            order_status = "submitted"
-            event_type = "live_place_submitted"
-        else:
+        collateral_status: dict[str, Any] | None = None
+        if str(side).lower() == "buy":
+            collateral_status = fetch_clob_collateral_status(
+                creds,
+                required_notional_usd=float(size) * float(price),
+            )
+            execution_payload["clob_collateral"] = to_jsonable(collateral_status)
+        if collateral_status is not None and not bool(collateral_status.get("ready")):
             order_status = "submit_error"
-            event_type = "live_place_failed"
-
-    merged_metadata = dict(metadata_json)
-    merged_metadata["execution"] = execution_payload
+            event_type = "live_place_blocked"
+            execution_payload["blocked_reason"] = "clob_collateral_unavailable"
+        else:
+            place_result = place_new_order(
+                creds,
+                PlaceOrderRequest(
+                    market_id=str(market_id),
+                    token_id=str(token_id),
+                    side=OrderSide.BUY if str(side).lower() == "buy" else OrderSide.SELL,
+                    size=float(size),
+                    price=float(price),
+                    order_type=OrderType.LIMIT if str(order_type).lower() == "limit" else OrderType.MARKET,
+                ),
+            )
+            execution_payload["clob_response"] = to_jsonable(place_result.raw)
+            external_order_id = _extract_external_order_id(place_result.raw)
+            if place_result.success:
+                order_status = "submitted"
+                event_type = "live_place_submitted"
+            else:
+                order_status = "submit_error"
+                event_type = "live_place_failed"
+        merged_metadata["execution"] = to_jsonable(execution_payload)
     repo.upsert_order(
         order_id=order_id,
         account_id=str(account["account_id"]),
@@ -253,24 +491,25 @@ def create_live_order(
         time_in_force=time_in_force,
         limit_price=float(price),
         size=float(size),
-        metadata_json=merged_metadata,
+        metadata_json=to_jsonable(merged_metadata),
     )
-    repo.insert_order_event(
-        order_event_id=str(uuid.uuid4()),
-        order_id=order_id,
-        event_time=now,
-        event_type=event_type,
-        filled_size_delta=None,
-        filled_notional_delta=None,
-        raw_json=execution_payload,
-        ignore_duplicates=True,
-    )
+    if not dry_run:
+        repo.insert_order_event(
+            order_event_id=str(uuid.uuid4()),
+            order_id=order_id,
+            event_time=now,
+            event_type=event_type,
+            filled_size_delta=None,
+            filled_notional_delta=None,
+            raw_json=to_jsonable(execution_payload),
+            ignore_duplicates=True,
+        )
     return {
         "order_id": order_id,
         "external_order_id": external_order_id,
         "status": order_status,
         "event_type": event_type,
-        "metadata_json": merged_metadata,
+        "metadata_json": to_jsonable(merged_metadata),
     }
 
 
@@ -520,6 +759,7 @@ __all__ = [
     "build_live_creds",
     "cancel_live_order",
     "create_live_order",
+    "resolve_entry_order_size",
     "fetch_account_summary",
     "fetch_latest_orderbook_summary",
     "list_active_run_signatures",

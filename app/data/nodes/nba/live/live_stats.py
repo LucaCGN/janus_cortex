@@ -28,6 +28,7 @@ Funções principais:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Optional, Set, Tuple, List, Dict, Any
@@ -39,11 +40,38 @@ from nba_api.live.nba.endpoints import boxscore, scoreboard
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+_PROVIDER_ERROR_LOG_COOLDOWN_SEC = 300.0
+_PROVIDER_ERROR_LOG_STATE: dict[tuple[str, str], float] = {}
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _is_transient_provider_decode_error(exc: Exception) -> bool:
+    message = str(exc or "")
+    name = exc.__class__.__name__
+    return "JSONDecodeError" in name or "Expecting value" in message
+
+
+def _log_provider_fetch_error(*, source: str, key: str, exc: Exception) -> None:
+    if not _is_transient_provider_decode_error(exc):
+        logger.error("%s provider error: %s", source, exc)
+        return
+    cache_key = (source, key)
+    now = time.monotonic()
+    last_logged_at = _PROVIDER_ERROR_LOG_STATE.get(cache_key)
+    if last_logged_at is None or (now - last_logged_at) >= _PROVIDER_ERROR_LOG_COOLDOWN_SEC:
+        _PROVIDER_ERROR_LOG_STATE[cache_key] = now
+        logger.warning(
+            "%s transient decode failure for %s; keeping poll loop alive and retrying: %s",
+            source,
+            key,
+            exc,
+        )
+        return
+    logger.debug("%s transient decode failure suppressed for %s: %s", source, key, exc)
 
 def parse_polymarket_nba_slug(slug: str) -> Tuple[str, str, str]:
     """
@@ -100,7 +128,7 @@ def resolve_game_id(input_str: str) -> str:
         sb = scoreboard.ScoreBoard()
         games = sb.games.get_dict()
     except Exception as e:
-        logger.error("[live_stats] Erro ao buscar ScoreBoard: %s", e)
+        _log_provider_fetch_error(source="resolve_game_id", key=slug, exc=e)
         raise ValueError(f"Erro ao buscar ScoreBoard live: {e}")
 
     target_set: Set[str] = {away, home}
@@ -375,7 +403,7 @@ def fetch_live_scoreboard(game_id: str) -> Dict[str, Any]:
             "away_team_slug": data.get('awayTeam', {}).get('teamName'),
         }
     except Exception as e:
-        logger.error(f"Error fetching live scoreboard: {e}")
+        _log_provider_fetch_error(source="fetch_live_scoreboard", key=str(game_id), exc=e)
         return {}
 
 def fetch_todays_scoreboard() -> List[Dict[str, Any]]:
@@ -405,7 +433,7 @@ def fetch_todays_scoreboard() -> List[Dict[str, Any]]:
                  "away_score": g.get('awayTeam', {}).get('score'),
              })
     except Exception as e:
-        logger.error(f"Error fetching today's live scoreboard: {e}")
+        _log_provider_fetch_error(source="fetch_todays_scoreboard", key="today", exc=e)
 
     # 2. Date Rollover Check (< 6 AM) -> Fetch Yesterday via Stats Endpoint
     # Used to catch late night games when server date has rolled over
@@ -476,6 +504,6 @@ def fetch_todays_scoreboard() -> List[Dict[str, Any]]:
                 })
                 
         except Exception as e:
-            logger.error(f"Error fetching yesterday's stats scoreboard: {e}")
+            _log_provider_fetch_error(source="fetch_todays_scoreboard", key="yesterday", exc=e)
 
     return results

@@ -23,6 +23,7 @@ from app.data.pipelines.daily.nba.analysis.bundle_loader import (
     _load_play_by_play,
     select_preferred_market_bundle,
 )
+from app.data.pipelines.daily.nba.analysis.stakes import evaluate_game_stakes
 
 
 BuildStateRowsForSide = Callable[..., list[dict[str, Any]]]
@@ -549,6 +550,35 @@ def derive_game_rows(
             "research_ready_contract_drift_flag": research_ready_contract_drift_flag,
             "price_path_reconciled_flag": price_path_reconciled_flag,
         }
+    stakes_assessment = evaluate_game_stakes(
+        season_phase=str(universe_row.get("season_phase") or DEFAULT_SEASON_PHASE),
+        game_date=game.get("game_date"),
+        home_opening_price=_safe_float(game_rows["home"].get("opening_price")),
+        away_opening_price=_safe_float(game_rows["away"].get("opening_price")),
+        llm_stakes_score=None,
+        context={
+            "series_elimination_game_flag": bool(feature_snapshot.get("series_elimination_game_flag")),
+            "position_mathematically_locked_flag": bool(feature_snapshot.get("position_mathematically_locked_flag")),
+            "playin_or_playoff_spot_implication_flag": bool(feature_snapshot.get("playin_or_playoff_spot_implication_flag")),
+            "homecourt_implication_flag": bool(feature_snapshot.get("homecourt_implication_flag")),
+            "draft_position_implication_flag": bool(feature_snapshot.get("draft_position_implication_flag")),
+        },
+    )
+    stakes_payload = {
+        "stakes_score": stakes_assessment.stakes_score,
+        "stakes_deterministic_score": stakes_assessment.stakes_deterministic_score,
+        "stakes_llm_score": stakes_assessment.stakes_llm_score,
+        "stakes_bucket": stakes_assessment.stakes_bucket,
+        "stakes_reason": stakes_assessment.stakes_reason,
+    }
+    for team_side in ("home", "away"):
+        game_rows[team_side].update(stakes_payload)
+        game_rows[team_side]["notes_json"] = {
+            **(game_rows[team_side].get("notes_json") or {}),
+            "stakes": stakes_payload,
+        }
+    for state_row in state_rows_all:
+        state_row.update(stakes_payload)
     qa = {
         "game_id": str(game["game_id"]),
         "coverage_status": coverage_status,

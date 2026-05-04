@@ -32,12 +32,8 @@ def _select_quarter_open_reprice_entry(group: pd.DataFrame) -> TradeSelection | 
     prices = pd.to_numeric(group["team_price"], errors="coerce").tolist()
     for index, price in enumerate(prices):
         if price is None or pd.isna(price):
-            previous_price = price
             continue
         resolved_price = float(price)
-        if index == 0:
-            previous_price = resolved_price
-            continue
         row = group.iloc[index]
         if str(row["period_label"]) != "Q1":
             previous_price = resolved_price
@@ -49,7 +45,8 @@ def _select_quarter_open_reprice_entry(group: pd.DataFrame) -> TradeSelection | 
         if resolved_price > _ENTRY_PRICE_MAX:
             previous_price = resolved_price
             continue
-        if float(previous_price) < threshold <= resolved_price:
+        crossed_threshold = float(previous_price) < threshold <= resolved_price
+        if crossed_threshold:
             if float(row["net_points_last_5_events"]) < _MIN_MOMENTUM:
                 previous_price = resolved_price
                 continue

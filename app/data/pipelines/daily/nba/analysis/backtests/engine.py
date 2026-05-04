@@ -18,6 +18,7 @@ from app.data.pipelines.daily.nba.analysis.contracts import (
     DEFAULT_REVERSION_OPEN_THRESHOLD,
     DEFAULT_SEASON,
     DEFAULT_SEASON_PHASE,
+    DEFAULT_TAKE_PROFIT_EXIT_PRICE,
     DEFAULT_WINNER_DEFINITION_BREAK,
     DEFAULT_WINNER_DEFINITION_ENTRY,
     BacktestRunRequest,
@@ -267,6 +268,16 @@ def _trade_row(
     }
 
 
+def _take_profit_exit_index(group: pd.DataFrame, *, entry_index: int) -> int | None:
+    if "team_price" not in group.columns:
+        return None
+    future_prices = pd.to_numeric(group.iloc[entry_index + 1 :]["team_price"], errors="coerce")
+    hits = future_prices[future_prices >= DEFAULT_TAKE_PROFIT_EXIT_PRICE]
+    if hits.empty:
+        return None
+    return int(hits.index[0])
+
+
 def simulate_trade_loop(
     state_df: pd.DataFrame,
     *,
@@ -289,6 +300,11 @@ def simulate_trade_loop(
         if selection is None:
             continue
         exit_index = exit_selector(ordered, selection)
+        take_profit_index = _take_profit_exit_index(ordered, entry_index=selection.entry_index)
+        if take_profit_index is not None and (exit_index is None or take_profit_index < exit_index):
+            exit_index = take_profit_index
+            selection.metadata["exit_override"] = "take_profit_95"
+            selection.metadata["target_price"] = DEFAULT_TAKE_PROFIT_EXIT_PRICE
         if exit_index is None or exit_index <= selection.entry_index:
             continue
         trades.append(

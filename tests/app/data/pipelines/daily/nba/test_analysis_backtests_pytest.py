@@ -30,6 +30,10 @@ from app.data.pipelines.daily.nba.analysis.backtests.master_router import (
     build_master_router_selection_priors,
     build_master_router_trade_frame,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.inversion import simulate_inversion_trades
+from app.data.pipelines.daily.nba.analysis.backtests.micro_momentum_continuation import (
+    simulate_micro_momentum_continuation_trades,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     _normalize_family_members,
     build_combined_portfolio_benchmark_frames,
@@ -37,7 +41,10 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     simulate_trade_portfolio,
     build_routed_portfolio_benchmark_frames,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.q1_repricing import simulate_q1_repricing_trades
+from app.data.pipelines.daily.nba.analysis.backtests.quarter_open_reprice import simulate_quarter_open_reprice_trades
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult
+from app.data.pipelines.daily.nba.analysis.backtests.underdog_liftoff import simulate_underdog_liftoff_trades
 from app.data.pipelines.daily.nba.analysis.backtests.unified_router import (
     resolve_unified_router_game_selection,
 )
@@ -851,6 +858,69 @@ def _build_state_frame() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def test_simulate_trade_loop_exits_at_95_take_profit_before_strategy_exit_pytest() -> None:
+    base = datetime(2026, 2, 22, 20, 0, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="002TAKEPROFIT",
+                team_slug="BOS",
+                opponent_team_slug="LAL",
+                opening_price=0.52,
+                state_index=0,
+                team_price=0.52,
+                event_at=base,
+                opening_band="50-60",
+            ),
+            _build_state_row(
+                game_id="002TAKEPROFIT",
+                team_slug="BOS",
+                opponent_team_slug="LAL",
+                opening_price=0.52,
+                state_index=1,
+                team_price=0.80,
+                event_at=base + timedelta(minutes=1),
+                opening_band="50-60",
+            ),
+            _build_state_row(
+                game_id="002TAKEPROFIT",
+                team_slug="BOS",
+                opponent_team_slug="LAL",
+                opening_price=0.52,
+                state_index=2,
+                team_price=0.95,
+                event_at=base + timedelta(minutes=2),
+                opening_band="50-60",
+            ),
+            _build_state_row(
+                game_id="002TAKEPROFIT",
+                team_slug="BOS",
+                opponent_team_slug="LAL",
+                opening_price=0.52,
+                state_index=3,
+                team_price=0.72,
+                event_at=base + timedelta(minutes=3),
+                opening_band="50-60",
+            ),
+        ]
+    )
+
+    trades = engine.simulate_trade_loop(
+        frame,
+        strategy_family="pytest_strategy",
+        entry_rule="entry_at_open",
+        exit_rule="strategy_final_exit",
+        slippage_cents=0,
+        entry_selector=lambda _: engine.TradeSelection(entry_index=0, metadata={}),
+        exit_selector=lambda rows, _: len(rows) - 1,
+    )
+
+    assert len(trades) == 1
+    assert trades[0]["exit_state_index"] == 2
+    assert trades[0]["exit_price"] == pytest.approx(0.95)
+    assert trades[0]["entry_metadata_json"]["exit_override"] == "take_profit_95"
+
+
 def _build_benchmark_state_frame() -> pd.DataFrame:
     frame = _build_state_frame().copy()
     game_bases = {
@@ -871,6 +941,176 @@ def _build_benchmark_state_frame() -> pd.DataFrame:
         frame.loc[mask, "event_at"] = frame.loc[mask, "state_index"].apply(lambda idx: base + timedelta(minutes=int(idx)))
         frame.loc[mask, "game_date"] = base.date()
     return frame
+
+
+def test_live_selectors_accept_first_visible_threshold_crossing() -> None:
+    base = datetime(2026, 4, 28, 23, 0, tzinfo=timezone.utc)
+    rows = [
+        _build_state_row(
+            game_id="FIRST-QOR",
+            team_slug="DAL",
+            opponent_team_slug="HOU",
+            opening_price=0.46,
+            state_index=0,
+            team_price=0.51,
+            event_at=base,
+            opening_band="40-50",
+            score_diff=2,
+            net_points_last_5_events=3,
+        ),
+        _build_state_row(
+            game_id="FIRST-QOR",
+            team_slug="DAL",
+            opponent_team_slug="HOU",
+            opening_price=0.46,
+            state_index=1,
+            team_price=0.58,
+            event_at=base + timedelta(minutes=1),
+            opening_band="40-50",
+            score_diff=4,
+            net_points_last_5_events=5,
+        ),
+        _build_state_row(
+            game_id="FIRST-INV",
+            team_slug="ORL",
+            opponent_team_slug="DET",
+            opening_price=0.42,
+            state_index=0,
+            team_price=0.51,
+            event_at=base + timedelta(minutes=2),
+            opening_band="40-50",
+            score_diff=-2,
+            net_points_last_5_events=3,
+        ),
+        _build_state_row(
+            game_id="FIRST-INV",
+            team_slug="ORL",
+            opponent_team_slug="DET",
+            opening_price=0.42,
+            state_index=1,
+            team_price=0.56,
+            event_at=base + timedelta(minutes=3),
+            opening_band="40-50",
+            score_diff=1,
+            net_points_last_5_events=4,
+        ),
+        _build_state_row(
+            game_id="FIRST-Q1",
+            team_slug="NYK",
+            opponent_team_slug="ATL",
+            opening_price=0.46,
+            state_index=0,
+            team_price=0.54,
+            event_at=base + timedelta(minutes=4),
+            opening_band="40-50",
+            score_diff=2,
+            net_points_last_5_events=3,
+        ),
+        _build_state_row(
+            game_id="FIRST-Q1",
+            team_slug="NYK",
+            opponent_team_slug="ATL",
+            opening_price=0.46,
+            state_index=1,
+            team_price=0.62,
+            event_at=base + timedelta(minutes=5),
+            opening_band="40-50",
+            score_diff=4,
+            net_points_last_5_events=5,
+        ),
+        _build_state_row(
+            game_id="FIRST-LIFT",
+            team_slug="POR",
+            opponent_team_slug="SAS",
+            opening_price=0.30,
+            state_index=0,
+            team_price=0.37,
+            event_at=base + timedelta(minutes=6),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_diff=-2,
+            net_points_last_5_events=2,
+            seconds_to_game_end=1800.0,
+        ),
+        _build_state_row(
+            game_id="FIRST-LIFT",
+            team_slug="POR",
+            opponent_team_slug="SAS",
+            opening_price=0.30,
+            state_index=1,
+            team_price=0.50,
+            event_at=base + timedelta(minutes=7),
+            opening_band="30-40",
+            period=2,
+            period_label="Q2",
+            score_diff=0,
+            net_points_last_5_events=5,
+            seconds_to_game_end=1740.0,
+        ),
+    ]
+    frame = pd.DataFrame(rows)
+
+    for trades in (
+        simulate_quarter_open_reprice_trades(frame[frame["game_id"] == "FIRST-QOR"], slippage_cents=0),
+        simulate_micro_momentum_continuation_trades(frame[frame["game_id"] == "FIRST-QOR"], slippage_cents=0),
+        simulate_inversion_trades(frame[frame["game_id"] == "FIRST-INV"], slippage_cents=0),
+        simulate_q1_repricing_trades(frame[frame["game_id"] == "FIRST-Q1"], slippage_cents=0),
+        simulate_underdog_liftoff_trades(frame[frame["game_id"] == "FIRST-LIFT"], slippage_cents=0),
+    ):
+        assert len(trades) == 1
+        assert trades[0]["entry_state_index"] == 0
+        assert trades[0]["exit_state_index"] == 1
+
+
+def test_live_selectors_keep_opening_anchor_after_missing_first_price() -> None:
+    base = datetime(2026, 4, 28, 23, 0, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="MISSING-QOR",
+                team_slug="DAL",
+                opponent_team_slug="HOU",
+                opening_price=0.46,
+                state_index=0,
+                team_price=float("nan"),
+                event_at=base,
+                opening_band="40-50",
+                score_diff=0,
+                net_points_last_5_events=0,
+            ),
+            _build_state_row(
+                game_id="MISSING-QOR",
+                team_slug="DAL",
+                opponent_team_slug="HOU",
+                opening_price=0.46,
+                state_index=1,
+                team_price=0.51,
+                event_at=base + timedelta(minutes=1),
+                opening_band="40-50",
+                score_diff=2,
+                net_points_last_5_events=3,
+            ),
+            _build_state_row(
+                game_id="MISSING-QOR",
+                team_slug="DAL",
+                opponent_team_slug="HOU",
+                opening_price=0.46,
+                state_index=2,
+                team_price=0.58,
+                event_at=base + timedelta(minutes=2),
+                opening_band="40-50",
+                score_diff=4,
+                net_points_last_5_events=5,
+            ),
+        ]
+    )
+
+    trades = simulate_quarter_open_reprice_trades(frame, slippage_cents=0)
+
+    assert len(trades) == 1
+    assert trades[0]["entry_state_index"] == 1
+    assert trades[0]["exit_state_index"] == 2
 
 
 def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None:
