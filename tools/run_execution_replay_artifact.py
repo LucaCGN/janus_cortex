@@ -70,6 +70,18 @@ from app.modules.nba.execution.contracts import LIVE_FALLBACK_CONTROLLER, LIVE_P
 
 DEFAULT_SHARED_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex\shared")
 ML_FOCUS_REPLAY_FAMILIES = ("inversion", "quarter_open_reprice", "micro_momentum_continuation")
+REPLAY_HF_FAMILIES = (
+    "micro_momentum_continuation",
+    "panic_fade_fast",
+    "quarter_open_reprice",
+    "halftime_gap_fill",
+    "lead_fragility",
+)
+REGULAR_REPLAY_FAMILIES = (
+    *DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
+    *DEFAULT_MASTER_ROUTER_EXTRA_FAMILIES,
+    *REPLAY_HF_FAMILIES,
+)
 
 
 def _normalize_game_id(value: object) -> str:
@@ -108,9 +120,39 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--fast-standard-frames",
         action="store_true",
-        help="Build regular-season replay from precomputed regular trade frames plus focused HF families.",
+        help="Build regular-season replay from precomputed regular trade frames plus selected HF families.",
+    )
+    parser.add_argument(
+        "--family-scope",
+        choices=("focus", "all"),
+        default="focus",
+        help="Replay only the ML focus families or all deterministic families available for regular-season replay.",
+    )
+    parser.add_argument(
+        "--controller-family-scope",
+        choices=("focus", "all"),
+        default=None,
+        help="Keep controller source rows focused or allow all source families. Defaults to --family-scope.",
     )
     return parser.parse_args()
+
+
+def _regular_replay_families_for_scope(family_scope: str) -> tuple[str, ...]:
+    if str(family_scope).strip() == "all":
+        return REGULAR_REPLAY_FAMILIES
+    return ML_FOCUS_REPLAY_FAMILIES
+
+
+def _filter_controller_trade_frame_by_family_scope(
+    frame: pd.DataFrame,
+    *,
+    controller_family_scope: str,
+) -> pd.DataFrame:
+    if frame.empty or str(controller_family_scope).strip() != "focus":
+        return frame.copy()
+    if "source_strategy_family" not in frame.columns:
+        return frame.copy()
+    return frame[frame["source_strategy_family"].astype(str).isin(ML_FOCUS_REPLAY_FAMILIES)].copy()
 
 
 def _regular_fast_subject_frames(
@@ -118,28 +160,33 @@ def _regular_fast_subject_frames(
     combined_state_df: pd.DataFrame,
     request: ReplayRunRequest,
     output_dir: Path,
+    family_scope: str = "focus",
+    controller_family_scope: str = "focus",
 ) -> tuple[list[ReplaySubject], dict[str, pd.DataFrame], dict[str, pd.DataFrame], dict[str, object]]:
     regular_router_frames, selection_sample_name = _load_regular_season_trade_frames()
     regular_router_frames = {
         family: _normalize_trade_frame_game_ids(frame)
         for family, frame in regular_router_frames.items()
     }
-    standard_trade_frames = {
-        family: regular_router_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS)).copy()
-        for family in ("inversion",)
-    }
-    hf_families = ("micro_momentum_continuation", "quarter_open_reprice")
-    for family in hf_families:
-        hf_request = replace(
-            request,
-            season_phase="regular_season",
-            season_phases=("regular_season",),
-            strategy_family=family,
-            strategy_group=REPLAY_HF_STRATEGY_GROUP,
-        )
-        hf_result = build_backtest_result(combined_state_df, hf_request)
-        frame = hf_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
-        standard_trade_frames[family] = _normalize_trade_frame_game_ids(frame)
+    replay_families = _regular_replay_families_for_scope(family_scope)
+    standard_trade_frames: dict[str, pd.DataFrame] = {}
+    for family in replay_families:
+        if family in REPLAY_HF_FAMILIES:
+            hf_request = replace(
+                request,
+                season_phase="regular_season",
+                season_phases=("regular_season",),
+                strategy_family=family,
+                strategy_group=REPLAY_HF_STRATEGY_GROUP,
+            )
+            hf_result = build_backtest_result(combined_state_df, hf_request)
+            frame = hf_result.trade_frames.get(family, pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS))
+            standard_trade_frames[family] = _normalize_trade_frame_game_ids(frame)
+            continue
+        standard_trade_frames[family] = regular_router_frames.get(
+            family,
+            pd.DataFrame(columns=BACKTEST_TRADE_COLUMNS),
+        ).copy()
 
     controller_context = build_controller_context(output_dir / "regular_replay_llm_cache.json")
     controller_context.llm_client = None
@@ -160,10 +207,10 @@ def _regular_fast_subject_frames(
         profile=DEFAULT_VNEXT_PROFILE,
     )
     deterministic_trades = _normalize_trade_frame_game_ids(deterministic_trades)
-    if "source_strategy_family" in deterministic_trades.columns:
-        deterministic_trades = deterministic_trades[
-            deterministic_trades["source_strategy_family"].astype(str).isin(ML_FOCUS_REPLAY_FAMILIES)
-        ].copy()
+    deterministic_trades = _filter_controller_trade_frame_by_family_scope(
+        deterministic_trades,
+        controller_family_scope=controller_family_scope,
+    )
     unified_request = replace(request, llm_max_budget_usd=0.0)
     unified_trades, unified_decisions, unified_token_totals = build_unified_router_trade_frame(
         controller_source,
@@ -186,10 +233,10 @@ def _regular_fast_subject_frames(
         profile=DEFAULT_VNEXT_PROFILE,
     )
     unified_trades = _normalize_trade_frame_game_ids(unified_trades)
-    if "source_strategy_family" in unified_trades.columns:
-        unified_trades = unified_trades[
-            unified_trades["source_strategy_family"].astype(str).isin(ML_FOCUS_REPLAY_FAMILIES)
-        ].copy()
+    unified_trades = _filter_controller_trade_frame_by_family_scope(
+        unified_trades,
+        controller_family_scope=controller_family_scope,
+    )
     standard_trade_frames[LIVE_FALLBACK_CONTROLLER] = deterministic_trades.copy()
     standard_trade_frames[LIVE_PRIMARY_CONTROLLER] = unified_trades.copy()
     standard_decision_frames = {
@@ -209,6 +256,10 @@ def _regular_fast_subject_frames(
     )
     metadata = {
         "fast_standard_frame_replay": True,
+        "family_scope": str(family_scope).strip() or "focus",
+        "controller_family_scope": str(controller_family_scope).strip() or "focus",
+        "replayed_families": list(replay_families),
+        "focus_replay_families": list(ML_FOCUS_REPLAY_FAMILIES),
         "selection_sample_name": selection_sample_name,
         "llm_client_available": False,
         "llm_spent_usd": 0.0,
@@ -217,7 +268,13 @@ def _regular_fast_subject_frames(
     return subjects, standard_trade_frames, standard_decision_frames, metadata
 
 
-def _run_fast_standard_frame_replay(*, request: ReplayRunRequest, output_dir: Path) -> ReplayRunResult:
+def _run_fast_standard_frame_replay(
+    *,
+    request: ReplayRunRequest,
+    output_dir: Path,
+    family_scope: str = "focus",
+    controller_family_scope: str = "focus",
+) -> ReplayRunResult:
     contexts, combined_state_df, manifest_df = load_finished_replay_contexts(
         season=request.season,
         analysis_version=request.analysis_version,
@@ -231,6 +288,8 @@ def _run_fast_standard_frame_replay(*, request: ReplayRunRequest, output_dir: Pa
         combined_state_df=combined_state_df,
         request=request,
         output_dir=output_dir,
+        family_scope=family_scope,
+        controller_family_scope=controller_family_scope,
     )
     replay_trade_frames, signal_summary_df, attempt_trace_df = simulate_replay_trade_frames(
         subjects,
@@ -363,7 +422,13 @@ def main() -> None:
     )
     if args.fast_standard_frames:
         request = replace(request, quote_source_mode="cross_side_last_trade", quote_source_fallback_mode="")
-        result = _run_fast_standard_frame_replay(request=request, output_dir=output_dir)
+        controller_family_scope = args.controller_family_scope or args.family_scope
+        result = _run_fast_standard_frame_replay(
+            request=request,
+            output_dir=output_dir,
+            family_scope=args.family_scope,
+            controller_family_scope=controller_family_scope,
+        )
     else:
         result = run_postseason_execution_replay(request=request, output_dir=output_dir)
     payload = write_replay_artifacts(result, output_dir)
