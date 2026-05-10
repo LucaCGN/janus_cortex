@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -137,6 +138,148 @@ def _ensure_market_exists(connection: PsycopgConnection, *, market_id: str) -> N
         cursor.execute("SELECT 1 FROM catalog.markets WHERE market_id = %s;", (market_id,))
         if cursor.fetchone() is None:
             raise HTTPException(status_code=404, detail="market_id not found")
+
+
+def _decimal_or_zero(value: Any) -> Decimal:
+    if value is None:
+        return Decimal("0")
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return Decimal("0")
+
+
+def _normalized_trade_decimal(value: Any) -> str:
+    decimal_value = _decimal_or_zero(value).quantize(Decimal("0.000001"))
+    return format(decimal_value.normalize(), "f")
+
+
+def _normalized_trade_timestamp(value: Any) -> str:
+    if isinstance(value, datetime):
+        parsed = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc).isoformat()
+    raw = str(value or "").strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    if raw:
+        try:
+            parsed = datetime.fromisoformat(raw)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc).isoformat()
+        except ValueError:
+            pass
+    return raw
+
+
+def _portfolio_trade_reconciliation_key(row: dict[str, Any]) -> str:
+    account_id = str(row.get("account_id") or "").strip()
+    external_trade_id = str(row.get("external_trade_id") or "").strip()
+    if external_trade_id:
+        return "|".join(["external", account_id, external_trade_id])
+    return "|".join(
+        [
+            "fallback",
+            account_id,
+            str(row.get("tx_hash") or "").strip(),
+            str(row.get("market_id") or "").strip(),
+            str(row.get("outcome_id") or "").strip(),
+            str(row.get("side") or "").strip().lower(),
+            _normalized_trade_decimal(row.get("price")),
+            _normalized_trade_decimal(row.get("size")),
+            _normalized_trade_timestamp(row.get("trade_time")),
+        ]
+    )
+
+
+def _trade_signed_size(row: dict[str, Any]) -> Decimal:
+    side = str(row.get("side") or "").strip().lower()
+    size = _decimal_or_zero(row.get("size"))
+    return -size if side == "sell" else size
+
+
+def _trade_cashflow(row: dict[str, Any]) -> Decimal:
+    side = str(row.get("side") or "").strip().lower()
+    notional = _decimal_or_zero(row.get("price")) * _decimal_or_zero(row.get("size"))
+    fee = _decimal_or_zero(row.get("fee"))
+    if side == "sell":
+        return notional - fee
+    return -notional - fee
+
+
+def build_trade_reconciliation_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        key = _portfolio_trade_reconciliation_key(row)
+        group = groups.setdefault(
+            key,
+            {
+                "dedupe_key": key,
+                "raw_count": 0,
+                "representative": row,
+                "trade_ids": [],
+            },
+        )
+        group["raw_count"] += 1
+        if row.get("trade_id") is not None:
+            group["trade_ids"].append(str(row.get("trade_id")))
+
+    unique_rows = [group["representative"] for group in groups.values()]
+    duplicate_groups = [group for group in groups.values() if int(group["raw_count"]) > 1]
+    net_position_size = sum((_trade_signed_size(row) for row in unique_rows), Decimal("0"))
+    net_cashflow_usd = sum((_trade_cashflow(row) for row in unique_rows), Decimal("0"))
+    buy_notional_usd = sum(
+        (
+            _decimal_or_zero(row.get("price")) * _decimal_or_zero(row.get("size"))
+            for row in unique_rows
+            if str(row.get("side") or "").strip().lower() == "buy"
+        ),
+        Decimal("0"),
+    )
+    sell_notional_usd = sum(
+        (
+            _decimal_or_zero(row.get("price")) * _decimal_or_zero(row.get("size"))
+            for row in unique_rows
+            if str(row.get("side") or "").strip().lower() == "sell"
+        ),
+        Decimal("0"),
+    )
+    grouped_items = []
+    for group in sorted(groups.values(), key=lambda item: str(item["dedupe_key"])):
+        representative = group["representative"]
+        grouped_items.append(
+            {
+                "dedupe_key": group["dedupe_key"],
+                "raw_count": group["raw_count"],
+                "duplicate_count": max(0, int(group["raw_count"]) - 1),
+                "trade_ids": group["trade_ids"],
+                "representative_trade_id": representative.get("trade_id"),
+                "account_id": representative.get("account_id"),
+                "market_id": representative.get("market_id"),
+                "outcome_id": representative.get("outcome_id"),
+                "event_slug": representative.get("event_slug"),
+                "side": representative.get("side"),
+                "price": representative.get("price"),
+                "size": representative.get("size"),
+                "trade_time": representative.get("trade_time"),
+                "tx_hash": representative.get("tx_hash"),
+                "external_trade_id": representative.get("external_trade_id"),
+                "signed_size": _trade_signed_size(representative),
+                "cashflow_usd": _trade_cashflow(representative),
+            }
+        )
+    return {
+        "raw_count": len(rows),
+        "unique_count": len(unique_rows),
+        "duplicate_count": max(0, len(rows) - len(unique_rows)),
+        "duplicate_group_count": len(duplicate_groups),
+        "net_position_size": net_position_size,
+        "buy_notional_usd": buy_notional_usd,
+        "sell_notional_usd": sell_notional_usd,
+        "net_cashflow_usd": net_cashflow_usd,
+        "flat_after_deduplication": net_position_size == Decimal("0"),
+        "groups": grouped_items,
+    }
 
 
 @router.get("/accounts")
@@ -720,6 +863,89 @@ def list_portfolio_trades(
         )
         rows = fetchall_dicts(cursor)
     return {"items": to_jsonable(rows), "count": len(rows)}
+
+
+@router.get("/trades/reconciliation")
+def reconcile_portfolio_trades(
+    account_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
+    outcome_id: UUID | None = Query(default=None),
+    event_slug: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    limit: int = Query(default=5000, ge=1, le=20000),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if account_id is not None:
+        conditions.append("t.account_id = %s")
+        params.append(str(account_id))
+    if market_id is not None:
+        conditions.append("t.market_id = %s")
+        params.append(str(market_id))
+    if outcome_id is not None:
+        conditions.append("t.outcome_id = %s")
+        params.append(str(outcome_id))
+    if event_slug:
+        conditions.append("e.canonical_slug = %s")
+        params.append(event_slug)
+    if start_time is not None:
+        conditions.append("t.trade_time >= %s")
+        params.append(start_time)
+    if end_time is not None:
+        conditions.append("t.trade_time <= %s")
+        params.append(end_time)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(limit)
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                t.trade_id,
+                t.account_id,
+                t.order_id,
+                t.market_id,
+                t.outcome_id,
+                t.external_trade_id,
+                t.tx_hash,
+                t.side,
+                t.price,
+                t.size,
+                t.fee,
+                t.fee_asset,
+                t.liquidity_role,
+                t.trade_time,
+                t.raw_json,
+                m.question AS market_question,
+                oc.outcome_label,
+                e.event_id,
+                e.canonical_slug AS event_slug
+            FROM portfolio.trades t
+            JOIN catalog.markets m ON m.market_id = t.market_id
+            LEFT JOIN catalog.outcomes oc ON oc.outcome_id = t.outcome_id
+            JOIN catalog.events e ON e.event_id = m.event_id
+            {where_sql}
+            ORDER BY t.trade_time ASC, t.trade_id ASC
+            LIMIT %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    report = build_trade_reconciliation_report(rows)
+    return {
+        "filters": {
+            "account_id": str(account_id) if account_id is not None else None,
+            "market_id": str(market_id) if market_id is not None else None,
+            "outcome_id": str(outcome_id) if outcome_id is not None else None,
+            "event_slug": event_slug,
+            "start_time": start_time,
+            "end_time": end_time,
+            "limit": limit,
+        },
+        "reconciliation": to_jsonable(report),
+    }
 
 
 @router.post("/orders", response_model=ManualOrderResponse, status_code=status.HTTP_201_CREATED)

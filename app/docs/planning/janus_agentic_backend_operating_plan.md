@@ -106,6 +106,7 @@ NBA watchlists are generated from the daily slate and Polymarket matching. Crypt
 Implementation status:
 
 - As of 2026-05-10, the NBA live controller mirrors captured live CLOB orderbook ticks into generic `market_watch_sessions` and `market_orderbook_ticks` while preserving the legacy `live_orderbook_ticks.jsonl` trace. `POST /v1/replay/from-watch-session` resolves persisted watch data into `replay_sessions` with source tick/trade counts, latency/cadence summary, and controller-decision comparison metadata. Live market trade persistence remains open P0 work.
+- Portfolio reconciliation exposes a non-destructive duplicate-fill report at `GET /v1/portfolio/trades/reconciliation` and through `codex_tool/reconcile_trades.py`; destructive historical cleanup must remain a separately reviewed operation.
 
 ## Backend Interfaces
 
@@ -126,6 +127,7 @@ Implementation status:
 - `POST /v1/watchlists/trades`
 - `POST /v1/replay/from-watch-session`
 - `POST /v1/operator/interventions/reconcile`
+- `GET /v1/portfolio/trades/reconciliation`
 
 ## Codex Tooling
 
@@ -146,6 +148,7 @@ Codex agents use scripts under `codex_tool/` to interact with the local API:
 - `record_market_trade.py`
 - `build_replay_from_watch_session.py`
 - `evaluate_strategy_plan.py`
+- `reconcile_trades.py`
 
 ## Codex Agent Schedule
 
