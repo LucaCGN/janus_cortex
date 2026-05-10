@@ -418,7 +418,69 @@ def try_persist_market_trades(payload: MarketTradeObservationRequest) -> dict[st
         return {"ok": False, "error": str(exc), "row_count": 0}
 
 
+def _has_text(value: Any) -> bool:
+    return value is not None and bool(str(value).strip())
+
+
+_OPERATOR_ADOPTION_ACTIONS = {"adopt", "reject", "protect", "target", "hedge"}
+
+
+def _operator_intervention_metadata_gate(payload: OperatorInterventionRequest) -> dict[str, Any]:
+    metadata_required = payload.action in _OPERATOR_ADOPTION_ACTIONS
+    missing_fields: list[str] = []
+    external_reference_count = len(payload.external_order_ids) + len(payload.external_trade_ids)
+
+    if metadata_required:
+        if external_reference_count == 0:
+            missing_fields.append("external_order_ids_or_external_trade_ids")
+        if not _has_text(payload.strategy_family) and not _has_text(payload.manual_reason):
+            missing_fields.append("strategy_family_or_manual_reason")
+        for field_name in ("target_status", "stop_status", "hedge_status", "expected_close_path"):
+            if not _has_text(getattr(payload, field_name)):
+                missing_fields.append(field_name)
+        if payload.final_pnl_usd is None:
+            missing_fields.append("final_pnl_usd")
+
+    adoption_class = "strategy_family" if _has_text(payload.strategy_family) else "manual_only"
+    if not _has_text(payload.strategy_family) and not _has_text(payload.manual_reason):
+        adoption_class = "unclassified"
+
+    status = "recorded"
+    if metadata_required:
+        status = "metadata_complete" if not missing_fields else "metadata_incomplete"
+
+    return {
+        "status": status,
+        "metadata_required": metadata_required,
+        "metadata_complete": not missing_fields,
+        "missing_metadata_fields": missing_fields,
+        "adoption_class": adoption_class,
+        "external_reference_count": external_reference_count,
+        "strategy_family": payload.strategy_family,
+        "manual_reason": payload.manual_reason,
+        "target_status": payload.target_status,
+        "stop_status": payload.stop_status,
+        "hedge_status": payload.hedge_status,
+        "protective_order_status": payload.protective_order_status,
+        "expected_close_path": payload.expected_close_path,
+        "final_pnl_usd": payload.final_pnl_usd,
+    }
+
+
+def _operator_intervention_metadata_summary(metadata_gate: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "metadata_status": metadata_gate["status"],
+        "metadata_required": metadata_gate["metadata_required"],
+        "metadata_complete": metadata_gate["metadata_complete"],
+        "missing_metadata_fields": metadata_gate["missing_metadata_fields"],
+        "adoption_class": metadata_gate["adoption_class"],
+    }
+
+
 def try_persist_operator_intervention(payload: OperatorInterventionRequest) -> dict[str, Any]:
+    metadata_gate = _operator_intervention_metadata_gate(payload)
+    payload_json = payload.model_dump(mode="json")
+    raw_json = {**payload_json, "adoption_metadata": metadata_gate}
     try:
         with managed_connection() as connection:
             with connection.cursor() as cursor:
@@ -448,15 +510,15 @@ def try_persist_operator_intervention(payload: OperatorInterventionRequest) -> d
                         payload.action,
                         Json(to_jsonable(payload.external_order_ids)),
                         payload.action,
-                        "recorded",
+                        metadata_gate["status"],
                         payload.notes,
-                        Json(to_jsonable(payload.model_dump(mode="json"))),
+                        Json(to_jsonable(raw_json)),
                     ),
                 )
             connection.commit()
-        return {"ok": True}
+        return {"ok": True, **_operator_intervention_metadata_summary(metadata_gate)}
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": str(exc), **_operator_intervention_metadata_summary(metadata_gate)}
 
 
 def try_persist_replay_request(payload: ReplayFromWatchSessionRequest, *, output_root: str | None = None) -> dict[str, Any]:

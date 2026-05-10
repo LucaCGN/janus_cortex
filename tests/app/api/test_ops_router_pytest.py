@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_db_connection
@@ -310,6 +312,56 @@ def test_replay_from_watch_session_returns_source_summary_pytest(tmp_path, monke
     assert payload["db_persistence"]["latency_summary"]["tick_cadence"]["max_gap_seconds"] == 3.0
     assert replay_calls[0]["payload"].watch_session_id == "watch-nba-event"
     assert replay_calls[0]["output_root"] == payload["path"]
+
+
+def test_operator_intervention_reconcile_accepts_adoption_metadata_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    persist_calls = []
+
+    def fake_persist(payload):
+        persist_calls.append(payload)
+        return {
+            "ok": True,
+            "metadata_status": "metadata_complete",
+            "metadata_required": True,
+            "metadata_complete": True,
+            "missing_metadata_fields": [],
+            "adoption_class": "manual_only",
+        }
+
+    monkeypatch.setattr(ops_router, "try_persist_operator_intervention", fake_persist)
+    monkeypatch.setattr(ops_router, "get_agentic_database_status", lambda: {"ok": True, "schema": "agentic"})
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/operator/interventions/reconcile",
+        json={
+            "account_id": "account-1",
+            "event_id": "event-lal-okc",
+            "market_id": "market-1",
+            "action": "adopt",
+            "external_order_ids": ["order-1"],
+            "external_trade_ids": ["trade-1"],
+            "manual_reason": "manual_only_ultra_low_ladder",
+            "target_status": "filled_target_sell",
+            "stop_status": "not_applicable_manual_watch",
+            "hedge_status": "not_applicable",
+            "protective_order_status": "manual_exit_completed",
+            "expected_close_path": "target_sell_or_manual_flatten",
+            "final_pnl_usd": -0.3,
+            "metadata": {"source": "postgame_2026-05-09"},
+            "notes": "pytest adoption metadata",
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert body["db_persistence"]["metadata_status"] == "metadata_complete"
+    assert body["database"]["ok"] is True
+    assert persist_calls[0].external_trade_ids == ["trade-1"]
+    assert persist_calls[0].expected_close_path == "target_sell_or_manual_flatten"
+    assert "manual_only_ultra_low_ladder" in Path(body["path"]).read_text(encoding="utf-8")
 
 
 def test_strategy_plan_evaluate_endpoint_compiles_intents_without_db_pytest(tmp_path, monkeypatch) -> None:

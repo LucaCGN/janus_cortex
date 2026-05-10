@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import uuid
 
-from app.modules.agentic.contracts import ReplayFromWatchSessionRequest
+from app.modules.agentic.contracts import OperatorInterventionRequest, ReplayFromWatchSessionRequest
 from app.modules.agentic import repository
 
 
@@ -22,6 +22,114 @@ def test_uuid_watch_session_ids_are_preserved_pytest() -> None:
     value = str(uuid.uuid4())
 
     assert repository._coerce_uuid(value, namespace="watch-session") == value  # noqa: SLF001
+
+
+def test_operator_intervention_metadata_gate_marks_complete_adoption_pytest() -> None:
+    payload = OperatorInterventionRequest(
+        account_id="account-1",
+        event_id="event-lal-okc",
+        market_id="market-1",
+        action="adopt",
+        external_order_ids=["order-1"],
+        external_trade_ids=["trade-1"],
+        manual_reason="manual_only_ultra_low_ladder",
+        target_status="filled_target_sell",
+        stop_status="not_applicable_manual_watch",
+        hedge_status="not_applicable",
+        protective_order_status="manual_exit_completed",
+        expected_close_path="target_sell_or_manual_flatten",
+        final_pnl_usd=-0.3,
+    )
+
+    gate = repository._operator_intervention_metadata_gate(payload)  # noqa: SLF001
+
+    assert gate["status"] == "metadata_complete"
+    assert gate["metadata_required"] is True
+    assert gate["metadata_complete"] is True
+    assert gate["missing_metadata_fields"] == []
+    assert gate["adoption_class"] == "manual_only"
+    assert gate["final_pnl_usd"] == -0.3
+
+
+def test_operator_intervention_metadata_gate_flags_missing_adoption_fields_pytest() -> None:
+    payload = OperatorInterventionRequest(action="adopt", external_order_ids=["order-1"])
+
+    gate = repository._operator_intervention_metadata_gate(payload)  # noqa: SLF001
+
+    assert gate["status"] == "metadata_incomplete"
+    assert gate["metadata_complete"] is False
+    assert gate["adoption_class"] == "unclassified"
+    assert gate["missing_metadata_fields"] == [
+        "strategy_family_or_manual_reason",
+        "target_status",
+        "stop_status",
+        "hedge_status",
+        "expected_close_path",
+        "final_pnl_usd",
+    ]
+
+
+def test_try_persist_operator_intervention_stores_metadata_status_in_raw_json_pytest(monkeypatch) -> None:
+    class FakeCursor:
+        def __init__(self) -> None:
+            self.insert_params = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, _query, params=None) -> None:
+            self.insert_params = params
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = FakeCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def cursor(self, *_, **__):
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            self.committed = True
+
+    fake_connection = FakeConnection()
+
+    @contextmanager
+    def fake_managed_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(repository, "managed_connection", fake_managed_connection)
+
+    result = repository.try_persist_operator_intervention(
+        OperatorInterventionRequest(
+            event_id="event-det-cle",
+            market_id="market-det",
+            action="reject",
+            external_trade_ids=["trade-1"],
+            strategy_family="underdog_tactical_rebound",
+            target_status="not_applicable_rejected",
+            stop_status="not_applicable_rejected",
+            hedge_status="not_applicable_rejected",
+            expected_close_path="no_position_adopted",
+            final_pnl_usd=0.0,
+        )
+    )
+
+    assert result["ok"] is True
+    assert result["metadata_status"] == "metadata_complete"
+    assert fake_connection.committed is True
+    insert_params = fake_connection.cursor_obj.insert_params
+    assert insert_params[8] == "metadata_complete"
+    assert insert_params[10].adapted["external_trade_ids"] == ["trade-1"]
+    assert insert_params[10].adapted["adoption_metadata"]["adoption_class"] == "strategy_family"
 
 
 def test_build_replay_source_summary_counts_ticks_trades_and_decisions_pytest() -> None:

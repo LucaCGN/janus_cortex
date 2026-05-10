@@ -166,8 +166,18 @@ class OperatorInterventionRequest(BaseModel):
     account_id: str | None = None
     event_id: str | None = None
     market_id: str | None = None
-    action: Literal["scan", "adopt", "protect", "target", "hedge", "cancel", "pause", "ignore"] = "scan"
+    action: Literal["scan", "adopt", "reject", "protect", "target", "hedge", "cancel", "pause", "ignore"] = "scan"
     external_order_ids: list[str] = Field(default_factory=list)
+    external_trade_ids: list[str] = Field(default_factory=list)
+    strategy_family: str | None = None
+    manual_reason: str | None = None
+    target_status: str | None = None
+    stop_status: str | None = None
+    hedge_status: str | None = None
+    protective_order_status: str | None = None
+    expected_close_path: str | None = None
+    final_pnl_usd: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     notes: str | None = None
 
 
