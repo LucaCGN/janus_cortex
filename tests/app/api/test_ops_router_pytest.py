@@ -494,7 +494,10 @@ def test_strategy_plan_evaluate_requires_declared_live_gate_state_pytest(tmp_pat
                             "max_spread_cents": 2,
                             "max_abs_score_gap": 10,
                             "max_open_positions": 2,
+                            "allow_ultra_low_underdog": True,
                         },
+                        "exit_rules": {"target_cents": 4},
+                        "stop_rules": {"max_loss_cents": 2},
                     }
                 ],
             },
@@ -554,7 +557,10 @@ def test_strategy_plan_evaluate_uses_outcome_specific_market_state_pytest(tmp_pa
                             "max_spread_cents": 2,
                             "max_abs_score_gap": 10,
                             "max_open_positions": 2,
+                            "allow_ultra_low_underdog": True,
                         },
+                        "exit_rules": {"target_cents": 4},
+                        "stop_rules": {"max_loss_cents": 2},
                     }
                 ],
             },
@@ -565,6 +571,80 @@ def test_strategy_plan_evaluate_uses_outcome_specific_market_state_pytest(tmp_pa
     payload = response.json()
     assert payload["intent_count"] == 1
     assert payload["intents"][0]["outcome_id"] == "outcome-1"
+
+
+def test_strategy_plan_evaluate_operator_sizing_overrides_llm_size_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_strategy_decisions",
+        lambda result, **kwargs: {"ok": True, "row_count": 1},
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/events/event-123/strategy-plan/evaluate",
+        json={
+            "dry_run": True,
+            "market_state": {
+                "outcome_states": {
+                    "outcome-1": {
+                        "price": 0.18,
+                        "orderbook_age_seconds": 1,
+                        "scoreboard_age_seconds": 1,
+                        "spread": 0.01,
+                        "score_gap": 4,
+                    }
+                }
+            },
+            "portfolio_state": {
+                "open_positions": 0,
+                "operator_sizing_policy": {
+                    "mode": "operator_minimum_order",
+                    "min_size": 5,
+                    "min_buy_notional_usd": 1.0,
+                    "share_precision": 3,
+                },
+            },
+            "plan": {
+                "event_id": "event-123",
+                "market_id": "market-123",
+                "active_strategies": [
+                    {
+                        "strategy_id": "grid-1",
+                        "family": "resistance_band_rebound_grid",
+                        "side": "underdog",
+                        "budget_usd": 0.25,
+                        "entry_rules": {
+                            "outcome_id": "outcome-1",
+                            "token_id": "token-1",
+                            "side": "buy",
+                            "price": 0.18,
+                            "price_band": [0.15, 0.25],
+                            "max_orderbook_age_seconds": 90,
+                            "max_scoreboard_age_seconds": 90,
+                            "max_spread_cents": 2,
+                            "max_abs_score_gap": 10,
+                            "max_open_positions": 2,
+                            "allow_ultra_low_underdog": True,
+                        },
+                        "exit_rules": {"target_cents": 4},
+                        "stop_rules": {"max_loss_cents": 2},
+                    }
+                ],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intent_count"] == 1
+    intent = payload["intents"][0]
+    assert intent["size"] == 5.556
+    assert intent["metadata"]["sizing_policy"]["source"] == "operator_policy"
+    assert intent["metadata"]["sizing_policy"]["llm_requested_size"] is None
+    assert intent["metadata"]["sizing_policy"]["llm_strategy_budget_usd"] == 0.25
 
 
 def test_strategy_plan_execute_endpoint_hands_intent_to_order_manager_pytest(tmp_path, monkeypatch) -> None:

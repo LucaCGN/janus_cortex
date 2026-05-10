@@ -6,7 +6,7 @@ Backend-first local prediction-market service for production-grade ingestion, ma
 
 Janus must run independently from Codex. The backend service owns ingestion, watch sessions, active `StrategyPlanJSON` loading, trigger evaluation, order-intent validation, audited order execution, portfolio reconciliation, and replay capture.
 
-Codex automations, or an equivalent external agent framework, are required for the CI/CD and research operating loop: postgame review, development passes, pregame integrity checks, external research, live health monitoring, prompt refinement, and documentation discipline. Codex agents may submit research and structured strategy-plan revisions, but the local Janus engine remains the source of execution truth.
+Codex automations, or an equivalent external agent framework, are required for the CI/CD and research operating loop: postgame review, development passes, pregame integrity checks, external research, live health monitoring, prompt refinement, and documentation discipline. Codex agents may submit research, context, and structured strategy-plan trigger revisions, but the local Janus engine remains the source of execution truth. Order sizing and portfolio exposure are operator policy, not pregame research output.
 
 ## Current Status
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
@@ -14,6 +14,7 @@ Codex automations, or an equivalent external agent framework, are required for t
 - Agentic backend operating plan: `app\docs\planning\janus_agentic_backend_operating_plan.md`
 - Codex agent automation prompt index: `app\docs\planning\codex_agent_automation_prompts.md`
 - Codex agent prompt folders: `app\docs\planning\codex_agents\`
+- LLM model routing: `app\docs\planning\llm_model_routing.md`
 - Codex automation tools live under `codex_tool\`
 - Current priority: keep the agentic backend operating loop live for the NBA playoff slate while hardening direct CLOB reconciliation, StrategyPlanJSON execution, watch-session replay, and minimum-size live testing.
 - Current scope: backend ops endpoints, Codex tools, live pregame/postgame workflow, strategy-plan validation/execution, stop/hedge/order-policy testing, decision logging, and unified benchmark control across replay, ML, LLM, and live-validation lanes.
@@ -47,7 +48,7 @@ Codex automations, or an equivalent external agent framework, are required for t
   - current live-probe tier is `quarter_open_reprice` plus `micro_momentum_continuation`, but today they still execute as shadow because live executor v1 cannot route standalone probes
   - current replay shadow set includes `inversion` and `lead_fragility`, while replay bench-only families remain visible but not promotable
   - ML v2 is compare-ready as context, ranking, calibration, and confidence metadata for strategy-plan selection; it does not yet have standalone execution authority
-  - LLM strategy authority now flows through structured `StrategyPlanJSON`: the LLM may choose and combine executable strategy families, while the order manager enforces mechanical safety
+  - LLM strategy authority now flows through structured `StrategyPlanJSON`: the LLM may choose and combine executable strategy families, while operator sizing policy controls live order size and the order manager enforces mechanical safety
 
 ## Scope Definitions
 - `v0.8.*`: NBA regular-season data completion for 2025/26.

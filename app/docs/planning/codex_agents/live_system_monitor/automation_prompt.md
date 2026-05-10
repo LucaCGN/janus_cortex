@@ -20,7 +20,7 @@ Read before acting:
 Primary command:
 
 ```powershell
-python codex_tool\run_live_strategy_tick.py --session-date YYYY-MM-DD --event-id nba-nyk-phi-YYYY-MM-DD --event-id nba-sas-min-YYYY-MM-DD --account-id 56964015-5935-5035-bdab-b056c9277146 --source codex-live-monitor --execute --live-money --max-intents 2
+python codex_tool\run_live_strategy_tick.py --session-date YYYY-MM-DD --event-id nba-nyk-phi-YYYY-MM-DD --event-id nba-sas-min-YYYY-MM-DD --account-id 56964015-5935-5035-bdab-b056c9277146 --source codex-live-monitor --execute --live-money --max-intents 2 --min-size 5 --min-buy-notional-usd 1 --share-precision 3
 ```
 
 Adjust `--event-id` values to the current day's StrategyPlanJSON event IDs from `janus_status.py` or the daily handoff.
@@ -30,12 +30,14 @@ Rules:
 - Live execution must be `dry_run=false`; do not run live execution as dry-run.
 - Every tick must run shadow evaluation and then the live execution pass only if gates are valid.
 - Use only limit orders.
-- Minimum order constraints stay at the exchange-safe minimum: `5` shares and at least `$1.00` buy notional.
+- Minimum order constraints are operator policy supplied to the tick tool: `5` shares and at least `$1.00` buy notional.
+- Do not let Codex Pregame Research or StrategyPlanJSON sizing fields override operator sizing policy.
 - Do not place a new order unless direct CLOB collateral is ready, direct open orders/positions are reconciled, the current plan exists, current orderbook and scoreboard states are fresh, spread is within plan limits, score gap is within plan limits, and the strategy emits a valid intent.
 - Treat the local portfolio mirror as non-authoritative while quarantined.
 - If a live buy fills, ensure a protective target/stop/hedge path exists before allowing additional exposure.
 - If the user manually opens/closes a position, pause new exposure, reconcile it through operator-intervention tooling, and report the adoption/protection state.
 - If no events are live, no plans are current, feeds are stale, or no strategy intent is valid, stop quickly after writing the blocker summary.
+- Use model-tier routing from `app\docs\planning\llm_model_routing.md`: gpt-5.4-nano for tick summaries, gpt-5.4-mini for normal no-position monitoring, and gpt-5.5 for open exposure, manual intervention, missing protection, stale recovery, stop, or hedge decisions.
 
 Write/update:
 

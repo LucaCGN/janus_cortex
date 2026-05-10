@@ -20,6 +20,9 @@ def main() -> None:
     parser.add_argument("--max-intents", type=int, default=2)
     parser.add_argument("--orderbook-sample-count", type=int, default=2)
     parser.add_argument("--orderbook-sample-interval-sec", type=float, default=0.5)
+    parser.add_argument("--min-size", type=float, default=5.0)
+    parser.add_argument("--min-buy-notional-usd", type=float, default=1.0)
+    parser.add_argument("--share-precision", type=int, default=3)
     args = parser.parse_args()
 
     result = run_tick(
@@ -33,6 +36,9 @@ def main() -> None:
         max_intents=args.max_intents,
         orderbook_sample_count=args.orderbook_sample_count,
         orderbook_sample_interval_sec=args.orderbook_sample_interval_sec,
+        min_size=args.min_size,
+        min_buy_notional_usd=args.min_buy_notional_usd,
+        share_precision=args.share_precision,
     )
     exit_for_response(result)
 
@@ -49,6 +55,9 @@ def run_tick(
     max_intents: int,
     orderbook_sample_count: int,
     orderbook_sample_interval_sec: float,
+    min_size: float,
+    min_buy_notional_usd: float,
+    share_precision: int,
 ) -> dict[str, Any]:
     integrity = api_json(
         api_root,
@@ -91,6 +100,9 @@ def run_tick(
             orderbook_sample_count=orderbook_sample_count,
             orderbook_sample_interval_sec=orderbook_sample_interval_sec,
             integrity_ready=ready_for_live,
+            min_size=min_size,
+            min_buy_notional_usd=min_buy_notional_usd,
+            share_precision=share_precision,
         )
         events.append(event_result)
         all_ok = all_ok and bool(event_result.get("ok", True))
@@ -101,6 +113,12 @@ def run_tick(
         "source": source,
         "execute_requested": execute,
         "live_money_requested": live_money,
+        "operator_sizing_policy": {
+            "mode": "operator_minimum_order",
+            "min_size": min_size,
+            "min_buy_notional_usd": min_buy_notional_usd,
+            "share_precision": share_precision,
+        },
         "integrity_ready_for_live_minimum_orders": ready_for_live,
         "integrity_path": integrity.get("path"),
         "live_monitor_path": live_monitor.get("path"),
@@ -122,6 +140,9 @@ def _run_event_tick(
     orderbook_sample_count: int,
     orderbook_sample_interval_sec: float,
     integrity_ready: bool,
+    min_size: float,
+    min_buy_notional_usd: float,
+    share_precision: int,
 ) -> dict[str, Any]:
     context = api_json(
         api_root,
@@ -175,6 +196,12 @@ def _run_event_tick(
     portfolio_state = {
         "open_orders": _direct_count(context, "direct_open_order_count"),
         "open_positions": _direct_count(context, "direct_open_position_count"),
+        "operator_sizing_policy": {
+            "mode": "operator_minimum_order",
+            "min_size": min_size,
+            "min_buy_notional_usd": min_buy_notional_usd,
+            "share_precision": share_precision,
+        },
     }
     integrity = context.get("integrity") or {}
     direct_clob = integrity.get("direct_clob") if isinstance(integrity, dict) else None

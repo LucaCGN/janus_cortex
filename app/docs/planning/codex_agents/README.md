@@ -21,5 +21,8 @@ Janus is the independent runtime service. Codex agents are the external CI/CD, r
 - Runtime files under `local\` are not committed. Summarize material runtime state in handoffs and reports.
 - Do not fabricate state when the API or DB is unavailable.
 - Live monitor execution uses live money (`dry_run=false`) only through `codex_tool\run_live_strategy_tick.py --execute --live-money`, after shadow evaluation and all StrategyPlanJSON/direct-CLOB/feed gates pass.
+- Pregame Research is context-only: it proposes thesis, strategy families, triggers, stop/target/hedge logic, and revision watchpoints, but not order size, budget, or portfolio exposure.
+- Live order sizing is controlled by operator policy supplied to Janus/live tooling, currently minimum `5` shares and minimum `$1.00` buy notional.
+- Follow model-tier routing in `app\docs\planning\llm_model_routing.md`: nano for extraction/summaries, mini for routine reasoning, full `gpt-5.5` for critical decisions.
 - Do not place live orders unless the active StrategyPlanJSON, direct CLOB truth, quote/score state, and integrity gate explicitly allow it.
 - Keep reports useful for the next agent in sequence, not just for human reading.

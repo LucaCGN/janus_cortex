@@ -26,6 +26,8 @@ The LLM does not place arbitrary undocumented orders. It writes executable `Stra
 
 The trading engine compiles the active plan into monitored triggers and order intents. The order manager enforces mechanical safety: schema validity, stale-feed gates, exchange/account constraints, duplicate prevention, uncovered-position prevention, and portfolio reconciliation.
 
+Codex Pregame Research is context-only. It can propose game thesis, strategy families, trigger conditions, stop/target/hedge logic, and revision watchpoints, but it does not define order sizing or portfolio exposure. Operator sizing policy is configured by the owner and injected by Janus/live tooling at execution time.
+
 Required plan fields:
 
 - `schema_version`
@@ -55,6 +57,28 @@ Each active strategy must include:
 - `shadow_flags`
 
 Supported strategy families include deterministic lanes, grid trading, resistance-band rebound, winner definition, underdog optionality, high-frequency scalping, momentum capture, hedges, bracket exits, and subjective event-specific triggers.
+
+## Operator Sizing Authority
+
+Order sizing is not owned by the planning agent. The active operator policy controls live order size, live exposure, and future portfolio-based resizing.
+
+Current live testing policy:
+
+- limit orders only;
+- buy size must satisfy at least `5` shares and at least `$1.00` buy notional;
+- live execution uses direct CLOB truth, not the quarantined portfolio mirror;
+- StrategyPlanJSON `budget_usd`, `max_positions`, and any entry-rule `size` are advisory or routing metadata whenever an operator sizing policy is present;
+- Janus records any LLM-requested size/budget in order metadata for audit, but live order size comes from `operator_sizing_policy`.
+
+Sizing can move from minimum-order testing to portfolio-relative sizing only after multiple profitable days and clean reconciliation prove the system.
+
+## LLM Model Routing
+
+Model-tier routing is tracked in `app\docs\planning\llm_model_routing.md`.
+
+- Use `gpt-5.4-nano` for extraction, play-by-play tagging, tick compression, and repetitive summaries.
+- Use `gpt-5.4-mini` for routine pregame synthesis, ordinary StrategyPlanJSON drafting/revision, routine live-monitor analysis, and first-pass postgame classification.
+- Use `gpt-5.5` for critical reasoning: high-uncertainty final plan review, live open-position stop/hedge decisions, manual intervention reconciliation, material postgame failures, lane promotion/demotion, and architecture/deep development.
 
 ## Runtime Flow
 

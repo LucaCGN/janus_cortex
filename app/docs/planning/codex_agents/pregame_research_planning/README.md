@@ -4,7 +4,7 @@
 
 The Pregame Research & Planning agent creates the game-specific intelligence that Janus internal strategy planning consumes before live play.
 
-It does not place orders. It studies each watched event, compares the available strategies to the actual matchup and market context, and submits structured research plus StrategyPlanJSON revisions only when evidence changes the current plan.
+It does not place orders and it does not define order sizing. It studies each watched event, compares the available strategies to the actual matchup and market context, and submits structured research plus StrategyPlanJSON trigger/revision proposals only when evidence changes the current plan. Operator sizing policy is set outside this agent and enforced by Janus/live tooling.
 
 The output should answer:
 
@@ -135,7 +135,9 @@ For every recommended active strategy, specify:
 - revision triggers for the internal LLM
 - conditions that force shadow-only or no-trade
 
-Maintain current minimum live sizing:
+Do not specify order size, budget, or portfolio exposure. If a schema path currently requires placeholders such as `budget_usd` or `max_positions`, mark them as non-authoritative and note that operator sizing policy overrides them.
+
+Current operator sizing policy for live testing is managed outside this agent:
 
 - limit-only
 - minimum `5` shares
@@ -173,11 +175,12 @@ Every revised plan must include:
 
 - valid schema
 - explicit active strategies
-- budget and max position limits
 - entry/exit/stop/hedge rules
 - revision triggers
 - portfolio reconciliation policy
 - explainability
+
+Do not let a revised plan make sizing or exposure decisions. Any `budget_usd`, `max_positions`, or `size` fields that remain for compatibility are placeholders/advisory metadata until the operator policy changes.
 
 After submitting a revised plan, run a dry evaluation. Do not run `--execute`.
 

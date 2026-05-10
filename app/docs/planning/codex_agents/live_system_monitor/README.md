@@ -13,3 +13,4 @@ Operating stance:
 - Shadow evaluation must run every tick before any live execution.
 - No order is valid unless the current StrategyPlanJSON is present, direct CLOB is funded/flat or reconciled, orderbook and scoreboard gates are fresh, spread is within plan limits, and the plan compiler emits valid intents.
 - The quarantined portfolio mirror is never live authority.
+- Order sizing comes from operator policy supplied to `run_live_strategy_tick.py`, not from Codex Pregame Research or StrategyPlanJSON sizing metadata.

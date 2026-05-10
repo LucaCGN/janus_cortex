@@ -14,7 +14,7 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 | `JANUS - Development Agent` | `app\docs\planning\codex_agents\development_agent` | `automation_prompt.md` |
 | `JANUS - Pregame Integrity Check` | `app\docs\planning\codex_agents\pregame_integrity_check` | `automation_prompt.md` |
 | `JANUS - Pregame Research & Planning` | `app\docs\planning\codex_agents\pregame_research_planning` | `automation_prompt.md` |
-| `JANUS - Live System Monitor` | `app\docs\planning\codex_agents\live_system_monitor` | pending focused contract |
+| `JANUS - Live System Monitor` | `app\docs\planning\codex_agents\live_system_monitor` | `automation_prompt.md` |
 
 ## Shared Context
 
@@ -33,6 +33,9 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 - Chat memory is useful but not authoritative.
 - Direct CLOB collateral, open orders, and open positions are authoritative over stale local portfolio mirrors.
 - Minimum live buy order remains `5` shares and `$1.00` notional until multiple profitable days and clean reconciliation justify resizing.
+- Pregame Research is context-only and does not define order size, notional budget, or portfolio exposure.
+- Live order sizing is operator policy supplied to Janus/live tooling, not strategy-plan sizing metadata.
+- Model-tier routing lives in `app\docs\planning\llm_model_routing.md`: nano for extraction/summaries, mini for routine reasoning, and `gpt-5.5` for critical decisions.
 - Runtime files under `local\` are untracked; summarize material runtime changes in handoffs/reports instead of committing them.
 
 ## Schedule Table
@@ -47,6 +50,4 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 
 ## Current Focus
 
-The Post Game System Review, Development Agent, Pregame Integrity Check, and Pregame Research & Planning contracts are active.
-
-Next folder to refine is the Live System Monitor after the Pregame Research contract is validated in a real run.
+All five prompt contracts are active.

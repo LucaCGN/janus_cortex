@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from typing import Any
 
@@ -53,7 +54,11 @@ def evaluate_strategy_plan(
             blockers.append({"strategy_id": strategy.strategy_id, **rule_gate})
             continue
         order_payload = _extract_order_payload(strategy.entry_rules)
-        missing = [key for key in ("outcome_id", "token_id", "price", "size") if order_payload.get(key) in {None, ""}]
+        sizing_policy = _operator_sizing_policy(portfolio_state)
+        required_order_fields = ["outcome_id", "token_id", "price"]
+        if sizing_policy is None:
+            required_order_fields.append("size")
+        missing = [key for key in required_order_fields if order_payload.get(key) in {None, ""}]
         if missing:
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "missing_order_fields", "missing": missing})
             continue
@@ -69,14 +74,20 @@ def evaluate_strategy_plan(
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "market_orders_disabled"})
             continue
         price = _safe_float(order_payload.get("price"))
-        size = _safe_float(order_payload.get("size"))
         if price is None or not 0.0 <= price <= 1.0:
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "invalid_price", "price": order_payload.get("price")})
             continue
+        size, sizing_metadata = _resolve_order_size(
+            order_payload,
+            strategy_budget_usd=strategy.budget_usd,
+            portfolio_state=portfolio_state,
+            side=side,
+            price=price,
+        )
         if size is None or size <= 0.0:
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "invalid_size", "size": order_payload.get("size")})
             continue
-        min_size = _safe_float(order_payload.get("min_size") or order_payload.get("minimum_size")) or MIN_ORDER_SIZE
+        min_size = _safe_float(sizing_metadata.get("min_size")) or MIN_ORDER_SIZE
         if size < min_size:
             blockers.append(
                 {
@@ -88,10 +99,7 @@ def evaluate_strategy_plan(
             )
             continue
         notional = price * size
-        min_buy_notional = (
-            _safe_float(order_payload.get("min_buy_notional_usd") or order_payload.get("minimum_buy_notional_usd"))
-            or MIN_BUY_NOTIONAL_USD
-        )
+        min_buy_notional = _safe_float(sizing_metadata.get("min_buy_notional_usd")) or MIN_BUY_NOTIONAL_USD
         if side == "buy" and notional < min_buy_notional:
             blockers.append(
                 {
@@ -102,7 +110,18 @@ def evaluate_strategy_plan(
                 }
             )
             continue
-        if side == "buy" and strategy.budget_usd > 0 and notional > strategy.budget_usd + 1e-9:
+        max_buy_notional = _safe_float(sizing_metadata.get("max_buy_notional_usd"))
+        if side == "buy" and max_buy_notional is not None and notional > max_buy_notional + 1e-9:
+            blockers.append(
+                {
+                    "strategy_id": strategy.strategy_id,
+                    "reason": "operator_sizing_notional_exceeded",
+                    "max_buy_notional_usd": max_buy_notional,
+                    "required_notional_usd": round(notional, 6),
+                }
+            )
+            continue
+        if side == "buy" and sizing_policy is None and strategy.budget_usd > 0 and notional > strategy.budget_usd + 1e-9:
             blockers.append(
                 {
                     "strategy_id": strategy.strategy_id,
@@ -116,7 +135,7 @@ def evaluate_strategy_plan(
             strategy,
             order_side=side,
             order_price=price,
-            market_state=market_state,
+            market_state=_strategy_market_state(strategy.entry_rules, market_state, strategy_id=strategy.strategy_id),
         )
         if ultra_low_blocker is not None:
             blockers.append({"strategy_id": strategy.strategy_id, **ultra_low_blocker})
@@ -148,6 +167,7 @@ def evaluate_strategy_plan(
                     "revision_triggers": strategy.revision_triggers,
                     "explainability": plan.explainability,
                     "required_notional_usd": round(notional, 6),
+                    "sizing_policy": sizing_metadata,
                 },
             )
         )
@@ -170,6 +190,61 @@ def _extract_order_payload(entry_rules: dict[str, Any]) -> dict[str, Any]:
     if isinstance(nested, dict):
         return {**entry_rules, **nested}
     return dict(entry_rules)
+
+
+def _resolve_order_size(
+    order_payload: dict[str, Any],
+    *,
+    strategy_budget_usd: float,
+    portfolio_state: dict[str, Any],
+    side: str,
+    price: float,
+) -> tuple[float | None, dict[str, Any]]:
+    policy = _operator_sizing_policy(portfolio_state)
+    if policy is None:
+        min_size = _safe_float(order_payload.get("min_size") or order_payload.get("minimum_size")) or MIN_ORDER_SIZE
+        min_buy_notional = (
+            _safe_float(order_payload.get("min_buy_notional_usd") or order_payload.get("minimum_buy_notional_usd"))
+            or MIN_BUY_NOTIONAL_USD
+        )
+        return _safe_float(order_payload.get("size")), {
+            "source": "strategy_plan",
+            "mode": "plan_size",
+            "min_size": min_size,
+            "min_buy_notional_usd": min_buy_notional,
+            "strategy_budget_usd": strategy_budget_usd,
+        }
+
+    min_size = _safe_float(policy.get("min_size") or policy.get("minimum_size")) or MIN_ORDER_SIZE
+    min_buy_notional = _safe_float(policy.get("min_buy_notional_usd") or policy.get("minimum_buy_notional_usd")) or MIN_BUY_NOTIONAL_USD
+    metadata = {
+        "source": "operator_policy",
+        "mode": policy.get("mode") or "operator_minimum_order",
+        "min_size": min_size,
+        "min_buy_notional_usd": min_buy_notional,
+        "max_buy_notional_usd": _safe_float(policy.get("max_buy_notional_usd") or policy.get("max_notional_usd")),
+        "llm_requested_size": _safe_float(order_payload.get("size")),
+        "llm_strategy_budget_usd": strategy_budget_usd,
+    }
+    if side != "buy":
+        return _safe_float(order_payload.get("size")), metadata
+    if price <= 0.0:
+        return None, metadata
+    minimum_notional_size = min_buy_notional / price
+    precision = int(_safe_float(policy.get("share_precision")) or 3)
+    factor = 10**max(0, precision)
+    size = max(min_size, math.ceil(minimum_notional_size * factor) / factor)
+    return size, metadata
+
+
+def _operator_sizing_policy(portfolio_state: dict[str, Any]) -> dict[str, Any] | None:
+    policy = portfolio_state.get("operator_sizing_policy") or portfolio_state.get("sizing_policy")
+    if not isinstance(policy, dict):
+        return None
+    mode = str(policy.get("mode") or "operator_minimum_order").strip().lower()
+    if mode in {"strategy_plan", "plan_size", "llm"}:
+        return None
+    return dict(policy)
 
 
 def _ultra_low_underdog_blocker(
