@@ -12,7 +12,7 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 |---|---|---|
 | `JANUS - Post Game System Review` | `app\docs\planning\codex_agents\post_game_system_review` | `automation_prompt.md` |
 | `JANUS - Development Agent` | `app\docs\planning\codex_agents\development_agent` | `automation_prompt.md` |
-| `JANUS - Pregame Integrity Check` | `app\docs\planning\codex_agents\pregame_integrity_check` | pending focused contract |
+| `JANUS - Pregame Integrity Check` | `app\docs\planning\codex_agents\pregame_integrity_check` | `automation_prompt.md` |
 | `JANUS - Pregame Research & Planning` | `app\docs\planning\codex_agents\pregame_research_planning` | pending focused contract |
 | `JANUS - Live System Monitor` | `app\docs\planning\codex_agents\live_system_monitor` | pending focused contract |
 
@@ -41,12 +41,12 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 |---|---:|---|
 | `JANUS - Post Game System Review` | Daily 04:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=4;BYMINUTE=0` |
 | `JANUS - Development Agent` | Every 30 minutes; self-gated by BRT time | `FREQ=MINUTELY;INTERVAL=30` |
-| `JANUS - Pregame Integrity Check` | Daily 12:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=12;BYMINUTE=0` |
+| `JANUS - Pregame Integrity Check` | Daily 13:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=13;BYMINUTE=0` |
 | `JANUS - Pregame Research & Planning` | Daily 14:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=14;BYMINUTE=0` |
 | `JANUS - Live System Monitor` | Every 30 minutes, self-gated by active events | `FREQ=MINUTELY;INTERVAL=30` |
 
 ## Current Focus
 
-The Post Game System Review and Development Agent contracts are active.
+The Post Game System Review, Development Agent, and Pregame Integrity Check contracts are active.
 
-Next folders should be refined one at a time after the Development Agent contract is validated in a real run.
+Next folders should be refined one at a time after the Pregame Integrity Check contract is validated in a real run.
