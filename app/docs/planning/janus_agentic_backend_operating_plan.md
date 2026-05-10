@@ -109,6 +109,7 @@ Implementation status:
 - Portfolio reconciliation exposes a non-destructive duplicate-fill report at `GET /v1/portfolio/trades/reconciliation` and through `codex_tool/reconcile_trades.py`; destructive historical cleanup must remain a separately reviewed operation.
 - Operator-intervention reconciliation stores adoption/rejection metadata in `raw_json` and reports whether the record includes external order/trade references, matched strategy family or manual-only reason, target/stop/hedge status, expected close path, and final PnL. `codex_tool/reconcile_orders.py` exposes the same fields for postgame cleanup.
 - Ultra-low underdog buys are guarded in both StrategyPlan evaluation and the legacy live-controller entry path. Underdog buys below `19c` require explicit low-price allowance, fresh scoreboard/score-gap evidence, and target/stop policy; buys below `10c` are manual-only and cannot compile autonomous order intents.
+- NBA schedule sync now captures a capped set of recently finished scoreboard games into the same per-game live context path as active games, persisting final score snapshots and play-by-play rows so postgame reviews can tie fills and market moves to score/clock context.
 
 ## Backend Interfaces
 

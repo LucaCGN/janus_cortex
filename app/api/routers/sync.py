@@ -980,6 +980,8 @@ def sync_nba_schedule(
             schedule_window_days=payload.schedule_window_days,
             include_live_snapshots=payload.include_live_snapshots,
             include_play_by_play=payload.include_play_by_play,
+            include_final_context=payload.include_final_context,
+            final_context_game_limit=payload.final_context_game_limit,
         )
         return to_jsonable(summary.__dict__)
 

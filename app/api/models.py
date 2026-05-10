@@ -131,6 +131,8 @@ class NbaScheduleSyncRequest(BaseModel):
     schedule_window_days: int = Field(default=2, ge=0)
     include_live_snapshots: bool = True
     include_play_by_play: bool = True
+    include_final_context: bool = True
+    final_context_game_limit: int = Field(default=4, ge=0, le=20)
 
 
 class NbaGameLiveSyncRequest(BaseModel):

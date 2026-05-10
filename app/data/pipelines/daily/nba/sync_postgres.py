@@ -31,6 +31,7 @@ class NbaSyncSummary:
     missing_today_detected: int
     missing_today_inserted: int
     ongoing_games: int
+    final_context_games: int
     live_snapshots_written: int
     play_by_play_rows_written: int
     error_text: str | None = None
@@ -46,6 +47,14 @@ class NbaLiveGameSyncSummary:
     live_snapshots_written: int
     play_by_play_rows_written: int
     error_text: str | None = None
+
+
+@dataclass
+class NbaGameContextSyncResult:
+    rows_read: int = 0
+    rows_written: int = 0
+    live_snapshots_written: int = 0
+    play_by_play_rows_written: int = 0
 
 
 def _uuid_for(*parts: str) -> str:
@@ -300,10 +309,11 @@ def _upsert_scoreboard_games(
     repo: JanusUpsertRepository,
     scoreboard_games: list[dict[str, Any]],
     season: str,
-) -> tuple[int, int, list[str], list[str]]:
+) -> tuple[int, int, list[str], list[str], list[str]]:
     teams_upserted = 0
     games_upserted = 0
     ongoing_game_ids: list[str] = []
+    finished_game_ids: list[str] = []
     scoreboard_game_ids: list[str] = []
     for game in scoreboard_games:
         game_id = str(game.get("gameId") or "").strip()
@@ -313,6 +323,8 @@ def _upsert_scoreboard_games(
         status = _safe_int(game.get("gameStatus"))
         if status == 2:
             ongoing_game_ids.append(game_id)
+        elif status == 3:
+            finished_game_ids.append(game_id)
 
         home = game.get("homeTeam") or {}
         away = game.get("awayTeam") or {}
@@ -359,7 +371,30 @@ def _upsert_scoreboard_games(
             updated_at=datetime.now(timezone.utc),
         )
         games_upserted += 1
-    return teams_upserted, games_upserted, ongoing_game_ids, scoreboard_game_ids
+    return teams_upserted, games_upserted, ongoing_game_ids, scoreboard_game_ids, finished_game_ids
+
+
+def _ordered_unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        key = str(value or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(key)
+    return out
+
+
+def _select_scoreboard_context_game_ids(
+    *,
+    ongoing_game_ids: list[str],
+    finished_game_ids: list[str],
+    include_final_context: bool,
+    final_context_game_limit: int,
+) -> list[str]:
+    capped_finished = finished_game_ids[: max(final_context_game_limit, 0)] if include_final_context else []
+    return _ordered_unique([*ongoing_game_ids, *capped_finished])
 
 
 def _detect_missing_today(
@@ -387,12 +422,83 @@ def _detect_missing_today(
     return missing
 
 
+def _sync_nba_game_live_context(
+    *,
+    connection: Any,
+    repo: JanusUpsertRepository,
+    sync_run_id: str,
+    provider_id: str,
+    game_id: str,
+    include_live_snapshots: bool,
+    include_play_by_play: bool,
+) -> NbaGameContextSyncResult:
+    result = NbaGameContextSyncResult()
+
+    if include_live_snapshots:
+        live_payload = fetch_live_scoreboard(game_id)
+        result.rows_read += 1
+        _insert_raw_payload(
+            connection,
+            sync_run_id=sync_run_id,
+            provider_id=provider_id,
+            endpoint=f"/nba/live/{game_id}/boxscore",
+            payload=live_payload,
+        )
+        if live_payload:
+            inserted = repo.insert_nba_live_game_snapshot(
+                game_id=game_id,
+                captured_at=datetime.now(timezone.utc),
+                period=_safe_int(live_payload.get("period")),
+                clock=str(live_payload.get("game_clock") or ""),
+                home_score=_safe_int(live_payload.get("home_score")),
+                away_score=_safe_int(live_payload.get("visitor_score")),
+                payload_json=live_payload,
+                ignore_duplicates=True,
+            )
+            if inserted:
+                result.live_snapshots_written += 1
+                result.rows_written += 1
+            _update_game_from_live_payload(connection, game_id=game_id, payload=live_payload)
+
+    if include_play_by_play:
+        pbp_df = fetch_play_by_play_df(PlayByPlayRequest(game_id=game_id))
+        result.rows_read += len(pbp_df)
+        _insert_raw_payload(
+            connection,
+            sync_run_id=sync_run_id,
+            provider_id=provider_id,
+            endpoint=f"/nba/live/{game_id}/play-by-play",
+            payload=pbp_df.to_dict(orient="records"),
+        )
+        if not pbp_df.empty:
+            for _, row in pbp_df.iterrows():
+                inserted = repo.upsert_nba_play_by_play_event(
+                    game_id=game_id,
+                    event_index=int(row.get("event_index")),
+                    action_id=str(row.get("action_id")) if row.get("action_id") is not None else None,
+                    period=_safe_int(row.get("period")),
+                    clock=str(row.get("clock") or ""),
+                    description=str(row.get("description") or ""),
+                    home_score=_safe_int(row.get("score_home")),
+                    away_score=_safe_int(row.get("score_away")),
+                    is_score_change=bool(row.get("is_score_change")),
+                    payload_json=row.get("raw") if isinstance(row.get("raw"), dict) else None,
+                )
+                if inserted:
+                    result.play_by_play_rows_written += 1
+                    result.rows_written += 1
+
+    return result
+
+
 def run_nba_metadata_sync(
     *,
     season: str = "2025-26",
     schedule_window_days: int = 2,
     include_play_by_play: bool = True,
     include_live_snapshots: bool = True,
+    include_final_context: bool = True,
+    final_context_game_limit: int = 4,
 ) -> NbaSyncSummary:
     rows_read = 0
     rows_written = 0
@@ -456,7 +562,7 @@ def run_nba_metadata_sync(
             games_upserted += game_count
             rows_written += team_count + game_count
 
-            team_count, game_count, ongoing_game_ids, scoreboard_game_ids = _upsert_scoreboard_games(
+            team_count, game_count, ongoing_game_ids, scoreboard_game_ids, finished_game_ids = _upsert_scoreboard_games(
                 repo=repo,
                 scoreboard_games=scoreboard_games,
                 season=season,
@@ -471,48 +577,29 @@ def run_nba_metadata_sync(
                 if game_id in missing_set:
                     missing_today_inserted += 1
 
-            if include_live_snapshots:
-                for game_id in ongoing_game_ids:
-                    payload = fetch_live_scoreboard(game_id)
-                    rows_read += 1
-                    if not payload:
-                        continue
-                    inserted = repo.insert_nba_live_game_snapshot(
+            context_game_ids = _select_scoreboard_context_game_ids(
+                ongoing_game_ids=ongoing_game_ids,
+                finished_game_ids=finished_game_ids,
+                include_final_context=include_final_context,
+                final_context_game_limit=final_context_game_limit,
+            )
+            finished_game_id_set = set(finished_game_ids)
+            final_context_games = len([game_id for game_id in context_game_ids if game_id in finished_game_id_set])
+            if include_live_snapshots or include_play_by_play:
+                for game_id in context_game_ids:
+                    context_result = _sync_nba_game_live_context(
+                        connection=connection,
+                        repo=repo,
+                        sync_run_id=sync_run_id,
+                        provider_id=provider_id,
                         game_id=game_id,
-                        captured_at=datetime.now(timezone.utc),
-                        period=_safe_int(payload.get("period")),
-                        clock=str(payload.get("game_clock") or ""),
-                        home_score=_safe_int(payload.get("home_score")),
-                        away_score=_safe_int(payload.get("visitor_score")),
-                        payload_json=payload,
-                        ignore_duplicates=True,
+                        include_live_snapshots=include_live_snapshots,
+                        include_play_by_play=include_play_by_play,
                     )
-                    if inserted:
-                        live_snapshots_written += 1
-                        rows_written += 1
-
-            if include_play_by_play:
-                for game_id in ongoing_game_ids:
-                    pbp_df = fetch_play_by_play_df(PlayByPlayRequest(game_id=game_id))
-                    rows_read += len(pbp_df)
-                    if pbp_df.empty:
-                        continue
-                    for _, row in pbp_df.iterrows():
-                        inserted = repo.upsert_nba_play_by_play_event(
-                            game_id=game_id,
-                            event_index=int(row.get("event_index")),
-                            action_id=str(row.get("action_id")) if row.get("action_id") is not None else None,
-                            period=_safe_int(row.get("period")),
-                            clock=str(row.get("clock") or ""),
-                            description=str(row.get("description") or ""),
-                            home_score=_safe_int(row.get("score_home")),
-                            away_score=_safe_int(row.get("score_away")),
-                            is_score_change=bool(row.get("is_score_change")),
-                            payload_json=row.get("raw") if isinstance(row.get("raw"), dict) else None,
-                        )
-                        if inserted:
-                            play_by_play_rows_written += 1
-                            rows_written += 1
+                    rows_read += context_result.rows_read
+                    rows_written += context_result.rows_written
+                    live_snapshots_written += context_result.live_snapshots_written
+                    play_by_play_rows_written += context_result.play_by_play_rows_written
 
             _update_sync_run(
                 connection,
@@ -533,6 +620,7 @@ def run_nba_metadata_sync(
                 missing_today_detected=len(missing_today),
                 missing_today_inserted=missing_today_inserted,
                 ongoing_games=len(ongoing_game_ids),
+                final_context_games=final_context_games,
                 live_snapshots_written=live_snapshots_written,
                 play_by_play_rows_written=play_by_play_rows_written,
             )
@@ -557,6 +645,7 @@ def run_nba_metadata_sync(
                 missing_today_detected=len(missing_today),
                 missing_today_inserted=0,
                 ongoing_games=0,
+                final_context_games=0,
                 live_snapshots_written=live_snapshots_written,
                 play_by_play_rows_written=play_by_play_rows_written,
                 error_text=repr(exc),
@@ -600,59 +689,19 @@ def run_nba_live_game_sync(
                 if cursor.fetchone() is None:
                     raise ValueError(f"game_id not found in nba.nba_games: {game_id}")
 
-            if include_live_snapshots:
-                live_payload = fetch_live_scoreboard(game_id)
-                rows_read += 1
-                _insert_raw_payload(
-                    connection,
-                    sync_run_id=sync_run_id,
-                    provider_id=provider_id,
-                    endpoint=f"/nba/live/{game_id}/boxscore",
-                    payload=live_payload,
-                )
-                if live_payload:
-                    inserted = repo.insert_nba_live_game_snapshot(
-                        game_id=game_id,
-                        captured_at=datetime.now(timezone.utc),
-                        period=_safe_int(live_payload.get("period")),
-                        clock=str(live_payload.get("game_clock") or ""),
-                        home_score=_safe_int(live_payload.get("home_score")),
-                        away_score=_safe_int(live_payload.get("visitor_score")),
-                        payload_json=live_payload,
-                        ignore_duplicates=True,
-                    )
-                    if inserted:
-                        live_snapshots_written += 1
-                        rows_written += 1
-                    _update_game_from_live_payload(connection, game_id=game_id, payload=live_payload)
-
-            if include_play_by_play:
-                pbp_df = fetch_play_by_play_df(PlayByPlayRequest(game_id=game_id))
-                rows_read += len(pbp_df)
-                _insert_raw_payload(
-                    connection,
-                    sync_run_id=sync_run_id,
-                    provider_id=provider_id,
-                    endpoint=f"/nba/live/{game_id}/play-by-play",
-                    payload=pbp_df.to_dict(orient="records"),
-                )
-                if not pbp_df.empty:
-                    for _, row in pbp_df.iterrows():
-                        inserted = repo.upsert_nba_play_by_play_event(
-                            game_id=game_id,
-                            event_index=int(row.get("event_index")),
-                            action_id=str(row.get("action_id")) if row.get("action_id") is not None else None,
-                            period=_safe_int(row.get("period")),
-                            clock=str(row.get("clock") or ""),
-                            description=str(row.get("description") or ""),
-                            home_score=_safe_int(row.get("score_home")),
-                            away_score=_safe_int(row.get("score_away")),
-                            is_score_change=bool(row.get("is_score_change")),
-                            payload_json=row.get("raw") if isinstance(row.get("raw"), dict) else None,
-                        )
-                        if inserted:
-                            play_by_play_rows_written += 1
-                            rows_written += 1
+            context_result = _sync_nba_game_live_context(
+                connection=connection,
+                repo=repo,
+                sync_run_id=sync_run_id,
+                provider_id=provider_id,
+                game_id=game_id,
+                include_live_snapshots=include_live_snapshots,
+                include_play_by_play=include_play_by_play,
+            )
+            rows_read += context_result.rows_read
+            rows_written += context_result.rows_written
+            live_snapshots_written += context_result.live_snapshots_written
+            play_by_play_rows_written += context_result.play_by_play_rows_written
 
             _update_sync_run(
                 connection,
@@ -702,6 +751,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--schedule-window-days", type=int, default=2)
     parser.add_argument("--skip-live-snapshots", action="store_true")
     parser.add_argument("--skip-play-by-play", action="store_true")
+    parser.add_argument("--skip-final-context", action="store_true")
+    parser.add_argument("--final-context-game-limit", type=int, default=4)
     return parser
 
 
@@ -713,6 +764,8 @@ def main() -> int:
         schedule_window_days=args.schedule_window_days,
         include_live_snapshots=not args.skip_live_snapshots,
         include_play_by_play=not args.skip_play_by_play,
+        include_final_context=not args.skip_final_context,
+        final_context_game_limit=args.final_context_game_limit,
     )
     print(f"sync_run_id={summary.sync_run_id}")
     print(f"status={summary.status} rows_read={summary.rows_read} rows_written={summary.rows_written}")
@@ -724,6 +777,7 @@ def main() -> int:
                 f"missing_today_detected={summary.missing_today_detected}",
                 f"missing_today_inserted={summary.missing_today_inserted}",
                 f"ongoing_games={summary.ongoing_games}",
+                f"final_context_games={summary.final_context_games}",
                 f"live_snapshots_written={summary.live_snapshots_written}",
                 f"play_by_play_rows_written={summary.play_by_play_rows_written}",
             ]
