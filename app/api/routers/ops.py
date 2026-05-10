@@ -82,12 +82,28 @@ def run_ops_pregame_plan(payload: PregamePlanRequest) -> dict[str, Any]:
         event_ids=payload.event_ids,
         notes=payload.notes,
     )
+    strategy_plan_records = [
+        write_strategy_plan(plan, day=payload.session_date)
+        for plan in payload.strategy_plans
+    ]
+    required_event_ids = payload.event_ids or [plan.event_id for plan in payload.strategy_plans]
+    strategy_plan_gate = _build_strategy_plan_gate(required_event_ids, day=payload.session_date)
     recorded = record_ops_stage(
         "pregame-plan",
-        {**payload.model_dump(mode="json"), "pregame_file": pregame_file},
+        {
+            **payload.model_dump(mode="json"),
+            "pregame_file": pregame_file,
+            "strategy_plan_records": strategy_plan_records,
+            "strategy_plan_gate": strategy_plan_gate,
+        },
         day=payload.session_date,
     )
-    return {**recorded, "pregame_file": pregame_file}
+    return {
+        **recorded,
+        "pregame_file": pregame_file,
+        "strategy_plan_records": strategy_plan_records,
+        "strategy_plan_gate": strategy_plan_gate,
+    }
 
 
 @router.post("/ops/live-monitor", status_code=status.HTTP_202_ACCEPTED)
@@ -97,17 +113,34 @@ def run_ops_live_monitor(
 ) -> dict[str, Any]:
     ops_status = build_ops_status()
     integrity = build_integrity_snapshot(connection, account_id=payload.account_id)
+    strategy_plan_gate = _build_strategy_plan_gate(payload.event_ids, day=payload.session_date)
     recorded = record_ops_stage(
         "live-monitor",
-        {**payload.model_dump(mode="json"), "ops_status": ops_status, "integrity": integrity},
+        {
+            **payload.model_dump(mode="json"),
+            "ops_status": ops_status,
+            "integrity": integrity,
+            "strategy_plan_gate": strategy_plan_gate,
+        },
         day=payload.session_date,
     )
-    return {**recorded, "ops_status": ops_status, "integrity": integrity}
+    return {
+        **recorded,
+        "ops_status": ops_status,
+        "integrity": integrity,
+        "strategy_plan_gate": strategy_plan_gate,
+    }
 
 
 @router.post("/ops/postgame-review", status_code=status.HTTP_202_ACCEPTED)
 def run_ops_postgame_review(payload: OpsCycleRequest) -> dict[str, Any]:
-    return record_ops_stage("postgame-review", payload.model_dump(mode="json"), day=payload.session_date)
+    strategy_plan_gate = _build_strategy_plan_gate(payload.event_ids, day=payload.session_date)
+    recorded = record_ops_stage(
+        "postgame-review",
+        {**payload.model_dump(mode="json"), "strategy_plan_gate": strategy_plan_gate},
+        day=payload.session_date,
+    )
+    return {**recorded, "strategy_plan_gate": strategy_plan_gate}
 
 
 @router.get("/events/{event_id}/agent-context")
@@ -299,7 +332,56 @@ def _resolve_strategy_plan(event_id: str, payload: StrategyPlanEvaluationRequest
         if payload.plan.event_id != event_id:
             raise HTTPException(status_code=422, detail="path event_id must match payload.plan.event_id")
         return payload.plan
-    stored = load_current_strategy_plan(event_id)
+    stored = load_current_strategy_plan(event_id, day=payload.session_date)
     if stored is None:
-        raise HTTPException(status_code=404, detail="no current strategy plan for event_id")
-    return StrategyPlan.model_validate(stored)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "reason": "strategy_plan_required",
+                "event_id": event_id,
+                "session_date": payload.session_date,
+                "message": "No current StrategyPlanJSON exists for this event. Submit a plan before evaluate/execute.",
+            },
+        )
+    try:
+        return StrategyPlan.model_validate(stored)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "reason": "current_strategy_plan_invalid",
+                "event_id": event_id,
+                "session_date": payload.session_date,
+                "error": str(exc),
+            },
+        ) from exc
+
+
+def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[str, Any]:
+    unique_event_ids = [event_id for event_id in dict.fromkeys(str(item).strip() for item in event_ids) if event_id]
+    plans: list[dict[str, Any]] = []
+    missing_event_ids: list[str] = []
+    for event_id in unique_event_ids:
+        plan = load_current_strategy_plan(event_id, day=day)
+        if not plan:
+            missing_event_ids.append(event_id)
+            continue
+        plans.append(
+            {
+                "event_id": event_id,
+                "market_id": plan.get("market_id"),
+                "schema_version": plan.get("schema_version"),
+                "plan_owner": plan.get("plan_owner"),
+                "active_strategy_count": len(plan.get("active_strategies") or []),
+            }
+        )
+    status_text = "not_required" if not unique_event_ids else ("ready" if not missing_event_ids else "blocked")
+    return {
+        "status": status_text,
+        "required_event_count": len(unique_event_ids),
+        "current_plan_count": len(plans),
+        "missing_event_ids": missing_event_ids,
+        "current_plans": plans,
+        "ready_for_strategy_evaluation": bool(unique_event_ids) and not missing_event_ids,
+        "blocker_reason": "missing_current_strategy_plan" if missing_event_ids else None,
+    }

@@ -65,6 +65,7 @@ class OpsCycleRequest(BaseModel):
 class PregamePlanRequest(OpsCycleRequest):
     research_markdown: str | None = None
     research_path: str | None = None
+    strategy_plans: list[StrategyPlan] = Field(default_factory=list)
 
 
 class WatchlistEvent(BaseModel):
@@ -194,6 +195,7 @@ class StrategyPlanEvaluationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     plan: StrategyPlan | None = None
+    session_date: str | None = None
     account_id: str | None = None
     dry_run: bool = True
     execute: bool = False

@@ -8,6 +8,40 @@ from app.api.routers import ops as ops_router
 from app.modules.agentic import store as agentic_store
 
 
+def _strategy_plan_payload(*, event_id: str = "event-123", market_id: str = "market-123") -> dict:
+    return {
+        "event_id": event_id,
+        "market_id": market_id,
+        "plan_owner": "janus_internal_llm",
+        "context_summary": {"thesis": "test plan"},
+        "active_strategies": [
+            {
+                "strategy_id": "grid-1",
+                "family": "resistance_band_rebound_grid",
+                "side": "underdog",
+                "budget_usd": 5.0,
+                "max_positions": 5,
+                "entry_rules": {
+                    "outcome_id": "outcome-1",
+                    "token_id": "token-1",
+                    "side": "buy",
+                    "price": 0.2,
+                    "size": 5,
+                    "price_band": [0.15, 0.25],
+                },
+                "exit_rules": {"target_cents": 3},
+                "stop_rules": {"max_loss_cents": 2},
+                "hedge_rules": {},
+                "revision_triggers": [{"type": "score_gap"}],
+                "shadow_flags": {},
+            }
+        ],
+        "trigger_conditions": [{"type": "orderbook_fresh"}],
+        "portfolio_reconciliation": [{"action": "adopt"}],
+        "explainability": {"why": "fixture"},
+    }
+
+
 def test_ops_status_uses_repo_local_root_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
@@ -33,30 +67,7 @@ def test_strategy_plan_endpoint_stores_and_reads_current_plan_pytest(tmp_path, m
     monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
     client = TestClient(create_app())
 
-    plan_payload = {
-        "event_id": "event-123",
-        "market_id": "market-123",
-        "plan_owner": "janus_internal_llm",
-        "context_summary": {"thesis": "test plan"},
-        "active_strategies": [
-            {
-                "strategy_id": "grid-1",
-                "family": "resistance_band_rebound_grid",
-                "side": "underdog",
-                "budget_usd": 5.0,
-                "max_positions": 5,
-                "entry_rules": {"price_band": [0.05, 0.20]},
-                "exit_rules": {"target_cents": 3},
-                "stop_rules": {"max_loss_cents": 2},
-                "hedge_rules": {},
-                "revision_triggers": [{"type": "score_gap"}],
-                "shadow_flags": {},
-            }
-        ],
-        "trigger_conditions": [{"type": "orderbook_fresh"}],
-        "portfolio_reconciliation": [{"action": "adopt"}],
-        "explainability": {"why": "fixture"},
-    }
+    plan_payload = _strategy_plan_payload()
 
     submit_response = client.post("/v1/events/event-123/strategy-plan", json=plan_payload)
     read_response = client.get("/v1/events/event-123/strategy-plan/current")
@@ -122,6 +133,39 @@ def test_pregame_plan_endpoint_writes_shared_research_pytest(tmp_path, monkeypat
     assert "Knicks-76ers test thesis." in research_path.read_text(encoding="utf-8")
 
 
+def test_pregame_plan_endpoint_persists_strategy_plans_and_reports_gate_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-10",
+            "event_ids": ["event-123"],
+            "source": "pytest",
+            "strategy_plans": [_strategy_plan_payload()],
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["strategy_plan_gate"]["status"] == "ready"
+    assert payload["strategy_plan_gate"]["missing_event_ids"] == []
+    assert payload["strategy_plan_records"][0]["strategy_count"] == 1
+    current_path = (
+        local_root
+        / "shared"
+        / "artifacts"
+        / "strategy-plans"
+        / "2026-05-10"
+        / "event-123"
+        / "current.json"
+    )
+    assert current_path.exists()
+
+
 def test_live_monitor_endpoint_includes_direct_integrity_snapshot_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
@@ -155,6 +199,37 @@ def test_live_monitor_endpoint_includes_direct_integrity_snapshot_pytest(tmp_pat
     assert payload["integrity"]["connection_matches"] is True
     assert payload["integrity"]["account_id"] == "account-123"
     assert payload["integrity"]["ready_for_live_minimum_orders"] is True
+
+
+def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None: {"ready_for_live_minimum_orders": True},
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-10", "event_ids": ["event-missing"], "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["strategy_plan_gate"]["status"] == "blocked"
+    assert payload["strategy_plan_gate"]["missing_event_ids"] == ["event-missing"]
+    assert payload["strategy_plan_gate"]["ready_for_strategy_evaluation"] is False
 
 
 def test_watch_session_tick_and_trade_endpoints_record_batches_pytest(tmp_path, monkeypatch) -> None:
@@ -247,6 +322,52 @@ def test_strategy_plan_evaluate_endpoint_compiles_intents_without_db_pytest(tmp_
     assert payload["intents"][0]["strategy_family"] == "resistance_band_rebound_grid"
     assert payload["decision_persistence"] == {"ok": True, "row_count": 1}
     assert decision_calls[0]["source"] == "codex"
+
+
+def test_strategy_plan_evaluate_endpoint_blocks_without_current_plan_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/events/event-missing/strategy-plan/evaluate",
+        json={"dry_run": True, "session_date": "2026-05-10", "market_state": {"price": 0.2}},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["details"]["reason"] == "strategy_plan_required"
+
+
+def test_strategy_plan_evaluate_endpoint_loads_current_plan_for_session_date_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_strategy_decisions",
+        lambda result, **kwargs: {"ok": True, "row_count": 1},
+    )
+    client = TestClient(create_app())
+
+    pregame_response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-10",
+            "event_ids": ["event-123"],
+            "source": "pytest",
+            "strategy_plans": [_strategy_plan_payload()],
+        },
+    )
+    evaluate_response = client.post(
+        "/v1/events/event-123/strategy-plan/evaluate",
+        json={"dry_run": True, "session_date": "2026-05-10", "market_state": {"price": 0.3}},
+    )
+
+    assert pregame_response.status_code == 202
+    assert evaluate_response.status_code == 200
+    payload = evaluate_response.json()
+    assert payload["intent_count"] == 0
+    assert payload["blockers"][0]["reason"] == "price_band_not_met"
 
 
 def test_strategy_plan_execute_endpoint_hands_intent_to_order_manager_pytest(tmp_path, monkeypatch) -> None:
