@@ -105,7 +105,7 @@ NBA watchlists are generated from the daily slate and Polymarket matching. Crypt
 
 Implementation status:
 
-- As of 2026-05-10, the NBA live controller mirrors captured live CLOB orderbook ticks into generic `market_watch_sessions` and `market_orderbook_ticks` while preserving the legacy `live_orderbook_ticks.jsonl` trace. Live market trade persistence and replay materialization from persisted watch data remain open P0 work.
+- As of 2026-05-10, the NBA live controller mirrors captured live CLOB orderbook ticks into generic `market_watch_sessions` and `market_orderbook_ticks` while preserving the legacy `live_orderbook_ticks.jsonl` trace. `POST /v1/replay/from-watch-session` resolves persisted watch data into `replay_sessions` with source tick/trade counts, latency/cadence summary, and controller-decision comparison metadata. Live market trade persistence remains open P0 work.
 
 ## Backend Interfaces
 

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from typing import Any
 
 from psycopg2.extras import Json
 
-from app.api.db import to_jsonable
+from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.data.databases.postgres import managed_connection
 from app.modules.agentic.contracts import (
     MarketOrderbookTickRequest,
@@ -459,9 +461,154 @@ def try_persist_operator_intervention(payload: OperatorInterventionRequest) -> d
 
 def try_persist_replay_request(payload: ReplayFromWatchSessionRequest, *, output_root: str | None = None) -> dict[str, Any]:
     watch_session_id = _coerce_uuid(payload.watch_session_id, namespace="watch-session")
+    replay_session_id = str(uuid.uuid4())
     try:
         with managed_connection() as connection:
-            with connection.cursor() as cursor:
+            with cursor_dict(connection) as cursor:
+                cursor.execute(
+                    """
+                    SELECT
+                        watch_session_id::text AS watch_session_id,
+                        event_key,
+                        category,
+                        started_at,
+                        ended_at,
+                        cadence_ms,
+                        passive_only,
+                        reason,
+                        metadata_json
+                    FROM agentic.market_watch_sessions
+                    WHERE watch_session_id = %s;
+                    """,
+                    (watch_session_id,),
+                )
+                watch_session = fetchone_dict(cursor)
+                if watch_session is None:
+                    return {
+                        "ok": False,
+                        "error": "watch_session_not_found",
+                        "watch_session_id": watch_session_id,
+                        "watch_session_key": payload.watch_session_id,
+                    }
+                event_key = str(payload.event_key or watch_session.get("event_key") or "").strip()
+                if payload.event_key and watch_session.get("event_key") and payload.event_key != watch_session.get("event_key"):
+                    return {
+                        "ok": False,
+                        "error": "event_key_mismatch",
+                        "watch_session_id": watch_session_id,
+                        "watch_session_key": payload.watch_session_id,
+                        "event_key": event_key,
+                    }
+                started_at = _parse_replay_timestamp(watch_session.get("started_at"))
+                ended_at = _parse_replay_timestamp(watch_session.get("ended_at"))
+                cursor.execute(
+                    """
+                    SELECT
+                        market_orderbook_tick_id::text AS market_orderbook_tick_id,
+                        event_key,
+                        market_id,
+                        outcome_id,
+                        token_id,
+                        captured_at,
+                        source_timestamp,
+                        best_bid,
+                        best_ask,
+                        spread,
+                        mid_price,
+                        bid_depth,
+                        ask_depth,
+                        source_latency_ms,
+                        ingest_latency_ms,
+                        levels_json,
+                        raw_json
+                    FROM agentic.market_orderbook_ticks
+                    WHERE event_key = %s
+                      AND (%s::timestamptz IS NULL OR captured_at >= %s)
+                      AND (%s::timestamptz IS NULL OR captured_at <= %s)
+                    ORDER BY captured_at ASC;
+                    """,
+                    (event_key, started_at, started_at, ended_at, ended_at),
+                )
+                tick_rows = _filter_rows_for_watch_session(
+                    fetchall_dicts(cursor),
+                    watch_session_key=payload.watch_session_id,
+                    watch_session_id=watch_session_id,
+                )
+                if not tick_rows:
+                    return {
+                        "ok": False,
+                        "error": "replay_source_empty",
+                        "watch_session_id": watch_session_id,
+                        "watch_session_key": payload.watch_session_id,
+                        "event_key": event_key,
+                        "source_tick_count": 0,
+                        "source_trade_count": 0,
+                    }
+                cursor.execute(
+                    """
+                    SELECT
+                        market_trade_id::text AS market_trade_id,
+                        event_key,
+                        market_id,
+                        outcome_id,
+                        token_id,
+                        external_trade_id,
+                        trade_time,
+                        observed_at,
+                        side,
+                        price,
+                        size,
+                        source_latency_ms,
+                        raw_json
+                    FROM agentic.market_trades
+                    WHERE event_key = %s
+                      AND (%s::timestamptz IS NULL OR trade_time >= %s)
+                      AND (%s::timestamptz IS NULL OR trade_time <= %s)
+                    ORDER BY trade_time ASC;
+                    """,
+                    (event_key, started_at, started_at, ended_at, ended_at),
+                )
+                trade_rows = _filter_rows_for_watch_session(
+                    fetchall_dicts(cursor),
+                    watch_session_key=payload.watch_session_id,
+                    watch_session_id=watch_session_id,
+                )
+                cursor.execute(
+                    """
+                    SELECT
+                        strategy_decision_id::text AS strategy_decision_id,
+                        event_key,
+                        decided_at,
+                        strategy_id,
+                        decision_type,
+                        blockers_json,
+                        order_intent_json,
+                        raw_json
+                    FROM agentic.strategy_decisions
+                    WHERE event_key = %s
+                      AND (%s::timestamptz IS NULL OR decided_at >= %s)
+                      AND (%s::timestamptz IS NULL OR decided_at <= %s)
+                    ORDER BY decided_at ASC;
+                    """,
+                    (event_key, started_at, started_at, ended_at, ended_at),
+                )
+                decision_rows = fetchall_dicts(cursor)
+                latency_summary = _build_replay_source_summary(
+                    watch_session=watch_session,
+                    tick_rows=tick_rows,
+                    trade_rows=trade_rows,
+                    decision_rows=decision_rows,
+                )
+                output_name = payload.output_name or _default_replay_output_name(event_key)
+                replay_config = {
+                    **payload.model_dump(mode="json"),
+                    "watch_session_key": payload.watch_session_id,
+                    "resolved_event_key": event_key,
+                    "source": "watch_session",
+                    "source_tick_count": len(tick_rows),
+                    "source_trade_count": len(trade_rows),
+                    "controller_decision_comparison": latency_summary.get("controller_decision_comparison", {}),
+                }
                 cursor.execute(
                     """
                     INSERT INTO agentic.replay_sessions (
@@ -469,24 +616,197 @@ def try_persist_replay_request(payload: ReplayFromWatchSessionRequest, *, output
                         watch_session_id,
                         event_key,
                         output_name,
+                        source_tick_count,
+                        source_trade_count,
+                        latency_summary_json,
                         replay_config_json,
                         output_root
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """,
                     (
-                        str(uuid.uuid4()),
+                        replay_session_id,
                         watch_session_id,
-                        payload.event_key,
-                        payload.output_name,
-                        Json(to_jsonable({**payload.model_dump(mode="json"), "watch_session_key": payload.watch_session_id})),
+                        event_key,
+                        output_name,
+                        len(tick_rows),
+                        len(trade_rows),
+                        Json(to_jsonable(latency_summary)),
+                        Json(to_jsonable(replay_config)),
                         output_root,
                     ),
                 )
             connection.commit()
-        return {"ok": True, "watch_session_id": watch_session_id, "watch_session_key": payload.watch_session_id}
+        return {
+            "ok": True,
+            "replay_session_id": replay_session_id,
+            "watch_session_id": watch_session_id,
+            "watch_session_key": payload.watch_session_id,
+            "event_key": event_key,
+            "output_name": output_name,
+            "source_tick_count": len(tick_rows),
+            "source_trade_count": len(trade_rows),
+            "latency_summary": latency_summary,
+        }
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "watch_session_id": watch_session_id, "watch_session_key": payload.watch_session_id}
+
+
+def _default_replay_output_name(event_key: str) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in str(event_key or "").strip())
+    safe = safe.strip("-")[:120] or "unknown"
+    return f"replay-{safe}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}"
+
+
+def _json_object(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _parse_replay_timestamp(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return None
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _filter_rows_for_watch_session(
+    rows: list[dict[str, Any]],
+    *,
+    watch_session_key: str,
+    watch_session_id: str,
+) -> list[dict[str, Any]]:
+    matched: list[dict[str, Any]] = []
+    for row in rows:
+        raw = _json_object(row.get("raw_json"))
+        if raw.get("watch_session_key") == watch_session_key or str(raw.get("watch_session_id") or "") == watch_session_id:
+            matched.append(row)
+    return matched or rows
+
+
+def _window_summary(rows: list[dict[str, Any]], timestamp_key: str) -> dict[str, Any]:
+    timestamps = [_parse_replay_timestamp(row.get(timestamp_key)) for row in rows]
+    timestamps = [timestamp for timestamp in timestamps if timestamp is not None]
+    if not timestamps:
+        return {"start": None, "end": None}
+    return {"start": min(timestamps).isoformat(), "end": max(timestamps).isoformat()}
+
+
+def _numeric_summary(rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
+    values = [_float_or_none(row.get(key)) for row in rows]
+    values = [value for value in values if value is not None]
+    if not values:
+        return {"avg": None, "max": None}
+    return {
+        "avg": round(sum(values) / len(values), 3),
+        "max": round(max(values), 3),
+    }
+
+
+def _sorted_values(rows: list[dict[str, Any]], key: str) -> list[str]:
+    values = {str(row.get(key) or "").strip() for row in rows}
+    return sorted(value for value in values if value)
+
+
+def _tick_cadence_summary(rows: list[dict[str, Any]], cadence_ms: Any) -> dict[str, Any]:
+    cadence_seconds = _float_or_none(cadence_ms)
+    cadence_seconds = cadence_seconds / 1000.0 if cadence_seconds is not None else None
+    grouped: dict[tuple[str, str, str], list[datetime]] = {}
+    for row in rows:
+        timestamp = _parse_replay_timestamp(row.get("captured_at"))
+        if timestamp is None:
+            continue
+        key = (
+            str(row.get("market_id") or ""),
+            str(row.get("outcome_id") or ""),
+            str(row.get("token_id") or ""),
+        )
+        grouped.setdefault(key, []).append(timestamp)
+    intervals: list[float] = []
+    for timestamps in grouped.values():
+        ordered = sorted(timestamps)
+        intervals.extend((right - left).total_seconds() for left, right in zip(ordered, ordered[1:]))
+    if not intervals:
+        return {
+            "stream_count": len(grouped),
+            "avg_interval_seconds": None,
+            "max_gap_seconds": None,
+            "gap_over_cadence_count": 0,
+            "cadence_ms": cadence_ms,
+        }
+    threshold = cadence_seconds * 2.0 if cadence_seconds is not None else None
+    return {
+        "stream_count": len(grouped),
+        "avg_interval_seconds": round(sum(intervals) / len(intervals), 3),
+        "max_gap_seconds": round(max(intervals), 3),
+        "gap_over_cadence_count": len([interval for interval in intervals if threshold is not None and interval > threshold]),
+        "cadence_ms": cadence_ms,
+    }
+
+
+def _decision_comparison_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    decision_types = Counter(str(row.get("decision_type") or "unknown") for row in rows)
+    return {
+        "status": "decisions_available" if rows else "missing_controller_decisions",
+        "decision_count": len(rows),
+        "decision_types": dict(sorted(decision_types.items())),
+        "strategy_ids": _sorted_values(rows, "strategy_id"),
+    }
+
+
+def _build_replay_source_summary(
+    *,
+    watch_session: dict[str, Any],
+    tick_rows: list[dict[str, Any]],
+    trade_rows: list[dict[str, Any]],
+    decision_rows: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "watch_session": {
+            "watch_session_id": watch_session.get("watch_session_id"),
+            "event_key": watch_session.get("event_key"),
+            "category": watch_session.get("category"),
+            "started_at": to_jsonable(watch_session.get("started_at")),
+            "ended_at": to_jsonable(watch_session.get("ended_at")),
+            "cadence_ms": watch_session.get("cadence_ms"),
+            "passive_only": watch_session.get("passive_only"),
+            "reason": watch_session.get("reason"),
+        },
+        "event_keys": _sorted_values(tick_rows + trade_rows, "event_key"),
+        "market_ids": _sorted_values(tick_rows + trade_rows, "market_id"),
+        "outcome_ids": _sorted_values(tick_rows + trade_rows, "outcome_id"),
+        "token_ids": _sorted_values(tick_rows + trade_rows, "token_id"),
+        "source_tick_count": len(tick_rows),
+        "source_trade_count": len(trade_rows),
+        "tick_window": _window_summary(tick_rows, "captured_at"),
+        "trade_window": _window_summary(trade_rows, "trade_time"),
+        "orderbook_source_latency_ms": _numeric_summary(tick_rows, "source_latency_ms"),
+        "orderbook_ingest_latency_ms": _numeric_summary(tick_rows, "ingest_latency_ms"),
+        "trade_source_latency_ms": _numeric_summary(trade_rows, "source_latency_ms"),
+        "tick_cadence": _tick_cadence_summary(tick_rows, watch_session.get("cadence_ms")),
+        "controller_decision_comparison": _decision_comparison_summary(decision_rows),
+    }
 
 
 __all__ = [

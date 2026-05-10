@@ -277,6 +277,41 @@ def test_watch_session_tick_and_trade_endpoints_record_batches_pytest(tmp_path, 
     assert (local_root / "shared" / "artifacts" / "ops").exists()
 
 
+def test_replay_from_watch_session_returns_source_summary_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    replay_calls = []
+
+    def fake_persist_replay(payload, *, output_root=None):
+        replay_calls.append({"payload": payload, "output_root": output_root})
+        return {
+            "ok": True,
+            "replay_session_id": "replay-1",
+            "watch_session_id": "watch-1",
+            "watch_session_key": payload.watch_session_id,
+            "event_key": payload.event_key,
+            "source_tick_count": 4,
+            "source_trade_count": 1,
+            "latency_summary": {"tick_cadence": {"max_gap_seconds": 3.0}},
+        }
+
+    monkeypatch.setattr(ops_router, "try_persist_replay_request", fake_persist_replay)
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/replay/from-watch-session",
+        json={"watch_session_id": "watch-nba-event", "event_key": "nba-event", "notes": "pytest"},
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["db_persistence"]["source_tick_count"] == 4
+    assert payload["db_persistence"]["source_trade_count"] == 1
+    assert payload["db_persistence"]["latency_summary"]["tick_cadence"]["max_gap_seconds"] == 3.0
+    assert replay_calls[0]["payload"].watch_session_id == "watch-nba-event"
+    assert replay_calls[0]["output_root"] == payload["path"]
+
+
 def test_strategy_plan_evaluate_endpoint_compiles_intents_without_db_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
