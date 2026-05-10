@@ -40,7 +40,7 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 | Agent | Schedule | RRULE |
 |---|---:|---|
 | `JANUS - Post Game System Review` | Daily 04:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=4;BYMINUTE=0` |
-| `JANUS - Development Agent` | Every 30 minutes, 06:00-11:30 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=6,7,8,9,10,11;BYMINUTE=0,30` |
+| `JANUS - Development Agent` | Every 30 minutes, 06:00-11:30 BRT | Use 12 single-time weekly automations, or `FREQ=MINUTELY;INTERVAL=30` with prompt self-gate |
 | `JANUS - Pregame Integrity Check` | Daily 12:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=12;BYMINUTE=0` |
 | `JANUS - Pregame Research & Planning` | Daily 14:00 BRT | `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=14;BYMINUTE=0` |
 | `JANUS - Live System Monitor` | Every 30 minutes, self-gated by active events | `FREQ=MINUTELY;INTERVAL=30` |

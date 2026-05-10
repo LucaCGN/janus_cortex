@@ -2,8 +2,29 @@
 
 Schedule:
 
+Codex did not accept the compact multi-hour/multi-minute RRULE. Use one of the two supported patterns below.
+
+Preferred if the automation UI allows multiple automations in the same pinned chat: create one automation per exact time.
+
 ```text
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=6,7,8,9,10,11;BYMINUTE=0,30
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=6;BYMINUTE=0
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=6;BYMINUTE=30
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=0
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=30
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=8;BYMINUTE=0
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=8;BYMINUTE=30
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=9;BYMINUTE=0
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=9;BYMINUTE=30
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=10;BYMINUTE=0
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=10;BYMINUTE=30
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=11;BYMINUTE=0
+FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=11;BYMINUTE=30
+```
+
+Fallback if only one automation can be attached to the pinned chat: run every 30 minutes and self-gate inside the prompt.
+
+```text
+FREQ=MINUTELY;INTERVAL=30
 ```
 
 Prompt:
@@ -14,6 +35,8 @@ Run one JANUS Development Agent development-window pass using app\docs\planning\
 Work from C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex. Derive today's session date in America/Sao_Paulo.
 
 Read the operating plan, prompt index, Development Agent README, daily-live-validation status, latest postgame report, latest postgame_development_handoff, local\shared\handoffs\development-agent\status.md if present, and local\shared\handoffs\development-agent\master_queue.md if present. Run janus_status and git status.
+
+If this automation uses `FREQ=MINUTELY;INTERVAL=30`, self-gate: perform development work only when local BRT time is between `06:00` and `11:30`, inclusive. Outside that window, update status briefly only if there is a critical blocker; otherwise stop.
 
 Continue the previous Development Agent task if it is mid-flight and still valid. Otherwise select the highest-priority routed task that can be safely implemented and tested in this pass. Prefer P0 live-safety/data-integrity work from the latest handoff: account-scoped fill de-duplication and PnL reconciliation, StrategyPlanJSON requirement/blocking for live-reviewed events, generic watch-session tick/trade persistence, replay creation from watch sessions, manual-intervention adoption, or stale mirror quarantine. After immediate safety work is moving, select deeper development items from the master queue: complex shadow running, new deterministic strategies, replay/backtest experiments, ML methods, LLM plan/prompt experiments, and live-vs-shadow comparison tooling.
 
