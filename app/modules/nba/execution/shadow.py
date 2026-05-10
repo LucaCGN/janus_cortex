@@ -32,6 +32,21 @@ LIVE_PROBE_FAMILIES = {"quarter_open_reprice", "micro_momentum_continuation", "u
 SHADOW_SNAPSHOT_JSON_NAME = "shadow_snapshot_latest.json"
 SHADOW_SNAPSHOT_CSV_NAME = "shadow_snapshot_latest.csv"
 SHADOW_LIVE_COMPARISON_CSV_NAME = "shadow_live_comparison_latest.csv"
+ML_SIDECAR_VIEWS = (
+    "family_candidates",
+    "controller_candidates",
+    "focus_family_selected",
+    "controller_focus_selected",
+    "sidecar_union_selected",
+)
+ML_SELECTED_SIDECAR_VIEWS = {"focus_family_selected", "controller_focus_selected", "sidecar_union_selected"}
+ML_SIDECAR_SUBJECTS = {
+    "family_candidates": "ml_focus_family_reranker_v2",
+    "controller_candidates": "ml_controller_focus_calibrator_v2",
+    "focus_family_selected": "ml_focus_family_reranker_v2",
+    "controller_focus_selected": "ml_controller_focus_calibrator_v2",
+    "sidecar_union_selected": "ml_sidecar_union_v2",
+}
 
 
 def _now_utc() -> datetime:
@@ -59,6 +74,47 @@ def _safe_datetime(value: Any) -> datetime | None:
     if pd.isna(parsed):
         return None
     return parsed.to_pydatetime()
+
+
+def _is_blank(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (dict, list, tuple, set)):
+        return False
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _first_value(record: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = record.get(key)
+        if not _is_blank(value):
+            return value
+    return None
+
+
+def _coerce_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    if _is_blank(value):
+        return None
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "selected", "pass", "passed"}:
+        return True
+    if text in {"0", "false", "no", "n", "wait", "skip", "blocked", "failed"}:
+        return False
+    return None
+
+
+def _set_if_blank(record: dict[str, Any], key: str, value: Any) -> None:
+    if _is_blank(record.get(key)):
+        record[key] = value
 
 
 def _latest_state_row(state_df: pd.DataFrame, *, game_id: str, team_side: str) -> dict[str, Any] | None:
@@ -147,10 +203,12 @@ def _build_live_shadow_comparison(
     run_id: str,
     family_rows: list[dict[str, Any]],
     controller_cards: list[dict[str, Any]],
+    sidecar_rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     card_by_game = {str(card.get("game_id") or ""): card for card in controller_cards}
     rows: list[dict[str, Any]] = []
-    for shadow_row in family_rows:
+    shadow_rows = [*family_rows, *(sidecar_rows or [])]
+    for shadow_row in shadow_rows:
         game_id = str(shadow_row.get("game_id") or "")
         card = card_by_game.get(game_id)
         bucket = _comparison_bucket(shadow_row=shadow_row, controller_card=card)
@@ -159,6 +217,9 @@ def _build_live_shadow_comparison(
                 "run_id": run_id,
                 "game_id": game_id,
                 "matchup": shadow_row.get("matchup") or (card or {}).get("matchup"),
+                "subject_name": shadow_row.get("subject_name"),
+                "subject_type": shadow_row.get("subject_type"),
+                "candidate_id": shadow_row.get("candidate_id"),
                 "team_side": shadow_row.get("team_side"),
                 "strategy_family": shadow_row.get("strategy_family"),
                 "promotion_bucket": shadow_row.get("promotion_bucket"),
@@ -175,6 +236,20 @@ def _build_live_shadow_comparison(
                 "shadow_quote_age_seconds": shadow_row.get("first_attempt_quote_age_seconds"),
                 "shadow_spread_cents": shadow_row.get("spread_cents"),
                 "coverage_status": shadow_row.get("coverage_status"),
+                "sidecar_lane": shadow_row.get("sidecar_lane"),
+                "sidecar_view": shadow_row.get("sidecar_view"),
+                "sidecar_selected_flag": shadow_row.get("sidecar_selected_flag"),
+                "sidecar_status": shadow_row.get("sidecar_status"),
+                "sidecar_score": shadow_row.get("sidecar_score"),
+                "sidecar_probability": shadow_row.get("sidecar_probability"),
+                "sidecar_calibrated_confidence": shadow_row.get("calibrated_confidence"),
+                "sidecar_execution_likelihood": (
+                    shadow_row.get("calibrated_execution_likelihood")
+                    if not _is_blank(shadow_row.get("calibrated_execution_likelihood"))
+                    else shadow_row.get("execution_likelihood")
+                ),
+                "sidecar_raw_confidence": shadow_row.get("raw_confidence"),
+                "sidecar_selection_source": shadow_row.get("selection_source"),
                 "live_controller_name": (card or {}).get("controller_name"),
                 "live_strategy_family": (card or {}).get("strategy_family"),
                 "live_selected_team_side": (card or {}).get("selected_team_side"),
@@ -219,6 +294,17 @@ def _build_live_shadow_comparison(
     summary = {
         "row_count": len(rows),
         "bucket_counts": bucket_counts,
+        "family_row_count": len([row for row in rows if row.get("subject_type") == "family"]),
+        "sidecar_row_count": len([row for row in rows if row.get("subject_type") == "sidecar"]),
+        "ml_sidecar_row_count": len([row for row in rows if row.get("sidecar_lane") == "ml"]),
+        "llm_sidecar_row_count": len([row for row in rows if row.get("sidecar_lane") == "llm"]),
+        "sidecar_selected_count": len(
+            [
+                row
+                for row in rows
+                if row.get("subject_type") == "sidecar" and row.get("shadow_action") == "would_enter"
+            ]
+        ),
         "missed_shadow_signal_count": bucket_counts.get("missed_shadow_signal", 0),
         "live_match_count": bucket_counts.get("live_match", 0),
         "live_only_action_count": bucket_counts.get("live_only_action", 0),
@@ -230,6 +316,264 @@ def _build_live_shadow_comparison(
         "missed_opportunity_bands": missed_bands,
         "rows": to_jsonable(rows),
     }
+
+
+def _sidecar_signal_id(*, subject_name: str, record: dict[str, Any], game_id: str, team_side: str) -> str | None:
+    signal_id = _first_value(record, "signal_id", "candidate_signal_id", "underlying_signal_id")
+    if not _is_blank(signal_id):
+        return str(signal_id)
+    entry_state_index = _first_value(record, "entry_state_index", "latest_state_index", "state_index")
+    if _is_blank(game_id) or _is_blank(team_side) or _is_blank(entry_state_index):
+        return None
+    return _signal_id(subject_name, game_id, team_side, entry_state_index)
+
+
+def _sidecar_status(record: dict[str, Any], *, selected: bool) -> str:
+    status = _first_value(
+        record,
+        "decision_status",
+        "shadow_reason",
+        "no_trade_reason",
+        "cluster_failure_reason",
+        "compile_failure_reason",
+        "selection_source",
+    )
+    if not _is_blank(status):
+        return str(status)
+    return "selected" if selected else "not_selected"
+
+
+def _sidecar_score(record: dict[str, Any]) -> float | None:
+    return _safe_float(
+        _first_value(
+            record,
+            "sidecar_probability",
+            "calibrated_confidence",
+            "selection_score",
+            "calibrated_execution_likelihood",
+            "score",
+            "rank_score",
+            "heuristic_rank_score",
+            "raw_confidence",
+        )
+    )
+
+
+def _normalize_sidecar_candidate(
+    *,
+    lane: str,
+    view: str,
+    subject_name: str,
+    record: dict[str, Any],
+    bundles: dict[str, dict[str, Any]],
+    diagnostics_by_game: dict[str, dict[str, Any]],
+    selected_game_ids: set[str],
+    selected: bool,
+) -> dict[str, Any] | None:
+    game_id = str(_first_value(record, "game_id", "nba_game_id", "gameId") or "")
+    if selected_game_ids and game_id and game_id not in selected_game_ids:
+        return None
+    team_side = str(_first_value(record, "team_side", "side", "selected_team_side") or "")
+    strategy_family = str(
+        _first_value(record, "strategy_family", "selected_core_family", "source_strategy_family", "family") or ""
+    )
+    signal_id = _sidecar_signal_id(subject_name=subject_name, record=record, game_id=game_id, team_side=team_side)
+    score = _sidecar_score(record)
+    status = _sidecar_status(record, selected=selected)
+    signal_entry_at = _safe_datetime(_first_value(record, "signal_entry_at", "entry_at"))
+    latest_event_at = _safe_datetime(_first_value(record, "latest_event_at", "event_at"))
+    bundle = bundles.get(game_id) or {}
+    raw_candidate_id = _first_value(record, "candidate_id", "variant_subject_id", "controller_id", "action_id")
+    return {
+        "candidate_id": subject_name,
+        "underlying_candidate_id": raw_candidate_id,
+        "subject_name": subject_name,
+        "subject_type": "sidecar",
+        "sidecar_lane": lane,
+        "sidecar_view": view,
+        "sidecar_selected_flag": selected,
+        "sidecar_status": status,
+        "sidecar_score": score,
+        "sidecar_probability": _safe_float(record.get("sidecar_probability")),
+        "calibrated_confidence": _safe_float(record.get("calibrated_confidence")),
+        "calibrated_execution_likelihood": _safe_float(
+            _first_value(record, "calibrated_execution_likelihood", "execution_likelihood")
+        ),
+        "raw_confidence": _safe_float(record.get("raw_confidence")),
+        "selection_source": _first_value(record, "selection_source", "workflow"),
+        "promotion_bucket": "shadow_sidecar",
+        "matchup": _matchup_label(bundle) if bundle else record.get("matchup"),
+        "game_id": game_id,
+        "team_side": team_side,
+        "strategy_family": strategy_family,
+        "signal_id": signal_id,
+        "entry_state_index": _first_value(record, "entry_state_index", "latest_state_index", "state_index"),
+        "exit_state_index": record.get("exit_state_index"),
+        "signal_entry_at": signal_entry_at.isoformat() if signal_entry_at else None,
+        "signal_exit_at": str(record.get("signal_exit_at") or record.get("exit_at") or ""),
+        "signal_entry_price": _safe_float(
+            _first_value(record, "signal_entry_price", "entry_price", "best_ask", "team_price")
+        ),
+        "signal_exit_price": _safe_float(_first_value(record, "signal_exit_price", "exit_price")),
+        "signal_strength": score,
+        "entry_rule": record.get("entry_rule"),
+        "exit_rule": record.get("exit_rule"),
+        "opening_band": record.get("opening_band"),
+        "period_label": _first_value(record, "state_period_label", "period_label"),
+        "context_bucket": record.get("context_bucket"),
+        "latest_state_index": _first_value(record, "latest_state_index", "state_index"),
+        "latest_event_at": latest_event_at.isoformat() if latest_event_at else None,
+        "first_attempt_signal_age_seconds": _safe_float(record.get("first_attempt_signal_age_seconds")),
+        "first_attempt_quote_age_seconds": _safe_float(record.get("first_attempt_quote_age_seconds")),
+        "first_attempt_state_lag": _safe_float(record.get("first_attempt_state_lag")),
+        "best_bid": _safe_float(record.get("best_bid")),
+        "best_ask": _safe_float(record.get("best_ask")),
+        "spread_cents": _safe_float(_first_value(record, "spread_cents", "first_attempt_spread_cents")),
+        "shadow_action": "would_enter" if selected else "wait",
+        "shadow_reason": status if not selected else "sidecar_selected",
+        "coverage_status": _first_value(record, "coverage_status")
+        or diagnostics_by_game.get(game_id, {}).get("coverage_status"),
+    }
+
+
+def _build_ml_sidecar_shadow_rows(
+    *,
+    ml_shadow: dict[str, Any],
+    bundles: dict[str, dict[str, Any]],
+    diagnostics_by_game: dict[str, dict[str, Any]],
+    selected_game_ids: set[str],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for view in ML_SIDECAR_VIEWS:
+        candidates = ml_shadow.get(view)
+        if not isinstance(candidates, list):
+            continue
+        subject_name = ML_SIDECAR_SUBJECTS.get(view, f"ml_{view}")
+        for record in candidates:
+            if not isinstance(record, dict):
+                continue
+            selected = view in ML_SELECTED_SIDECAR_VIEWS or bool(_coerce_bool(record.get("shadow_selected_flag")))
+            row = _normalize_sidecar_candidate(
+                lane="ml",
+                view=view,
+                subject_name=subject_name,
+                record=record,
+                bundles=bundles,
+                diagnostics_by_game=diagnostics_by_game,
+                selected_game_ids=selected_game_ids,
+                selected=selected,
+            )
+            if row is not None:
+                rows.append(row)
+    return rows
+
+
+def _flatten_llm_action_record(record: dict[str, Any]) -> dict[str, Any]:
+    action = record.get("compiled_action") if isinstance(record.get("compiled_action"), dict) else {}
+    entry_condition = action.get("entry_condition") if isinstance(action.get("entry_condition"), dict) else {}
+    state_context = action.get("state_context") if isinstance(action.get("state_context"), dict) else {}
+    confidence = action.get("confidence") if isinstance(action.get("confidence"), dict) else {}
+    gating = action.get("gating") if isinstance(action.get("gating"), dict) else {}
+    compilation = action.get("compilation") if isinstance(action.get("compilation"), dict) else {}
+    flattened = dict(record)
+    _set_if_blank(flattened, "game_id", state_context.get("game_id"))
+    _set_if_blank(flattened, "team_side", action.get("side"))
+    _set_if_blank(flattened, "signal_id", action.get("candidate_signal_id"))
+    _set_if_blank(flattened, "strategy_family", action.get("strategy_family"))
+    _set_if_blank(flattened, "entry_state_index", entry_condition.get("entry_state_index"))
+    _set_if_blank(flattened, "signal_entry_at", entry_condition.get("signal_entry_at"))
+    _set_if_blank(flattened, "first_attempt_signal_age_seconds", entry_condition.get("observed_signal_age_seconds"))
+    _set_if_blank(flattened, "first_attempt_quote_age_seconds", entry_condition.get("observed_quote_age_seconds"))
+    _set_if_blank(flattened, "first_attempt_state_lag", entry_condition.get("observed_state_lag"))
+    _set_if_blank(flattened, "spread_cents", entry_condition.get("observed_spread_cents"))
+    _set_if_blank(flattened, "opening_band", state_context.get("opening_band"))
+    _set_if_blank(flattened, "period_label", state_context.get("period_label"))
+    _set_if_blank(flattened, "selection_score", confidence.get("selection_score"))
+    _set_if_blank(flattened, "calibrated_execution_likelihood", gating.get("optional_ml_calibrated_execution_likelihood"))
+    _set_if_blank(flattened, "selection_source", action.get("workflow"))
+    _set_if_blank(flattened, "compile_failure_reason", compilation.get("compile_failure_reason"))
+    return flattened
+
+
+def _build_llm_sidecar_shadow_rows(
+    *,
+    llm_shadow: dict[str, Any],
+    bundles: dict[str, dict[str, Any]],
+    diagnostics_by_game: dict[str, dict[str, Any]],
+    selected_game_ids: set[str],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    variants = llm_shadow.get("variants")
+    if not isinstance(variants, list):
+        return rows
+    for variant in variants:
+        if not isinstance(variant, dict):
+            continue
+        subject_name = str(variant.get("controller_id") or "llm_shadow_variant")
+        for record in variant.get("selected_actions") or []:
+            if not isinstance(record, dict):
+                continue
+            row = _normalize_sidecar_candidate(
+                lane="llm",
+                view="selected_actions",
+                subject_name=subject_name,
+                record=_flatten_llm_action_record(record),
+                bundles=bundles,
+                diagnostics_by_game=diagnostics_by_game,
+                selected_game_ids=selected_game_ids,
+                selected=True,
+            )
+            if row is not None:
+                rows.append(row)
+        for record in variant.get("decision_trace") or []:
+            if not isinstance(record, dict):
+                continue
+            selected = bool(_coerce_bool(record.get("selected_flag")))
+            row = _normalize_sidecar_candidate(
+                lane="llm",
+                view="decision_trace",
+                subject_name=subject_name,
+                record=record,
+                bundles=bundles,
+                diagnostics_by_game=diagnostics_by_game,
+                selected_game_ids=selected_game_ids,
+                selected=selected,
+            )
+            if row is not None:
+                rows.append(row)
+    return rows
+
+
+def _build_sidecar_shadow_rows(
+    *,
+    snapshot: dict[str, Any],
+    bundles: dict[str, dict[str, Any]],
+    diagnostics_by_game: dict[str, dict[str, Any]],
+    game_ids: list[str],
+) -> list[dict[str, Any]]:
+    selected_game_ids = {str(game_id) for game_id in game_ids}
+    rows: list[dict[str, Any]] = []
+    ml_shadow = snapshot.get("ml_shadow")
+    if isinstance(ml_shadow, dict):
+        rows.extend(
+            _build_ml_sidecar_shadow_rows(
+                ml_shadow=ml_shadow,
+                bundles=bundles,
+                diagnostics_by_game=diagnostics_by_game,
+                selected_game_ids=selected_game_ids,
+            )
+        )
+    llm_shadow = snapshot.get("llm_shadow")
+    if isinstance(llm_shadow, dict):
+        rows.extend(
+            _build_llm_sidecar_shadow_rows(
+                llm_shadow=llm_shadow,
+                bundles=bundles,
+                diagnostics_by_game=diagnostics_by_game,
+                selected_game_ids=selected_game_ids,
+            )
+        )
+    return rows
 
 
 def _build_family_shadow_rows(
@@ -392,13 +736,21 @@ def build_live_shadow_snapshot(
     state_df = snapshot.get("state_df")
     if not isinstance(state_df, pd.DataFrame):
         state_df = pd.DataFrame()
+    bundles = snapshot.get("bundles") or {}
+    diagnostics_by_game = snapshot.get("diagnostics_by_game") or {}
     family_rows = _build_family_shadow_rows(
         state_df=state_df,
-        bundles=snapshot.get("bundles") or {},
-        diagnostics_by_game=snapshot.get("diagnostics_by_game") or {},
+        bundles=bundles,
+        diagnostics_by_game=diagnostics_by_game,
         game_ids=selected_game_ids,
         families=selected_families,
         snapshot_at=snapshot_at,
+    )
+    sidecar_rows = _build_sidecar_shadow_rows(
+        snapshot=snapshot,
+        bundles=bundles,
+        diagnostics_by_game=diagnostics_by_game,
+        game_ids=selected_game_ids,
     )
     active_rows = [row for row in family_rows if row.get("shadow_action") == "would_enter"]
     blocked_rows = [row for row in family_rows if row.get("signal_id") and row.get("shadow_action") != "would_enter"]
@@ -406,6 +758,7 @@ def build_live_shadow_snapshot(
         run_id=run_id,
         family_rows=family_rows,
         controller_cards=controller_cards or [],
+        sidecar_rows=sidecar_rows,
     )
     summary_rows: list[dict[str, Any]] = []
     for family in selected_families:
@@ -430,6 +783,7 @@ def build_live_shadow_snapshot(
         "families": selected_families,
         "controller_cards": to_jsonable(controller_cards or []),
         "family_shadow": to_jsonable(family_rows),
+        "sidecar_shadow": to_jsonable(sidecar_rows),
         "live_shadow_comparison": live_comparison,
         "summary": summary_rows,
         "active_signals": to_jsonable(active_rows),

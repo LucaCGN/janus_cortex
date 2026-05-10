@@ -298,6 +298,137 @@ def test_build_live_shadow_snapshot_reports_missed_shadow_signal_pytest(tmp_path
     ]
 
 
+def test_build_live_shadow_snapshot_compares_ml_and_llm_sidecars_pytest(tmp_path: Path) -> None:
+    base = datetime(2026, 5, 10, 0, 0, tzinfo=timezone.utc)
+    snapshot = {
+        "state_df": pd.DataFrame(),
+        "bundles": {
+            "G-SIDE": {
+                "game": {"away_team_slug": "AWY", "home_team_slug": "HME"},
+            }
+        },
+        "diagnostics_by_game": {"G-SIDE": {"coverage_status": "covered_partial"}},
+        "ml_shadow": {
+            "sidecar_union_selected": [
+                {
+                    "game_id": "G-SIDE",
+                    "team_side": "home",
+                    "strategy_family": "underdog_range_scalp",
+                    "signal_id": "ml-sig-1",
+                    "entry_state_index": 4,
+                    "signal_entry_at": base.isoformat(),
+                    "signal_entry_price": 0.23,
+                    "opening_band": "20-30",
+                    "period_label": "Q2",
+                    "sidecar_probability": 0.74,
+                    "calibrated_confidence": 0.71,
+                    "calibrated_execution_likelihood": 0.69,
+                    "selection_source": "combined_sidecar",
+                    "shadow_selected_flag": True,
+                    "first_attempt_quote_age_seconds": 1.5,
+                    "spread_cents": 1.0,
+                }
+            ]
+        },
+        "llm_shadow": {
+            "variants": [
+                {
+                    "controller_id": "llm_selector_core_windows_v2",
+                    "selected_actions": [
+                        {
+                            "compiled_action": {
+                                "workflow": "selector",
+                                "candidate_signal_id": "llm-sig-1",
+                                "strategy_family": "winner_definition",
+                                "side": "away",
+                                "entry_condition": {
+                                    "entry_state_index": 9,
+                                    "signal_entry_at": base.isoformat(),
+                                    "observed_signal_age_seconds": 12.0,
+                                    "observed_quote_age_seconds": 1.0,
+                                    "observed_spread_cents": 1.0,
+                                    "observed_state_lag": 0,
+                                },
+                                "state_context": {
+                                    "game_id": "G-SIDE",
+                                    "opening_band": "20-30",
+                                    "period_label": "Q2",
+                                },
+                                "confidence": {"selection_score": 0.82},
+                                "gating": {"optional_ml_calibrated_execution_likelihood": 0.7},
+                            }
+                        }
+                    ],
+                    "decision_trace": [
+                        {
+                            "game_id": "G-SIDE",
+                            "team_side": "home",
+                            "strategy_family": "inversion",
+                            "signal_id": "llm-sig-2",
+                            "decision_status": "filtered_by_replay_gate",
+                            "selected_flag": False,
+                            "selection_score": 0.32,
+                            "opening_band": "20-30",
+                            "period_label": "Q2",
+                        }
+                    ],
+                }
+            ]
+        },
+    }
+
+    payload = build_live_shadow_snapshot(
+        run_id="demo-run",
+        run_root=tmp_path,
+        snapshot=snapshot,
+        controller_cards=[
+            {
+                "game_id": "G-SIDE",
+                "controller_name": "controller_vnext_unified_v1 :: balanced",
+                "strategy_family": "skip",
+                "selected_team_side": "home",
+                "selected_action": "wait",
+                "state_label": "skip",
+                "fill_state": "none",
+            }
+        ],
+        game_ids=["G-SIDE"],
+        families=["quarter_open_reprice"],
+        persist=False,
+    )
+
+    comparison = payload["live_shadow_comparison"]
+    summary = comparison["summary"]
+    assert len(payload["sidecar_shadow"]) == 3
+    assert summary["family_row_count"] == 0
+    assert summary["sidecar_row_count"] == 3
+    assert summary["ml_sidecar_row_count"] == 1
+    assert summary["llm_sidecar_row_count"] == 2
+    assert summary["sidecar_selected_count"] == 2
+    assert summary["missed_shadow_signal_count"] == 2
+    assert summary["blocked_shadow_signal_count"] == 1
+
+    ml_row = next(row for row in comparison["rows"] if row["sidecar_lane"] == "ml")
+    assert ml_row["candidate_id"] == "ml_sidecar_union_v2"
+    assert ml_row["comparison_bucket"] == "missed_shadow_signal"
+    assert ml_row["sidecar_probability"] == pytest.approx(0.74)
+    assert ml_row["sidecar_execution_likelihood"] == pytest.approx(0.69)
+
+    llm_selected = [
+        row for row in comparison["rows"] if row["sidecar_lane"] == "llm" and row["sidecar_view"] == "selected_actions"
+    ][0]
+    assert llm_selected["shadow_signal_id"] == "llm-sig-1"
+    assert llm_selected["team_side"] == "away"
+    assert llm_selected["sidecar_score"] == pytest.approx(0.82)
+    assert llm_selected["sidecar_execution_likelihood"] == pytest.approx(0.7)
+
+    llm_blocked = [
+        row for row in comparison["rows"] if row["sidecar_lane"] == "llm" and row["sidecar_view"] == "decision_trace"
+    ][0]
+    assert llm_blocked["comparison_bucket"] == "blocked_shadow_signal"
+    assert llm_blocked["sidecar_status"] == "filtered_by_replay_gate"
+
+
 def test_build_live_shadow_snapshot_marks_stale_signal_pytest(tmp_path: Path) -> None:
     base = datetime(2026, 4, 24, 20, 0, tzinfo=timezone.utc)
     state_df = pd.DataFrame(

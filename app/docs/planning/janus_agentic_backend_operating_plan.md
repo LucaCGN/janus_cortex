@@ -110,7 +110,7 @@ Implementation status:
 - Operator-intervention reconciliation stores adoption/rejection metadata in `raw_json` and reports whether the record includes external order/trade references, matched strategy family or manual-only reason, target/stop/hedge status, expected close path, and final PnL. `codex_tool/reconcile_orders.py` exposes the same fields for postgame cleanup.
 - Ultra-low underdog buys are guarded in both StrategyPlan evaluation and the legacy live-controller entry path. Underdog buys below `19c` require explicit low-price allowance, fresh scoreboard/score-gap evidence, and target/stop policy; buys below `10c` are manual-only and cannot compile autonomous order intents.
 - NBA schedule sync now captures a capped set of recently finished scoreboard games into the same per-game live context path as active games, persisting final score snapshots and play-by-play rows so postgame reviews can tie fills and market moves to score/clock context.
-- Live shadow snapshots now include a `live_shadow_comparison_v1` report and `shadow_live_comparison_latest.csv`, comparing live controller actions against shadow-family signals by game/side/family with missed-signal bands, blocker buckets, live-fill state, and orderbook context for postgame review.
+- Live shadow snapshots now include a `live_shadow_comparison_v1` report and `shadow_live_comparison_latest.csv`, comparing live controller actions against shadow-family signals plus ML/LLM sidecar rows by game/side/family with missed-signal bands, blocker buckets, sidecar scores/decisions, live-fill state, and orderbook context for postgame review.
 
 ## Backend Interfaces
 
