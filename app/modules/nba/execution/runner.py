@@ -74,6 +74,12 @@ from app.modules.nba.execution.shadow import (
     SHADOW_SNAPSHOT_JSON_NAME,
     build_live_shadow_snapshot,
 )
+from app.modules.agentic.contracts import (
+    MarketOrderbookTick,
+    MarketOrderbookTickRequest,
+    MarketWatchSessionRequest,
+)
+from app.modules.agentic.repository import try_persist_orderbook_ticks, try_persist_watch_session
 
 
 LIVE_MASTER_ROUTER_KWARGS = {
@@ -731,6 +737,172 @@ def _append_live_orderbook_tick(
     return _live_orderbook_tick_identity(tick) not in before_identities
 
 
+def _live_watch_event_key(bundle: dict[str, Any]) -> str:
+    selected_market = bundle.get("selected_market") or {}
+    game = bundle.get("game") or {}
+    for value in (
+        selected_market.get("canonical_slug"),
+        selected_market.get("event_id"),
+        selected_market.get("market_slug"),
+        selected_market.get("market_id"),
+        game.get("game_id"),
+    ):
+        normalized = str(value or "").strip()
+        if normalized:
+            return normalized
+    return "unknown"
+
+
+def _watch_session_key_for_event(event_key: str) -> str:
+    normalized = str(event_key or "").strip()
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in normalized)
+    safe = safe.strip("-")[:180]
+    return f"watch-{safe or 'unknown'}"
+
+
+def _agentic_tick_timestamps(payload: dict[str, Any]) -> tuple[datetime, datetime]:
+    tick = payload.get("tick") if isinstance(payload.get("tick"), dict) else {}
+    orderbook = payload.get("orderbook") if isinstance(payload.get("orderbook"), dict) else {}
+    captured_at = _parse_datetime(payload.get("observed_at")) or utc_now()
+    source_at = (
+        _parse_datetime(orderbook.get("timestamp"))
+        or _parse_datetime(tick.get("ts"))
+        or _parse_datetime(tick.get("timestamp"))
+        or captured_at
+    )
+    return captured_at, source_at
+
+
+def _build_agentic_orderbook_tick(
+    payload: dict[str, Any],
+    *,
+    run_id: str,
+    watch_session_key: str,
+    watch_session_id: str | None,
+) -> MarketOrderbookTick | None:
+    event_key = str(payload.get("event_key") or payload.get("game_id") or "").strip()
+    market_id = str(payload.get("market_id") or "").strip()
+    if not event_key or not market_id:
+        return None
+    tick = payload.get("tick") if isinstance(payload.get("tick"), dict) else {}
+    orderbook = payload.get("orderbook") if isinstance(payload.get("orderbook"), dict) else {}
+    best_bid = _safe_float(orderbook.get("best_bid"))
+    best_ask = _safe_float(orderbook.get("best_ask"))
+    tick_bid = _safe_float(tick.get("bid"))
+    tick_ask = _safe_float(tick.get("ask"))
+    best_bid = best_bid if best_bid is not None else tick_bid
+    best_ask = best_ask if best_ask is not None else tick_ask
+    if best_bid is None and best_ask is None:
+        return None
+    mid_price = _safe_float(tick.get("price"))
+    if mid_price is None and best_bid is not None and best_ask is not None:
+        mid_price = round((best_bid + best_ask) / 2.0, 6)
+    spread = None
+    if best_bid is not None and best_ask is not None:
+        spread = max(0.0, round(best_ask - best_bid, 6))
+    captured_at, source_at = _agentic_tick_timestamps(payload)
+    source_latency_ms = max(0.0, (captured_at - source_at).total_seconds() * 1000.0)
+    ingest_latency_ms = max(0.0, (utc_now() - captured_at).total_seconds() * 1000.0)
+    raw_payload = to_jsonable(
+        {
+            "run_id": run_id,
+            "watch_session_key": watch_session_key,
+            "watch_session_id": watch_session_id,
+            "game_id": payload.get("game_id"),
+            "event_id": payload.get("event_id"),
+            "event_slug": payload.get("event_slug"),
+            "market_slug": payload.get("market_slug"),
+            "side": payload.get("side"),
+            "cache_key": payload.get("cache_key"),
+            "trace": payload,
+        }
+    )
+    return MarketOrderbookTick(
+        event_key=event_key,
+        market_id=market_id,
+        outcome_id=payload.get("outcome_id"),
+        token_id=payload.get("token_id"),
+        captured_at_utc=captured_at,
+        source_timestamp_utc=source_at,
+        best_bid=best_bid,
+        best_ask=best_ask,
+        spread=spread,
+        mid_price=mid_price,
+        bid_depth=_safe_float(orderbook.get("bid_size")),
+        ask_depth=_safe_float(orderbook.get("ask_size")),
+        source_latency_ms=source_latency_ms,
+        ingest_latency_ms=ingest_latency_ms,
+        levels=to_jsonable(
+            {
+                "best_bid": best_bid,
+                "best_ask": best_ask,
+                "bid_size": orderbook.get("bid_size"),
+                "ask_size": orderbook.get("ask_size"),
+                "spread_cents": orderbook.get("spread_cents"),
+                "min_order_size": orderbook.get("min_order_size"),
+                "tick_size": orderbook.get("tick_size"),
+            }
+        ),
+        raw=raw_payload,
+    )
+
+
+def _persist_live_orderbook_tick_trace(
+    payload: dict[str, Any],
+    *,
+    run_id: str,
+    cadence_ms: int | None,
+    persisted_watch_sessions: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    event_key = str(payload.get("event_key") or payload.get("game_id") or "").strip()
+    if not event_key:
+        return {"ok": False, "error": "missing_event_key"}
+    watch_session_key = str(payload.get("watch_session_key") or _watch_session_key_for_event(event_key))
+    session_result = persisted_watch_sessions.get(watch_session_key)
+    if session_result is None:
+        session_result = try_persist_watch_session(
+            MarketWatchSessionRequest(
+                watch_session_id=watch_session_key,
+                event_key=event_key,
+                category="nba",
+                passive_only=True,
+                cadence_ms=cadence_ms,
+                reason="live_controller_orderbook_capture",
+                metadata={
+                    "run_id": run_id,
+                    "game_id": payload.get("game_id"),
+                    "market_id": payload.get("market_id"),
+                    "event_id": payload.get("event_id"),
+                    "event_slug": payload.get("event_slug"),
+                    "market_slug": payload.get("market_slug"),
+                    "source": "live_controller",
+                },
+            )
+        )
+        if session_result.get("ok"):
+            persisted_watch_sessions[watch_session_key] = session_result
+    tick = _build_agentic_orderbook_tick(
+        payload,
+        run_id=run_id,
+        watch_session_key=watch_session_key,
+        watch_session_id=session_result.get("watch_session_id"),
+    )
+    if tick is None:
+        return {"ok": False, "watch_session": session_result, "error": "missing_tick_fields"}
+    tick_result = try_persist_orderbook_ticks(
+        MarketOrderbookTickRequest(
+            ticks=[tick],
+            source="live_controller",
+        )
+    )
+    return {
+        "ok": bool(session_result.get("ok")) and bool(tick_result.get("ok")),
+        "watch_session_key": watch_session_key,
+        "watch_session": session_result,
+        "orderbook_ticks": tick_result,
+    }
+
+
 def _overlay_live_orderbook_ticks(
     bundle: dict[str, Any],
     *,
@@ -741,6 +913,7 @@ def _overlay_live_orderbook_ticks(
 ) -> dict[str, dict[str, Any]]:
     selected_market = bundle.get("selected_market") or {}
     market_id = str(selected_market.get("market_id") or "")
+    event_key = _live_watch_event_key(bundle)
     series_items = selected_market.get("series") or []
     for series_item in series_items:
         if not isinstance(series_item, dict):
@@ -805,7 +978,11 @@ def _overlay_live_orderbook_ticks(
                 {
                     "observed_at": (observed_at or utc_now()).isoformat(),
                     "game_id": str(game.get("game_id") or ""),
+                    "event_key": event_key,
+                    "event_id": selected_market.get("event_id"),
+                    "event_slug": selected_market.get("canonical_slug"),
                     "market_id": market_id,
+                    "market_slug": selected_market.get("market_slug"),
                     "side": side,
                     "outcome_id": series_item.get("outcome_id"),
                     "token_id": token_id,
@@ -1287,6 +1464,7 @@ class LiveRunWorker:
         self.last_traceback: str | None = None
         self.latest_cycle_snapshot: dict[str, Any] | None = None
         self.live_market_tick_cache: dict[str, list[dict[str, Any]]] = {}
+        self._agentic_watch_sessions: dict[str, dict[str, Any]] = {}
         self._load_recovery_snapshot()
         _write_json(self.run_root / "run_config.json", self.config.model_dump())
 
@@ -3058,6 +3236,38 @@ class LiveRunWorker:
 
     def _append_live_orderbook_tick_trace(self, payload: dict[str, Any]) -> None:
         _append_jsonl(self.run_root / "live_orderbook_ticks.jsonl", payload)
+        try:
+            persisted_watch_sessions = getattr(self, "_agentic_watch_sessions", None)
+            if persisted_watch_sessions is None:
+                persisted_watch_sessions = {}
+                self._agentic_watch_sessions = persisted_watch_sessions
+            cadence_ms = int(max(1.0, float(self.config.poll_interval_live_sec)) * 1000)
+            result = _persist_live_orderbook_tick_trace(
+                payload,
+                run_id=self.config.run_id,
+                cadence_ms=cadence_ms,
+                persisted_watch_sessions=persisted_watch_sessions,
+            )
+            if not result.get("ok"):
+                self._write_runtime_log(
+                    "live_orderbook_tick_agentic_persist_failed",
+                    {
+                        "run_id": self.config.run_id,
+                        "event_key": payload.get("event_key"),
+                        "market_id": payload.get("market_id"),
+                        "result": result,
+                    },
+                )
+        except Exception as exc:
+            self._write_runtime_log(
+                "live_orderbook_tick_agentic_persist_error",
+                {
+                    "run_id": self.config.run_id,
+                    "event_key": payload.get("event_key"),
+                    "market_id": payload.get("market_id"),
+                    "error": str(exc),
+                },
+            )
 
     def _state_trace_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
         if not row:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -9,6 +10,7 @@ import pytest
 from app.modules.nba.execution import runner as runner_module
 from app.modules.nba.execution.contracts import LiveRunConfig, build_live_order_metadata
 from app.modules.nba.execution.runner import (
+    LiveRunWorker,
     _controller_probe_family,
     _controller_source_name,
     _apply_live_orderbook_to_latest_state_rows,
@@ -364,7 +366,10 @@ def test_overlay_live_orderbook_tick_cache_survives_next_state_build_pytest(monk
     bundle = {
         "game": {"game_id": "0042500231"},
         "selected_market": {
+            "event_id": "event-sas-min",
+            "canonical_slug": "nba-sas-min-2026-05-04",
             "market_id": "market-min-sas",
+            "market_slug": "nba-sas-min-moneyline",
             "series": [
                 {
                     "side": "away",
@@ -376,16 +381,21 @@ def test_overlay_live_orderbook_tick_cache_survives_next_state_build_pytest(monk
         },
     }
     tick_cache: dict[str, list[dict[str, object]]] = {}
+    captured_ticks: list[dict[str, object]] = []
 
     orderbooks = _overlay_live_orderbook_ticks(
         bundle,
         account={"account_id": "demo"},
         observed_at=observed_at,
         live_tick_cache=tick_cache,
+        live_tick_sink=captured_ticks.append,
     )
 
     assert orderbooks["away"]["best_bid"] == 0.28
     assert tick_cache
+    assert captured_ticks[0]["event_key"] == "nba-sas-min-2026-05-04"
+    assert captured_ticks[0]["event_id"] == "event-sas-min"
+    assert captured_ticks[0]["market_slug"] == "nba-sas-min-moneyline"
     assert float(bundle["selected_market"]["series"][0]["ticks"][-1]["price"]) == pytest.approx(0.29)
 
     rebuilt_bundle = {
@@ -413,6 +423,84 @@ def test_overlay_live_orderbook_tick_cache_survives_next_state_build_pytest(monk
     rebuilt_ticks = rebuilt_bundle["selected_market"]["series"][0]["ticks"]
     assert [tick["source"] for tick in rebuilt_ticks] == ["after_last_tick", "live_orderbook_mid"]
     assert float(rebuilt_ticks[-1]["price"]) == pytest.approx(0.29)
+
+
+def test_live_worker_persists_orderbook_ticks_to_agentic_watch_sessions_pytest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed_at = datetime(2026, 5, 10, 0, 10, tzinfo=timezone.utc)
+    watch_sessions: list[object] = []
+    tick_requests: list[object] = []
+
+    def fake_persist_watch_session(payload: object) -> dict[str, object]:
+        watch_sessions.append(payload)
+        watch_session_key = getattr(payload, "watch_session_id")
+        return {
+            "ok": True,
+            "watch_session_id": f"uuid-{watch_session_key}",
+            "watch_session_key": watch_session_key,
+        }
+
+    def fake_persist_orderbook_ticks(payload: object) -> dict[str, object]:
+        tick_requests.append(payload)
+        return {"ok": True, "inserted": len(getattr(payload, "ticks"))}
+
+    monkeypatch.setattr(runner_module, "try_persist_watch_session", fake_persist_watch_session)
+    monkeypatch.setattr(runner_module, "try_persist_orderbook_ticks", fake_persist_orderbook_ticks)
+
+    worker = LiveRunWorker.__new__(LiveRunWorker)
+    worker.run_root = tmp_path
+    worker.config = LiveRunConfig(run_id="live-test", poll_interval_live_sec=3.0)
+    worker._agentic_watch_sessions = {}
+
+    for event_idx, side in enumerate(["away", "home"], start=1):
+        LiveRunWorker._append_live_orderbook_tick_trace(
+            worker,
+            {
+                "observed_at": observed_at.isoformat(),
+                "game_id": f"G{event_idx}",
+                "event_key": f"nba-event-{event_idx}",
+                "event_id": f"event-{event_idx}",
+                "event_slug": f"nba-event-{event_idx}",
+                "market_id": f"market-{event_idx}",
+                "market_slug": f"market-slug-{event_idx}",
+                "side": side,
+                "outcome_id": f"out-{event_idx}",
+                "token_id": f"token-{event_idx}",
+                "cache_key": f"G{event_idx}|market-{event_idx}|out-{event_idx}|{side}",
+                "tick": {
+                    "outcome_id": f"out-{event_idx}",
+                    "ts": observed_at,
+                    "source": "live_orderbook_mid",
+                    "price": Decimal("0.29"),
+                    "bid": Decimal("0.28"),
+                    "ask": Decimal("0.30"),
+                },
+                "orderbook": {
+                    "best_bid": 0.28,
+                    "best_ask": 0.30,
+                    "spread_cents": 2.0,
+                    "bid_size": 100.0,
+                    "ask_size": 120.0,
+                    "timestamp": observed_at.isoformat(),
+                    "min_order_size": 5.0,
+                    "tick_size": 0.01,
+                },
+            },
+        )
+
+    assert (tmp_path / "live_orderbook_ticks.jsonl").exists()
+    assert len(watch_sessions) == 2
+    assert [getattr(session, "event_key") for session in watch_sessions] == ["nba-event-1", "nba-event-2"]
+    assert {getattr(session, "cadence_ms") for session in watch_sessions} == {3000}
+    assert len(tick_requests) == 2
+    persisted_ticks = [getattr(request, "ticks")[0] for request in tick_requests]
+    assert [tick.event_key for tick in persisted_ticks] == ["nba-event-1", "nba-event-2"]
+    assert [tick.market_id for tick in persisted_ticks] == ["market-1", "market-2"]
+    assert [tick.mid_price for tick in persisted_ticks] == [0.29, 0.29]
+    assert persisted_ticks[0].raw["watch_session_key"] == "watch-nba-event-1"
+    assert persisted_ticks[0].raw["run_id"] == "live-test"
 
 
 def test_probe_family_controller_defaults_to_empty_frames_when_probe_keys_missing_pytest() -> None:

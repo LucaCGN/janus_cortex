@@ -103,6 +103,10 @@ Generic tables live in the `agentic` schema:
 
 NBA watchlists are generated from the daily slate and Polymarket matching. Crypto/geopolitics watchlists are explicit operator-maintained lists seeded from public Polymarket profiles and event URLs. Passive watching is allowed without trading so Janus can collect real tick latency for future replay.
 
+Implementation status:
+
+- As of 2026-05-10, the NBA live controller mirrors captured live CLOB orderbook ticks into generic `market_watch_sessions` and `market_orderbook_ticks` while preserving the legacy `live_orderbook_ticks.jsonl` trace. Live market trade persistence and replay materialization from persisted watch data remain open P0 work.
+
 ## Backend Interfaces
 
 - `GET /v1/ops/status`
