@@ -1,6 +1,12 @@
 # Janus Cortex
 
-Personal prediction-market data framework focused on production-grade data structures, ingestion pipelines, and service layers before strategy automation.
+Backend-first local prediction-market service for production-grade ingestion, market watching, strategy-plan execution, order reconciliation, replay capture, and continuous Codex-assisted development.
+
+## Operating Boundary
+
+Janus must run independently from Codex. The backend service owns ingestion, watch sessions, active `StrategyPlanJSON` loading, trigger evaluation, order-intent validation, audited order execution, portfolio reconciliation, and replay capture.
+
+Codex automations, or an equivalent external agent framework, are required for the CI/CD and research operating loop: postgame review, development passes, pregame integrity checks, external research, live health monitoring, prompt refinement, and documentation discipline. Codex agents may submit research and structured strategy-plan revisions, but the local Janus engine remains the source of execution truth.
 
 ## Current Status
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
@@ -8,8 +14,8 @@ Personal prediction-market data framework focused on production-grade data struc
 - Agentic backend operating plan: `app\docs\planning\janus_agentic_backend_operating_plan.md`
 - Codex agent automation prompts: `app\docs\planning\codex_agent_automation_prompts.md`
 - Codex automation tools live under `codex_tool\`
-- Current priority: run the locked NBA controller pair through the live playoff validation loop and harden the local Polymarket executor path.
-- Current scope: locked controller execution integration, live-paper review, stop-loss/order-policy testing, decision logging, and unified benchmark control across replay, ML, and LLM lanes.
+- Current priority: keep the agentic backend operating loop live for the NBA playoff slate while hardening direct CLOB reconciliation, StrategyPlanJSON execution, watch-session replay, and minimum-size live testing.
+- Current scope: backend ops endpoints, Codex tools, live pregame/postgame workflow, strategy-plan validation/execution, stop/hedge/order-policy testing, decision logging, and unified benchmark control across replay, ML, LLM, and live-validation lanes.
 - Current NBA analysis snapshot on `2026-04-23`:
   - regular-season research-ready corpus: `1198 / 1224`
   - postseason validation corpus: `22` games (`6` play-in + `16` playoffs), all research-ready
@@ -39,8 +45,8 @@ Personal prediction-market data framework focused on production-grade data struc
   - current live-ready stack is still only the locked controller pair: `controller_vnext_unified_v1 :: balanced` and `controller_vnext_deterministic_v1 :: tight`
   - current live-probe tier is `quarter_open_reprice` plus `micro_momentum_continuation`, but today they still execute as shadow because live executor v1 cannot route standalone probes
   - current replay shadow set includes `inversion` and `lead_fragility`, while replay bench-only families remain visible but not promotable
-  - ML v2 is compare-ready as sidecar ranking/calibration only and is recommended to merge behind a bounded sidecar scope, not as hard routing or sizing
-  - LLM v2 is compare-ready in constrained select/gate/compile mode, but current recommendation remains shadow-only until more validation clears
+  - ML v2 is compare-ready as context, ranking, calibration, and confidence metadata for strategy-plan selection; it does not yet have standalone execution authority
+  - LLM strategy authority now flows through structured `StrategyPlanJSON`: the LLM may choose and combine executable strategy families, while the order manager enforces mechanical safety
 
 ## Scope Definitions
 - `v0.8.*`: NBA regular-season data completion for 2025/26.
@@ -128,6 +134,6 @@ Common commands:
 - Local checkpoint and reference material should live under `JANUS_LOCAL_ROOT` rather than the repository root.
 - Current execution planning belongs under `app/docs/planning/current`; closed execution waves belong under `app/docs/planning/archive`.
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
-- Sports-core data completeness comes before Chroma, LLM memory, or broader multi-module expansion.
-- Strategy logic is now frozen around the offline NBA analysis controller stack; the current goal is execution hardening and review tooling, not new family proliferation.
-- The live-control surface is a minimal operator console, not the long-horizon analysis dashboard. Use `/live-control` for tonight's run loop and `analysis-studio` for offline review.
+- Sports-core data completeness and the generic watch/replay foundation come before broader crypto/geopolitics strategy branches.
+- Strategy development is active but must flow through tested families, structured StrategyPlanJSON, direct CLOB reconciliation, and replay/live-validation evidence.
+- The frontend is not the production operating surface. Backend API endpoints, `codex_tool\`, tracked docs, and runtime handoffs are the operating interface.

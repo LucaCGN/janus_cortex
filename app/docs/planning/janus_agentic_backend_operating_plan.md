@@ -4,6 +4,8 @@
 
 Janus is moving to a backend-first local production service. The internal LLM system has real strategy authority through structured JSON plans that the trading engine validates, monitors, and executes. Codex agents remain external operators for research, health checks, postgame review, and continuous development.
 
+Codex automations, or an equivalent external agent framework, are part of the required operating loop for CI/CD, research, audits, and continuous improvement. They are not part of the critical runtime path for order execution: Janus must continue to ingest data, watch markets, evaluate active plans, reconcile the portfolio, and preserve replay data from the latest valid local state even when Codex is offline.
+
 The canonical local runtime root is:
 
 `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
@@ -13,7 +15,7 @@ Runtime data under `local/` is not tracked by git. Tracked code and docs define 
 ## Core Architecture
 
 - Janus owns ingestion, market watching, strategy-plan execution, order reconciliation, and replay capture.
-- Codex owns external research, monitoring, development work, CI/CD-style checks, and handoff discipline.
+- Codex owns external research, monitoring, development work, CI/CD-style checks, prompt/documentation discipline, and handoff review.
 - Backend API and CLI tools are the production control surface.
 - The frontend is removed from the operating path first, then deleted only after backend parity tests pass.
 - Future crypto-options and geopolitics branches must reuse the same generic market watch/replay foundation.
