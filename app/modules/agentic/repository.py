@@ -12,6 +12,7 @@ from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.data.databases.postgres import managed_connection
 from app.modules.agentic.contracts import (
     MarketOrderbookTickRequest,
+    MarketTradeObservation,
     MarketTradeObservationRequest,
     MarketWatchSessionRequest,
     OperatorInterventionRequest,
@@ -367,10 +368,30 @@ def try_persist_orderbook_ticks(payload: MarketOrderbookTickRequest) -> dict[str
         return {"ok": False, "error": str(exc), "row_count": 0}
 
 
+_MARKET_TRADE_NAMESPACE = uuid.UUID("56bbac1f-6d4a-4a79-b11b-549ac4d4d40a")
+
+
+def _market_trade_observation_id(trade: MarketTradeObservation) -> str:
+    identity = "|".join(
+        [
+            str(trade.event_key or ""),
+            str(trade.market_id or ""),
+            str(trade.outcome_id or ""),
+            str(trade.token_id or ""),
+            str(trade.external_trade_id or ""),
+            trade.trade_time_utc.isoformat(),
+            str(trade.side or ""),
+            str(trade.price or ""),
+            str(trade.size or ""),
+        ]
+    )
+    return str(uuid.uuid5(_MARKET_TRADE_NAMESPACE, identity))
+
+
 def try_persist_market_trades(payload: MarketTradeObservationRequest) -> dict[str, Any]:
     rows = [
         (
-            str(uuid.uuid4()),
+            _market_trade_observation_id(trade),
             trade.event_key,
             trade.market_id,
             trade.outcome_id,
@@ -408,7 +429,21 @@ def try_persist_market_trades(payload: MarketTradeObservationRequest) -> dict[st
                         source_latency_ms,
                         raw_json
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (market_trade_id)
+                    DO UPDATE SET
+                        event_key = EXCLUDED.event_key,
+                        market_id = EXCLUDED.market_id,
+                        outcome_id = EXCLUDED.outcome_id,
+                        token_id = EXCLUDED.token_id,
+                        external_trade_id = EXCLUDED.external_trade_id,
+                        trade_time = EXCLUDED.trade_time,
+                        observed_at = EXCLUDED.observed_at,
+                        side = EXCLUDED.side,
+                        price = EXCLUDED.price,
+                        size = EXCLUDED.size,
+                        source_latency_ms = EXCLUDED.source_latency_ms,
+                        raw_json = EXCLUDED.raw_json;
                     """,
                     rows,
                 )

@@ -77,9 +77,11 @@ from app.modules.nba.execution.shadow import (
 from app.modules.agentic.contracts import (
     MarketOrderbookTick,
     MarketOrderbookTickRequest,
+    MarketTradeObservation,
+    MarketTradeObservationRequest,
     MarketWatchSessionRequest,
 )
-from app.modules.agentic.repository import try_persist_orderbook_ticks, try_persist_watch_session
+from app.modules.agentic.repository import try_persist_market_trades, try_persist_orderbook_ticks, try_persist_watch_session
 
 
 LIVE_MASTER_ROUTER_KWARGS = {
@@ -903,6 +905,58 @@ def _persist_live_orderbook_tick_trace(
         "watch_session": session_result,
         "orderbook_ticks": tick_result,
     }
+
+
+def _build_live_trade_observation(trade: dict[str, Any], *, run_id: str) -> MarketTradeObservation | None:
+    metadata = _parse_json_dict(trade.get("metadata_json"))
+    event_key = str(metadata.get("event_key") or metadata.get("game_id") or "").strip()
+    market_id = str(trade.get("market_id") or metadata.get("market_id") or "").strip()
+    if not event_key or not market_id:
+        return None
+    trade_time = _parse_datetime(trade.get("trade_time")) or utc_now()
+    observed_at = utc_now()
+    return MarketTradeObservation(
+        event_key=event_key,
+        market_id=market_id,
+        outcome_id=str(trade.get("outcome_id") or metadata.get("outcome_id") or "").strip() or None,
+        token_id=str(metadata.get("token_id") or "").strip() or None,
+        external_trade_id=str(trade.get("external_trade_id") or trade.get("trade_id") or "").strip() or None,
+        trade_time_utc=trade_time,
+        observed_at_utc=observed_at,
+        side=str(trade.get("side") or "").lower() or None,
+        price=_safe_float(trade.get("price")),
+        size=_safe_float(trade.get("size")),
+        source_latency_ms=max(0.0, (observed_at - trade_time).total_seconds() * 1000.0),
+        raw=to_jsonable(
+            {
+                "trade_source": "live_order_fill",
+                "run_id": run_id,
+                "order_id": trade.get("order_id"),
+                "trade_id": trade.get("trade_id"),
+                "account_id": trade.get("account_id"),
+                "watch_session_key": metadata.get("watch_session_key") or _watch_session_key_for_event(event_key),
+                "metadata_json": metadata,
+                "portfolio_trade": trade,
+            }
+        ),
+    )
+
+
+def _persist_live_run_market_trades(run_trades: list[dict[str, Any]], *, run_id: str) -> dict[str, Any]:
+    observations = [
+        observation
+        for trade in run_trades
+        if (observation := _build_live_trade_observation(trade, run_id=run_id)) is not None
+    ]
+    if not observations:
+        return {"ok": True, "row_count": 0, "skipped_trade_count": len(run_trades)}
+    result = try_persist_market_trades(
+        MarketTradeObservationRequest(
+            trades=observations,
+            source="live_controller_order_fills",
+        )
+    )
+    return {**result, "skipped_trade_count": len(run_trades) - len(observations)}
 
 
 def _overlay_live_orderbook_ticks(
@@ -2176,6 +2230,12 @@ class LiveRunWorker:
             reconcile_live_order_fills(connection, account=self.account, run_id=self.config.run_id)
         run_orders = list_run_orders(connection, run_id=self.config.run_id)
         run_trades = list_run_trades(connection, run_id=self.config.run_id)
+        trade_persistence = _persist_live_run_market_trades(run_trades, run_id=self.config.run_id)
+        if run_trades or not bool(trade_persistence.get("ok")):
+            self._append_controller_trace(
+                "market_trade_persistence",
+                payload=trade_persistence,
+            )
         latest_positions = list_latest_positions(connection, account_id=str(self.account["account_id"])) if self.account else []
         trade_by_order: dict[str, list[dict[str, Any]]] = {}
         for trade in run_trades:
@@ -2796,9 +2856,12 @@ class LiveRunWorker:
                 stop_price=_extract_stop_price(record),
                 order_policy="limit_best_ask",
                 extra={
+                    "event_key": _live_watch_event_key(bundle),
+                    "watch_session_key": _watch_session_key_for_event(_live_watch_event_key(bundle)),
                     "team_side": team_side,
                     "team_slug": record.get("team_slug"),
                     "opponent_team_slug": record.get("opponent_team_slug"),
+                    "token_id": str(outcome_meta.get("token_id") or ""),
                     "entry_metadata": _parse_json_dict(record.get("entry_metadata_json")),
                     "best_bid": best_bid,
                     "best_ask": best_ask,
@@ -2904,6 +2967,8 @@ class LiveRunWorker:
                     "pending_action": "entry",
                     "submitted_at": utc_now().isoformat(),
                     "game_id": game_id,
+                    "event_key": _live_watch_event_key(bundle),
+                    "watch_session_key": _watch_session_key_for_event(_live_watch_event_key(bundle)),
                     "matchup": _matchup_label(bundle["game"]),
                     "market_id": str(bundle.get("selected_market", {}).get("market_id") or ""),
                     "market_question": bundle.get("selected_market", {}).get("question"),
@@ -2990,7 +3055,14 @@ class LiveRunWorker:
             entry_reason=str(position_state.get("exit_reason") or "live_exit"),
             stop_price=float(position_state.get("stop_price") or 0.0) if position_state.get("stop_price") is not None else None,
             order_policy=order_policy,
-            extra={"team_side": position_state.get("team_side"), "stop_triggered_flag": stop_triggered_flag},
+            extra={
+                "event_key": position_state.get("event_key") or position_state.get("game_id"),
+                "watch_session_key": position_state.get("watch_session_key")
+                or _watch_session_key_for_event(str(position_state.get("event_key") or position_state.get("game_id") or "")),
+                "team_side": position_state.get("team_side"),
+                "token_id": position_state.get("token_id"),
+                "stop_triggered_flag": stop_triggered_flag,
+            },
         )
         placed = create_live_order(
             connection,
@@ -3068,7 +3140,11 @@ class LiveRunWorker:
             stop_price=float(position_state.get("stop_price") or 0.0) if position_state.get("stop_price") is not None else None,
             order_policy="resting_limit_target",
             extra={
+                "event_key": position_state.get("event_key") or position_state.get("game_id"),
+                "watch_session_key": position_state.get("watch_session_key")
+                or _watch_session_key_for_event(str(position_state.get("event_key") or position_state.get("game_id") or "")),
                 "team_side": position_state.get("team_side"),
+                "token_id": position_state.get("token_id"),
                 "entry_price": position_state.get("entry_price"),
                 "target_price": target_price,
                 "bracket_order_flag": True,

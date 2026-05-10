@@ -7,8 +7,10 @@ from app.modules.nba.execution import runner as runner_mod
 from app.modules.nba.execution.contracts import LiveRunConfig
 from app.modules.nba.execution.runner import (
     LiveRunWorker,
+    _build_live_trade_observation,
     _controller_ultra_low_underdog_entry_blocker,
     _evaluate_exit_reason,
+    _persist_live_run_market_trades,
     _resolve_resting_target_exit_price,
     _run_game_entry_budget_state,
     _should_confirm_contextual_scalp_stop,
@@ -238,6 +240,79 @@ def test_controller_ultra_low_underdog_allows_guarded_floor_entry_pytest() -> No
     assert blocker is None
 
 
+def test_build_live_trade_observation_maps_run_trade_to_agentic_market_trade_pytest() -> None:
+    observation = _build_live_trade_observation(
+        {
+            "trade_id": "trade-1",
+            "order_id": "order-1",
+            "account_id": "acct-1",
+            "market_id": "market-1",
+            "outcome_id": "outcome-lal",
+            "external_trade_id": "external-trade-1",
+            "side": "buy",
+            "price": 0.12,
+            "size": 5,
+            "trade_time": "2026-05-10T01:02:03+00:00",
+            "metadata_json": {
+                "event_key": "nba-okc-lal-2026-05-09",
+                "game_id": "0042500223",
+                "token_id": "token-lal",
+                "watch_session_key": "watch-nba-okc-lal-2026-05-09",
+            },
+        },
+        run_id="live-test",
+    )
+
+    assert observation is not None
+    assert observation.event_key == "nba-okc-lal-2026-05-09"
+    assert observation.market_id == "market-1"
+    assert observation.outcome_id == "outcome-lal"
+    assert observation.token_id == "token-lal"
+    assert observation.external_trade_id == "external-trade-1"
+    assert observation.raw["trade_source"] == "live_order_fill"
+    assert observation.raw["watch_session_key"] == "watch-nba-okc-lal-2026-05-09"
+
+
+def test_persist_live_run_market_trades_writes_observed_fills_pytest(monkeypatch) -> None:
+    calls = []
+
+    def fake_persist(payload):
+        calls.append(payload)
+        return {"ok": True, "row_count": len(payload.trades)}
+
+    monkeypatch.setattr(runner_mod, "try_persist_market_trades", fake_persist)
+
+    result = _persist_live_run_market_trades(
+        [
+            {
+                "trade_id": "trade-1",
+                "order_id": "order-1",
+                "market_id": "market-1",
+                "outcome_id": "outcome-lal",
+                "side": "buy",
+                "price": 0.12,
+                "size": 5,
+                "trade_time": "2026-05-10T01:02:03+00:00",
+                "metadata_json": {"event_key": "nba-okc-lal-2026-05-09"},
+            },
+            {
+                "trade_id": "missing-event",
+                "market_id": "market-1",
+                "side": "buy",
+                "price": 0.12,
+                "size": 5,
+                "trade_time": "2026-05-10T01:02:03+00:00",
+                "metadata_json": {},
+            },
+        ],
+        run_id="live-test",
+    )
+
+    assert result == {"ok": True, "row_count": 1, "skipped_trade_count": 1}
+    assert calls[0].source == "live_controller_order_fills"
+    assert calls[0].trades[0].event_key == "nba-okc-lal-2026-05-09"
+
+
 def test_resolve_resting_target_exit_price_uses_strategy_target_or_minimum_gain_pytest() -> None:
     target_price = _resolve_resting_target_exit_price(
         {
@@ -326,6 +401,7 @@ def test_reconcile_runtime_state_allows_active_order_mutation_during_fill_pytest
     worker.run_root = tmp_path
     worker.account = {"account_id": "acct-1"}
     worker.events = deque(maxlen=20)
+    worker.cycle_count = 0
     worker.active_orders = {
         "signal-1": {
             "order_id": "order-1",

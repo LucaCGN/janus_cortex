@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 import uuid
 
-from app.modules.agentic.contracts import OperatorInterventionRequest, ReplayFromWatchSessionRequest
+from app.modules.agentic.contracts import MarketTradeObservation, MarketTradeObservationRequest, OperatorInterventionRequest, ReplayFromWatchSessionRequest
 from app.modules.agentic import repository
 
 
@@ -130,6 +130,83 @@ def test_try_persist_operator_intervention_stores_metadata_status_in_raw_json_py
     assert insert_params[8] == "metadata_complete"
     assert insert_params[10].adapted["external_trade_ids"] == ["trade-1"]
     assert insert_params[10].adapted["adoption_metadata"]["adoption_class"] == "strategy_family"
+
+
+def test_market_trade_observation_id_is_stable_for_reconciled_live_fills_pytest() -> None:
+    trade = MarketTradeObservation(
+        event_key="nba-lal-okc-2026-05-09",
+        market_id="market-1",
+        outcome_id="outcome-lal",
+        token_id="token-lal",
+        external_trade_id="trade-1",
+        trade_time_utc=datetime(2026, 5, 10, 1, 2, tzinfo=timezone.utc),
+        side="buy",
+        price=0.12,
+        size=5,
+    )
+
+    assert repository._market_trade_observation_id(trade) == repository._market_trade_observation_id(trade)  # noqa: SLF001
+
+
+def test_try_persist_market_trades_upserts_deterministic_rows_pytest(monkeypatch) -> None:
+    class FakeCursor:
+        def __init__(self) -> None:
+            self.query = None
+            self.rows = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def executemany(self, query, rows) -> None:
+            self.query = query
+            self.rows = rows
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = FakeCursor()
+            self.committed = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def cursor(self, *_, **__):
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            self.committed = True
+
+    fake_connection = FakeConnection()
+
+    @contextmanager
+    def fake_managed_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(repository, "managed_connection", fake_managed_connection)
+
+    trade = MarketTradeObservation(
+        event_key="nba-lal-okc-2026-05-09",
+        market_id="market-1",
+        external_trade_id="trade-1",
+        trade_time_utc=datetime(2026, 5, 10, 1, 2, tzinfo=timezone.utc),
+        side="buy",
+        price=0.12,
+        size=5,
+        raw={"source": "live_order_fill"},
+    )
+    result = repository.try_persist_market_trades(MarketTradeObservationRequest(source="pytest", trades=[trade]))
+
+    assert result == {"ok": True, "row_count": 1}
+    assert "ON CONFLICT (market_trade_id)" in fake_connection.cursor_obj.query
+    assert fake_connection.cursor_obj.rows[0][0] == repository._market_trade_observation_id(trade)  # noqa: SLF001
+    assert fake_connection.cursor_obj.rows[0][12].adapted["source"] == "pytest"
+    assert fake_connection.cursor_obj.rows[0][12].adapted["source"] != "live_order_fill"
+    assert fake_connection.committed is True
 
 
 def test_build_replay_source_summary_counts_ticks_trades_and_decisions_pytest() -> None:
