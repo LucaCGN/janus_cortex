@@ -31,6 +31,7 @@ DEFAULT_SHADOW_FAMILIES = (
 LIVE_PROBE_FAMILIES = {"quarter_open_reprice", "micro_momentum_continuation", "underdog_range_scalp"}
 SHADOW_SNAPSHOT_JSON_NAME = "shadow_snapshot_latest.json"
 SHADOW_SNAPSHOT_CSV_NAME = "shadow_snapshot_latest.csv"
+SHADOW_LIVE_COMPARISON_CSV_NAME = "shadow_live_comparison_latest.csv"
 
 
 def _now_utc() -> datetime:
@@ -102,6 +103,133 @@ def _promotion_bucket_for_family(family: str) -> str:
     if family in LIVE_PROBE_FAMILIES:
         return "live_probe"
     return "shadow_only"
+
+
+def _live_action_is_active(card: dict[str, Any] | None) -> bool:
+    if not card:
+        return False
+    action = str(card.get("selected_action") or "").strip().lower()
+    state_label = str(card.get("state_label") or "").strip().lower()
+    fill_state = str(card.get("fill_state") or "").strip().lower()
+    return action in {"buy limit", "hold"} or state_label in {"entry queued", "open position"} or fill_state in {
+        "working",
+        "filled",
+    }
+
+
+def _comparison_bucket(*, shadow_row: dict[str, Any], controller_card: dict[str, Any] | None) -> str:
+    shadow_action = str(shadow_row.get("shadow_action") or "").strip().lower()
+    shadow_has_signal = bool(shadow_row.get("signal_id"))
+    live_active = _live_action_is_active(controller_card)
+    live_family = str((controller_card or {}).get("strategy_family") or "").strip()
+    shadow_family = str(shadow_row.get("strategy_family") or "").strip()
+    live_side = str((controller_card or {}).get("selected_team_side") or "").strip()
+    shadow_side = str(shadow_row.get("team_side") or "").strip()
+    side_matches = not live_side or not shadow_side or live_side == shadow_side
+
+    if shadow_action == "would_enter" and live_active and live_family == shadow_family and side_matches:
+        return "live_match"
+    if shadow_action == "would_enter" and live_active and live_family == shadow_family:
+        return "live_different_side"
+    if shadow_action == "would_enter" and live_active:
+        return "live_different_family"
+    if shadow_action == "would_enter":
+        return "missed_shadow_signal"
+    if live_active and side_matches and not shadow_has_signal:
+        return "live_only_action"
+    if shadow_has_signal:
+        return "blocked_shadow_signal"
+    return "both_wait"
+
+
+def _build_live_shadow_comparison(
+    *,
+    run_id: str,
+    family_rows: list[dict[str, Any]],
+    controller_cards: list[dict[str, Any]],
+) -> dict[str, Any]:
+    card_by_game = {str(card.get("game_id") or ""): card for card in controller_cards}
+    rows: list[dict[str, Any]] = []
+    for shadow_row in family_rows:
+        game_id = str(shadow_row.get("game_id") or "")
+        card = card_by_game.get(game_id)
+        bucket = _comparison_bucket(shadow_row=shadow_row, controller_card=card)
+        rows.append(
+            {
+                "run_id": run_id,
+                "game_id": game_id,
+                "matchup": shadow_row.get("matchup") or (card or {}).get("matchup"),
+                "team_side": shadow_row.get("team_side"),
+                "strategy_family": shadow_row.get("strategy_family"),
+                "promotion_bucket": shadow_row.get("promotion_bucket"),
+                "comparison_bucket": bucket,
+                "shadow_action": shadow_row.get("shadow_action"),
+                "shadow_reason": shadow_row.get("shadow_reason"),
+                "shadow_signal_id": shadow_row.get("signal_id"),
+                "shadow_entry_price": shadow_row.get("signal_entry_price"),
+                "shadow_signal_strength": shadow_row.get("signal_strength"),
+                "shadow_opening_band": shadow_row.get("opening_band"),
+                "shadow_period_label": shadow_row.get("period_label"),
+                "shadow_context_bucket": shadow_row.get("context_bucket"),
+                "shadow_signal_age_seconds": shadow_row.get("first_attempt_signal_age_seconds"),
+                "shadow_quote_age_seconds": shadow_row.get("first_attempt_quote_age_seconds"),
+                "shadow_spread_cents": shadow_row.get("spread_cents"),
+                "coverage_status": shadow_row.get("coverage_status"),
+                "live_controller_name": (card or {}).get("controller_name"),
+                "live_strategy_family": (card or {}).get("strategy_family"),
+                "live_selected_team_side": (card or {}).get("selected_team_side"),
+                "live_selected_action": (card or {}).get("selected_action"),
+                "live_state_label": (card or {}).get("state_label"),
+                "live_note": (card or {}).get("note"),
+                "live_fill_state": (card or {}).get("fill_state"),
+                "live_open_order_count": (card or {}).get("open_order_count"),
+                "live_open_position_count": (card or {}).get("open_position_count"),
+                "live_best_bid": (card or {}).get("best_bid"),
+                "live_best_ask": (card or {}).get("best_ask"),
+                "live_stop_price": (card or {}).get("stop_price"),
+                "live_realized_pnl": (card or {}).get("realized_pnl"),
+            }
+        )
+
+    bucket_counts: dict[str, int] = {}
+    for row in rows:
+        bucket = str(row.get("comparison_bucket") or "unknown")
+        bucket_counts[bucket] = bucket_counts.get(bucket, 0) + 1
+
+    missed_bands: list[dict[str, Any]] = []
+    missed_rows = [row for row in rows if row.get("comparison_bucket") == "missed_shadow_signal"]
+    if missed_rows:
+        missed_frame = pd.DataFrame(missed_rows)
+        group_cols = ["strategy_family", "shadow_opening_band"]
+        for keys, group in missed_frame.groupby(group_cols, dropna=False, sort=True):
+            family, opening_band = keys if isinstance(keys, tuple) else (keys, None)
+            entry_prices = pd.to_numeric(group["shadow_entry_price"], errors="coerce")
+            missed_bands.append(
+                {
+                    "strategy_family": None if pd.isna(family) else str(family),
+                    "opening_band": None if pd.isna(opening_band) else str(opening_band),
+                    "missed_signal_count": int(len(group)),
+                    "avg_shadow_entry_price": (
+                        round(float(entry_prices.dropna().mean()), 6) if not entry_prices.dropna().empty else None
+                    ),
+                    "games": sorted({str(value) for value in group["game_id"].dropna().tolist()}),
+                }
+            )
+
+    summary = {
+        "row_count": len(rows),
+        "bucket_counts": bucket_counts,
+        "missed_shadow_signal_count": bucket_counts.get("missed_shadow_signal", 0),
+        "live_match_count": bucket_counts.get("live_match", 0),
+        "live_only_action_count": bucket_counts.get("live_only_action", 0),
+        "blocked_shadow_signal_count": bucket_counts.get("blocked_shadow_signal", 0),
+    }
+    return {
+        "schema_version": "live_shadow_comparison_v1",
+        "summary": summary,
+        "missed_opportunity_bands": missed_bands,
+        "rows": to_jsonable(rows),
+    }
 
 
 def _build_family_shadow_rows(
@@ -274,6 +402,11 @@ def build_live_shadow_snapshot(
     )
     active_rows = [row for row in family_rows if row.get("shadow_action") == "would_enter"]
     blocked_rows = [row for row in family_rows if row.get("signal_id") and row.get("shadow_action") != "would_enter"]
+    live_comparison = _build_live_shadow_comparison(
+        run_id=run_id,
+        family_rows=family_rows,
+        controller_cards=controller_cards or [],
+    )
     summary_rows: list[dict[str, Any]] = []
     for family in selected_families:
         family_slice = [row for row in family_rows if row.get("strategy_family") == family]
@@ -297,22 +430,26 @@ def build_live_shadow_snapshot(
         "families": selected_families,
         "controller_cards": to_jsonable(controller_cards or []),
         "family_shadow": to_jsonable(family_rows),
+        "live_shadow_comparison": live_comparison,
         "summary": summary_rows,
         "active_signals": to_jsonable(active_rows),
         "blocked_signals": to_jsonable(blocked_rows),
         "artifacts": {
             "shadow_snapshot_json": str(run_root / SHADOW_SNAPSHOT_JSON_NAME),
             "shadow_snapshot_csv": str(run_root / SHADOW_SNAPSHOT_CSV_NAME),
+            "shadow_live_comparison_csv": str(run_root / SHADOW_LIVE_COMPARISON_CSV_NAME),
         },
     }
     if persist:
         _write_json(run_root / SHADOW_SNAPSHOT_JSON_NAME, payload)
         _write_csv(run_root / SHADOW_SNAPSHOT_CSV_NAME, family_rows)
+        _write_csv(run_root / SHADOW_LIVE_COMPARISON_CSV_NAME, live_comparison["rows"])
     return payload
 
 
 __all__ = [
     "DEFAULT_SHADOW_FAMILIES",
+    "SHADOW_LIVE_COMPARISON_CSV_NAME",
     "SHADOW_SNAPSHOT_CSV_NAME",
     "SHADOW_SNAPSHOT_JSON_NAME",
     "build_live_shadow_snapshot",

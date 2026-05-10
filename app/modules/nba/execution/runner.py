@@ -2172,6 +2172,7 @@ class LiveRunWorker:
                 "clock": _clock_label(game, latest_state_row),
                 "controller_name": self.config.controller_name,
                 "strategy_family": str((selected_trade or {}).get("source_strategy_family") or decision.get("selected_core_family") or "skip"),
+                "selected_team_side": side or None,
                 "selected_action": (
                     "hold"
                     if active_positions

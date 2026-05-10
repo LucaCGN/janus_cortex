@@ -22,6 +22,7 @@ from app.modules.nba.execution.runner import (
     _select_live_event_link_candidate,
 )
 from app.modules.nba.execution.shadow import (
+    SHADOW_LIVE_COMPARISON_CSV_NAME,
     SHADOW_SNAPSHOT_CSV_NAME,
     SHADOW_SNAPSHOT_JSON_NAME,
     build_live_shadow_snapshot,
@@ -167,7 +168,22 @@ def test_build_live_shadow_snapshot_marks_fresh_probe_and_persists_artifacts_pyt
         run_id="demo-run",
         run_root=tmp_path,
         snapshot=snapshot,
-        controller_cards=[],
+        controller_cards=[
+            {
+                "game_id": "G-Q1",
+                "matchup": "AWY at HME",
+                "controller_name": "quarter_open_reprice",
+                "strategy_family": "quarter_open_reprice",
+                "selected_team_side": "home",
+                "selected_action": "buy limit",
+                "state_label": "monitoring",
+                "fill_state": "none",
+                "open_order_count": 0,
+                "open_position_count": 0,
+                "best_bid": 0.56,
+                "best_ask": 0.57,
+            }
+        ],
         game_ids=["G-Q1"],
         families=["quarter_open_reprice"],
         persist=True,
@@ -177,8 +193,109 @@ def test_build_live_shadow_snapshot_marks_fresh_probe_and_persists_artifacts_pyt
     assert payload["summary"][0]["active_signal_count"] == 1
     assert payload["active_signals"][0]["shadow_action"] == "would_enter"
     assert payload["active_signals"][0]["shadow_reason"] == "eligible"
+    assert payload["live_shadow_comparison"]["summary"]["live_match_count"] == 1
+    assert payload["live_shadow_comparison"]["summary"]["bucket_counts"]["both_wait"] == 1
+    assert payload["live_shadow_comparison"]["rows"][0]["comparison_bucket"] == "live_match"
+    assert payload["live_shadow_comparison"]["rows"][0]["live_selected_team_side"] == "home"
     assert (tmp_path / SHADOW_SNAPSHOT_JSON_NAME).exists()
     assert (tmp_path / SHADOW_SNAPSHOT_CSV_NAME).exists()
+    assert (tmp_path / SHADOW_LIVE_COMPARISON_CSV_NAME).exists()
+
+
+def test_build_live_shadow_snapshot_reports_missed_shadow_signal_pytest(tmp_path: Path) -> None:
+    base = datetime(2026, 4, 24, 20, 0, tzinfo=timezone.utc)
+    state_df = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="G-Q1",
+                team_side="home",
+                state_index=0,
+                event_at=base,
+                opening_price=0.45,
+                team_price=0.45,
+                period_label="Q1",
+                clock_elapsed_seconds=0.0,
+                score_diff=0,
+                net_points_last_5_events=0.0,
+            ),
+            _build_state_row(
+                game_id="G-Q1",
+                team_side="home",
+                state_index=1,
+                event_at=base + timedelta(seconds=30),
+                opening_price=0.45,
+                team_price=0.51,
+                period_label="Q1",
+                clock_elapsed_seconds=180.0,
+                score_diff=1,
+                net_points_last_5_events=3.0,
+            ),
+            _build_state_row(
+                game_id="G-Q1",
+                team_side="home",
+                state_index=2,
+                event_at=base + timedelta(seconds=60),
+                opening_price=0.45,
+                team_price=0.57,
+                period_label="Q1",
+                clock_elapsed_seconds=240.0,
+                score_diff=2,
+                net_points_last_5_events=4.0,
+            ),
+        ]
+    )
+    snapshot = {
+        "state_df": state_df,
+        "bundles": {
+            "G-Q1": {
+                "game": {"away_team_slug": "AWY", "home_team_slug": "HME"},
+                "live_orderbooks": {
+                    "home": {
+                        "best_bid": 0.56,
+                        "best_ask": 0.57,
+                        "spread_cents": 1.0,
+                        "timestamp": (base + timedelta(seconds=60)).isoformat(),
+                    }
+                },
+            }
+        },
+        "diagnostics_by_game": {"G-Q1": {"coverage_status": "covered_partial"}},
+    }
+
+    payload = build_live_shadow_snapshot(
+        run_id="demo-run",
+        run_root=tmp_path,
+        snapshot=snapshot,
+        controller_cards=[
+            {
+                "game_id": "G-Q1",
+                "controller_name": "controller_vnext_unified_v1 :: balanced",
+                "strategy_family": "skip",
+                "selected_team_side": "home",
+                "selected_action": "wait",
+                "state_label": "skip",
+                "fill_state": "none",
+            }
+        ],
+        game_ids=["G-Q1"],
+        families=["quarter_open_reprice"],
+        persist=False,
+    )
+
+    comparison = payload["live_shadow_comparison"]
+    missed = [row for row in comparison["rows"] if row["comparison_bucket"] == "missed_shadow_signal"]
+    assert len(missed) == 1
+    assert missed[0]["strategy_family"] == "quarter_open_reprice"
+    assert comparison["summary"]["missed_shadow_signal_count"] == 1
+    assert comparison["missed_opportunity_bands"] == [
+        {
+            "strategy_family": "quarter_open_reprice",
+            "opening_band": "40-50",
+            "missed_signal_count": 1,
+            "avg_shadow_entry_price": 0.51,
+            "games": ["G-Q1"],
+        }
+    ]
 
 
 def test_build_live_shadow_snapshot_marks_stale_signal_pytest(tmp_path: Path) -> None:
