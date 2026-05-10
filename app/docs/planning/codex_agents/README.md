@@ -11,7 +11,7 @@ Janus is the independent runtime service. Codex agents are the external CI/CD, r
 | `JANUS - Post Game System Review` | `post_game_system_review` | active contract |
 | `JANUS - Development Agent` | `development_agent` | active contract |
 | `JANUS - Pregame Integrity Check` | `pregame_integrity_check` | active contract |
-| `JANUS - Pregame Research & Planning` | `pregame_research_planning` | pending focused refinement |
+| `JANUS - Pregame Research & Planning` | `pregame_research_planning` | active contract |
 | `JANUS - Live System Monitor` | `live_system_monitor` | pending focused refinement |
 
 ## Shared Rules
