@@ -85,6 +85,70 @@ class WatchlistRequest(BaseModel):
     source: str = "codex"
 
 
+class MarketWatchSessionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    watch_session_id: str | None = None
+    event_key: str = Field(min_length=1)
+    category: Literal["nba", "crypto_options", "geopolitics", "other"] = "other"
+    passive_only: bool = True
+    cadence_ms: int | None = Field(default=None, ge=0)
+    reason: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MarketOrderbookTick(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_key: str = Field(min_length=1)
+    market_id: str | None = None
+    outcome_id: str | None = None
+    token_id: str | None = None
+    captured_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    source_timestamp_utc: datetime | None = None
+    best_bid: float | None = Field(default=None, ge=0.0, le=1.0)
+    best_ask: float | None = Field(default=None, ge=0.0, le=1.0)
+    spread: float | None = Field(default=None, ge=0.0)
+    mid_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    bid_depth: float | None = Field(default=None, ge=0.0)
+    ask_depth: float | None = Field(default=None, ge=0.0)
+    source_latency_ms: float | None = Field(default=None, ge=0.0)
+    ingest_latency_ms: float | None = Field(default=None, ge=0.0)
+    levels: dict[str, Any] = Field(default_factory=dict)
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class MarketOrderbookTickRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ticks: list[MarketOrderbookTick] = Field(default_factory=list)
+    source: str = "codex"
+
+
+class MarketTradeObservation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    event_key: str = Field(min_length=1)
+    market_id: str | None = None
+    outcome_id: str | None = None
+    token_id: str | None = None
+    external_trade_id: str | None = None
+    trade_time_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    observed_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    side: str | None = None
+    price: float | None = Field(default=None, ge=0.0, le=1.0)
+    size: float | None = Field(default=None, ge=0.0)
+    source_latency_ms: float | None = Field(default=None, ge=0.0)
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+
+class MarketTradeObservationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trades: list[MarketTradeObservation] = Field(default_factory=list)
+    source: str = "codex"
+
+
 class ReplayFromWatchSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -153,6 +217,11 @@ class StrategyPlanEvaluationResult(BaseModel):
 
 __all__ = [
     "ActiveStrategy",
+    "MarketOrderbookTick",
+    "MarketOrderbookTickRequest",
+    "MarketTradeObservation",
+    "MarketTradeObservationRequest",
+    "MarketWatchSessionRequest",
     "OperatorInterventionRequest",
     "OrderIntent",
     "OpsCycleRequest",

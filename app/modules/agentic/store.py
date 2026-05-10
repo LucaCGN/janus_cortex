@@ -7,7 +7,7 @@ from typing import Any
 
 from app.api.db import to_jsonable
 from app.modules.agentic.contracts import StrategyPlan
-from app.modules.agentic.repository import try_persist_strategy_plan
+from app.modules.agentic.repository import get_agentic_database_status, try_persist_strategy_plan
 from app.runtime.local_paths import resolve_shared_root
 
 
@@ -155,6 +155,7 @@ def build_ops_status() -> dict[str, Any]:
             "current_plan_count_today": len(plans),
             "current_plan_paths": [str(path) for path in plans],
         },
+        "database": get_agentic_database_status(),
         "handoffs": latest_handoff_statuses(),
     }
 

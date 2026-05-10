@@ -114,6 +114,9 @@ NBA watchlists are generated from the daily slate and Polymarket matching. Crypt
 - `POST /v1/events/{event_id}/strategy-plan/evaluate`
 - `POST /v1/events/{event_id}/strategy-plan/execute`
 - `POST /v1/watchlists/events`
+- `POST /v1/watchlists/sessions`
+- `POST /v1/watchlists/orderbook-ticks`
+- `POST /v1/watchlists/trades`
 - `POST /v1/replay/from-watch-session`
 - `POST /v1/operator/interventions/reconcile`
 
@@ -131,6 +134,9 @@ Codex agents use scripts under `codex_tool/` to interact with the local API:
 - `run_postgame_review.py`
 - `reconcile_orders.py`
 - `watch_market.py`
+- `start_watch_session.py`
+- `record_orderbook_tick.py`
+- `record_market_trade.py`
 - `build_replay_from_watch_session.py`
 - `evaluate_strategy_plan.py`
 

@@ -7,6 +7,9 @@ from psycopg2.extensions import connection as PsycopgConnection
 
 from app.api.dependencies import get_db_connection
 from app.modules.agentic.contracts import (
+    MarketOrderbookTickRequest,
+    MarketTradeObservationRequest,
+    MarketWatchSessionRequest,
     OperatorInterventionRequest,
     OpsCycleRequest,
     PregamePlanRequest,
@@ -17,8 +20,13 @@ from app.modules.agentic.contracts import (
 )
 from app.modules.agentic.engine import evaluate_strategy_plan
 from app.modules.agentic.repository import (
+    get_agentic_database_status,
+    try_persist_market_trades,
+    try_persist_orderbook_ticks,
     try_persist_operator_intervention,
     try_persist_replay_request,
+    try_persist_strategy_decisions,
+    try_persist_watch_session,
     try_persist_watchlist_event,
 )
 from app.modules.agentic.store import (
@@ -49,7 +57,13 @@ def run_ops_data_refresh(payload: OpsCycleRequest) -> dict[str, Any]:
 
 @router.post("/ops/integrity-check", status_code=status.HTTP_202_ACCEPTED)
 def run_ops_integrity_check(payload: OpsCycleRequest) -> dict[str, Any]:
-    return record_ops_stage("integrity-check", payload.model_dump(mode="json"), day=payload.session_date)
+    ops_status = build_ops_status()
+    recorded = record_ops_stage(
+        "integrity-check",
+        {**payload.model_dump(mode="json"), "ops_status": ops_status},
+        day=payload.session_date,
+    )
+    return {**recorded, "ops_status": ops_status}
 
 
 @router.post("/ops/pregame-plan", status_code=status.HTTP_202_ACCEPTED)
@@ -98,7 +112,13 @@ def evaluate_event_strategy_plan(event_id: str, payload: StrategyPlanEvaluationR
         dry_run=payload.dry_run,
         max_intents=payload.max_intents,
     )
-    return result.model_dump(mode="json")
+    decision_persistence = try_persist_strategy_decisions(
+        result,
+        source=payload.source,
+        execute_requested=False,
+        account_id=payload.account_id,
+    )
+    return {**result.model_dump(mode="json"), "decision_persistence": decision_persistence}
 
 
 @router.post("/events/{event_id}/strategy-plan/execute", status_code=status.HTTP_202_ACCEPTED)
@@ -116,7 +136,13 @@ def execute_event_strategy_plan(
         max_intents=payload.max_intents,
     )
     if not payload.execute:
-        return result.model_dump(mode="json")
+        decision_persistence = try_persist_strategy_decisions(
+            result,
+            source=payload.source,
+            execute_requested=False,
+            account_id=payload.account_id,
+        )
+        return {**result.model_dump(mode="json"), "decision_persistence": decision_persistence}
 
     account = resolve_trading_account(connection, account_id=payload.account_id)
     executed_orders: list[dict[str, Any]] = []
@@ -153,7 +179,13 @@ def execute_event_strategy_plan(
         )
         executed_orders.append({"intent_id": intent.intent_id, **placed})
     result.executed_orders = executed_orders
-    return result.model_dump(mode="json")
+    decision_persistence = try_persist_strategy_decisions(
+        result,
+        source=payload.source,
+        execute_requested=True,
+        account_id=payload.account_id,
+    )
+    return {**result.model_dump(mode="json"), "decision_persistence": decision_persistence}
 
 
 @router.post("/watchlists/events", status_code=status.HTTP_201_CREATED)
@@ -174,6 +206,49 @@ def add_watchlist_events(payload: WatchlistRequest) -> dict[str, Any]:
     return {"status": "stored", "event_count": len(payload.events), "path": str(path), "db_persistence": db_persistence}
 
 
+@router.post("/watchlists/sessions", status_code=status.HTTP_201_CREATED)
+def start_watch_session(payload: MarketWatchSessionRequest) -> dict[str, Any]:
+    root = ops_artifact_root()
+    db_persistence = try_persist_watch_session(payload)
+    record = {
+        "source": "watch-session",
+        "payload": payload.model_dump(mode="json"),
+        "db_persistence": db_persistence,
+    }
+    append_jsonl(root / "watch_sessions.jsonl", record)
+    return {"status": "stored", "db_persistence": db_persistence}
+
+
+@router.post("/watchlists/orderbook-ticks", status_code=status.HTTP_202_ACCEPTED)
+def record_orderbook_ticks(payload: MarketOrderbookTickRequest) -> dict[str, Any]:
+    root = ops_artifact_root()
+    db_persistence = try_persist_orderbook_ticks(payload)
+    append_jsonl(
+        root / "orderbook_tick_batches.jsonl",
+        {
+            "source": payload.source,
+            "tick_count": len(payload.ticks),
+            "db_persistence": db_persistence,
+        },
+    )
+    return {"status": "stored", "tick_count": len(payload.ticks), "db_persistence": db_persistence}
+
+
+@router.post("/watchlists/trades", status_code=status.HTTP_202_ACCEPTED)
+def record_market_trades(payload: MarketTradeObservationRequest) -> dict[str, Any]:
+    root = ops_artifact_root()
+    db_persistence = try_persist_market_trades(payload)
+    append_jsonl(
+        root / "trade_batches.jsonl",
+        {
+            "source": payload.source,
+            "trade_count": len(payload.trades),
+            "db_persistence": db_persistence,
+        },
+    )
+    return {"status": "stored", "trade_count": len(payload.trades), "db_persistence": db_persistence}
+
+
 @router.post("/replay/from-watch-session", status_code=status.HTTP_202_ACCEPTED)
 def build_replay_from_watch_session(payload: ReplayFromWatchSessionRequest) -> dict[str, Any]:
     recorded = record_ops_stage("replay-from-watch-session", payload.model_dump(mode="json"))
@@ -183,7 +258,11 @@ def build_replay_from_watch_session(payload: ReplayFromWatchSessionRequest) -> d
 @router.post("/operator/interventions/reconcile", status_code=status.HTTP_202_ACCEPTED)
 def reconcile_operator_interventions(payload: OperatorInterventionRequest) -> dict[str, Any]:
     recorded = record_ops_stage("operator-intervention-reconcile", payload.model_dump(mode="json"))
-    return {**recorded, "db_persistence": try_persist_operator_intervention(payload)}
+    return {
+        **recorded,
+        "db_persistence": try_persist_operator_intervention(payload),
+        "database": get_agentic_database_status(),
+    }
 
 
 def _resolve_strategy_plan(event_id: str, payload: StrategyPlanEvaluationRequest) -> StrategyPlan:

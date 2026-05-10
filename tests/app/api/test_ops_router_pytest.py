@@ -5,11 +5,17 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_db_connection
 from app.api.main import create_app
 from app.api.routers import ops as ops_router
+from app.modules.agentic import store as agentic_store
 
 
 def test_ops_status_uses_repo_local_root_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(
+        ops_router,
+        "get_agentic_database_status",
+        lambda: {"ok": True, "schema": "agentic", "tables": []},
+    )
 
     client = TestClient(create_app())
     response = client.get("/v1/ops/status")
@@ -18,11 +24,13 @@ def test_ops_status_uses_repo_local_root_pytest(tmp_path, monkeypatch) -> None:
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["local_roots"]["shared_root"] == str(local_root / "shared")
+    assert payload["database"]["schema"] == "agentic"
 
 
 def test_strategy_plan_endpoint_stores_and_reads_current_plan_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
     client = TestClient(create_app())
 
     plan_payload = {
@@ -62,6 +70,7 @@ def test_strategy_plan_endpoint_stores_and_reads_current_plan_pytest(tmp_path, m
 def test_watchlist_and_ops_cycle_endpoints_record_runtime_artifacts_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(ops_router, "try_persist_watchlist_event", lambda event, *, source: {"ok": True})
     client = TestClient(create_app())
 
     watch_response = client.post(
@@ -90,9 +99,60 @@ def test_watchlist_and_ops_cycle_endpoints_record_runtime_artifacts_pytest(tmp_p
     assert (local_root / "shared" / "artifacts" / "ops" / "2026-05-09").exists()
 
 
+def test_watch_session_tick_and_trade_endpoints_record_batches_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_watch_session",
+        lambda payload: {"ok": True, "watch_session_id": payload.watch_session_id or "watch-1"},
+    )
+    monkeypatch.setattr(ops_router, "try_persist_orderbook_ticks", lambda payload: {"ok": True, "row_count": len(payload.ticks)})
+    monkeypatch.setattr(ops_router, "try_persist_market_trades", lambda payload: {"ok": True, "row_count": len(payload.trades)})
+    client = TestClient(create_app())
+
+    session_response = client.post(
+        "/v1/watchlists/sessions",
+        json={"event_key": "event-1", "category": "nba", "cadence_ms": 3000, "reason": "pytest"},
+    )
+    tick_response = client.post(
+        "/v1/watchlists/orderbook-ticks",
+        json={
+            "source": "pytest",
+            "ticks": [
+                {
+                    "event_key": "event-1",
+                    "market_id": "market-1",
+                    "token_id": "token-1",
+                    "best_bid": 0.19,
+                    "best_ask": 0.2,
+                }
+            ],
+        },
+    )
+    trade_response = client.post(
+        "/v1/watchlists/trades",
+        json={"source": "pytest", "trades": [{"event_key": "event-1", "price": 0.2, "size": 5}]},
+    )
+
+    assert session_response.status_code == 201
+    assert session_response.json()["db_persistence"]["watch_session_id"] == "watch-1"
+    assert tick_response.status_code == 202
+    assert tick_response.json()["tick_count"] == 1
+    assert trade_response.status_code == 202
+    assert trade_response.json()["trade_count"] == 1
+    assert (local_root / "shared" / "artifacts" / "ops").exists()
+
+
 def test_strategy_plan_evaluate_endpoint_compiles_intents_without_db_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    decision_calls = []
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_strategy_decisions",
+        lambda result, **kwargs: decision_calls.append({"result": result, **kwargs}) or {"ok": True, "row_count": 1},
+    )
     client = TestClient(create_app())
 
     response = client.post(
@@ -127,6 +187,8 @@ def test_strategy_plan_evaluate_endpoint_compiles_intents_without_db_pytest(tmp_
     payload = response.json()
     assert payload["intent_count"] == 1
     assert payload["intents"][0]["strategy_family"] == "resistance_band_rebound_grid"
+    assert payload["decision_persistence"] == {"ok": True, "row_count": 1}
+    assert decision_calls[0]["source"] == "codex"
 
 
 def test_strategy_plan_execute_endpoint_hands_intent_to_order_manager_pytest(tmp_path, monkeypatch) -> None:
@@ -144,6 +206,11 @@ def test_strategy_plan_execute_endpoint_hands_intent_to_order_manager_pytest(tmp
         ops_router,
         "resolve_trading_account",
         lambda connection, *, account_id=None: {"account_id": account_id or "default-account"},
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_strategy_decisions",
+        lambda result, **kwargs: {"ok": True, "row_count": len(result.intents) + len(result.executed_orders)},
     )
 
     def fake_create_live_order(connection, **kwargs):
@@ -189,6 +256,7 @@ def test_strategy_plan_execute_endpoint_hands_intent_to_order_manager_pytest(tmp
     assert response.status_code == 202
     payload = response.json()
     assert payload["intent_count"] == 1
+    assert payload["decision_persistence"] == {"ok": True, "row_count": 2}
     assert payload["executed_orders"] == [
         {"intent_id": "event-123|grid-1|1", "status": "dry_run", "local_order_id": "order-1"}
     ]
