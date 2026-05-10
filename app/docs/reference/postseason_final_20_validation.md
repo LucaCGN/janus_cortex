@@ -135,13 +135,13 @@ That means the next work wave should focus on:
 
 ## Key Artifacts
 - showdown summary:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\benchmark_final_option_showdown_summary.csv`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\benchmark_final_option_showdown_summary.csv`
 - showdown daily paths:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\benchmark_final_option_showdown_daily_paths.csv`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\benchmark_final_option_showdown_daily_paths.csv`
 - showdown decisions:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\benchmark_final_option_showdown_decisions.csv`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\benchmark_final_option_showdown_decisions.csv`
 - full benchmark payload:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\run_analysis_backtests.json`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis\2025-26\postseason_final_20\v1_0_1\backtests\run_analysis_backtests.json`
 
 ## Reproduction Commands
 Data preparation:

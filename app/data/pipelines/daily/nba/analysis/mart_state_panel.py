@@ -102,6 +102,7 @@ def _period_duration_seconds(period: int | None) -> int:
 def _total_game_duration_seconds(max_period: int | None) -> float | None:
     if max_period is None:
         return None
+    max_period = max(int(max_period), 4)
     total = 0.0
     for period in range(1, max_period + 1):
         total += float(_period_duration_seconds(period))

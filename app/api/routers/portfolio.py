@@ -318,6 +318,7 @@ def get_portfolio_summary(
 def list_portfolio_positions(
     account_id: UUID | None = Query(default=None),
     outcome_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
     latest_only: bool = Query(default=True),
     source: str | None = Query(default=None),
     limit: int = Query(default=500, ge=1, le=5000),
@@ -327,6 +328,7 @@ def list_portfolio_positions(
     query = PortfolioPositionsQuery(
         account_id=account_id,
         outcome_id=outcome_id,
+        market_id=market_id,
         latest_only=latest_only,
         source=source,
         limit=limit,
@@ -340,6 +342,9 @@ def list_portfolio_positions(
     if query.outcome_id is not None:
         conditions.append("ps.outcome_id = %s")
         params.append(str(query.outcome_id))
+    if query.market_id is not None:
+        conditions.append("ps.outcome_id IN (SELECT outcome_id FROM catalog.outcomes WHERE market_id = %s)")
+        params.append(str(query.market_id))
     if query.source:
         conditions.append("ps.source = %s")
         params.append(query.source)
@@ -413,6 +418,7 @@ def list_portfolio_positions(
 def list_portfolio_positions_history(
     account_id: UUID | None = Query(default=None),
     outcome_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
     source: str | None = Query(default=None),
     start_time: datetime | None = Query(default=None),
     end_time: datetime | None = Query(default=None),
@@ -423,6 +429,7 @@ def list_portfolio_positions_history(
     query = PortfolioPositionHistoryQuery(
         account_id=account_id,
         outcome_id=outcome_id,
+        market_id=market_id,
         source=source,
         start_time=start_time,
         end_time=end_time,
@@ -437,6 +444,9 @@ def list_portfolio_positions_history(
     if query.outcome_id is not None:
         conditions.append("ps.outcome_id = %s")
         params.append(str(query.outcome_id))
+    if query.market_id is not None:
+        conditions.append("ps.outcome_id IN (SELECT outcome_id FROM catalog.outcomes WHERE market_id = %s)")
+        params.append(str(query.market_id))
     if query.source:
         conditions.append("ps.source = %s")
         params.append(query.source)

@@ -11,6 +11,9 @@ from app.data.pipelines.daily.nba.analysis.backtests.benchmarking import (
     BACKTEST_BENCHMARK_CONTRACT_VERSION,
     _normalize_robustness_seeds,
 )
+from app.data.pipelines.daily.nba.analysis.backtests.favorite_floor_rebound import (
+    simulate_favorite_floor_rebound_trades,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.llm_experiment import (
     _build_game_candidates,
     _build_llm_prompt_payload,
@@ -45,6 +48,9 @@ from app.data.pipelines.daily.nba.analysis.backtests.q1_repricing import simulat
 from app.data.pipelines.daily.nba.analysis.backtests.quarter_open_reprice import simulate_quarter_open_reprice_trades
 from app.data.pipelines.daily.nba.analysis.backtests.specs import BacktestResult
 from app.data.pipelines.daily.nba.analysis.backtests.underdog_liftoff import simulate_underdog_liftoff_trades
+from app.data.pipelines.daily.nba.analysis.backtests.underdog_range_scalp import (
+    simulate_underdog_range_scalp_trades,
+)
 from app.data.pipelines.daily.nba.analysis.backtests.unified_router import (
     resolve_unified_router_game_selection,
 )
@@ -1111,6 +1117,294 @@ def test_live_selectors_keep_opening_anchor_after_missing_first_price() -> None:
     assert len(trades) == 1
     assert trades[0]["entry_state_index"] == 1
     assert trades[0]["exit_state_index"] == 2
+
+
+def test_underdog_range_scalp_covers_close_score_20c_to_35c_rebound_pytest() -> None:
+    base = datetime(2026, 5, 4, 23, 30, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="MIN-SAS-RANGE",
+                team_slug="MIN",
+                opponent_team_slug="SAS",
+                opening_price=0.135,
+                state_index=0,
+                team_price=0.215,
+                event_at=base,
+                opening_band="10-20",
+                period=3,
+                period_label="Q3",
+                score_diff=-8,
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q3|trail_5_9",
+                net_points_last_5_events=-2,
+                seconds_to_game_end=1260.0,
+            ),
+            _build_state_row(
+                game_id="MIN-SAS-RANGE",
+                team_slug="MIN",
+                opponent_team_slug="SAS",
+                opening_price=0.135,
+                state_index=1,
+                team_price=0.29,
+                event_at=base + timedelta(minutes=2),
+                opening_band="10-20",
+                period=3,
+                period_label="Q3",
+                score_diff=-6,
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q3|trail_5_9",
+                net_points_last_5_events=4,
+                seconds_to_game_end=1140.0,
+            ),
+            _build_state_row(
+                game_id="MIN-SAS-RANGE",
+                team_slug="MIN",
+                opponent_team_slug="SAS",
+                opening_price=0.135,
+                state_index=2,
+                team_price=0.36,
+                event_at=base + timedelta(minutes=5),
+                opening_band="10-20",
+                period=3,
+                period_label="Q3",
+                score_diff=-4,
+                score_diff_bucket="trail_1_4",
+                context_bucket="Q3|trail_1_4",
+                net_points_last_5_events=5,
+                seconds_to_game_end=960.0,
+            ),
+        ]
+    )
+
+    trades = simulate_underdog_range_scalp_trades(frame, slippage_cents=0)
+
+    assert len(trades) == 1
+    assert trades[0]["entry_state_index"] == 1
+    assert trades[0]["exit_state_index"] == 2
+    assert trades[0]["entry_price"] == pytest.approx(0.29)
+    assert trades[0]["exit_price"] == pytest.approx(0.36)
+    assert trades[0]["entry_metadata_json"]["target_price"] == pytest.approx(0.35)
+
+
+def test_underdog_range_scalp_uses_larger_rebound_target_near_20c_pytest() -> None:
+    base = datetime(2026, 5, 5, 1, 10, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="CLE-DET-LOW-REBOUND",
+                team_slug="CLE",
+                opponent_team_slug="DET",
+                opening_price=0.40,
+                state_index=0,
+                team_price=0.20,
+                event_at=base,
+                opening_band="40-50",
+                period=4,
+                period_label="Q4",
+                score_diff=-9,
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q4|trail_5_9",
+                net_points_last_5_events=3,
+                seconds_to_game_end=440.0,
+            ),
+            _build_state_row(
+                game_id="CLE-DET-LOW-REBOUND",
+                team_slug="CLE",
+                opponent_team_slug="DET",
+                opening_price=0.40,
+                state_index=1,
+                team_price=0.40,
+                event_at=base + timedelta(minutes=3),
+                opening_band="40-50",
+                period=4,
+                period_label="Q4",
+                score_diff=-4,
+                score_diff_bucket="trail_1_4",
+                context_bucket="Q4|trail_1_4",
+                net_points_last_5_events=6,
+                seconds_to_game_end=260.0,
+            ),
+        ]
+    )
+
+    trades = simulate_underdog_range_scalp_trades(frame, slippage_cents=0)
+
+    assert len(trades) == 1
+    assert trades[0]["entry_price"] == pytest.approx(0.20)
+    assert trades[0]["exit_price"] == pytest.approx(0.40)
+    assert trades[0]["entry_metadata_json"]["target_price"] == pytest.approx(0.40)
+
+
+def test_underdog_range_scalp_covers_low_price_when_close_score_context_persists_pytest() -> None:
+    base = datetime(2026, 5, 5, 1, 10, tzinfo=timezone.utc)
+    prices = [0.14, 0.145, 0.14, 0.28]
+    score_diffs = [-5, -5, -5, -2]
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="LAL-OKC-FLOOR",
+                team_slug="LAL",
+                opponent_team_slug="OKC",
+                opening_price=0.14,
+                state_index=index,
+                team_price=price,
+                event_at=base + timedelta(seconds=index * 45),
+                opening_band="10-20",
+                period=2,
+                period_label="Q2",
+                score_diff=score_diffs[index],
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q2|trail_5_9",
+                net_points_last_5_events=0,
+                seconds_to_game_end=2160.0 - index * 45.0,
+            )
+            for index, price in enumerate(prices)
+        ]
+    )
+
+    trades = simulate_underdog_range_scalp_trades(frame, slippage_cents=0)
+
+    assert len(trades) == 1
+    assert trades[0]["entry_state_index"] == 2
+    assert trades[0]["exit_state_index"] == 3
+    assert trades[0]["entry_price"] == pytest.approx(0.14)
+    assert trades[0]["exit_price"] == pytest.approx(0.28)
+    assert trades[0]["entry_metadata_json"]["entry_context"] == "close_score_floor"
+    assert trades[0]["entry_metadata_json"]["target_price"] == pytest.approx(0.28)
+    assert trades[0]["entry_metadata_json"]["context_seconds"] == pytest.approx(90.0)
+
+
+def test_underdog_range_scalp_rejects_low_price_single_snapshot_pytest() -> None:
+    base = datetime(2026, 5, 5, 1, 10, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="LAL-OKC-FLOOR-SINGLE",
+                team_slug="LAL",
+                opponent_team_slug="OKC",
+                opening_price=0.14,
+                state_index=index,
+                team_price=0.14,
+                event_at=base + timedelta(seconds=index * 30),
+                opening_band="10-20",
+                period=2,
+                period_label="Q2",
+                score_diff=-5,
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q2|trail_5_9",
+                net_points_last_5_events=0,
+                seconds_to_game_end=2160.0 - index * 30.0,
+            )
+            for index in range(2)
+        ]
+    )
+
+    trades = simulate_underdog_range_scalp_trades(frame, slippage_cents=0)
+
+    assert trades == []
+
+
+def test_underdog_range_scalp_allows_repeated_non_overlapping_reentries_pytest() -> None:
+    base = datetime(2026, 5, 5, 23, 30, tzinfo=timezone.utc)
+    prices = [0.23, 0.29, 0.18, 0.25, 0.31]
+    score_diffs = [-8, -6, -11, -7, -4]
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="CLE-DET-RANGE-REENTRY",
+                team_slug="CLE",
+                opponent_team_slug="DET",
+                opening_price=0.40,
+                state_index=index,
+                team_price=price,
+                event_at=base + timedelta(minutes=index),
+                opening_band="40-50",
+                period=3,
+                period_label="Q3",
+                score_diff=score_diffs[index],
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q3|trail_5_9",
+                net_points_last_5_events=4,
+                seconds_to_game_end=600.0 - index * 60.0,
+            )
+            for index, price in enumerate(prices)
+        ]
+    )
+
+    trades = simulate_underdog_range_scalp_trades(frame, slippage_cents=0)
+
+    assert len(trades) == 2
+    assert [trade["entry_state_index"] for trade in trades] == [0, 3]
+    assert [trade["exit_state_index"] for trade in trades] == [1, 4]
+
+
+def test_favorite_floor_rebound_covers_13c_favorite_close_score_flip_pytest() -> None:
+    base = datetime(2026, 5, 5, 0, 20, tzinfo=timezone.utc)
+    frame = pd.DataFrame(
+        [
+            _build_state_row(
+                game_id="SAS-MIN-FLOOR",
+                team_slug="SAS",
+                opponent_team_slug="MIN",
+                opening_price=0.74,
+                state_index=0,
+                team_price=0.74,
+                event_at=base,
+                opening_band="70-80",
+                period=1,
+                period_label="Q1",
+                score_diff=4,
+                score_diff_bucket="lead_1_4",
+                context_bucket="Q1|lead_1_4",
+                net_points_last_5_events=2,
+                seconds_to_game_end=2880.0,
+            ),
+            _build_state_row(
+                game_id="SAS-MIN-FLOOR",
+                team_slug="SAS",
+                opponent_team_slug="MIN",
+                opening_price=0.74,
+                state_index=1,
+                team_price=0.13,
+                event_at=base + timedelta(minutes=38),
+                opening_band="70-80",
+                period=4,
+                period_label="Q4",
+                score_diff=-10,
+                score_diff_bucket="trail_10_14",
+                context_bucket="Q4|trail_10_14",
+                net_points_last_5_events=0,
+                seconds_to_game_end=240.0,
+            ),
+            _build_state_row(
+                game_id="SAS-MIN-FLOOR",
+                team_slug="SAS",
+                opponent_team_slug="MIN",
+                opening_price=0.74,
+                state_index=2,
+                team_price=0.20,
+                event_at=base + timedelta(minutes=40),
+                opening_band="70-80",
+                period=4,
+                period_label="Q4",
+                score_diff=-8,
+                score_diff_bucket="trail_5_9",
+                context_bucket="Q4|trail_5_9",
+                net_points_last_5_events=4,
+                seconds_to_game_end=120.0,
+            ),
+        ]
+    )
+
+    trades = simulate_favorite_floor_rebound_trades(frame, slippage_cents=0)
+
+    assert len(trades) == 1
+    assert trades[0]["entry_state_index"] == 1
+    assert trades[0]["exit_state_index"] == 2
+    assert trades[0]["entry_price"] == pytest.approx(0.13)
+    assert trades[0]["exit_price"] == pytest.approx(0.20)
+    assert trades[0]["entry_metadata_json"]["prior_high_price"] == pytest.approx(0.74)
 
 
 def test_backtests_trade_loop_no_lookahead_and_artifacts(tmp_path: Path) -> None:

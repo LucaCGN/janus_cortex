@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -8,7 +7,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.db import to_jsonable
-from app.data.pipelines.daily.nba.analysis.contracts import WINDOWS_LOCAL_ROOT
+from app.runtime.local_paths import resolve_live_tracks_root as resolve_default_live_tracks_root
 
 
 LIVE_PRIMARY_CONTROLLER = "controller_vnext_unified_v1 :: balanced"
@@ -16,7 +15,7 @@ LIVE_FALLBACK_CONTROLLER = "controller_vnext_deterministic_v1 :: tight"
 LIVE_EXECUTION_PROFILE_VERSION = "v1"
 LIVE_RUN_ROOT_SUFFIX = Path("tracks") / "live-controller"
 LIVE_DEFAULT_RUN_ID = "live-2026-04-23-v1"
-LIVE_DEFAULT_POLL_MS = 5000
+LIVE_DEFAULT_POLL_MS = 2000
 
 
 def utc_now() -> datetime:
@@ -24,12 +23,7 @@ def utc_now() -> datetime:
 
 
 def resolve_live_tracks_root() -> Path:
-    configured_root = os.getenv("JANUS_LOCAL_ROOT")
-    if configured_root:
-        return Path(configured_root) / LIVE_RUN_ROOT_SUFFIX
-    if WINDOWS_LOCAL_ROOT.exists():
-        return WINDOWS_LOCAL_ROOT / LIVE_RUN_ROOT_SUFFIX
-    return Path("output") / "live-controller"
+    return resolve_default_live_tracks_root()
 
 
 class LiveRunConfig(BaseModel):
@@ -42,11 +36,11 @@ class LiveRunConfig(BaseModel):
     game_ids: list[str] = Field(default_factory=list)
     dry_run: bool = Field(default=True)
     entries_enabled: bool = Field(default=True)
-    entry_target_notional_usd: float = Field(default=0.0, ge=0.0, le=25.0)
+    entry_target_notional_usd: float = Field(default=1.0, ge=0.0, le=25.0)
     max_entry_orders_per_game: int = Field(default=2, ge=1, le=10)
-    max_entry_notional_per_game_usd: float = Field(default=10.0, ge=0.1, le=100.0)
-    poll_interval_live_sec: float = Field(default=5.0, ge=1.0, le=60.0)
-    poll_interval_idle_sec: float = Field(default=15.0, ge=1.0, le=120.0)
+    max_entry_notional_per_game_usd: float = Field(default=2.0, ge=0.1, le=100.0)
+    poll_interval_live_sec: float = Field(default=2.0, ge=1.0, le=60.0)
+    poll_interval_idle_sec: float = Field(default=10.0, ge=1.0, le=120.0)
     stop_loss_mode: str = Field(default="market_on_local_trigger")
     account_id: str | None = Field(default=None)
     notes: str | None = Field(default=None)
@@ -65,11 +59,11 @@ class LiveRunCreateRequest(BaseModel):
     game_ids: list[str] = Field(default_factory=list)
     dry_run: bool = Field(default=True)
     entries_enabled: bool = Field(default=True)
-    entry_target_notional_usd: float = Field(default=0.0, ge=0.0, le=25.0)
+    entry_target_notional_usd: float = Field(default=1.0, ge=0.0, le=25.0)
     max_entry_orders_per_game: int = Field(default=2, ge=1, le=10)
-    max_entry_notional_per_game_usd: float = Field(default=10.0, ge=0.1, le=100.0)
-    poll_interval_live_sec: float = Field(default=5.0, ge=1.0, le=60.0)
-    poll_interval_idle_sec: float = Field(default=15.0, ge=1.0, le=120.0)
+    max_entry_notional_per_game_usd: float = Field(default=2.0, ge=0.1, le=100.0)
+    poll_interval_live_sec: float = Field(default=2.0, ge=1.0, le=60.0)
+    poll_interval_idle_sec: float = Field(default=10.0, ge=1.0, le=120.0)
     stop_loss_mode: str = Field(default="market_on_local_trigger")
     account_id: str | None = Field(default=None)
     notes: str | None = Field(default=None)

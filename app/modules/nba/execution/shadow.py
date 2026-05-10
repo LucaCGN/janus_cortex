@@ -18,8 +18,17 @@ DEFAULT_SHADOW_FAMILIES = (
     "quarter_open_reprice",
     "micro_momentum_continuation",
     "inversion",
+    "underdog_range_scalp",
+    "favorite_floor_rebound",
+    "underdog_liftoff",
+    "panic_fade_fast",
+    "lead_fragility",
+    "halftime_gap_fill",
+    "winner_definition",
+    "q1_repricing",
+    "q4_clutch",
 )
-LIVE_PROBE_FAMILIES = {"quarter_open_reprice", "micro_momentum_continuation"}
+LIVE_PROBE_FAMILIES = {"quarter_open_reprice", "micro_momentum_continuation", "underdog_range_scalp"}
 SHADOW_SNAPSHOT_JSON_NAME = "shadow_snapshot_latest.json"
 SHADOW_SNAPSHOT_CSV_NAME = "shadow_snapshot_latest.csv"
 

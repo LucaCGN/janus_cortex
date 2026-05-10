@@ -79,7 +79,7 @@ python tools/start_live_run.py --api-root http://127.0.0.1:8010 --run-id live-20
 
 ## Local Ledger Paths
 - root:
-  - `C:\code-personal\janus-local\janus_cortex\tracks\live-controller\2026-04-23\live-2026-04-23-v1\`
+  - `JANUS_LOCAL_ROOT\tracks\live-controller\2026-04-23\live-2026-04-23-v1\`
 - required files:
   - `run_config.json`
   - `heartbeat.json`

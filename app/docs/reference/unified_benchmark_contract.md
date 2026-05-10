@@ -31,16 +31,16 @@ Interpretation:
 Use the shared Codex space, not repo-root temp files.
 
 ### Contract Docs
-- `C:\code-personal\janus-local\janus_cortex\shared\benchmark_contract\`
+- `JANUS_LOCAL_ROOT\shared\benchmark_contract\`
 
 ### Lane Reports
-- `C:\code-personal\janus-local\janus_cortex\shared\reports\<lane>\`
+- `JANUS_LOCAL_ROOT\shared\reports\<lane>\`
 
 ### Lane Artifacts
-- `C:\code-personal\janus-local\janus_cortex\shared\artifacts\<lane>\`
+- `JANUS_LOCAL_ROOT\shared\artifacts\<lane>\`
 
 ### Lane Handoffs
-- `C:\code-personal\janus-local\janus_cortex\shared\handoffs\<lane>\`
+- `JANUS_LOCAL_ROOT\shared\handoffs\<lane>\`
 
 ## Canonical Result Modes
 Every normalized candidate row now carries three explicit result views:
@@ -130,8 +130,8 @@ That submission is a compact manifest that points at existing artifacts instead 
 ```
 
 Published example files:
-- `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
-- `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
+- `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
+- `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
 
 ## Canonical Normalized Candidate Fields
 The dashboard normalizes everything into one candidate row.

@@ -15,6 +15,7 @@ from app.api.routers import (
     market_data_router,
     nba_live_router,
     nba_read_router,
+    ops_router,
     portfolio_router,
     sync_router,
     system_registry_router,
@@ -22,7 +23,7 @@ from app.api.routers import (
 
 
 logger = logging.getLogger(__name__)
-API_VERSION = "0.8.1"
+API_VERSION = "1.1.0"
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -62,6 +63,7 @@ def create_app() -> FastAPI:
     app.include_router(catalog_router)
     app.include_router(market_data_router)
     app.include_router(nba_live_router)
+    app.include_router(ops_router)
     app.include_router(portfolio_router)
     app.include_router(sync_router)
     app.include_router(nba_read_router)

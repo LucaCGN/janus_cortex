@@ -143,10 +143,10 @@ Interpretation:
 - the primary controller is now frozen for live execution work, with the deterministic tight controller kept as the explicit fallback
 
 ## Artifacts
-- local report: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_report.md`
-- regular summary: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_regular_summary.csv`
-- postseason summary: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_postseason_summary.csv`
-- overall ranking: `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_overall_summary.csv`
+- local report: `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_report.md`
+- regular summary: `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_regular_summary.csv`
+- postseason summary: `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_postseason_summary.csv`
+- overall ranking: `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_dynamic80_s5_slip5\controller_vnext_overall_summary.csv`
 - full regular-season lock check:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games\regular_full_season_all_games_report.md`
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games\regular_full_season_all_games_summary.csv`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games\regular_full_season_all_games_report.md`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games\regular_full_season_all_games_summary.csv`

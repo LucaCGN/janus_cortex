@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pandas as pd
@@ -7,6 +8,60 @@ import pytest
 
 from app.modules.nba.execution import adapter
 from app.data.nodes.polymarket.blockchain.stream_orderbook import OrderbookSnapshot
+
+
+class _FakeCursor:
+    def __init__(self, connection: "_FakeCommitConnection") -> None:
+        self.connection = connection
+        self._row = None
+        self._rows: list[dict[str, object]] = []
+
+    def __enter__(self) -> "_FakeCursor":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def execute(self, query: str, params: object = None) -> None:
+        self.connection.queries.append((query, params))
+        if "FROM portfolio.orders o" in query:
+            self._rows = self.connection.order_rows
+            self._row = None
+        elif "FROM portfolio.orders" in query:
+            self._row = self.connection.order_row
+            self._rows = []
+        elif "FROM portfolio.trades" in query:
+            self._row = {"filled_size": self.connection.filled_size}
+            self._rows = []
+        else:
+            self._row = None
+            self._rows = []
+
+    def fetchone(self) -> dict[str, object] | None:
+        return self._row
+
+    def fetchall(self) -> list[dict[str, object]]:
+        return self._rows
+
+
+class _FakeCommitConnection:
+    def __init__(
+        self,
+        *,
+        order_row: dict[str, object] | None = None,
+        order_rows: list[dict[str, object]] | None = None,
+    ) -> None:
+        self.commit_count = 0
+        self.queries: list[tuple[str, object]] = []
+        self.order_row = order_row
+        self.order_rows = order_rows or []
+        self.filled_size = 0.0
+
+    def cursor(self, *args, **kwargs) -> _FakeCursor:
+        return _FakeCursor(self)
+
+    def commit(self) -> None:
+        self.commit_count += 1
 
 
 def test_resolve_entry_order_size_uses_minimum_shares_even_above_old_one_dollar_target_pytest() -> None:
@@ -117,6 +172,7 @@ def test_create_live_order_dry_run_sanitizes_metadata_and_persists_pytest(monkey
 
 def test_create_live_order_persists_initial_row_before_submit_update_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
     repo_calls: list[tuple[str, dict[str, object]]] = []
+    connection = _FakeCommitConnection()
 
     class _FakeRepo:
         def __init__(self, connection: object) -> None:
@@ -135,6 +191,7 @@ def test_create_live_order_persists_initial_row_before_submit_update_pytest(monk
             return True
 
     monkeypatch.setattr(adapter, "JanusUpsertRepository", _FakeRepo)
+    monkeypatch.setattr(adapter, "fetch_clob_collateral_status", lambda creds, required_notional_usd: {"ready": True})
     monkeypatch.setattr(
         adapter,
         "place_new_order",
@@ -144,7 +201,7 @@ def test_create_live_order_persists_initial_row_before_submit_update_pytest(monk
 
     with pytest.raises(RuntimeError, match="post-submit persistence failed"):
         adapter.create_live_order(
-            object(),
+            connection,
             account={"account_id": "acct-live"},
             market_id="market-demo",
             outcome_id="outcome-demo",
@@ -162,6 +219,55 @@ def test_create_live_order_persists_initial_row_before_submit_update_pytest(monk
     assert len(order_upserts) == 2
     assert order_upserts[0]["status"] == "pending_submit"
     assert events[0]["event_type"] == "live_place_requested"
+    assert connection.commit_count == 1
+
+
+def test_create_live_order_commits_submitted_live_order_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_calls: list[tuple[str, dict[str, object]]] = []
+    connection = _FakeCommitConnection()
+
+    class _FakeRepo:
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+
+        def upsert_order(self, **kwargs) -> str:
+            repo_calls.append(("upsert_order", kwargs))
+            return str(kwargs["order_id"])
+
+        def insert_order_event(self, **kwargs) -> bool:
+            repo_calls.append(("insert_order_event", kwargs))
+            return True
+
+    monkeypatch.setattr(adapter, "JanusUpsertRepository", _FakeRepo)
+    monkeypatch.setattr(adapter, "build_live_creds", lambda account: SimpleNamespace())
+    monkeypatch.setattr(adapter, "fetch_clob_collateral_status", lambda creds, required_notional_usd: {"ready": True})
+    monkeypatch.setattr(
+        adapter,
+        "place_new_order",
+        lambda creds, request: SimpleNamespace(success=True, raw={"orderID": "ext-order-1"}),
+    )
+
+    result = adapter.create_live_order(
+        connection,
+        account={"account_id": "acct-live"},
+        market_id="market-demo",
+        outcome_id="outcome-demo",
+        token_id="token-demo",
+        side="buy",
+        size=5.0,
+        price=0.27,
+        order_type="limit",
+        metadata_json={"run_id": "live-2026-05-05-v1-live"},
+        dry_run=False,
+    )
+
+    order_upserts = [payload for name, payload in repo_calls if name == "upsert_order"]
+    events = [payload for name, payload in repo_calls if name == "insert_order_event"]
+    assert result["status"] == "submitted"
+    assert result["external_order_id"] == "ext-order-1"
+    assert [order["status"] for order in order_upserts] == ["pending_submit", "submitted"]
+    assert [event["event_type"] for event in events] == ["live_place_requested", "live_place_submitted"]
+    assert connection.commit_count == 2
 
 
 def test_create_live_order_blocks_live_buy_when_clob_collateral_not_ready_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -219,6 +325,113 @@ def test_create_live_order_blocks_live_buy_when_clob_collateral_not_ready_pytest
     assert order_upserts[0]["status"] == "pending_submit"
     assert order_upserts[1]["status"] == "submit_error"
     assert [event["event_type"] for event in events] == ["live_place_requested", "live_place_blocked"]
+
+
+def test_cancel_live_order_commits_cancel_status_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_calls: list[tuple[str, dict[str, object]]] = []
+    connection = _FakeCommitConnection(
+        order_row={
+            "order_id": "order-1",
+            "external_order_id": "ext-order-1",
+            "status": "submitted",
+            "metadata_json": {},
+        }
+    )
+
+    class _FakeRepo:
+        def __init__(self, connection: object) -> None:
+            self.connection = connection
+
+        def insert_order_event(self, **kwargs) -> bool:
+            repo_calls.append(("insert_order_event", kwargs))
+            return True
+
+    monkeypatch.setattr(adapter, "JanusUpsertRepository", _FakeRepo)
+    monkeypatch.setattr(adapter, "build_live_creds", lambda account: SimpleNamespace())
+    monkeypatch.setattr(
+        adapter,
+        "cancel_order",
+        lambda creds, external_order_id: SimpleNamespace(success=True, raw={"canceled": external_order_id}),
+    )
+
+    result = adapter.cancel_live_order(
+        connection,
+        account={"account_id": "acct-live"},
+        order_id="order-1",
+        dry_run=False,
+        reason="stale_signal",
+    )
+
+    assert result["status"] == "canceled"
+    assert result["event_type"] == "live_cancel_submitted"
+    assert repo_calls[0][1]["event_type"] == "live_cancel_submitted"
+    assert connection.commit_count == 1
+
+
+def test_reconcile_live_order_fills_links_clob_trade_to_run_order_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_calls: list[tuple[str, dict[str, object]]] = []
+    connection = _FakeCommitConnection(
+        order_rows=[
+            {
+                "order_id": "order-1",
+                "account_id": "acct-live",
+                "market_id": "market-demo",
+                "outcome_id": "outcome-demo",
+                "external_order_id": "0xabc",
+                "side": "buy",
+                "size": 5.0,
+                "placed_at": datetime(2026, 5, 5, 23, 57, tzinfo=timezone.utc),
+                "status": "submitted",
+            }
+        ]
+    )
+
+    class _FakeRepo:
+        def __init__(self, connection: _FakeCommitConnection) -> None:
+            self.connection = connection
+
+        def upsert_trade(self, **kwargs) -> str:
+            repo_calls.append(("upsert_trade", kwargs))
+            self.connection.filled_size += float(kwargs["size"])
+            return str(kwargs["trade_id"])
+
+        def insert_order_event(self, **kwargs) -> bool:
+            repo_calls.append(("insert_order_event", kwargs))
+            return True
+
+    monkeypatch.setattr(adapter, "JanusUpsertRepository", _FakeRepo)
+    monkeypatch.setattr(adapter, "build_live_creds", lambda account: SimpleNamespace())
+    monkeypatch.setattr(
+        adapter,
+        "view_trades",
+        lambda creds: [
+            SimpleNamespace(
+                id="trade-1",
+                taker_order_id="0xabc",
+                maker_order_id="",
+                side="BUY",
+                asset_id="token-demo",
+                size=5.0,
+                price=0.27,
+                timestamp=0,
+            )
+        ],
+    )
+
+    result = adapter.reconcile_live_order_fills(
+        connection,
+        account={"account_id": "acct-live"},
+        run_id="live-2026-05-05-v1-live",
+    )
+
+    assert result == {"checked_orders": 1, "matched_trades": 1, "orders_filled": 1}
+    assert repo_calls[0][0] == "upsert_trade"
+    assert repo_calls[0][1]["order_id"] == "order-1"
+    assert repo_calls[1][0] == "insert_order_event"
+    assert str(repo_calls[1][1]["event_type"]).startswith("live_trade_fill:")
+    update_queries = [query for query, _params in connection.queries if "UPDATE portfolio.orders" in query]
+    assert update_queries
+    assert connection.commit_count == 1
 
 
 def test_fetch_latest_orderbook_summary_caches_missing_orderbook_pytest(monkeypatch: pytest.MonkeyPatch) -> None:

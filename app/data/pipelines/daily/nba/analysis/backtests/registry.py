@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.data.pipelines.daily.nba.analysis.backtests.favorite_floor_rebound import simulate_favorite_floor_rebound_trades
 from app.data.pipelines.daily.nba.analysis.backtests.halftime_gap_fill import simulate_halftime_gap_fill_trades
 from app.data.pipelines.daily.nba.analysis.backtests.inversion import simulate_inversion_trades
 from app.data.pipelines.daily.nba.analysis.backtests.lead_fragility import simulate_lead_fragility_trades
@@ -12,6 +13,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.q1_repricing import simulat
 from app.data.pipelines.daily.nba.analysis.backtests.q4_clutch import simulate_q4_clutch_trades
 from app.data.pipelines.daily.nba.analysis.backtests.specs import StrategyDefinition
 from app.data.pipelines.daily.nba.analysis.backtests.underdog_liftoff import simulate_underdog_liftoff_trades
+from app.data.pipelines.daily.nba.analysis.backtests.underdog_range_scalp import simulate_underdog_range_scalp_trades
 from app.data.pipelines.daily.nba.analysis.backtests.winner_definition import simulate_winner_definition_trades
 
 
@@ -114,6 +116,24 @@ def build_strategy_registry(*, strategy_group: str = DEFAULT_STRATEGY_GROUP) -> 
                     comparator_group="higher_frequency_fragility",
                     tags=("higher_frequency", "fragility", "rebound"),
                     simulator=simulate_lead_fragility_trades,
+                ),
+                StrategyDefinition(
+                    family="underdog_range_scalp",
+                    entry_rule="close_score_underdog_buy_20c_to_35c_rebound",
+                    exit_rule="plus_6c_or_minus_4c_or_late_flatten",
+                    description="Close-score underdog range scalp for 20c-35c live prices, targeting practical 5-share round trips before late-game clutch volatility.",
+                    comparator_group="higher_frequency_underdog_range",
+                    tags=("higher_frequency", "underdog", "range_scalp", "close_game"),
+                    simulator=simulate_underdog_range_scalp_trades,
+                ),
+                StrategyDefinition(
+                    family="favorite_floor_rebound",
+                    entry_rule="favorite_buy_10c_to_20c_when_score_gap_recoverable",
+                    exit_rule="plus_7c_or_minus_4c_or_late_flatten",
+                    description="Collapsed favorite rebound that buys a prior favorite in the 10c-20c band when the score gap is still recoverable and exits quickly.",
+                    comparator_group="higher_frequency_favorite_rebound",
+                    tags=("higher_frequency", "favorite", "panic_fade", "close_game"),
+                    simulator=simulate_favorite_floor_rebound_trades,
                 ),
             ]
         )

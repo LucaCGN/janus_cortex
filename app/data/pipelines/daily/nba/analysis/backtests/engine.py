@@ -322,6 +322,57 @@ def simulate_trade_loop(
     return trades
 
 
+def simulate_repeating_trade_loop(
+    state_df: pd.DataFrame,
+    *,
+    strategy_family: str,
+    entry_rule: str,
+    exit_rule: str,
+    slippage_cents: int,
+    entry_selector: EntrySelector,
+    exit_selector: ExitSelector,
+    max_trades_per_side: int = 12,
+) -> list[dict[str, Any]]:
+    if state_df.empty:
+        return []
+    work = _prepare_state_panel_frame(state_df)
+    trades: list[dict[str, Any]] = []
+    for (_, _), group in work.groupby(["game_id", "team_side"], sort=True):
+        ordered = group.sort_values("state_index", kind="mergesort").reset_index(drop=True)
+        start_offset = 0
+        trade_count = 0
+        while start_offset < len(ordered) and trade_count < max(1, int(max_trades_per_side)):
+            window = ordered.iloc[start_offset:].reset_index(drop=True)
+            if window.empty:
+                break
+            selection = entry_selector(window)
+            if selection is None:
+                break
+            exit_index = exit_selector(window, selection)
+            take_profit_index = _take_profit_exit_index(window, entry_index=selection.entry_index)
+            if take_profit_index is not None and (exit_index is None or take_profit_index < exit_index):
+                exit_index = take_profit_index
+                selection.metadata["exit_override"] = "take_profit_95"
+                selection.metadata["target_price"] = DEFAULT_TAKE_PROFIT_EXIT_PRICE
+            if exit_index is None or exit_index <= selection.entry_index:
+                break
+            trades.append(
+                _trade_row(
+                    window,
+                    entry_index=selection.entry_index,
+                    exit_index=exit_index,
+                    strategy_family=strategy_family,
+                    entry_rule=entry_rule,
+                    exit_rule=exit_rule,
+                    slippage_cents=slippage_cents,
+                    selection_metadata=selection.metadata,
+                )
+            )
+            trade_count += 1
+            start_offset += int(exit_index) + 1
+    return trades
+
+
 def _summarize_trades(trades_df: pd.DataFrame) -> dict[str, Any]:
     if trades_df.empty:
         return {
@@ -633,6 +684,7 @@ __all__ = [
     "build_benchmark_run_result",
     "load_analysis_backtest_state_panel_df",
     "run_analysis_backtests",
+    "simulate_repeating_trade_loop",
     "simulate_trade_loop",
     "write_backtest_artifacts",
     "write_benchmark_artifacts",

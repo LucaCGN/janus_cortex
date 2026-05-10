@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 import time
 from typing import Any
@@ -20,6 +20,7 @@ from app.data.nodes.polymarket.blockchain.manage_portfolio import (
     PolymarketCredentials,
     cancel_order,
     place_new_order,
+    view_trades,
 )
 from app.data.nodes.polymarket.blockchain.stream_orderbook import fetch_orderbook
 from app.data.pipelines.daily.polymarket.sync_portfolio import run_portfolio_mirror_sync
@@ -28,9 +29,10 @@ from app.data.pipelines.daily.polymarket.sync_portfolio import run_portfolio_mir
 POLYMARKET_PROVIDER_CODE = "polymarket"
 _PROVIDER_NAMESPACE = uuid.UUID("41395777-ed5f-474f-a5b7-c97567f5ca56")
 _ACCOUNT_NAMESPACE = uuid.UUID("0b28a9b6-a9a7-4f05-a4f9-9925434fd1e0")
-OPEN_ORDER_STATUSES = {"open", "submitted", "working", "pending"}
+OPEN_ORDER_STATUSES = {"open", "submitted", "working", "pending", "partially_filled", "partial"}
 _MISSING_ORDERBOOK_CACHE_TTL_SEC = 300.0
 _MISSING_ORDERBOOK_CACHE: dict[tuple[str, str], float] = {}
+_ORDER_EVENT_NAMESPACE = uuid.UUID("69c5b0a4-62a6-43e2-b474-c89c12b004f8")
 
 
 def _provider_uuid_for(code: str) -> str:
@@ -50,6 +52,12 @@ def _extract_external_order_id(payload: Any) -> str | None:
                 if value:
                     return str(value)
     return None
+
+
+def _commit_if_supported(connection: PsycopgConnection) -> None:
+    commit = getattr(connection, "commit", None)
+    if callable(commit):
+        commit()
 
 
 def _resolve_provider_id(connection: PsycopgConnection, *, provider_code: str) -> str:
@@ -441,6 +449,8 @@ def create_live_order(
         raw_json=to_jsonable(execution_payload),
         ignore_duplicates=True,
     )
+    if not dry_run:
+        _commit_if_supported(connection)
 
     if not dry_run:
         creds = build_live_creds(account)
@@ -504,6 +514,8 @@ def create_live_order(
             raw_json=to_jsonable(execution_payload),
             ignore_duplicates=True,
         )
+    if not dry_run:
+        _commit_if_supported(connection)
     return {
         "order_id": order_id,
         "external_order_id": external_order_id,
@@ -574,6 +586,8 @@ def cancel_live_order(
         raw_json=execution_payload,
         ignore_duplicates=True,
     )
+    if not dry_run:
+        _commit_if_supported(connection)
     return {
         "order_id": order_id,
         "external_order_id": external_order_id,
@@ -654,6 +668,149 @@ def list_run_trades(
             (run_id,),
         )
         return fetchall_dicts(cursor)
+
+
+def _trade_time_from_external_trade(trade: Any, *, fallback: datetime) -> datetime:
+    timestamp = getattr(trade, "timestamp", None)
+    try:
+        parsed_timestamp = int(timestamp or 0)
+    except (TypeError, ValueError):
+        parsed_timestamp = 0
+    if parsed_timestamp > 0:
+        return datetime.fromtimestamp(parsed_timestamp, tz=timezone.utc)
+    trade_id = str(getattr(trade, "id", "") or "")
+    offset = uuid.uuid5(_ORDER_EVENT_NAMESPACE, trade_id).int % 1_000_000 if trade_id else 0
+    return fallback + timedelta(microseconds=offset)
+
+
+def reconcile_live_order_fills(
+    connection: PsycopgConnection,
+    *,
+    account: dict[str, Any],
+    run_id: str,
+) -> dict[str, Any]:
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT
+                o.order_id,
+                o.account_id,
+                o.market_id,
+                o.outcome_id,
+                o.external_order_id,
+                o.side,
+                o.size,
+                o.placed_at,
+                o.status
+            FROM portfolio.orders o
+            WHERE o.metadata_json->>'run_id' = %s
+              AND o.external_order_id IS NOT NULL
+              AND lower(o.status) = ANY(%s);
+            """,
+            (run_id, list(OPEN_ORDER_STATUSES)),
+        )
+        open_orders = fetchall_dicts(cursor)
+    if not open_orders:
+        return {"checked_orders": 0, "matched_trades": 0, "orders_filled": 0}
+
+    order_by_external_id = {
+        str(row.get("external_order_id") or "").strip().lower(): row
+        for row in open_orders
+        if str(row.get("external_order_id") or "").strip()
+    }
+    if not order_by_external_id:
+        return {"checked_orders": len(open_orders), "matched_trades": 0, "orders_filled": 0}
+
+    creds = build_live_creds(account)
+    external_trades = view_trades(creds)
+    repo = JanusUpsertRepository(connection)
+    matched_trades = 0
+    orders_filled: set[str] = set()
+
+    for trade in external_trades:
+        external_candidates = [
+            str(getattr(trade, "taker_order_id", "") or "").strip().lower(),
+            str(getattr(trade, "maker_order_id", "") or "").strip().lower(),
+        ]
+        order_row = next((order_by_external_id[item] for item in external_candidates if item in order_by_external_id), None)
+        if order_row is None:
+            continue
+
+        order_id = str(order_row["order_id"])
+        trade_id = str(getattr(trade, "id", "") or "") or str(
+            uuid.uuid5(_ORDER_EVENT_NAMESPACE, f"{order_id}:{getattr(trade, 'asset_id', '')}:{getattr(trade, 'price', '')}:{getattr(trade, 'size', '')}")
+        )
+        fallback_time = order_row.get("placed_at")
+        if not isinstance(fallback_time, datetime):
+            fallback_time = datetime.now(timezone.utc)
+        trade_time = _trade_time_from_external_trade(trade, fallback=fallback_time)
+        side = str(getattr(trade, "side", "") or order_row.get("side") or "").lower()
+        price = float(getattr(trade, "price", 0.0) or 0.0)
+        size = float(getattr(trade, "size", 0.0) or 0.0)
+        raw_json = to_jsonable(getattr(trade, "__dict__", {}) or {})
+        repo.upsert_trade(
+            trade_id=trade_id,
+            account_id=str(order_row["account_id"]),
+            order_id=order_id,
+            market_id=str(order_row["market_id"]),
+            outcome_id=str(order_row.get("outcome_id")) if order_row.get("outcome_id") else None,
+            external_trade_id=trade_id,
+            tx_hash=None,
+            side=side,
+            price=price,
+            size=size,
+            fee=None,
+            fee_asset=None,
+            liquidity_role=None,
+            trade_time=trade_time,
+            raw_json=raw_json,
+        )
+        inserted_event = repo.insert_order_event(
+            order_event_id=str(uuid.uuid5(_ORDER_EVENT_NAMESPACE, f"{order_id}:{trade_id}:live_trade_fill")),
+            order_id=order_id,
+            event_time=trade_time,
+            event_type=f"live_trade_fill:{trade_id}",
+            filled_size_delta=size,
+            filled_notional_delta=size * price,
+            raw_json=raw_json,
+            ignore_duplicates=True,
+        )
+        matched_trades += 1
+
+        with cursor_dict(connection) as cursor:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(size), 0) AS filled_size
+                FROM portfolio.trades
+                WHERE order_id = %s
+                  AND lower(side) = lower(%s);
+                """,
+                (order_id, str(order_row.get("side") or side)),
+            )
+            fill_row = fetchone_dict(cursor) or {}
+        filled_size = float(fill_row.get("filled_size") or 0.0)
+        requested_size = float(order_row.get("size") or 0.0)
+        order_status = "filled" if requested_size > 0 and filled_size + 1e-9 >= requested_size else "partially_filled"
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE portfolio.orders
+                SET status = %s,
+                    updated_at = %s
+                WHERE order_id = %s;
+                """,
+                (order_status, trade_time, order_id),
+            )
+        if inserted_event and order_status == "filled":
+            orders_filled.add(order_id)
+
+    if matched_trades:
+        _commit_if_supported(connection)
+    return {
+        "checked_orders": len(open_orders),
+        "matched_trades": matched_trades,
+        "orders_filled": len(orders_filled),
+    }
 
 
 def list_latest_positions(
@@ -767,6 +924,7 @@ __all__ = [
     "list_run_orders",
     "list_run_trades",
     "mirror_account_state",
+    "reconcile_live_order_fills",
     "resolve_minimum_order_size",
     "resolve_trading_account",
 ]

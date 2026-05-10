@@ -1683,6 +1683,106 @@ def test_analysis_studio_benchmark_dashboard_route_loads_shared_snapshot_pytest(
     assert payload["divergence_summary"][0]["signal_count"] == 19
 
 
+def test_analysis_studio_benchmark_dashboard_uses_latest_monitor_artifacts_pytest(tmp_path: Path) -> None:
+    shared_root = tmp_path / "shared"
+    _write_shared_benchmark_fixture(shared_root)
+    daily_root = shared_root / "artifacts" / "daily-live-validation" / "2025-04-25"
+    daily_root.mkdir(parents=True, exist_ok=True)
+    shadow_path = daily_root / "shadow_snapshot_live-2025-04-25.json"
+    _write_json(
+        shadow_path,
+        {
+            "snapshot_at_utc": "2025-04-26T03:36:35+00:00",
+            "session_date": "2025-04-25",
+            "run_id": "live-2025-04-25-v1-live",
+            "run_status": "completed",
+            "summary": [
+                {
+                    "subject_name": "quarter_open_reprice",
+                    "promotion_bucket": "live_probe",
+                    "active_signal_count": 0,
+                    "stale_signal_count": 1,
+                },
+                {
+                    "subject_name": "inversion",
+                    "promotion_bucket": "shadow_only",
+                    "active_signal_count": 0,
+                    "stale_signal_count": 1,
+                },
+                {
+                    "subject_name": "winner_definition",
+                    "promotion_bucket": "bench_only",
+                    "active_signal_count": 0,
+                    "stale_signal_count": 1,
+                },
+            ],
+        },
+    )
+    (daily_root / "monitor_ticks.jsonl").write_text(
+        json.dumps(
+            {
+                "checked_at_utc": "2025-04-26T03:40:00+00:00",
+                "session_date": "2025-04-25",
+                "run_id": "live-2025-04-25-v1-live",
+                "run": {
+                    "status": "completed",
+                    "cycle_count": 933,
+                    "dry_run": False,
+                    "entries_enabled": True,
+                    "open_orders": 0,
+                    "open_positions": 0,
+                    "games": [
+                        {
+                            "game_id": "0042500113",
+                            "matchup": "BOS at PHI",
+                            "controller_name": "controller_vnext_unified_v1 :: balanced",
+                            "selected_action": "wait",
+                            "note": "entry_signal_stale",
+                            "fill_state": "none",
+                            "best_bid": 0.67,
+                            "best_ask": 0.68,
+                        }
+                    ],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    reports_root = shared_root / "reports" / "daily-live-validation"
+    reports_root.mkdir(parents=True, exist_ok=True)
+    (reports_root / "postgame_report_2025-04-25.md").write_text(
+        "# Postgame Report - 2025-04-25\n",
+        encoding="utf-8",
+    )
+    client = TestClient(create_app())
+
+    response = client.get(
+        "/v1/analysis/studio/benchmark-dashboard",
+        params={
+            "season": "2025-26",
+            "shared_root": str(shared_root),
+            "finalist_limit": 4,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["daily_live_validation"]["session_date"] == "2025-04-25"
+    assert payload["summary"]["daily_live_session_date"] == "2025-04-25"
+    assert payload["summary"]["daily_live_status"] == "completed"
+    assert payload["summary"]["daily_live_cycle_count"] == 933
+    assert payload["current_promoted_stack"]["session_date"] == "2025-04-25"
+    assert payload["current_promoted_stack"]["live_status"] == "completed"
+    assert payload["daily_live_validation"]["summary"]["planned_probes"][0]["candidate_id"] == "quarter_open_reprice"
+    assert payload["daily_live_validation"]["summary"]["shadow_set"][0]["candidate_id"] == "inversion"
+    assert payload["daily_live_validation"]["comparison_rows"][0]["no_trade_bucket"] == "stale_signal"
+    assert (
+        payload["daily_live_validation"]["comparison_rows"][0]["candidate_id"]
+        == "controller_vnext_unified_v1 :: balanced"
+    )
+
+
 def test_analysis_studio_snapshot_route_loads_consumer_snapshot_pytest(tmp_path: Path) -> None:
     _write_consumer_fixture(tmp_path)
     client = TestClient(create_app())

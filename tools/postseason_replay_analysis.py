@@ -21,10 +21,11 @@ from app.data.pipelines.daily.nba.analysis.backtests.replay import (
     write_replay_artifacts,
 )
 from app.data.pipelines.daily.nba.analysis.contracts import ReplayRunRequest
+from app.runtime.local_paths import resolve_shared_root
 
 
-DEFAULT_ARTIFACTS_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex\shared\artifacts\replay-engine-hf")
-DEFAULT_REPORTS_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex\shared\reports\replay-engine-hf")
+DEFAULT_ARTIFACTS_ROOT = resolve_shared_root() / "artifacts" / "replay-engine-hf"
+DEFAULT_REPORTS_ROOT = resolve_shared_root() / "reports" / "replay-engine-hf"
 DEFAULT_LIVE_RUN_IDS: tuple[str, ...] = ()
 REPLAY_ENGINE_LANE_ID = "replay-engine-hf"
 LOCKED_BASELINE_SUBJECTS = (
@@ -33,6 +34,8 @@ LOCKED_BASELINE_SUBJECTS = (
 )
 PRIORITY_HF_FAMILIES = (
     "quarter_open_reprice",
+    "underdog_range_scalp",
+    "favorite_floor_rebound",
     "halftime_gap_fill",
     "micro_momentum_continuation",
     "lead_fragility",

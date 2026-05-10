@@ -391,19 +391,20 @@ def view_orders(creds: PolymarketCredentials, *, open_only: bool = True) -> List
 
         for raw in raw_list:
             try:
+                status = str(raw.get("status", "OPEN")).upper()
                 o = OpenOrder(
                     id=str(raw.get("orderID") or raw.get("orderID") or raw.get("id")),
                     market=str(raw.get("market", "")),
                     asset_id=str(raw.get("asset_id", "")),
                     side=str(raw.get("side")),
-                    size=float(raw.get("size", 0) or 0.0),
+                    size=float(raw.get("size") or raw.get("original_size") or 0.0),
                     price=float(raw.get("price", 0) or 0.0),
                     filled_size=float(raw.get("filledSize") or raw.get("filled_size") or raw.get("size_matched") or 0.0),
-                    status=str(raw.get("status", "OPEN")),
+                    status=status,
                     created_at=int(raw.get("timestamp") or raw.get("created_at") or 0),
                     token_id=str(raw.get("asset_id") or raw.get("token_id") or ""),
                 )
-                if open_only and o.status not in ("OPEN", "PARTIALLY_FILLED"):
+                if open_only and o.status not in ("OPEN", "LIVE", "PARTIALLY_FILLED"):
                     continue
                 orders.append(o)
             except Exception as exc:  # noqa: BLE001

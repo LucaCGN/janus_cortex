@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import threading
 import uuid
@@ -26,13 +25,12 @@ from app.data.pipelines.daily.nba.analysis.benchmark_integration import (
 )
 from app.data.pipelines.daily.nba.analysis.contracts import (
     ANALYSIS_VERSION,
-    DEFAULT_LOCAL_ROOT_ENV_VAR,
     DEFAULT_SEASON,
     DEFAULT_SEASON_PHASE,
-    WINDOWS_LOCAL_ROOT,
     AnalysisConsumerRequest,
     resolve_default_output_root,
 )
+from app.runtime.local_paths import resolve_local_root
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -115,12 +113,7 @@ def _now_iso() -> str:
 
 
 def _resolve_local_root() -> Path:
-    env_value = os.getenv(DEFAULT_LOCAL_ROOT_ENV_VAR)
-    if env_value:
-        return Path(env_value)
-    if WINDOWS_LOCAL_ROOT.exists():
-        return WINDOWS_LOCAL_ROOT
-    return REPO_ROOT / "janus_local"
+    return resolve_local_root()
 
 
 def _ensure_directory(path: Path) -> Path:

@@ -242,6 +242,7 @@ class PortfolioPositionsQuery(BaseModel):
 
     account_id: UUID | None = None
     outcome_id: UUID | None = None
+    market_id: UUID | None = None
     latest_only: bool = True
     source: str | None = None
     limit: int = Field(default=500, ge=1, le=5000)
@@ -253,6 +254,7 @@ class PortfolioPositionHistoryQuery(BaseModel):
 
     account_id: UUID | None = None
     outcome_id: UUID | None = None
+    market_id: UUID | None = None
     source: str | None = None
     start_time: datetime | None = None
     end_time: datetime | None = None

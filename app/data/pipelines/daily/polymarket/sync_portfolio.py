@@ -412,6 +412,59 @@ def _fetch_data_api_payload(
     }
 
 
+def _lookup_existing_trading_account(
+    connection: Any,
+    *,
+    provider_id: str,
+    wallet_address: str,
+    proxy_wallet_address: str | None,
+) -> dict[str, Any] | None:
+    wallet = str(wallet_address or "").strip()
+    proxy_wallet = str(proxy_wallet_address or "").strip()
+    if not wallet and not proxy_wallet:
+        return None
+
+    lookup_values = [value for value in (wallet, proxy_wallet) if value]
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                account_id,
+                account_label,
+                wallet_address,
+                proxy_wallet_address,
+                chain_id
+            FROM portfolio.trading_accounts
+            WHERE provider_id = %s
+              AND (
+                lower(wallet_address) = ANY(%s)
+                OR lower(proxy_wallet_address) = ANY(%s)
+              )
+            ORDER BY
+                is_active DESC,
+                CASE WHEN account_label ILIKE 'wallet:%%' THEN 1 ELSE 0 END,
+                updated_at DESC NULLS LAST,
+                created_at DESC NULLS LAST
+            LIMIT 1;
+            """,
+            (
+                provider_id,
+                [value.lower() for value in lookup_values],
+                [value.lower() for value in lookup_values],
+            ),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return None
+    return {
+        "account_id": str(row[0]),
+        "account_label": str(row[1]),
+        "wallet_address": str(row[2] or wallet),
+        "proxy_wallet_address": str(row[3] or proxy_wallet or wallet),
+        "chain_id": int(row[4] or 137),
+    }
+
+
 def run_portfolio_mirror_sync(
     *,
     wallet_address: str,
@@ -452,16 +505,37 @@ def run_portfolio_mirror_sync(
             description="Data API portfolio mirror ingestion pipeline",
             owner="janus",
         )
-        resolved_account_id = account_id or _uuid_for("account", wallet_address)
-        resolved_account_label = account_label or f"wallet:{wallet_address[:10]}"
-        resolved_proxy_wallet = proxy_wallet_address or wallet_address
+        existing_account = None
+        if account_id is None:
+            existing_account = _lookup_existing_trading_account(
+                connection,
+                provider_id=provider_id,
+                wallet_address=wallet_address,
+                proxy_wallet_address=proxy_wallet_address,
+            )
+        resolved_account_id = (
+            account_id
+            or (existing_account or {}).get("account_id")
+            or _uuid_for("account", wallet_address)
+        )
+        resolved_account_label = (
+            account_label
+            or (existing_account or {}).get("account_label")
+            or f"wallet:{wallet_address[:10]}"
+        )
+        resolved_proxy_wallet = (
+            proxy_wallet_address
+            or (existing_account or {}).get("proxy_wallet_address")
+            or wallet_address
+        )
+        resolved_chain_id = int((existing_account or {}).get("chain_id") or chain_id)
         account_id = repo.upsert_trading_account(
             account_id=resolved_account_id,
             provider_id=provider_id,
             account_label=resolved_account_label,
             wallet_address=wallet_address,
             proxy_wallet_address=resolved_proxy_wallet,
-            chain_id=chain_id,
+            chain_id=resolved_chain_id,
             is_active=True,
         )
         sync_run_id = _insert_sync_run(

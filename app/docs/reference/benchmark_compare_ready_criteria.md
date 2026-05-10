@@ -64,9 +64,9 @@ For replay-lane HF families specifically, the integration layer should follow th
 
 ## Strict Submission Examples
 - ML:
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
 - LLM:
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
 
 ## Operational Interpretation
 - standard backtest remains visible for context, but it is not the realism baseline

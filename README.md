@@ -4,7 +4,10 @@ Personal prediction-market data framework focused on production-grade data struc
 
 ## Current Status
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
-- Local checkpoint ledger source of truth: `JANUS_LOCAL_ROOT\tracks\dev-checkpoint` with workspace default `C:\code-personal\janus-local\janus_cortex`
+- Local runtime root: `JANUS_LOCAL_ROOT`, defaulting to `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
+- Agentic backend operating plan: `app\docs\planning\janus_agentic_backend_operating_plan.md`
+- Codex agent automation prompts: `app\docs\planning\codex_agent_automation_prompts.md`
+- Codex automation tools live under `codex_tool\`
 - Current priority: run the locked NBA controller pair through the live playoff validation loop and harden the local Polymarket executor path.
 - Current scope: locked controller execution integration, live-paper review, stop-loss/order-policy testing, decision logging, and unified benchmark control across replay, ML, and LLM lanes.
 - Current NBA analysis snapshot on `2026-04-23`:
@@ -28,7 +31,7 @@ Personal prediction-market data framework focused on production-grade data struc
     - run launcher available at `tools/start_live_run.py`
     - controller core remains frozen; only execution profile versions iterate (`v1`, `v2`, ...)
 - Current benchmark integration snapshot on `2026-04-24`:
-  - replay-engine shared contract now published at `C:\code-personal\janus-local\janus_cortex\shared\benchmark_contract\replay_contract_current.md`
+  - replay-engine shared contract now published under `JANUS_LOCAL_ROOT\shared\benchmark_contract\replay_contract_current.md`
   - unified comparison dashboard now mounted at `/analysis-studio`
   - shared export command now available at `python tools/export_benchmark_dashboard.py`
   - replay is now the realism baseline; standard backtest, replay result, and live observed remain separate result views

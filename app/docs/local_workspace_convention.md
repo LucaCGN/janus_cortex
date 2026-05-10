@@ -1,13 +1,13 @@
 # Local Workspace Convention
 
 ## Purpose
-Keep branch-independent local state outside the repository so worktrees stay disposable and `main` stays clean.
+Keep branch-independent local state under the ignored repo-local `local/` directory so the running service avoids Windows permission friction while `main` stays clean.
 
 ## Default Local Root
-- preferred local root: `C:\code-personal\janus-local\janus_cortex`
+- preferred local root: `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
 - optional override: `JANUS_LOCAL_ROOT`
 
-If `JANUS_LOCAL_ROOT` is unset, the repo helper defaults to the path above.
+If `JANUS_LOCAL_ROOT` is unset, runtime helpers default to `<repo>\local`.
 
 ## Layout
 - `tracks/`: persistent checkpoint ledgers, reference folders, and branch-independent notes

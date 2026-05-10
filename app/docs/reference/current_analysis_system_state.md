@@ -144,7 +144,7 @@ Validated on `2026-04-23`:
 - `python -m pytest -q tests/app/data/pipelines/daily/nba/test_analysis_backtests_pytest.py`
 - `python tools/controller_vnext_analysis.py --season 2025-26 --analysis-version v1_0_1 --llm-model gpt-5.4 --llm-budget-usd 10.0`
 - full regular-season lock check replay written under:
-  - `C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games`
+  - `JANUS_LOCAL_ROOT\archives\output\nba_analysis_controller_vnext\2025-26\controller_vnext_regular_full_season_all_games`
 
 ## Current Frontend Surface
 - the studio remains read-only
@@ -167,7 +167,7 @@ Validated on `2026-04-23`:
 ### Shared contract state
 - replay-engine lane published the first shared replay contract on `2026-04-24`
 - shared contract path:
-  - `C:\code-personal\janus-local\janus_cortex\shared\benchmark_contract\replay_contract_current.md`
+  - `JANUS_LOCAL_ROOT\shared\benchmark_contract\replay_contract_current.md`
 - current maturity:
   - `execution_replay_v1_2`
 - unified comparison contract layered above it:
@@ -213,16 +213,16 @@ Validated on `2026-04-23`:
 - export command:
   - `python tools/export_benchmark_dashboard.py`
 - shared integration artifact root:
-  - `C:\code-personal\janus-local\janus_cortex\shared\artifacts\benchmark-integration\`
+  - `JANUS_LOCAL_ROOT\shared\artifacts\benchmark-integration\`
 - shared compare-ready criteria export:
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\compare_ready_criteria.md`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\compare_ready_criteria.md`
 - shared promoted-stack note:
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\current_promoted_stack.md`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\current_promoted_stack.md`
 - shared merge-plan memo:
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\milestone_merge_plan.md`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\milestone_merge_plan.md`
 - shared submission example exports:
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\ml_benchmark_submission_example.json`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\llm_benchmark_submission_example.json`
 
 ## Current Live Execution Surface
 ### Local live executor v1
@@ -241,7 +241,7 @@ Validated on `2026-04-23`:
   - local stop-loss trigger with immediate market-emulated sell
   - non-stop exits try limit first, then one aggressive retry
 - local orchestration ledger:
-  - `C:\code-personal\janus-local\janus_cortex\tracks\live-controller\<date>\<run_id>\`
+  - `JANUS_LOCAL_ROOT\tracks\live-controller\<date>\<run_id>\`
   - files:
     - `run_config.json`
     - `heartbeat.json`
@@ -271,4 +271,4 @@ Validated on `2026-04-23`:
 
 ## Output Root Convention
 - repo outputs remain read-only snapshots
-- branch-independent artifacts and quicklook material belong under `C:\code-personal\janus-local\janus_cortex`
+- branch-independent artifacts and quicklook material belong under `JANUS_LOCAL_ROOT`

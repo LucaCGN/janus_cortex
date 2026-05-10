@@ -27,6 +27,8 @@ REPLAY_HIGH_FREQUENCY_FAMILIES = {
     "micro_momentum_continuation",
     "panic_fade_fast",
     "quarter_open_reprice",
+    "underdog_range_scalp",
+    "favorite_floor_rebound",
     "halftime_gap_fill",
     "lead_fragility",
 }
@@ -481,29 +483,299 @@ def _discover_lane_publications(
     return publications
 
 
+def _read_jsonl_last_record(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    last_line = ""
+    try:
+        with path.open("r", encoding="utf-8-sig") as handle:
+            for line in handle:
+                text = line.strip()
+                if text:
+                    last_line = text
+    except OSError:
+        return None
+    if not last_line:
+        return None
+    try:
+        payload = json.loads(last_line)
+    except json.JSONDecodeError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _latest_json_file(root: Path, pattern: str) -> Path | None:
+    if not root.exists():
+        return None
+    candidates = [path for path in root.glob(pattern) if path.is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: path.stat().st_mtime)
+
+
+def _daily_live_date_names(artifacts_root: Path, reports_root: Path) -> list[str]:
+    names: set[str] = set()
+    if artifacts_root.exists():
+        names.update(path.name for path in artifacts_root.iterdir() if path.is_dir())
+    if reports_root.exists():
+        report_pattern = re.compile(r"postgame_report_(\d{4}-\d{2}-\d{2})\.md$")
+        for path in reports_root.glob("postgame_report_*.md"):
+            match = report_pattern.match(path.name)
+            if match:
+                names.add(match.group(1))
+    return sorted(names, reverse=True)
+
+
+def _extract_operational_stage_result(payload: dict[str, Any], stage: str) -> dict[str, Any]:
+    for summary in payload.get("summaries") or []:
+        if not isinstance(summary, dict) or summary.get("stage") != stage:
+            continue
+        result = summary.get("result")
+        return result if isinstance(result, dict) else {}
+    return {}
+
+
+def _extract_operational_stage_summary(payload: dict[str, Any], stage: str) -> dict[str, Any]:
+    for summary in payload.get("summaries") or []:
+        if isinstance(summary, dict) and summary.get("stage") == stage:
+            return summary
+    return {}
+
+
+def _daily_live_posture_from_shadow_snapshot(
+    shadow_payload: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    planned_probes: list[dict[str, Any]] = []
+    shadow_set: list[dict[str, Any]] = []
+    bench_set: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for item in (shadow_payload or {}).get("summary") or []:
+        if not isinstance(item, dict):
+            continue
+        candidate_id = str(item.get("subject_name") or item.get("candidate_id") or "").strip()
+        bucket = str(item.get("promotion_bucket") or "").strip()
+        if not candidate_id or (candidate_id, bucket) in seen:
+            continue
+        seen.add((candidate_id, bucket))
+        if bucket == PROMOTION_BUCKET_LIVE_PROBE:
+            planned_probes.append(
+                {
+                    "candidate_id": candidate_id,
+                    "target_mode": "probe",
+                    "today_execution": "shadow",
+                    "compare_ready_state": "published_daily_shadow_snapshot",
+                    "executor_supported": False,
+                    "reason": "latest shadow snapshot keeps replay probe candidates in shadow unless live routing supports standalone probes",
+                }
+            )
+        elif bucket == PROMOTION_BUCKET_SHADOW_ONLY:
+            shadow_set.append(
+                {
+                    "candidate_id": candidate_id,
+                    "today_execution": "shadow",
+                    "compare_ready_state": "published_daily_shadow_snapshot",
+                }
+            )
+        elif bucket == PROMOTION_BUCKET_BENCH_ONLY:
+            bench_set.append(candidate_id)
+    return planned_probes, shadow_set, bench_set
+
+
+def _no_trade_bucket_from_note(note: Any) -> str:
+    text = str(note or "").strip().lower()
+    if "stale" in text:
+        return "stale_signal"
+    if "feed" in text:
+        return "feed_gap"
+    if "orderbook" in text or "quote" in text:
+        return "orderbook_gap"
+    if "budget" in text:
+        return "budget_gate"
+    if "execution" in text or "route" in text:
+        return "execution_path_issue"
+    return "strategy_no_trade" if text else ""
+
+
+def _build_synthetic_live_comparison_rows(
+    *,
+    session_date: str,
+    monitor_payload: dict[str, Any] | None,
+    shadow_payload: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    source = monitor_payload if isinstance(monitor_payload, dict) else {}
+    run = source.get("run") if isinstance(source.get("run"), dict) else {}
+    games = run.get("games") if isinstance(run.get("games"), list) else []
+    run_id = source.get("run_id") or (shadow_payload or {}).get("run_id")
+    dry_run = _clean_bool(run.get("dry_run"))
+    today_execution = "dry_run" if dry_run else "live"
+    rows: list[dict[str, Any]] = []
+    for game in games:
+        if not isinstance(game, dict):
+            continue
+        candidate_id = str(game.get("controller_name") or "").strip()
+        if not candidate_id:
+            continue
+        note = game.get("note")
+        selected_action = str(game.get("selected_action") or "").strip().lower()
+        fill_state = str(game.get("fill_state") or "").strip().lower()
+        rows.append(
+            {
+                "session_date": session_date,
+                "run_id": run_id,
+                "game_id": game.get("game_id"),
+                "matchup": game.get("matchup"),
+                "candidate_id": candidate_id,
+                "candidate_kind": "control",
+                "source_lane": "daily-live-validation",
+                "target_mode": "control",
+                "today_execution": today_execution,
+                "benchmark_compare_ready_state": "control_locked_baseline",
+                "live_selected_trade": selected_action not in {"", "skip"},
+                "live_attempted_entry": selected_action in {"buy", "enter", "entry"},
+                "live_filled": fill_state in {"filled", "position_open", "open"},
+                "no_trade_bucket": _no_trade_bucket_from_note(note),
+                "no_trade_sub_reason": note,
+                "route_lane": "daily-live-validation",
+                "best_bid": game.get("best_bid"),
+                "best_ask": game.get("best_ask"),
+                "notes": note,
+            }
+        )
+    return [_clean_record(row) for row in rows]
+
+
+def _synthesize_daily_live_payload(
+    *,
+    session_date: str,
+    report_path: Path,
+    monitor_payload: dict[str, Any] | None,
+    shadow_payload: dict[str, Any] | None,
+    operational_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    operational_payload = operational_payload if isinstance(operational_payload, dict) else {}
+    monitor_payload = monitor_payload if isinstance(monitor_payload, dict) else {}
+    shadow_payload = shadow_payload if isinstance(shadow_payload, dict) else {}
+    live_result = _extract_operational_stage_result(operational_payload, "live-test")
+    live_summary = _extract_operational_stage_summary(operational_payload, "live-test")
+    run = monitor_payload.get("run") if isinstance(monitor_payload.get("run"), dict) else {}
+    monitor_games = run.get("games") if isinstance(run.get("games"), list) else []
+    first_monitor_game = next((game for game in monitor_games if isinstance(game, dict)), {})
+    planned_probes, shadow_set, bench_set = _daily_live_posture_from_shadow_snapshot(shadow_payload)
+
+    primary_controller = (
+        first_monitor_game.get("controller_name")
+        or live_result.get("controller_name")
+        or None
+    )
+    fallback_controller = live_result.get("fallback_controller_name")
+    run_status = run.get("status") or shadow_payload.get("run_status") or live_result.get("status")
+    snapshot_published_at = (
+        monitor_payload.get("checked_at_utc")
+        or shadow_payload.get("snapshot_at_utc")
+        or operational_payload.get("generated_at_utc")
+    )
+    current_live_truth = {
+        "run_status": run_status,
+        "cycle_count": run.get("cycle_count", live_result.get("cycle_count")),
+        "open_orders": run.get("open_orders", live_result.get("open_orders")),
+        "open_positions": run.get("open_positions", live_result.get("open_positions")),
+    }
+    harness_capabilities = {
+        "live_executor_version": live_result.get("execution_profile_version"),
+        "supports_locked_controller_pair": bool(primary_controller),
+        "supports_standalone_probe_candidates": False,
+        "supports_ml_sidecar_live_routing": False,
+        "supports_llm_sidecar_live_routing": False,
+    }
+    if isinstance(monitor_payload.get("safety"), dict):
+        harness_capabilities["direct_clob_ready"] = monitor_payload["safety"].get("direct_clob_ready")
+    risk_contract = (
+        monitor_payload.get("budget_config")
+        if isinstance(monitor_payload.get("budget_config"), dict)
+        else live_summary.get("risk_contract")
+    )
+    return {
+        "session_date": session_date,
+        "status": run_status or ("postgame_report" if report_path.exists() else "daily_live_artifact"),
+        "snapshot_published_at": snapshot_published_at,
+        "control": {
+            "primary_controller": primary_controller,
+            "fallback_controller": fallback_controller,
+            "mode": "dry_run" if _clean_bool(run.get("dry_run", live_result.get("dry_run"))) else "live",
+        },
+        "planned_probes": planned_probes,
+        "shadow_set": shadow_set,
+        "bench_set": bench_set,
+        "harness_capabilities": harness_capabilities,
+        "current_live_truth": current_live_truth,
+        "risk_contract": risk_contract or {},
+        "postgame_report_available": report_path.exists(),
+        "source": "synthesized_from_daily_live_artifacts",
+    }
+
+
 def _load_daily_live_validation(shared_root: Path) -> dict[str, Any]:
     artifacts_root = shared_root / "artifacts" / "daily-live-validation"
     reports_root = shared_root / "reports" / "daily-live-validation"
-    if not artifacts_root.exists():
+    if not artifacts_root.exists() and not reports_root.exists():
         return {}
 
-    dated_roots = sorted(
-        [path for path in artifacts_root.iterdir() if path.is_dir()],
-        key=lambda path: path.name,
-        reverse=True,
-    )
-    for dated_root in dated_roots:
+    for date_name in _daily_live_date_names(artifacts_root, reports_root):
+        dated_root = artifacts_root / date_name
         summary_path = dated_root / "session_summary.json"
         payload = _read_json(summary_path)
+        report_path = reports_root / f"postgame_report_{dated_root.name}.md"
         if not isinstance(payload, dict):
-            continue
+            monitor_path = dated_root / "monitor_ticks.jsonl"
+            shadow_path = _latest_json_file(dated_root, "shadow_snapshot_*.json")
+            operational_path = dated_root / "operational_cycle" / "operational_cycle_summary.json"
+            has_completed_live_evidence = (
+                report_path.exists()
+                or monitor_path.exists()
+                or shadow_path is not None
+            )
+            if not has_completed_live_evidence:
+                continue
+            monitor_payload = _read_jsonl_last_record(monitor_path)
+            shadow_payload_raw = _read_json(shadow_path) if shadow_path else None
+            shadow_payload = shadow_payload_raw if isinstance(shadow_payload_raw, dict) else None
+            operational_payload_raw = _read_json(operational_path)
+            operational_payload = (
+                operational_payload_raw if isinstance(operational_payload_raw, dict) else None
+            )
+            payload = _synthesize_daily_live_payload(
+                session_date=dated_root.name,
+                report_path=report_path,
+                monitor_payload=monitor_payload,
+                shadow_payload=shadow_payload,
+                operational_payload=operational_payload,
+            )
+            comparison_rows = _build_synthetic_live_comparison_rows(
+                session_date=dated_root.name,
+                monitor_payload=monitor_payload,
+                shadow_payload=shadow_payload,
+            )
+            return {
+                "session_date": payload.get("session_date") or dated_root.name,
+                "status": payload.get("status"),
+                "snapshot_published_at": payload.get("snapshot_published_at"),
+                "summary": payload,
+                "comparison_rows": comparison_rows,
+                "source_paths": {
+                    "session_summary_json": str(summary_path),
+                    "comparison_csv": str(dated_root / "live_vs_replay_comparison.csv"),
+                    "postgame_report_markdown": str(report_path),
+                    "monitor_ticks_jsonl": str(monitor_path),
+                    "shadow_snapshot_json": str(shadow_path) if shadow_path else None,
+                    "operational_cycle_summary_json": str(operational_path),
+                },
+            }
         comparison_frame = _read_table(dated_root, "live_vs_replay_comparison")
         comparison_rows = (
             [_clean_record(row) for row in comparison_frame.to_dict(orient="records")]
             if not comparison_frame.empty
             else []
         )
-        report_path = reports_root / f"postgame_report_{dated_root.name}.md"
         return {
             "session_date": payload.get("session_date") or dated_root.name,
             "status": payload.get("status"),

@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from app.modules.nba.execution import runner as runner_module
 from app.modules.nba.execution.contracts import LiveRunConfig, build_live_order_metadata
 from app.modules.nba.execution.runner import (
     _controller_probe_family,
@@ -14,6 +15,7 @@ from app.modules.nba.execution.runner import (
     _detect_live_feed_stall,
     _live_event_slug_candidates,
     _live_series_event_slug_candidates,
+    _overlay_live_orderbook_ticks,
     _select_live_trade_and_decision_frames,
     _select_live_event_link_candidate,
 )
@@ -339,6 +341,80 @@ def test_apply_live_orderbook_updates_latest_state_price_only_pytest() -> None:
     assert rows[1]["price_delta_from_open"] == pytest.approx(-0.125)
 
 
+def test_overlay_live_orderbook_tick_cache_survives_next_state_build_pytest(monkeypatch: pytest.MonkeyPatch) -> None:
+    observed_at = datetime(2026, 5, 4, 23, 45, tzinfo=timezone.utc)
+    stale_tick = {
+        "outcome_id": "out-away",
+        "ts": (observed_at - timedelta(hours=4)).isoformat(),
+        "source": "after_last_tick",
+        "price": 0.245,
+    }
+
+    def fake_fetch_latest_orderbook_summary(**_: object) -> dict[str, object]:
+        return {
+            "best_bid": 0.28,
+            "best_ask": 0.30,
+            "spread_cents": 2.0,
+            "timestamp": observed_at.isoformat(),
+        }
+
+    monkeypatch.setattr(runner_module, "resolve_trading_account_credentials", lambda account: {"ok": True})
+    monkeypatch.setattr(runner_module, "fetch_latest_orderbook_summary", fake_fetch_latest_orderbook_summary)
+
+    bundle = {
+        "game": {"game_id": "0042500231"},
+        "selected_market": {
+            "market_id": "market-min-sas",
+            "series": [
+                {
+                    "side": "away",
+                    "outcome_id": "out-away",
+                    "token_id": "token-away",
+                    "ticks": [dict(stale_tick)],
+                }
+            ],
+        },
+    }
+    tick_cache: dict[str, list[dict[str, object]]] = {}
+
+    orderbooks = _overlay_live_orderbook_ticks(
+        bundle,
+        account={"account_id": "demo"},
+        observed_at=observed_at,
+        live_tick_cache=tick_cache,
+    )
+
+    assert orderbooks["away"]["best_bid"] == 0.28
+    assert tick_cache
+    assert float(bundle["selected_market"]["series"][0]["ticks"][-1]["price"]) == pytest.approx(0.29)
+
+    rebuilt_bundle = {
+        "game": {"game_id": "0042500231"},
+        "selected_market": {
+            "market_id": "market-min-sas",
+            "series": [
+                {
+                    "side": "away",
+                    "outcome_id": "out-away",
+                    "token_id": "token-away",
+                    "ticks": [dict(stale_tick)],
+                }
+            ],
+        },
+    }
+
+    _overlay_live_orderbook_ticks(
+        rebuilt_bundle,
+        account=None,
+        observed_at=observed_at + timedelta(seconds=20),
+        live_tick_cache=tick_cache,
+    )
+
+    rebuilt_ticks = rebuilt_bundle["selected_market"]["series"][0]["ticks"]
+    assert [tick["source"] for tick in rebuilt_ticks] == ["after_last_tick", "live_orderbook_mid"]
+    assert float(rebuilt_ticks[-1]["price"]) == pytest.approx(0.29)
+
+
 def test_probe_family_controller_defaults_to_empty_frames_when_probe_keys_missing_pytest() -> None:
     selected_trades, selected_decisions = _select_live_trade_and_decision_frames(
         {
@@ -401,6 +477,34 @@ def test_select_live_event_link_candidate_rejects_stale_series_fallback_pytest()
     )
 
     assert candidate is None
+
+
+def test_select_live_event_link_candidate_prefers_game_moneyline_before_series_pytest() -> None:
+    candidate = _select_live_event_link_candidate(
+        [
+            {
+                "event_id": "series-open",
+                "canonical_slug": "nba-playoffs-who-will-win-series-cavaliers-vs-pistons",
+                "status": "open",
+                "start_time": "2026-05-01T00:00:00+00:00",
+            },
+            {
+                "event_id": "game-open",
+                "canonical_slug": "nba-cle-det-2026-05-05",
+                "status": "open",
+                "start_time": "2026-05-05T23:00:00+00:00",
+            },
+        ],
+        exact_slugs=[
+            "nba-cle-det-2026-05-05",
+            "nba-det-cle-2026-05-05",
+            "nba-playoffs-who-will-win-series-cavaliers-vs-pistons",
+            "nba-playoffs-who-will-win-series-pistons-vs-cavaliers",
+        ],
+    )
+
+    assert candidate is not None
+    assert candidate["event_id"] == "game-open"
 
 
 def test_build_live_order_metadata_sanitizes_pandas_timestamp_pytest() -> None:

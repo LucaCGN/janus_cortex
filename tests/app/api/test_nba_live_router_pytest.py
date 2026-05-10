@@ -36,9 +36,9 @@ def test_create_live_run_route_forwards_entry_budget_and_controller_pytest(monke
             "game_ids": ["0042500104"],
             "dry_run": False,
             "entries_enabled": True,
-            "entry_target_notional_usd": 0.0,
+            "entry_target_notional_usd": 1.0,
             "max_entry_orders_per_game": 2,
-            "max_entry_notional_per_game_usd": 10.0,
+            "max_entry_notional_per_game_usd": 2.0,
             "controller_name": "quarter_open_reprice",
         },
     )
@@ -49,9 +49,9 @@ def test_create_live_run_route_forwards_entry_budget_and_controller_pytest(monke
         "game_ids": ["0042500104"],
         "dry_run": False,
         "entries_enabled": True,
-        "entry_target_notional_usd": 0.0,
+        "entry_target_notional_usd": 1.0,
         "max_entry_orders_per_game": 2,
-        "max_entry_notional_per_game_usd": 10.0,
+        "max_entry_notional_per_game_usd": 2.0,
         "controller_name": "quarter_open_reprice",
     }
 

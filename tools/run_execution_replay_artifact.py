@@ -66,16 +66,22 @@ from app.data.pipelines.daily.nba.analysis.backtests.specs import ReplayRunResul
 from app.data.pipelines.daily.nba.analysis.backtests.unified_router import build_unified_router_trade_frame  # noqa: E402
 from app.data.pipelines.daily.nba.analysis.contracts import ReplayRunRequest  # noqa: E402
 from app.modules.nba.execution.contracts import LIVE_FALLBACK_CONTROLLER, LIVE_PRIMARY_CONTROLLER  # noqa: E402
+from app.runtime.local_paths import resolve_shared_root  # noqa: E402
 
 
-DEFAULT_SHARED_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex\shared")
+DEFAULT_SHARED_ROOT = resolve_shared_root()
 ML_FOCUS_REPLAY_FAMILIES = ("inversion", "quarter_open_reprice", "micro_momentum_continuation")
+GRID_REPLAY_FAMILIES = (
+    "underdog_range_scalp",
+    "favorite_floor_rebound",
+)
 REPLAY_HF_FAMILIES = (
     "micro_momentum_continuation",
     "panic_fade_fast",
     "quarter_open_reprice",
     "halftime_gap_fill",
     "lead_fragility",
+    *GRID_REPLAY_FAMILIES,
 )
 REGULAR_REPLAY_FAMILIES = (
     *DEFAULT_MASTER_ROUTER_CORE_FAMILIES,
@@ -124,7 +130,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--family-scope",
-        choices=("focus", "all"),
+        choices=("focus", "grid", "all"),
         default="focus",
         help="Replay only the ML focus families or all deterministic families available for regular-season replay.",
     )
@@ -138,8 +144,11 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _regular_replay_families_for_scope(family_scope: str) -> tuple[str, ...]:
-    if str(family_scope).strip() == "all":
+    resolved = str(family_scope).strip()
+    if resolved == "all":
         return REGULAR_REPLAY_FAMILIES
+    if resolved == "grid":
+        return GRID_REPLAY_FAMILIES
     return ML_FOCUS_REPLAY_FAMILIES
 
 

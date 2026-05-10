@@ -34,6 +34,7 @@ from app.data.pipelines.daily.nba.analysis.backtests.portfolio import (
     simulate_trade_portfolio,
 )
 from app.data.pipelines.daily.nba.analysis.contracts import BacktestRunRequest
+from app.runtime.local_paths import resolve_output_root
 
 
 STARTING_BANKROLL = 10.0
@@ -149,7 +150,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--analysis-version", default="v1_0_1")
     parser.add_argument(
         "--output-dir",
-        default=r"C:\code-personal\janus-local\janus_cortex\archives\output\nba_analysis_live_readiness",
+        default=str(resolve_output_root() / "nba_analysis_live_readiness"),
     )
     parser.add_argument("--llm-model", default="gpt-5.4-mini")
     parser.add_argument("--llm-budget-usd", type=float, default=10.0)

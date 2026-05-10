@@ -169,7 +169,7 @@ If a source endpoint is unstable or unavailable:
 
 ## Local Workspace Rule
 - keep branch-independent local state under `JANUS_LOCAL_ROOT`, not in the repository root
-- default workspace local root: `C:\code-personal\janus-local\janus_cortex`
+- default workspace local root: `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
 - use [tools/janus_local.ps1](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/tools/janus_local.ps1) to create the local layout, move ad hoc folders, export stash snapshots, and clear generated caches
 - keep local branch registers and active session notes under `JANUS_LOCAL_ROOT\tracks\planning\current`
 - move superseded local notes to `JANUS_LOCAL_ROOT\tracks\planning\archive`

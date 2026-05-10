@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 import requests
@@ -64,7 +64,7 @@ from app.modules.nba.execution.adapter import (
     list_latest_positions,
     list_run_orders,
     list_run_trades,
-    mirror_account_state,
+    reconcile_live_order_fills,
     resolve_entry_order_size,
     resolve_trading_account,
 )
@@ -137,6 +137,8 @@ class GameEntryBudgetState:
 
 
 _ENTRY_BUDGET_IGNORED_STATUSES = {"submit_error", "rejected", "failed", "error"}
+_RESTING_TARGET_EXIT_ACTION = "target_exit"
+_ACTIVE_EXIT_ACTIONS = {"exit", _RESTING_TARGET_EXIT_ACTION}
 
 
 def _safe_float_or_none(value: Any) -> float | None:
@@ -278,7 +280,12 @@ def _live_outcome_label(label: Any) -> str:
     return LIVE_OUTCOME_LABEL_ALIASES.get(raw.lower(), raw)
 
 
-def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str, Any] | None:
+def _ensure_gamma_live_series_market(
+    connection: Any,
+    *,
+    slug: str,
+    source: str = "gamma_live_series_market",
+) -> dict[str, Any] | None:
     event_payload = _gamma_slug_payload("/events", slug)
     market_payload = _gamma_slug_payload("/markets", slug)
     if not event_payload or not market_payload:
@@ -304,13 +311,6 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
         provider_code="gamma",
         external_id=provider_event_id,
     )
-    canonical_market_id = build_market_id(
-        canonical_event_id=canonical_event_id,
-        question=question,
-        market_kind="moneyline",
-        provider_code="gamma",
-        external_market_id=provider_market_id,
-    )
     now = utc_now()
 
     with cursor_dict(connection) as cursor:
@@ -330,7 +330,7 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
     event_metadata = {
         "provider_event_id": provider_event_id,
         "provider_slug": slug,
-        "source": "gamma_live_series_market",
+        "source": source,
         "volume": _safe_float(event_payload.get("volume")),
         "liquidity": _safe_float(event_payload.get("liquidity")),
     }
@@ -338,7 +338,7 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
         "provider_event_id": provider_event_id,
         "provider_market_id": provider_market_id,
         "provider_slug": slug,
-        "source": "gamma_live_series_market",
+        "source": source,
         "volume": _safe_float(market_payload.get("volume")),
         "liquidity": _safe_float(market_payload.get("liquidity")),
         "active": market_payload.get("active"),
@@ -354,15 +354,16 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
                 start_time, end_time, metadata_json
             )
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
-            ON CONFLICT (event_id)
+            ON CONFLICT (canonical_slug) WHERE canonical_slug IS NOT NULL
             DO UPDATE SET
+                event_type_id = EXCLUDED.event_type_id,
                 title = EXCLUDED.title,
-                canonical_slug = EXCLUDED.canonical_slug,
                 status = EXCLUDED.status,
                 start_time = EXCLUDED.start_time,
                 end_time = EXCLUDED.end_time,
                 metadata_json = EXCLUDED.metadata_json,
-                updated_at = now();
+                updated_at = now()
+            RETURNING event_id;
             """,
             (
                 canonical_event_id,
@@ -374,6 +375,16 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
                 end_time,
                 json.dumps(to_jsonable(event_metadata)),
             ),
+        )
+        event_row = fetchone_dict(cursor)
+        if event_row is not None:
+            canonical_event_id = str(event_row["event_id"])
+        canonical_market_id = build_market_id(
+            canonical_event_id=canonical_event_id,
+            question=question,
+            market_kind="moneyline",
+            provider_code="gamma",
+            external_market_id=provider_market_id,
         )
         cursor.execute(
             """
@@ -415,7 +426,7 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
             outcome_metadata = {
                 "provider_market_id": provider_market_id,
                 "provider_slug": slug,
-                "source": "gamma_live_series_market",
+                "source": source,
                 "raw_label": str(raw_label or ""),
             }
             cursor.execute(
@@ -465,7 +476,7 @@ def _ensure_gamma_live_series_market(connection: Any, *, slug: str) -> dict[str,
                         json.dumps(
                             to_jsonable(
                                 {
-                                    "source": "gamma_live_series_market",
+                                    "source": source,
                                     "provider_market_id": provider_market_id,
                                     "provider_slug": slug,
                                 }
@@ -533,7 +544,7 @@ def _ensure_live_game_event_link(connection: Any, *, game_id: str) -> dict[str, 
 
     game_slugs = _live_event_slug_candidates(game)
     series_slugs = _live_series_event_slug_candidates(game)
-    exact_slugs = [*series_slugs, *game_slugs]
+    exact_slugs = [*game_slugs, *series_slugs]
     if not exact_slugs:
         return None
 
@@ -552,26 +563,9 @@ def _ensure_live_game_event_link(connection: Any, *, game_id: str) -> dict[str, 
             (game_id,),
         )
         existing_links = fetchall_dicts(cursor)
-    exact_slug_set = set(exact_slugs)
-    if any(str(link.get("canonical_slug") or "") in exact_slug_set for link in existing_links):
-        return None
-    stale_live_link_ids = [
-        str(link["nba_game_event_link_id"])
-        for link in existing_links
-        if str(link.get("linked_by") or "") == "live_slug_pair_fallback"
-        and str(link.get("canonical_slug") or "") not in exact_slug_set
-        and link.get("nba_game_event_link_id") is not None
-    ]
-    if stale_live_link_ids:
-        with cursor_dict(connection) as cursor:
-            cursor.execute(
-                """
-                DELETE FROM nba.nba_game_event_links
-                WHERE nba_game_event_link_id = ANY(%s::uuid[]);
-                """,
-                (stale_live_link_ids,),
-            )
 
+    for game_slug in game_slugs:
+        _ensure_gamma_live_series_market(connection, slug=game_slug, source="gamma_live_game_moneyline")
     for series_slug in series_slugs:
         _ensure_gamma_live_series_market(connection, slug=series_slug)
 
@@ -602,6 +596,26 @@ def _ensure_live_game_event_link(connection: Any, *, game_id: str) -> dict[str, 
         return None
 
     slug = str(candidate.get("canonical_slug") or "")
+    has_candidate_link = any(str(link.get("canonical_slug") or "") == slug for link in existing_links)
+    stale_live_link_ids = [
+        str(link["nba_game_event_link_id"])
+        for link in existing_links
+        if str(link.get("linked_by") or "").startswith("live_")
+        and str(link.get("canonical_slug") or "") != slug
+        and link.get("nba_game_event_link_id") is not None
+    ]
+    if stale_live_link_ids:
+        with cursor_dict(connection) as cursor:
+            cursor.execute(
+                """
+                DELETE FROM nba.nba_game_event_links
+                WHERE nba_game_event_link_id = ANY(%s::uuid[]);
+                """,
+                (stale_live_link_ids,),
+            )
+    if has_candidate_link:
+        return None
+
     if slug in series_slugs:
         linked_by = "live_series_slug_exact"
         confidence = 0.9
@@ -652,9 +666,90 @@ def _side_outcome_map(bundle: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return mapping
 
 
-def _overlay_live_orderbook_ticks(bundle: dict[str, Any], *, account: dict[str, Any] | None) -> dict[str, dict[str, Any]]:
+LIVE_ORDERBOOK_TICK_CACHE_MAX_PER_KEY = 720
+
+
+def _live_orderbook_tick_cache_key(bundle: dict[str, Any], series_item: dict[str, Any]) -> str:
+    game = bundle.get("game") or {}
+    selected_market = bundle.get("selected_market") or {}
+    game_id = str(game.get("game_id") or "")
+    market_id = str(selected_market.get("market_id") or "")
+    outcome_id = str(series_item.get("outcome_id") or "")
+    token_id = str(series_item.get("token_id") or "")
+    side = str(series_item.get("side") or "")
+    return "|".join([game_id, market_id, outcome_id or token_id, side])
+
+
+def _tick_sort_key(tick: dict[str, Any]) -> datetime:
+    parsed = _parse_datetime(tick.get("ts") or tick.get("timestamp"))
+    return parsed or datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _live_orderbook_tick_identity(tick: dict[str, Any]) -> tuple[str, str, str, str]:
+    timestamp = _parse_datetime(tick.get("ts") or tick.get("timestamp"))
+    price = _safe_float(tick.get("price"))
+    return (
+        str(tick.get("outcome_id") or ""),
+        timestamp.isoformat() if timestamp is not None else str(tick.get("ts") or tick.get("timestamp") or ""),
+        str(tick.get("source") or ""),
+        f"{price:.6f}" if price is not None else "",
+    )
+
+
+def _merge_live_orderbook_ticks(series_item: dict[str, Any], cached_ticks: list[dict[str, Any]]) -> None:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for raw_tick in [*(series_item.get("ticks") or []), *cached_ticks]:
+        if not isinstance(raw_tick, dict):
+            continue
+        tick = dict(raw_tick)
+        if tick.get("timestamp") is not None and tick.get("ts") is None:
+            tick["ts"] = tick.get("timestamp")
+        if tick.get("outcome_id") is None and series_item.get("outcome_id") is not None:
+            tick["outcome_id"] = series_item.get("outcome_id")
+        identity = _live_orderbook_tick_identity(tick)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        merged.append(tick)
+    merged.sort(key=_tick_sort_key)
+    series_item["ticks"] = merged
+
+
+def _append_live_orderbook_tick(
+    live_tick_cache: dict[str, list[dict[str, Any]]] | None,
+    cache_key: str,
+    tick: dict[str, Any],
+) -> bool:
+    if live_tick_cache is None:
+        return False
+    cached_ticks = list(live_tick_cache.get(cache_key) or [])
+    before_identities = {_live_orderbook_tick_identity(cached_tick) for cached_tick in cached_ticks if isinstance(cached_tick, dict)}
+    _merge_holder = {"ticks": cached_ticks}
+    _merge_live_orderbook_ticks(_merge_holder, [tick])
+    live_tick_cache[cache_key] = list(_merge_holder.get("ticks") or [])[-LIVE_ORDERBOOK_TICK_CACHE_MAX_PER_KEY:]
+    return _live_orderbook_tick_identity(tick) not in before_identities
+
+
+def _overlay_live_orderbook_ticks(
+    bundle: dict[str, Any],
+    *,
+    account: dict[str, Any] | None,
+    observed_at: datetime | None = None,
+    live_tick_cache: dict[str, list[dict[str, Any]]] | None = None,
+    live_tick_sink: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, dict[str, Any]]:
     selected_market = bundle.get("selected_market") or {}
     market_id = str(selected_market.get("market_id") or "")
+    series_items = selected_market.get("series") or []
+    for series_item in series_items:
+        if not isinstance(series_item, dict):
+            continue
+        cache_key = _live_orderbook_tick_cache_key(bundle, series_item)
+        cached_ticks = list((live_tick_cache or {}).get(cache_key) or [])
+        if cached_ticks:
+            _merge_live_orderbook_ticks(series_item, cached_ticks)
+
     if not market_id or not account:
         return {}
     try:
@@ -663,7 +758,9 @@ def _overlay_live_orderbook_ticks(bundle: dict[str, Any], *, account: dict[str, 
         return {}
 
     orderbooks_by_side: dict[str, dict[str, Any]] = {}
-    for series_item in selected_market.get("series") or []:
+    for series_item in series_items:
+        if not isinstance(series_item, dict):
+            continue
         side = str(series_item.get("side") or "").strip()
         token_id = str(series_item.get("token_id") or "")
         if side not in {"home", "away"} or not token_id:
@@ -682,26 +779,41 @@ def _overlay_live_orderbook_ticks(bundle: dict[str, Any], *, account: dict[str, 
         if best_bid is None or best_ask is None:
             continue
         mid_price = round((float(best_bid) + float(best_ask)) / 2.0, 6)
-        timestamp = _parse_datetime(orderbook.get("timestamp")) or utc_now()
+        timestamp = _parse_datetime(orderbook.get("timestamp")) or observed_at or utc_now()
         ticks = list(series_item.get("ticks") or [])
         latest_tick = ticks[-1] if ticks else None
         latest_ts = _parse_datetime((latest_tick or {}).get("ts"))
         latest_price = _safe_float((latest_tick or {}).get("price"))
         if latest_ts is not None and latest_ts >= timestamp and latest_price is not None and abs(latest_price - mid_price) < 1e-9:
             continue
-        ticks.append(
-            {
-                "outcome_id": series_item.get("outcome_id"),
-                "ts": timestamp,
-                "source": "live_orderbook_mid",
-                "price": Decimal(str(mid_price)),
-                "bid": Decimal(str(float(best_bid))),
-                "ask": Decimal(str(float(best_ask))),
-                "volume": None,
-                "liquidity": None,
-            }
-        )
-        series_item["ticks"] = ticks
+        tick = {
+            "outcome_id": series_item.get("outcome_id"),
+            "ts": timestamp,
+            "source": "live_orderbook_mid",
+            "price": Decimal(str(mid_price)),
+            "bid": Decimal(str(float(best_bid))),
+            "ask": Decimal(str(float(best_ask))),
+            "volume": None,
+            "liquidity": None,
+        }
+        cache_key = _live_orderbook_tick_cache_key(bundle, series_item)
+        appended = _append_live_orderbook_tick(live_tick_cache, cache_key, tick)
+        _merge_live_orderbook_ticks(series_item, [tick])
+        if appended and live_tick_sink is not None:
+            game = bundle.get("game") or {}
+            live_tick_sink(
+                {
+                    "observed_at": (observed_at or utc_now()).isoformat(),
+                    "game_id": str(game.get("game_id") or ""),
+                    "market_id": market_id,
+                    "side": side,
+                    "outcome_id": series_item.get("outcome_id"),
+                    "token_id": token_id,
+                    "tick": tick,
+                    "orderbook": orderbook,
+                    "cache_key": cache_key,
+                }
+            )
     return orderbooks_by_side
 
 
@@ -738,6 +850,87 @@ def _apply_live_orderbook_to_latest_state_rows(
         if opening_price is not None:
             row["price_delta_from_open"] = live_mid - opening_price
             row["abs_price_delta_from_open"] = abs(live_mid - opening_price)
+
+
+def _live_orderbooks_have_both_sides(live_orderbooks: dict[str, dict[str, Any]]) -> bool:
+    for side in ("away", "home"):
+        orderbook = live_orderbooks.get(side) or {}
+        if _safe_float(orderbook.get("best_bid")) is None or _safe_float(orderbook.get("best_ask")) is None:
+            return False
+    return True
+
+
+def _mark_live_orderbook_price_path_reconciled(
+    *,
+    game_rows: list[dict[str, Any]],
+    per_game_state_rows: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
+    live_orderbooks: dict[str, dict[str, Any]],
+    observed_at: datetime,
+) -> None:
+    if not _live_orderbooks_have_both_sides(live_orderbooks):
+        return
+    state_sides = {str(row.get("team_side") or "") for row in per_game_state_rows}
+    if not {"away", "home"}.issubset(state_sides):
+        return
+    diagnostics["price_path_reconciled_flag"] = True
+    diagnostics["live_orderbook_reconciled_flag"] = True
+    diagnostics["live_orderbook_reconciled_at"] = observed_at.isoformat()
+    diagnostics["live_orderbook_reconciled_sides"] = sorted(live_orderbooks)
+    for row in game_rows:
+        row["price_path_reconciled_flag"] = True
+        row["live_orderbook_reconciled_flag"] = True
+    for row in per_game_state_rows:
+        row["price_path_reconciled_flag"] = True
+        row["live_orderbook_reconciled_flag"] = True
+
+
+def _live_orderbook_mid(orderbook: dict[str, Any]) -> float | None:
+    best_bid = _safe_float(orderbook.get("best_bid"))
+    best_ask = _safe_float(orderbook.get("best_ask"))
+    if best_bid is None or best_ask is None:
+        return None
+    return round((best_bid + best_ask) / 2.0, 6)
+
+
+def _select_monitor_side(
+    state_df: pd.DataFrame | None,
+    *,
+    game_id: str,
+    live_orderbooks: dict[str, dict[str, Any]] | None,
+) -> str:
+    orderbook_prices = {
+        side: mid
+        for side, mid in (
+            (side, _live_orderbook_mid(orderbook))
+            for side, orderbook in (live_orderbooks or {}).items()
+            if side in {"away", "home"}
+        )
+        if mid is not None
+    }
+    if orderbook_prices:
+        return min(orderbook_prices, key=orderbook_prices.get)
+    if state_df is not None and not state_df.empty:
+        game_rows = state_df[state_df["game_id"].astype(str) == str(game_id)]
+        latest_by_side: dict[str, dict[str, Any]] = {}
+        for row in game_rows.to_dict(orient="records"):
+            side = str(row.get("team_side") or "")
+            if side not in {"away", "home"}:
+                continue
+            current = latest_by_side.get(side)
+            if current is None or int(row.get("state_index") or -1) >= int(current.get("state_index") or -1):
+                latest_by_side[side] = row
+        state_prices = {
+            side: price
+            for side, price in (
+                (side, _safe_float(row.get("team_price")))
+                for side, row in latest_by_side.items()
+            )
+            if price is not None
+        }
+        if state_prices:
+            return min(state_prices, key=state_prices.get)
+    return "away"
 
 
 def _infer_live_coverage_status(bundle: dict[str, Any]) -> tuple[str, str]:
@@ -921,6 +1114,23 @@ def _extract_stop_price(record: dict[str, Any]) -> float | None:
     return None
 
 
+def _target_exit_order_key(signal_id: str) -> str:
+    return f"{signal_id}|{_RESTING_TARGET_EXIT_ACTION}"
+
+
+def _resolve_resting_target_exit_price(position_state: dict[str, Any]) -> float | None:
+    metadata = dict(position_state.get("entry_metadata") or {})
+    target_price = _safe_float(metadata.get("target_price"))
+    entry_price = _safe_float(position_state.get("entry_price") or position_state.get("price"))
+    if target_price is None and entry_price is None:
+        return None
+    if entry_price is not None:
+        target_price = max(float(target_price or 0.0), entry_price + 0.06)
+    if target_price is None:
+        return None
+    return round(min(max(float(target_price), 0.01), DEFAULT_TAKE_PROFIT_EXIT_PRICE), 4)
+
+
 def _is_recent_signal(record: dict[str, Any], latest_state: dict[str, Any]) -> bool:
     entry_at = _parse_datetime(record.get("entry_at"))
     event_at = _parse_datetime(latest_state.get("event_at"))
@@ -943,7 +1153,13 @@ def _evaluate_exit_reason(position_state: dict[str, Any], current_state: dict[st
         return "take_profit_95", False
     if family in {"winner_definition", "inversion"} and exit_threshold is not None and current_price <= float(exit_threshold):
         return "threshold_break", True
-    if family in {"underdog_liftoff", "q1_repricing", "q4_clutch"}:
+    if family in {
+        "underdog_liftoff",
+        "q1_repricing",
+        "q4_clutch",
+        "underdog_range_scalp",
+        "favorite_floor_rebound",
+    }:
         if target_price is not None and current_price >= float(target_price):
             return "target_hit", False
         if stop_price is not None and current_price <= float(stop_price):
@@ -953,6 +1169,26 @@ def _evaluate_exit_reason(position_state: dict[str, Any], current_state: dict[st
     if seconds_to_game_end <= 0.0:
         return "game_end", False
     return None, False
+
+
+def _should_confirm_contextual_scalp_stop(position_state: dict[str, Any], current_state: dict[str, Any]) -> bool:
+    family = str(position_state.get("strategy_family") or "")
+    if family not in {"underdog_range_scalp", "favorite_floor_rebound"}:
+        return False
+    metadata = dict(position_state.get("entry_metadata") or {})
+    max_score_gap = (
+        _safe_float(metadata.get("max_close_score_gap"))
+        or _safe_float(metadata.get("max_trailing_score_gap"))
+        or 10.0
+    )
+    score_diff = _safe_float(current_state.get("score_diff"))
+    if score_diff is not None and score_diff < -(max_score_gap + 2.0):
+        return False
+    min_seconds_left = _safe_float(metadata.get("min_seconds_left")) or 120.0
+    seconds_to_game_end = _safe_float(current_state.get("seconds_to_game_end"))
+    if seconds_to_game_end is not None and seconds_to_game_end <= max(min_seconds_left, 180.0):
+        return False
+    return True
 
 
 def resolve_trading_account_credentials(account: dict[str, Any]) -> Any:
@@ -1028,7 +1264,9 @@ class LiveRunWorker:
         self.controller_context = build_controller_context(self.run_root)
         self._lock = threading.RLock()
         self._thread: threading.Thread | None = None
+        self._market_capture_thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._live_tick_cache_lock = threading.RLock()
         self.status = "created"
         self.entries_enabled = bool(config.entries_enabled)
         self.last_error: str | None = None
@@ -1048,6 +1286,7 @@ class LiveRunWorker:
         self.last_successful_cycle_at: datetime | None = None
         self.last_traceback: str | None = None
         self.latest_cycle_snapshot: dict[str, Any] | None = None
+        self.live_market_tick_cache: dict[str, list[dict[str, Any]]] = {}
         self._load_recovery_snapshot()
         _write_json(self.run_root / "run_config.json", self.config.model_dump())
 
@@ -1062,6 +1301,13 @@ class LiveRunWorker:
                 daemon=True,
             )
             self._thread.start()
+            if not (self._market_capture_thread and self._market_capture_thread.is_alive()):
+                self._market_capture_thread = threading.Thread(
+                    target=self._run_orderbook_capture_loop,
+                    name=f"live-orderbook-capture-{self.config.run_id}",
+                    daemon=True,
+                )
+                self._market_capture_thread.start()
 
     def request_stop(self) -> None:
         self._stop_event.set()
@@ -1249,7 +1495,6 @@ class LiveRunWorker:
             try:
                 with managed_connection() as connection:
                     self.account = resolve_trading_account(connection, account_id=self.config.account_id)
-                    mirror_account_state(connection, account=self.account)
                     snapshot = self._build_cycle_snapshot(connection)
                     with self._lock:
                         self.latest_cycle_snapshot = snapshot
@@ -1259,7 +1504,6 @@ class LiveRunWorker:
                     if self.entries_enabled:
                         self._process_new_entries(connection, snapshot=snapshot)
                     self._refresh_game_cards(snapshot)
-                    mirror_account_state(connection, account=self.account)
                 self.status = "running"
                 self.last_error = None
                 self.last_traceback = None
@@ -1300,6 +1544,37 @@ class LiveRunWorker:
         self._write_heartbeat()
         self._persist_recovery_snapshot()
 
+    def _run_orderbook_capture_loop(self) -> None:
+        while not self._stop_event.is_set():
+            if self.status in {"completed", "stopped"}:
+                return
+            observed_at = utc_now()
+            try:
+                with managed_connection() as connection:
+                    if self.account is None:
+                        self.account = resolve_trading_account(connection, account_id=self.config.account_id)
+                    for game_id in self.config.game_ids:
+                        bundle = load_analysis_bundle(connection, game_id=str(game_id))
+                        if bundle is None or not (bundle.get("selected_market") or {}).get("series"):
+                            _ensure_live_game_event_link(connection, game_id=str(game_id))
+                            bundle = load_analysis_bundle(connection, game_id=str(game_id))
+                        if bundle is None:
+                            continue
+                        if not (bundle.get("selected_market") or {}).get("series"):
+                            continue
+                        _overlay_live_orderbook_ticks(
+                            bundle,
+                            account=self.account,
+                            observed_at=observed_at,
+                            live_tick_cache=self.live_market_tick_cache,
+                            live_tick_sink=self._append_live_orderbook_tick_trace,
+                        )
+                self._persist_recovery_snapshot()
+            except Exception as exc:  # noqa: BLE001
+                self._write_runtime_log(f"[{utc_now().isoformat()}] orderbook_capture_error error={exc}")
+            if self._stop_event.wait(max(1.0, float(self.config.poll_interval_live_sec))):
+                return
+
     def _build_cycle_snapshot(self, connection: Any) -> dict[str, Any]:
         state_rows: list[dict[str, Any]] = []
         bundles: dict[str, dict[str, Any]] = {}
@@ -1316,7 +1591,13 @@ class LiveRunWorker:
             if bundle is None:
                 diagnostics_by_game[str(game_id)] = {"error": "game_not_found"}
                 continue
-            live_orderbooks = _overlay_live_orderbook_ticks(bundle, account=self.account)
+            live_orderbooks = _overlay_live_orderbook_ticks(
+                bundle,
+                account=self.account,
+                observed_at=snapshot_observed_at,
+                live_tick_cache=self.live_market_tick_cache,
+                live_tick_sink=self._append_live_orderbook_tick_trace,
+            )
             selected_market = bundle.get("selected_market") or {}
             series_by_outcome = {
                 str(item.get("outcome_id")): list(item.get("ticks") or [])
@@ -1346,6 +1627,13 @@ class LiveRunWorker:
                 build_state_rows_for_side=build_state_rows_for_side,
             )
             _apply_live_orderbook_to_latest_state_rows(per_game_state_rows, live_orderbooks)
+            _mark_live_orderbook_price_path_reconciled(
+                game_rows=game_rows,
+                per_game_state_rows=per_game_state_rows,
+                diagnostics=diagnostics,
+                live_orderbooks=live_orderbooks,
+                observed_at=snapshot_observed_at,
+            )
             bundle["derived_game_rows"] = game_rows
             bundle["live_orderbooks"] = live_orderbooks
             bundles[str(game_id)] = bundle
@@ -1518,15 +1806,22 @@ class LiveRunWorker:
             decision = decision_lookup.get(str(game_id)) or {}
             trades = trade_lookup.get(str(game_id)) or []
             selected_trade = trades[0] if trades else None
+            live_orderbooks = bundle.get("live_orderbooks") or {}
             latest_state_row = None
+            side = str((selected_trade or {}).get("team_side") or decision.get("selected_team_side") or "")
+            if not side:
+                side = _select_monitor_side(
+                    snapshot["state_df"],
+                    game_id=str(game_id),
+                    live_orderbooks=live_orderbooks,
+                )
             if snapshot["state_df"] is not None and not snapshot["state_df"].empty:
-                side = str((selected_trade or {}).get("team_side") or decision.get("selected_team_side") or "")
                 if side:
                     latest_state_row = self._latest_state_row(snapshot["state_df"], game_id=str(game_id), team_side=side)
             orderbook = None
-            if selected_trade is not None and self.account:
+            if side and self.account:
                 outcome_map = _side_outcome_map(bundle)
-                outcome_meta = outcome_map.get(str(selected_trade.get("team_side") or ""))
+                outcome_meta = outcome_map.get(side)
                 if outcome_meta is not None:
                     try:
                         orderbook = fetch_latest_orderbook_summary(
@@ -1536,6 +1831,8 @@ class LiveRunWorker:
                         )
                     except Exception:
                         orderbook = None
+            if orderbook is None and side:
+                orderbook = live_orderbooks.get(side)
             active_orders = [item for item in self.active_orders.values() if str(item.get("game_id")) == str(game_id)]
             active_positions = [item for item in self.active_positions.values() if str(item.get("game_id")) == str(game_id)]
             fill_state = "filled" if active_positions else "working" if active_orders else "none"
@@ -1622,6 +1919,8 @@ class LiveRunWorker:
             self.game_cards = cards
 
     def _reconcile_runtime_state(self, connection: Any) -> None:
+        if self.active_orders and self.account:
+            reconcile_live_order_fills(connection, account=self.account, run_id=self.config.run_id)
         run_orders = list_run_orders(connection, run_id=self.config.run_id)
         run_trades = list_run_trades(connection, run_id=self.config.run_id)
         latest_positions = list_latest_positions(connection, account_id=str(self.account["account_id"])) if self.account else []
@@ -1631,7 +1930,7 @@ class LiveRunWorker:
 
         stale_order_keys: list[str] = []
         with self._lock:
-            for signal_id, order_state in self.active_orders.items():
+            for signal_id, order_state in list(self.active_orders.items()):
                 order_row = next((row for row in run_orders if str(row.get("order_id")) == str(order_state.get("order_id"))), None)
                 if order_row is None:
                     stale_order_keys.append(signal_id)
@@ -1645,7 +1944,7 @@ class LiveRunWorker:
                     if not trade_id or trade_id in self._seen_trade_ids:
                         continue
                     self._seen_trade_ids.add(trade_id)
-                    self._handle_trade_fill(order_state, trade)
+                    self._handle_trade_fill(connection, order_state, trade)
                     stale_order_keys.append(signal_id)
             for key in stale_order_keys:
                 self.active_orders.pop(key, None)
@@ -1686,6 +1985,59 @@ class LiveRunWorker:
                     aggressive=True,
                 )
 
+    def _active_exit_order_key(self, signal_id: str) -> str | None:
+        for key, order_state in self.active_orders.items():
+            if str(order_state.get("signal_id") or "") != signal_id:
+                continue
+            if str(order_state.get("pending_action") or "") in _ACTIVE_EXIT_ACTIONS or str(order_state.get("side") or "").lower() == "sell":
+                return key
+        return None
+
+    def _cancel_active_exit_order(self, connection: Any, *, signal_id: str, reason: str) -> bool:
+        order_key = self._active_exit_order_key(signal_id)
+        if order_key is None:
+            return True
+        order_state = self.active_orders.get(order_key)
+        if not order_state:
+            return True
+        try:
+            cancel_live_order(
+                connection,
+                account=self.account,
+                order_id=str(order_state["order_id"]),
+                dry_run=self.config.dry_run,
+                reason=reason,
+            )
+        except Exception as exc:
+            self._record_event(
+                "error",
+                "Exit cancel failed",
+                "Could not cancel resting target before stop exit.",
+                game_id=str(order_state.get("game_id") or ""),
+                details={
+                    "signal_id": signal_id,
+                    "order_id": order_state.get("order_id"),
+                    "pending_action": order_state.get("pending_action"),
+                    "reason": reason,
+                    "error": str(exc),
+                },
+            )
+            return False
+        with self._lock:
+            self.active_orders.pop(order_key, None)
+        self._record_event(
+            "warn",
+            "Target sell canceled",
+            "Canceled resting target sell before stop exit.",
+            game_id=str(order_state.get("game_id") or ""),
+            details={
+                "signal_id": signal_id,
+                "order_id": order_state.get("order_id"),
+                "reason": reason,
+            },
+        )
+        return True
+
     def _process_open_positions(self, connection: Any, *, snapshot: dict[str, Any]) -> None:
         active_positions = list(self.active_positions.values())
         for position_state in active_positions:
@@ -1707,6 +2059,8 @@ class LiveRunWorker:
                 continue
             exit_reason, stop_triggered = _evaluate_exit_reason(position_state, current_state)
             if not exit_reason:
+                position_state.pop("stop_breach_started_at", None)
+                position_state.pop("stop_breach_count", None)
                 self._append_controller_trace(
                     "exit_gate",
                     game_id=str(position_state.get("game_id") or ""),
@@ -1718,6 +2072,29 @@ class LiveRunWorker:
                     },
                 )
                 continue
+            if exit_reason == "stop_hit" and stop_triggered and _should_confirm_contextual_scalp_stop(position_state, current_state):
+                now = utc_now()
+                started_at = _parse_datetime(position_state.get("stop_breach_started_at"))
+                breach_count = int(position_state.get("stop_breach_count") or 0) + 1
+                position_state["stop_breach_count"] = breach_count
+                if started_at is None:
+                    position_state["stop_breach_started_at"] = now.isoformat()
+                    started_at = now
+                breach_age_seconds = max(0.0, (now - started_at).total_seconds())
+                if breach_count < 2 and breach_age_seconds < 15.0:
+                    self._append_controller_trace(
+                        "exit_gate",
+                        game_id=str(position_state.get("game_id") or ""),
+                        payload={
+                            "result": "hold",
+                            "reason": "contextual_stop_confirmation_pending",
+                            "breach_count": breach_count,
+                            "breach_age_seconds": round(breach_age_seconds, 3),
+                            "position": self._position_trace_row(position_state),
+                            "current_state": self._state_trace_row(current_state),
+                        },
+                    )
+                    continue
             self._append_controller_trace(
                 "exit_gate",
                 game_id=str(position_state.get("game_id") or ""),
@@ -1729,6 +2106,25 @@ class LiveRunWorker:
                     "current_state": self._state_trace_row(current_state),
                 },
             )
+            signal_id = str(position_state.get("signal_id") or "")
+            active_exit_key = self._active_exit_order_key(signal_id)
+            if active_exit_key is not None:
+                if stop_triggered:
+                    if not self._cancel_active_exit_order(connection, signal_id=signal_id, reason=exit_reason):
+                        continue
+                else:
+                    self._append_controller_trace(
+                        "exit_gate",
+                        game_id=str(position_state.get("game_id") or ""),
+                        payload={
+                            "result": "hold",
+                            "reason": "target_exit_order_already_working",
+                            "active_order_key": active_exit_key,
+                            "position": self._position_trace_row(position_state),
+                            "current_state": self._state_trace_row(current_state),
+                        },
+                    )
+                    continue
             self._submit_exit_order(
                 connection,
                 position_state={**position_state, "exit_reason": exit_reason},
@@ -1998,6 +2394,56 @@ class LiveRunWorker:
                 continue
             entry_price = float(best_ask)
             orderbook_meta = orderbook
+            signal_price = float(record.get("entry_price") or latest_state.get("team_price") or entry_price)
+            entry_metadata = _parse_json_dict(record.get("entry_metadata_json"))
+            max_live_entry_drift = float(entry_metadata.get("max_live_entry_drift") or 0.02)
+            entry_drift = entry_price - signal_price
+            target_price = _safe_float(entry_metadata.get("target_price"))
+            min_remaining_upside = float(entry_metadata.get("min_live_remaining_upside") or 0.03)
+            remaining_upside = (target_price - entry_price) if target_price is not None else None
+            if entry_drift > max_live_entry_drift or (
+                remaining_upside is not None and remaining_upside < min_remaining_upside
+            ):
+                reason = "live_entry_price_drift"
+                if remaining_upside is not None and remaining_upside < min_remaining_upside:
+                    reason = "live_entry_upside_too_small"
+                self._record_event(
+                    "warn",
+                    "Entry skipped",
+                    "Executable price moved too far from the strategy signal.",
+                    game_id=game_id,
+                    details={
+                        "signal_id": signal_id,
+                        "signal_price": signal_price,
+                        "entry_price": entry_price,
+                        "entry_drift_cents": round(entry_drift * 100.0, 4),
+                        "max_live_entry_drift_cents": round(max_live_entry_drift * 100.0, 4),
+                        "target_price": target_price,
+                        "remaining_upside_cents": (
+                            round(remaining_upside * 100.0, 4) if remaining_upside is not None else None
+                        ),
+                    },
+                )
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        "reason": reason,
+                        "signal_price": signal_price,
+                        "entry_price": entry_price,
+                        "entry_drift_cents": round(entry_drift * 100.0, 4),
+                        "max_live_entry_drift_cents": round(max_live_entry_drift * 100.0, 4),
+                        "target_price": target_price,
+                        "remaining_upside_cents": (
+                            round(remaining_upside * 100.0, 4) if remaining_upside is not None else None
+                        ),
+                        "trade": self._trade_trace_row(record),
+                        "latest_state": self._state_trace_row(latest_state),
+                    },
+                )
+                continue
             sizing = resolve_entry_order_size(
                 entry_price,
                 min_order_size=orderbook_meta.get("min_order_size"),
@@ -2026,13 +2472,18 @@ class LiveRunWorker:
             required_notional = float(sizing.get("required_notional_usd") or (entry_price * float(size)))
             projected_notional = budget_state.entry_requested_notional_usd + required_notional
             if projected_notional > self.config.max_entry_notional_per_game_usd + 0.000001:
+                budget_reason = (
+                    "min_order_size_exceeds_budget"
+                    if budget_state.entry_requested_notional_usd <= 0.000001
+                    else "game_entry_notional_budget_exceeded"
+                )
                 self._append_controller_trace(
                     "entry_gate",
                     game_id=game_id,
                     payload={
                         "signal_id": signal_id,
                         "decision": "skip",
-                        "reason": "game_entry_notional_budget_exceeded",
+                        "reason": budget_reason,
                         "entry_requested_notional_usd": budget_state.entry_requested_notional_usd,
                         "required_notional_usd": required_notional,
                         "projected_notional_usd": projected_notional,
@@ -2052,7 +2503,7 @@ class LiveRunWorker:
                 outcome_id=str(outcome_meta.get("outcome_id") or ""),
                 strategy_family=str(record.get("source_strategy_family") or record.get("strategy_family") or ""),
                 signal_id=signal_id,
-                signal_price=float(record.get("entry_price") or latest_state.get("team_price") or entry_price),
+                signal_price=signal_price,
                 signal_timestamp=record.get("entry_at"),
                 entry_reason=str(decision_lookup.get(game_id, {}).get("final_selection_reason") or "live_signal"),
                 stop_price=_extract_stop_price(record),
@@ -2214,7 +2665,7 @@ class LiveRunWorker:
         aggressive: bool,
     ) -> None:
         signal_id = str(position_state.get("signal_id") or "")
-        if signal_id in self.active_orders:
+        if self._active_exit_order_key(signal_id) is not None:
             return
         orderbook = fetch_latest_orderbook_summary(
             creds=resolve_trading_account_credentials(self.account),
@@ -2301,7 +2752,104 @@ class LiveRunWorker:
             },
         )
 
-    def _handle_trade_fill(self, order_state: dict[str, Any], trade: dict[str, Any]) -> None:
+    def _submit_resting_target_exit_order(self, connection: Any, *, position_state: dict[str, Any]) -> None:
+        signal_id = str(position_state.get("signal_id") or "")
+        if not signal_id or self._active_exit_order_key(signal_id) is not None:
+            return
+        target_price = _resolve_resting_target_exit_price(position_state)
+        if target_price is None:
+            self._record_event(
+                "warn",
+                "Target sell skipped",
+                "Filled entry has no target price for a resting sell.",
+                game_id=str(position_state.get("game_id") or ""),
+                details={"signal_id": signal_id},
+            )
+            return
+        metadata = build_live_order_metadata(
+            config=self.config,
+            controller_name=self.config.controller_name,
+            controller_source="target_bracket",
+            game_id=str(position_state.get("game_id") or ""),
+            market_id=str(position_state.get("market_id") or ""),
+            outcome_id=str(position_state.get("outcome_id") or ""),
+            strategy_family=str(position_state.get("strategy_family") or ""),
+            signal_id=signal_id,
+            signal_price=float(position_state.get("signal_price") or position_state.get("entry_price") or 0.0),
+            signal_timestamp=position_state.get("entry_at"),
+            entry_reason="target_bracket_on_fill",
+            stop_price=float(position_state.get("stop_price") or 0.0) if position_state.get("stop_price") is not None else None,
+            order_policy="resting_limit_target",
+            extra={
+                "team_side": position_state.get("team_side"),
+                "entry_price": position_state.get("entry_price"),
+                "target_price": target_price,
+                "bracket_order_flag": True,
+            },
+        )
+        placed = create_live_order(
+            connection,
+            account=self.account,
+            market_id=str(position_state.get("market_id") or ""),
+            outcome_id=str(position_state.get("outcome_id") or ""),
+            token_id=str(position_state.get("token_id") or ""),
+            side="sell",
+            size=float(position_state.get("size") or 0.0),
+            price=target_price,
+            order_type="limit",
+            metadata_json=metadata,
+            dry_run=self.config.dry_run,
+        )
+        placed_status = str(placed.get("status") or "")
+        if placed_status not in OPEN_ORDER_STATUSES:
+            execution_meta = dict(placed.get("metadata_json", {}).get("execution") or {})
+            self._record_event(
+                "error",
+                "Target sell not submitted",
+                "Resting target sell failed after entry fill.",
+                game_id=str(position_state.get("game_id") or ""),
+                details={
+                    "signal_id": signal_id,
+                    "order_id": placed.get("order_id"),
+                    "status": placed_status,
+                    "event_type": placed.get("event_type"),
+                    "blocked_reason": execution_meta.get("blocked_reason"),
+                },
+            )
+            return
+        order_key = _target_exit_order_key(signal_id)
+        with self._lock:
+            self.active_orders[order_key] = {
+                **position_state,
+                "order_id": placed["order_id"],
+                "external_order_id": placed.get("external_order_id"),
+                "status": placed_status,
+                "pending_action": _RESTING_TARGET_EXIT_ACTION,
+                "submitted_at": utc_now().isoformat(),
+                "side": "sell",
+                "price": target_price,
+                "target_price": target_price,
+                "type": "target limit sell",
+                "age": "00:00",
+                "stop_triggered_flag": False,
+                "market_retry_done": False,
+            }
+        self._record_event(
+            "info",
+            "Target sell submitted",
+            f"{position_state.get('matchup')} target sell at {target_price:.3f}.",
+            game_id=str(position_state.get("game_id") or ""),
+            details={
+                "signal_id": signal_id,
+                "order_id": placed.get("order_id"),
+                "external_order_id": placed.get("external_order_id"),
+                "size": float(position_state.get("size") or 0.0),
+                "price": target_price,
+                "order_policy": "resting_limit_target",
+            },
+        )
+
+    def _handle_trade_fill(self, connection: Any, order_state: dict[str, Any], trade: dict[str, Any]) -> None:
         side = str(order_state.get("side") or "").lower()
         fill_price = float(trade.get("price") or 0.0)
         size = float(trade.get("size") or order_state.get("size") or 0.0)
@@ -2324,16 +2872,17 @@ class LiveRunWorker:
             }
         )
         if side == "buy":
+            opened_position = {
+                **order_state,
+                "status": "open",
+                "entry_price": fill_price,
+                "entry_at": trade_time.isoformat(),
+                "size": size,
+                "realized_pnl": None,
+                "pnl_text": "+0.00",
+            }
             with self._lock:
-                self.active_positions[str(order_state["signal_id"])] = {
-                    **order_state,
-                    "status": "open",
-                    "entry_price": fill_price,
-                    "entry_at": trade_time.isoformat(),
-                    "size": size,
-                    "realized_pnl": None,
-                    "pnl_text": "+0.00",
-                }
+                self.active_positions[str(order_state["signal_id"])] = opened_position
             self._record_event(
                 "info",
                 "Position opened",
@@ -2347,6 +2896,7 @@ class LiveRunWorker:
                     "slippage_vs_best_quote_cents": round(slippage_quote, 4) if slippage_quote is not None else None,
                 },
             )
+            self._submit_resting_target_exit_order(connection, position_state=opened_position)
             return
         existing = self.active_positions.pop(str(order_state.get("signal_id")), None)
         if existing:
@@ -2446,6 +2996,7 @@ class LiveRunWorker:
                 "last_cycle_completed_at": self.last_cycle_completed_at,
                 "last_cycle_duration_seconds": self.last_cycle_duration_seconds,
                 "last_successful_cycle_at": self.last_successful_cycle_at,
+                "live_market_tick_cache": self.live_market_tick_cache,
             }
         _write_json(self.run_root / "recovery_snapshot.json", payload)
 
@@ -2474,6 +3025,12 @@ class LiveRunWorker:
         self.last_successful_cycle_at = _parse_datetime(payload.get("last_successful_cycle_at"))
         if isinstance(payload.get("account"), dict):
             self.account = payload["account"]
+        if isinstance(payload.get("live_market_tick_cache"), dict):
+            self.live_market_tick_cache = {
+                str(key): [tick for tick in list(value or []) if isinstance(tick, dict)]
+                for key, value in payload["live_market_tick_cache"].items()
+                if isinstance(value, list)
+            }
 
     def _latest_event_message_for_game(self, game_id: str) -> str | None:
         with self._lock:
@@ -2498,6 +3055,9 @@ class LiveRunWorker:
             "payload": payload or {},
         }
         _append_jsonl(self.run_root / "controller_trace.jsonl", row)
+
+    def _append_live_orderbook_tick_trace(self, payload: dict[str, Any]) -> None:
+        _append_jsonl(self.run_root / "live_orderbook_ticks.jsonl", payload)
 
     def _state_trace_row(self, row: dict[str, Any] | None) -> dict[str, Any] | None:
         if not row:

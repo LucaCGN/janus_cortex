@@ -2088,8 +2088,10 @@ def _portfolio_summary_for_frames(
 
 
 def _load_live_run_summary(*, run_ids: tuple[str, ...]) -> pd.DataFrame:
+    from app.runtime.local_paths import resolve_live_tracks_root
+
     rows: list[dict[str, Any]] = []
-    live_root = Path(r"C:\code-personal\janus-local\janus_cortex\tracks\live-controller")
+    live_root = resolve_live_tracks_root()
     if not live_root.exists():
         return pd.DataFrame(columns=["run_id", "subject_name", "game_id", "live_trade_count", "entry_submitted_count", "position_opened_count"])
     for run_id in run_ids:

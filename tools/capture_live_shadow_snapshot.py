@@ -45,13 +45,27 @@ from app.data.pipelines.daily.nba.analysis.ml_trading_lane import (
     _select_focus_family_candidates,
 )
 from app.modules.nba.execution.adapter import build_live_creds, fetch_latest_orderbook_summary, resolve_trading_account
-from app.modules.nba.execution.runner import _infer_live_coverage_status
+from app.modules.nba.execution.runner import (
+    _apply_live_orderbook_to_latest_state_rows,
+    _infer_live_coverage_status,
+    _mark_live_orderbook_price_path_reconciled,
+)
+from app.runtime.local_paths import resolve_shared_root
 
 
 TARGET_FAMILIES = (
     "quarter_open_reprice",
     "micro_momentum_continuation",
     "inversion",
+    "underdog_range_scalp",
+    "favorite_floor_rebound",
+    "underdog_liftoff",
+    "panic_fade_fast",
+    "lead_fragility",
+    "halftime_gap_fill",
+    "winner_definition",
+    "q1_repricing",
+    "q4_clutch",
 )
 TARGET_LLM_VARIANTS = (
     "llm_selector_core_windows_v2",
@@ -66,6 +80,12 @@ ML_SHADOW_REQUIRED_FIELDS = (
     "orderbook_available_flag",
     "min_required_notional_usd",
     "budget_affordable_flag",
+)
+ML_SHADOW_LOG_FIELDS = (
+    *ML_SHADOW_REQUIRED_FIELDS,
+    "raw_neural_score",
+    "calibrated_neural_score",
+    "execution_likelihood",
 )
 LIVE_ENTRY_TARGET_NOTIONAL_USD = 0.0
 LIVE_MAX_ENTRY_NOTIONAL_PER_GAME_USD = 10.0
@@ -100,7 +120,34 @@ def _fetch_json(url: str) -> dict[str, Any]:
 
 def _write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=True, default=str), encoding="utf-8")
+    path.write_text(
+        json.dumps(_json_sanitize(payload), indent=2, ensure_ascii=True, default=str, allow_nan=False),
+        encoding="utf-8",
+    )
+
+
+def _json_sanitize(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_sanitize(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_sanitize(item) for item in value]
+    if isinstance(value, tuple):
+        return [_json_sanitize(item) for item in value]
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        numeric = float(value)
+        return numeric if np.isfinite(numeric) else None
+    if isinstance(value, float):
+        return value if np.isfinite(value) else None
+    try:
+        if value is pd.NA or pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -132,6 +179,16 @@ def _safe_datetime(value: Any) -> datetime | None:
     if pd.isna(parsed):
         return None
     return parsed.to_pydatetime()
+
+
+def _series_or_null(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column in frame.columns:
+        return frame[column]
+    return pd.Series([np.nan] * len(frame), index=frame.index)
+
+
+def _numeric_series(frame: pd.DataFrame, column: str) -> pd.Series:
+    return pd.to_numeric(_series_or_null(frame, column), errors="coerce")
 
 
 def _latest_state_row(state_df: pd.DataFrame, *, game_id: str, team_side: str) -> dict[str, Any] | None:
@@ -251,13 +308,23 @@ def _build_current_state(
                     "research_ready_flag": classification == "research_ready",
                 }
             )
-            _, per_game_state_rows, diagnostics = derive_game_rows(
+            observed_at = _now_utc()
+            game_rows, per_game_state_rows, diagnostics = derive_game_rows(
                 universe_row=universe_row,
                 bundle=bundle,
                 analysis_version="v1_0_1",
-                computed_at=_now_utc(),
+                computed_at=observed_at,
                 build_state_rows_for_side=build_state_rows_for_side,
             )
+            _apply_live_orderbook_to_latest_state_rows(per_game_state_rows, current_orderbooks)
+            _mark_live_orderbook_price_path_reconciled(
+                game_rows=game_rows,
+                per_game_state_rows=per_game_state_rows,
+                diagnostics=diagnostics,
+                live_orderbooks=current_orderbooks,
+                observed_at=observed_at,
+            )
+            bundle["live_orderbooks"] = current_orderbooks
             bundles[str(game_id)] = bundle
             diagnostics_by_game[str(game_id)] = diagnostics
             orderbooks_by_game[str(game_id)] = current_orderbooks
@@ -519,7 +586,7 @@ def _resolve_live_budget_config(run_root: Path) -> dict[str, Any]:
 
 def _enrich_ml_shadow_frame(frame: pd.DataFrame, *, live_budget_config: dict[str, Any] | None = None) -> pd.DataFrame:
     if frame.empty:
-        for field in ML_SHADOW_REQUIRED_FIELDS:
+        for field in ML_SHADOW_LOG_FIELDS:
             frame[field] = pd.Series(dtype=object)
         return frame
     budget_config = live_budget_config or {}
@@ -529,7 +596,7 @@ def _enrich_ml_shadow_frame(frame: pd.DataFrame, *, live_budget_config: dict[str
         or LIVE_MAX_ENTRY_NOTIONAL_PER_GAME_USD
     )
     work = frame.copy()
-    work["sidecar_probability"] = pd.to_numeric(work.get("sidecar_probability"), errors="coerce").fillna(0.5)
+    work["sidecar_probability"] = _numeric_series(work, "sidecar_probability").fillna(0.5)
     if "calibrated_confidence" not in work.columns:
         work["calibrated_confidence"] = work["sidecar_probability"]
     else:
@@ -543,6 +610,14 @@ def _enrich_ml_shadow_frame(frame: pd.DataFrame, *, live_budget_config: dict[str
             work["sidecar_probability"]
         )
     if "heuristic_execute_score" not in work.columns:
+        for column in (
+            "first_attempt_signal_age_seconds",
+            "first_attempt_quote_age_seconds",
+            "first_attempt_spread_cents",
+            "raw_confidence",
+        ):
+            if column not in work.columns:
+                work[column] = np.nan
         work["heuristic_execute_score"] = _build_heuristic_execute_score(work)
     work["heuristic_execute_score"] = pd.to_numeric(work["heuristic_execute_score"], errors="coerce").fillna(0.5)
     if "calibrated_execution_likelihood" not in work.columns:
@@ -552,15 +627,33 @@ def _enrich_ml_shadow_frame(frame: pd.DataFrame, *, live_budget_config: dict[str
             work["calibrated_execution_likelihood"],
             errors="coerce",
         ).fillna(work["heuristic_execute_score"])
+    work["execution_likelihood"] = work["calibrated_execution_likelihood"]
+    if "raw_neural_score" not in work.columns:
+        if "neural_raw_score" in work.columns:
+            work["raw_neural_score"] = pd.to_numeric(work["neural_raw_score"], errors="coerce")
+        else:
+            work["raw_neural_score"] = np.nan
+    else:
+        work["raw_neural_score"] = pd.to_numeric(work["raw_neural_score"], errors="coerce")
+    if "calibrated_neural_score" not in work.columns:
+        if "neural_calibrated_score" in work.columns:
+            work["calibrated_neural_score"] = pd.to_numeric(
+                work["neural_calibrated_score"],
+                errors="coerce",
+            )
+        else:
+            work["calibrated_neural_score"] = np.nan
+    else:
+        work["calibrated_neural_score"] = pd.to_numeric(work["calibrated_neural_score"], errors="coerce")
     if "focus_family_flag" not in work.columns:
         work["focus_family_flag"] = work.get("strategy_family", pd.Series(dtype=object)).astype(str).isin(FOCUS_STRATEGY_FAMILIES)
     work["focus_family_flag"] = work["focus_family_flag"].fillna(False).astype(bool)
-    best_bid = pd.to_numeric(work.get("best_bid"), errors="coerce")
-    best_ask = pd.to_numeric(work.get("best_ask"), errors="coerce")
-    signal_entry_price = pd.to_numeric(work.get("signal_entry_price"), errors="coerce")
-    coverage_status = work.get("coverage_status", pd.Series([None] * len(work), index=work.index)).astype(str)
-    latest_event_at = pd.to_datetime(work.get("latest_event_at"), errors="coerce", utc=True)
-    shadow_reason = work.get("shadow_reason", pd.Series([None] * len(work), index=work.index)).astype(str)
+    best_bid = _numeric_series(work, "best_bid")
+    best_ask = _numeric_series(work, "best_ask")
+    signal_entry_price = _numeric_series(work, "signal_entry_price")
+    coverage_status = _series_or_null(work, "coverage_status").astype(str)
+    latest_event_at = pd.to_datetime(_series_or_null(work, "latest_event_at"), errors="coerce", utc=True)
+    shadow_reason = _series_or_null(work, "shadow_reason").astype(str)
     work["feed_fresh_flag"] = (
         latest_event_at.notna()
         & coverage_status.ne("pregame_only")
@@ -636,11 +729,33 @@ def _build_ml_shadow(
     controller_rows: pd.DataFrame,
     live_budget_config: dict[str, Any],
 ) -> dict[str, Any]:
+    if family_rows.empty and controller_rows.empty:
+        return {
+            "method": "heuristic_proxy_from_ml_lane_feature_logic",
+            "notes": [
+                "No current family or controller shadow signals were available for ML sidecar annotation.",
+            ],
+            "required_live_fields": list(ML_SHADOW_REQUIRED_FIELDS),
+            "shadow_log_fields": list(ML_SHADOW_LOG_FIELDS),
+            "thresholds": {
+                "focus_family_min_score": DEFAULT_FOCUS_RANK_THRESHOLD,
+                "controller_focus_min_score": DEFAULT_CONTROLLER_CALIBRATION_THRESHOLD,
+            },
+            "family_candidates": [],
+            "controller_candidates": [],
+            "focus_family_selected": [],
+            "controller_focus_selected": [],
+            "sidecar_union_selected": [],
+            "ml_feature_df": pd.DataFrame(),
+        }
     regular_trade_frames = _load_regular_season_trade_frames(Path(DEFAULT_OUTPUT_ROOT))
     historical_context_df = _build_historical_context_frame(regular_trade_frames)
     historical_family_df = _build_family_overall_frame(regular_trade_frames)
 
-    family_predictions_df = family_rows[family_rows["signal_id"].notna()].copy()
+    if "signal_id" in family_rows.columns:
+        family_predictions_df = family_rows[family_rows["signal_id"].notna()].copy()
+    else:
+        family_predictions_df = pd.DataFrame()
     if not family_predictions_df.empty:
         family_predictions_df = family_predictions_df.merge(
             historical_context_df,
@@ -703,6 +818,7 @@ def _build_ml_shadow(
             "No online calibrated model bundle is published for daily live validation yet, so sidecar_probability falls back to heuristic rank or raw controller confidence.",
         ],
         "required_live_fields": list(ML_SHADOW_REQUIRED_FIELDS),
+        "shadow_log_fields": list(ML_SHADOW_LOG_FIELDS),
         "thresholds": {
             "focus_family_min_score": DEFAULT_FOCUS_RANK_THRESHOLD,
             "controller_focus_min_score": DEFAULT_CONTROLLER_CALIBRATION_THRESHOLD,
@@ -725,7 +841,10 @@ def _build_llm_shadow(
     ml_feature_df: pd.DataFrame,
     snapshot_at: datetime,
 ) -> dict[str, Any]:
-    signal_rows = family_rows[family_rows["signal_id"].notna()].copy()
+    if "signal_id" in family_rows.columns:
+        signal_rows = family_rows[family_rows["signal_id"].notna()].copy()
+    else:
+        signal_rows = pd.DataFrame()
     if signal_rows.empty:
         return {
             "method": "deterministic_shadow_from_llm_strategy_lane",
@@ -829,7 +948,7 @@ def main() -> None:
     artifact_dir = (
         Path(args.artifact_dir)
         if args.artifact_dir
-        else Path(r"C:\code-personal\janus-local\janus_cortex\shared\artifacts\daily-live-validation") / session_date
+        else resolve_shared_root() / "artifacts" / "daily-live-validation" / session_date
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -852,7 +971,7 @@ def main() -> None:
             snapshot_at=snapshot_at,
         )
     )
-    subject_summary_df = _subject_summary_from_replay_submission(Path(r"C:\code-personal\janus-local\janus_cortex\shared"))
+    subject_summary_df = _subject_summary_from_replay_submission(resolve_shared_root())
     ml_shadow = _build_ml_shadow(
         family_rows=family_rows,
         controller_rows=controller_rows,
@@ -903,8 +1022,9 @@ def main() -> None:
         },
     }
     json_path = artifact_dir / f"shadow_snapshot_{args.run_id}.json"
+    payload = _json_sanitize(payload)
     _write_json(json_path, payload)
-    print(json.dumps(payload, indent=2, ensure_ascii=True, default=str))
+    print(json.dumps(payload, indent=2, ensure_ascii=True, default=str, allow_nan=False))
 
 
 if __name__ == "__main__":

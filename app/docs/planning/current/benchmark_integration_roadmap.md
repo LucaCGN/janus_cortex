@@ -160,6 +160,6 @@ Current operator-promoted stack:
 - `/v1/analysis/studio/benchmark-dashboard`
 - `tools/export_benchmark_dashboard.py`
 - shared coordination artifacts under:
-  - `C:\code-personal\janus-local\janus_cortex\shared\handoffs\benchmark-integration\`
-  - `C:\code-personal\janus-local\janus_cortex\shared\reports\benchmark-integration\`
-  - `C:\code-personal\janus-local\janus_cortex\shared\artifacts\benchmark-integration\`
+  - `JANUS_LOCAL_ROOT\shared\handoffs\benchmark-integration\`
+  - `JANUS_LOCAL_ROOT\shared\reports\benchmark-integration\`
+  - `JANUS_LOCAL_ROOT\shared\artifacts\benchmark-integration\`

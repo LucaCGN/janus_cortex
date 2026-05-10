@@ -1,24 +1,19 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.runtime.local_paths import DEFAULT_LOCAL_ROOT_ENV_VAR, resolve_local_root
 
 
 ANALYSIS_VERSION = "v1_0_1"
 DEFAULT_SEASON = "2025-26"
 DEFAULT_SEASON_PHASE = "regular_season"
-DEFAULT_LOCAL_ROOT_ENV_VAR = "JANUS_LOCAL_ROOT"
-WINDOWS_LOCAL_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex")
+WINDOWS_LOCAL_ROOT = resolve_local_root()
 
 
 def resolve_default_output_root() -> Path:
-    configured_root = os.getenv(DEFAULT_LOCAL_ROOT_ENV_VAR)
-    if configured_root:
-        return Path(configured_root) / "archives" / "output" / "nba_analysis"
-    if os.name == "nt" and WINDOWS_LOCAL_ROOT.exists():
-        return WINDOWS_LOCAL_ROOT / "archives" / "output" / "nba_analysis"
-    return Path("output") / "nba_analysis"
+    return resolve_local_root() / "archives" / "output" / "nba_analysis"
 
 
 DEFAULT_OUTPUT_ROOT = resolve_default_output_root()
@@ -117,7 +112,7 @@ DEFAULT_BACKTEST_LLM_MAX_BUDGET_USD = 20.0
 DEFAULT_BACKTEST_STRATEGY_GROUP = "default"
 DEFAULT_REPLAY_SIGNAL_MAX_AGE_SECONDS = 60.0
 DEFAULT_REPLAY_QUOTE_MAX_AGE_SECONDS = 30.0
-DEFAULT_REPLAY_POLL_INTERVAL_SECONDS = 5.0
+DEFAULT_REPLAY_POLL_INTERVAL_SECONDS = 2.0
 DEFAULT_REPLAY_MAX_SPREAD_CENTS = 2.0
 DEFAULT_REPLAY_PROXY_MIN_SPREAD_CENTS = 1.0
 DEFAULT_REPLAY_PROXY_MAX_SPREAD_CENTS = 6.0
