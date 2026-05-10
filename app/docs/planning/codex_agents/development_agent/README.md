@@ -6,7 +6,13 @@ The Development Agent turns postgame findings into code, tests, and clean tracke
 
 It is not a trading agent. It does not place orders. It does not make discretionary portfolio decisions. Its job is to keep Janus production-safe while improving the backend, replay, strategy-plan execution, data integrity, and lane evidence.
 
-This is a sustained development lane, not a quick health-check lane. Between postgame and pregame, the agent should use the full development window to keep moving the system forward across repeated 30-minute automation triggers.
+This is a sustained development lane, not a quick health-check lane. It should run from one permanent 30-minute automation and self-gate by local BRT time:
+
+- `06:00-11:30`: normal development-window work.
+- `11:30-12:30`: sprint closeout, stabilization, handoff, and readiness for the Pregame Integrity Check agent.
+- outside `06:00-12:30`: do not act; report no-op briefly and stop.
+
+Never delete, disable, or alter the automation from inside the agent.
 
 ## Inputs
 
@@ -49,9 +55,17 @@ Status-only updates are acceptable only when the agent is blocked by unavailable
 
 ## Iterative Workday Model
 
-The Development Agent runs every 30 minutes from 06:00 through 11:30 BRT. Each run must continue from the prior run's handoff.
+The Development Agent automation runs every 30 minutes and must self-gate by BRT time. Each in-window run must continue from the prior run's handoff.
 
 At the start of each run:
+
+1. Determine current local BRT time.
+2. If outside `06:00-12:30`, do not perform development work; write a brief no-op only if needed and stop.
+3. If between `11:30-12:30`, switch to sprint closeout mode.
+4. If between `06:00-11:30`, proceed with normal development.
+5. Never delete, disable, pause, or edit the automation itself.
+
+Normal development mode:
 
 1. Read `local\shared\handoffs\development-agent\status.md`.
 2. Read `local\shared\handoffs\development-agent\master_queue.md`.
@@ -59,14 +73,22 @@ At the start of each run:
 4. Check git branch/status and recent commits.
 5. Decide whether to continue the previous work packet, start the next queued task, or route a blocker.
 
-At the end of each run:
+Sprint closeout mode, `11:30-12:30`:
+
+1. Finish or safely park any in-progress code work.
+2. Run targeted tests for touched areas.
+3. Avoid starting large new implementation work unless it is a critical fix for the integrity gate.
+4. Update the Development Agent status with branch, commits, tests, open blockers, and exact integrity-agent handoff.
+5. Update daily-live-validation status with what the Pregame Integrity Check should verify next.
+
+At the end of each in-window run:
 
 1. Write what was completed.
 2. Write what remains.
 3. Write the exact next recommended task for the next Development Agent trigger.
 4. If a master-queue item was addressed, mark it addressed or partially addressed with evidence.
 
-The agent should maximize productive engineering time across the 6-hour window. The goal is a real morning development session, not three isolated maintenance checks.
+The agent should maximize productive engineering time across the morning window. The goal is a real morning development session with a controlled handoff into the integrity gate, not isolated maintenance checks.
 
 ## Current First-Run Priorities From May 9 Review
 
@@ -117,6 +139,7 @@ The handoff update must include:
 - readiness impact for the next slate
 - next recommended task for the next automation trigger
 - master-queue items addressed or still open
+- integrity-agent handoff when running in `11:30-12:30` closeout mode
 
 ## Non-Goals
 
@@ -125,3 +148,4 @@ The handoff update must include:
 - Do not silently skip tests.
 - Do not implement every handoff task in one run if that creates risk, but do keep progressing across runs.
 - Do not treat ML/LLM ideas as live authority without StrategyPlanJSON and safety gates.
+- Do not delete, pause, disable, or alter the automation itself.

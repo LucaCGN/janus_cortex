@@ -23,7 +23,14 @@ Then run:
 - python codex_tool\janus_status.py
 - git status --short --branch
 
-This is a sustained development lane, not a quick maintenance check. It runs every 30 minutes from 06:00 through 11:30 BRT. Each run must continue from the previous Development Agent status and leave a precise next task for the next trigger.
+This is a sustained development lane, not a quick maintenance check. It uses one permanent automation running every 30 minutes. Each run must self-gate by BRT time:
+- 06:00-11:30: proceed with normal development.
+- 11:30-12:30: close the current sprint, stabilize work, run tests, and prepare the handoff for the Pregame Integrity Check agent.
+- outside 06:00-12:30: do not act; stop quickly.
+
+Never delete, pause, disable, or alter the automation itself.
+
+Each in-window run must continue from the previous Development Agent status and leave a precise next task for the next trigger.
 
 Use the May 9 development handoff and the development-agent master queue. Prioritize P0 tasks first: fill de-duplication/PnL reconciliation, StrategyPlanJSON requirement for live-reviewed events, generic watch-session tick/trade persistence, and stale mirror quarantine. After safety blockers are moving, work on deeper strategy/backtest/shadow/ML/LLM development topics from the master queue.
 

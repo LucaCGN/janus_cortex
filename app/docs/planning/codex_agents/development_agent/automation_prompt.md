@@ -2,26 +2,7 @@
 
 Schedule:
 
-Codex did not accept the compact multi-hour/multi-minute RRULE. Use one of the two supported patterns below.
-
-Preferred if the automation UI allows multiple automations in the same pinned chat: create one automation per exact time.
-
-```text
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=6;BYMINUTE=0
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=6;BYMINUTE=30
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=0
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=7;BYMINUTE=30
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=8;BYMINUTE=0
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=8;BYMINUTE=30
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=9;BYMINUTE=0
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=9;BYMINUTE=30
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=10;BYMINUTE=0
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=10;BYMINUTE=30
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=11;BYMINUTE=0
-FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR,SA,SU;BYHOUR=11;BYMINUTE=30
-```
-
-Fallback if only one automation can be attached to the pinned chat: run every 30 minutes and self-gate inside the prompt.
+Use one permanent automation. Do not delete, disable, or alter this automation from inside the agent.
 
 ```text
 FREQ=MINUTELY;INTERVAL=30
@@ -36,7 +17,12 @@ Work from C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex. Derive 
 
 Read the operating plan, prompt index, Development Agent README, daily-live-validation status, latest postgame report, latest postgame_development_handoff, local\shared\handoffs\development-agent\status.md if present, and local\shared\handoffs\development-agent\master_queue.md if present. Run janus_status and git status.
 
-If this automation uses `FREQ=MINUTELY;INTERVAL=30`, self-gate: perform development work only when local BRT time is between `06:00` and `11:30`, inclusive. Outside that window, update status briefly only if there is a critical blocker; otherwise stop.
+Self-gate by local BRT time:
+- If between `06:00` and `11:30`, proceed normally with the current development instructions.
+- If between `11:30` and `12:30`, focus on ending the current sprint: finish or safely park work, run targeted tests, update handoffs, and prepare the next step for the Pregame Integrity Check agent.
+- If outside `06:00` through `12:30`, do not act; end quickly after a brief no-op note if needed.
+
+Never delete, disable, pause, or alter the automation itself.
 
 Continue the previous Development Agent task if it is mid-flight and still valid. Otherwise select the highest-priority routed task that can be safely implemented and tested in this pass. Prefer P0 live-safety/data-integrity work from the latest handoff: account-scoped fill de-duplication and PnL reconciliation, StrategyPlanJSON requirement/blocking for live-reviewed events, generic watch-session tick/trade persistence, replay creation from watch sessions, manual-intervention adoption, or stale mirror quarantine. After immediate safety work is moving, select deeper development items from the master queue: complex shadow running, new deterministic strategies, replay/backtest experiments, ML methods, LLM plan/prompt experiments, and live-vs-shadow comparison tooling.
 
