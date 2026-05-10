@@ -43,7 +43,12 @@ def evaluate_strategy_plan(
         if bool(shadow_flags.get("shadow_only")):
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "shadow_only"})
             continue
-        rule_gate = _rules_blocker(strategy.entry_rules, market_state=market_state, portfolio_state=portfolio_state)
+        rule_gate = _rules_blocker(
+            strategy.entry_rules,
+            market_state=market_state,
+            portfolio_state=portfolio_state,
+            strategy_id=strategy.strategy_id,
+        )
         if rule_gate is not None:
             blockers.append({"strategy_id": strategy.strategy_id, **rule_gate})
             continue
@@ -287,19 +292,46 @@ def _rules_blocker(
     *,
     market_state: dict[str, Any],
     portfolio_state: dict[str, Any],
+    strategy_id: str | None = None,
 ) -> dict[str, Any] | None:
+    strategy_state = _strategy_market_state(entry_rules, market_state, strategy_id=strategy_id)
+
     max_orderbook_age = _safe_float(entry_rules.get("max_orderbook_age_seconds"))
-    orderbook_age = _safe_float(market_state.get("orderbook_age_seconds"))
+    orderbook_age = _safe_float(strategy_state.get("orderbook_age_seconds"))
+    if max_orderbook_age is not None and orderbook_age is None:
+        return {"reason": "orderbook_freshness_required", "max_orderbook_age_seconds": max_orderbook_age}
     if max_orderbook_age is not None and orderbook_age is not None and orderbook_age > max_orderbook_age:
         return {"reason": "orderbook_stale", "orderbook_age_seconds": orderbook_age, "max_orderbook_age_seconds": max_orderbook_age}
 
+    max_scoreboard_age = _safe_float(entry_rules.get("max_scoreboard_age_seconds") or entry_rules.get("max_live_scoreboard_age_seconds"))
+    scoreboard_age = _first_float(strategy_state, ("scoreboard_age_seconds", "scoreboard_age"))
+    if max_scoreboard_age is not None and scoreboard_age is None:
+        return {"reason": "scoreboard_freshness_required", "max_scoreboard_age_seconds": max_scoreboard_age}
+    if max_scoreboard_age is not None and scoreboard_age is not None and scoreboard_age > max_scoreboard_age:
+        return {
+            "reason": "scoreboard_stale",
+            "scoreboard_age_seconds": scoreboard_age,
+            "max_scoreboard_age_seconds": max_scoreboard_age,
+        }
+
+    max_spread_cents = _safe_float(entry_rules.get("max_spread_cents"))
+    spread_cents = _spread_cents(strategy_state)
+    if max_spread_cents is not None and spread_cents is None:
+        return {"reason": "orderbook_spread_required", "max_spread_cents": max_spread_cents}
+    if max_spread_cents is not None and spread_cents is not None and spread_cents > max_spread_cents:
+        return {"reason": "orderbook_spread_too_wide", "spread_cents": spread_cents, "max_spread_cents": max_spread_cents}
+
     max_score_gap = _safe_float(entry_rules.get("max_abs_score_gap"))
-    score_gap = _safe_float(market_state.get("score_gap"))
+    score_gap = _first_float(strategy_state, ("score_gap", "score_diff"))
+    if max_score_gap is not None and score_gap is None:
+        return {"reason": "score_gap_required", "max_abs_score_gap": max_score_gap}
     if max_score_gap is not None and score_gap is not None and abs(score_gap) > max_score_gap:
         return {"reason": "score_gap_outside_rule", "score_gap": score_gap, "max_abs_score_gap": max_score_gap}
 
     price_band = entry_rules.get("price_band") or entry_rules.get("price_range")
-    current_price = _safe_float(market_state.get("price"))
+    current_price = _first_float(strategy_state, ("price", "team_price", "current_price"))
+    if isinstance(price_band, (list, tuple)) and len(price_band) == 2 and current_price is None:
+        return {"reason": "price_state_required", "price_band": list(price_band)}
     if isinstance(price_band, (list, tuple)) and len(price_band) == 2 and current_price is not None:
         low = _safe_float(price_band[0])
         high = _safe_float(price_band[1])
@@ -308,10 +340,78 @@ def _rules_blocker(
 
     max_open_positions = _safe_float(entry_rules.get("max_open_positions"))
     open_positions = _safe_float(portfolio_state.get("open_positions"))
+    if max_open_positions is not None and open_positions is None:
+        return {"reason": "position_state_required", "max_open_positions": max_open_positions}
     if max_open_positions is not None and open_positions is not None and open_positions >= max_open_positions:
         return {"reason": "position_limit_reached", "open_positions": open_positions, "max_open_positions": max_open_positions}
 
     return None
+
+
+def _strategy_market_state(
+    entry_rules: dict[str, Any],
+    market_state: dict[str, Any],
+    *,
+    strategy_id: str | None,
+) -> dict[str, Any]:
+    state = dict(market_state)
+    outcome_id = str(entry_rules.get("outcome_id") or "")
+    token_id = str(entry_rules.get("token_id") or "")
+    _merge_nested_state(state, market_state, ("strategy_states", "strategy_market_states"), strategy_id)
+    _merge_nested_state(state, market_state, ("outcome_states", "outcome_market_states", "outcomes"), outcome_id)
+    _merge_nested_state(state, market_state, ("token_states", "token_market_states", "tokens"), token_id)
+    _merge_scalar_state(state, market_state, ("outcome_prices", "prices_by_outcome"), outcome_id, "price")
+    _merge_scalar_state(state, market_state, ("token_prices", "prices_by_token"), token_id, "price")
+    return state
+
+
+def _merge_nested_state(
+    state: dict[str, Any],
+    market_state: dict[str, Any],
+    buckets: tuple[str, ...],
+    key: str | None,
+) -> None:
+    if not key:
+        return
+    for bucket in buckets:
+        values = market_state.get(bucket)
+        if not isinstance(values, dict):
+            continue
+        selected = values.get(key)
+        if isinstance(selected, dict):
+            state.update(selected)
+
+
+def _merge_scalar_state(
+    state: dict[str, Any],
+    market_state: dict[str, Any],
+    buckets: tuple[str, ...],
+    key: str | None,
+    target_key: str,
+) -> None:
+    if not key:
+        return
+    for bucket in buckets:
+        values = market_state.get(bucket)
+        if not isinstance(values, dict):
+            continue
+        selected = values.get(key)
+        if selected is not None and not isinstance(selected, dict):
+            state[target_key] = selected
+
+
+def _spread_cents(market_state: dict[str, Any]) -> float | None:
+    explicit = _safe_float(market_state.get("spread_cents"))
+    if explicit is not None:
+        return explicit
+    spread = _safe_float(market_state.get("spread"))
+    if spread is not None:
+        return spread * 100.0 if spread <= 1.0 else spread
+    bid = _safe_float(market_state.get("best_bid"))
+    ask = _safe_float(market_state.get("best_ask"))
+    if bid is None or ask is None:
+        return None
+    return max(0.0, ask - bid) * 100.0
 
 
 def _safe_float(value: Any) -> float | None:
@@ -321,6 +421,15 @@ def _safe_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _first_float(values: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        if key in values:
+            parsed = _safe_float(values.get(key))
+            if parsed is not None:
+                return parsed
+    return None
 
 
 __all__ = ["MIN_BUY_NOTIONAL_USD", "MIN_ORDER_SIZE", "evaluate_strategy_plan"]

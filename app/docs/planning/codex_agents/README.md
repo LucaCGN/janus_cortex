@@ -12,7 +12,7 @@ Janus is the independent runtime service. Codex agents are the external CI/CD, r
 | `JANUS - Development Agent` | `development_agent` | active contract |
 | `JANUS - Pregame Integrity Check` | `pregame_integrity_check` | active contract |
 | `JANUS - Pregame Research & Planning` | `pregame_research_planning` | active contract |
-| `JANUS - Live System Monitor` | `live_system_monitor` | pending focused refinement |
+| `JANUS - Live System Monitor` | `live_system_monitor` | active contract |
 
 ## Shared Rules
 
@@ -20,5 +20,6 @@ Janus is the independent runtime service. Codex agents are the external CI/CD, r
 - Direct CLOB collateral, orders, fills, and positions are authoritative over stale local mirrors.
 - Runtime files under `local\` are not committed. Summarize material runtime state in handoffs and reports.
 - Do not fabricate state when the API or DB is unavailable.
-- Do not place live orders unless the active StrategyPlanJSON, direct CLOB truth, and integrity gate explicitly allow it.
+- Live monitor execution uses live money (`dry_run=false`) only through `codex_tool\run_live_strategy_tick.py --execute --live-money`, after shadow evaluation and all StrategyPlanJSON/direct-CLOB/feed gates pass.
+- Do not place live orders unless the active StrategyPlanJSON, direct CLOB truth, quote/score state, and integrity gate explicitly allow it.
 - Keep reports useful for the next agent in sequence, not just for human reading.
