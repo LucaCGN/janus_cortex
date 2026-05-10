@@ -298,6 +298,7 @@ def _state_from_orderbook(
 
 def _scoreboard_state(outcome_label: str | None, *, game: dict[str, Any], live_state: dict[str, Any]) -> dict[str, Any]:
     latest = live_state.get("latest_snapshot") or {}
+    latest_payload = latest.get("payload_json") if isinstance(latest.get("payload_json"), dict) else {}
     if not latest:
         return {
             "score_gap": None,
@@ -321,9 +322,9 @@ def _scoreboard_state(outcome_label: str | None, *, game: dict[str, Any], live_s
     return {
         "score_gap": score_gap,
         "scoreboard_age_seconds": _age_seconds(snapshot_time),
-        "game_status": latest.get("game_status") or game.get("game_status"),
+        "game_status": latest.get("game_status") or latest_payload.get("game_status") or game.get("game_status"),
         "period": latest.get("period") or game.get("period"),
-        "game_clock": latest.get("game_clock") or game.get("game_clock"),
+        "game_clock": latest.get("game_clock") or latest.get("clock") or latest_payload.get("game_clock") or game.get("game_clock"),
         "home_score": home_score,
         "away_score": away_score,
     }
