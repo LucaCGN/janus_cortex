@@ -144,7 +144,9 @@ Codex agents use scripts under `codex_tool/` to interact with the local API:
 
 ## Codex Agent Schedule
 
-Copyable pinned-chat prompts live in `app\docs\planning\codex_agent_automation_prompts.md`.
+Codex prompt index lives in `app\docs\planning\codex_agent_automation_prompts.md`.
+
+Agent-specific prompt contracts live under `app\docs\planning\codex_agents\`.
 
 Use one pinned chat per agent. DB/docs are source of truth; chat context is useful but not authoritative.
 

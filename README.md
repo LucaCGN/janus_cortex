@@ -12,7 +12,8 @@ Codex automations, or an equivalent external agent framework, are required for t
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
 - Local runtime root: `JANUS_LOCAL_ROOT`, defaulting to `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
 - Agentic backend operating plan: `app\docs\planning\janus_agentic_backend_operating_plan.md`
-- Codex agent automation prompts: `app\docs\planning\codex_agent_automation_prompts.md`
+- Codex agent automation prompt index: `app\docs\planning\codex_agent_automation_prompts.md`
+- Codex agent prompt folders: `app\docs\planning\codex_agents\`
 - Codex automation tools live under `codex_tool\`
 - Current priority: keep the agentic backend operating loop live for the NBA playoff slate while hardening direct CLOB reconciliation, StrategyPlanJSON execution, watch-session replay, and minimum-size live testing.
 - Current scope: backend ops endpoints, Codex tools, live pregame/postgame workflow, strategy-plan validation/execution, stop/hedge/order-policy testing, decision logging, and unified benchmark control across replay, ML, LLM, and live-validation lanes.
