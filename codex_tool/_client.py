@@ -60,7 +60,7 @@ def print_json(payload: Any) -> None:
 def read_text(path: str | None) -> str | None:
     if not path:
         return None
-    return Path(path).read_text(encoding="utf-8")
+    return Path(path).read_text(encoding="utf-8-sig")
 
 
 def exit_for_response(response: dict[str, Any]) -> None:

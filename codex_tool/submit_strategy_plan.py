@@ -15,7 +15,7 @@ def main() -> None:
     parser.add_argument("--plan-path", required=True)
     args = parser.parse_args()
 
-    payload = json.loads(Path(args.plan_path).read_text(encoding="utf-8"))
+    payload = json.loads(Path(args.plan_path).read_text(encoding="utf-8-sig"))
     exit_for_response(api_json(args.api_root, "POST", f"/v1/events/{args.event_id}/strategy-plan", payload))
 
 

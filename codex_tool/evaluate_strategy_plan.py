@@ -17,7 +17,9 @@ def main() -> None:
     parser.add_argument("--live-money", action="store_true", help="Set dry_run=false.")
     parser.add_argument("--execute", action="store_true", help="Submit valid intents through the audited order path.")
     parser.add_argument("--market-state-json", default=None)
+    parser.add_argument("--market-state-path", default=None)
     parser.add_argument("--portfolio-state-json", default=None)
+    parser.add_argument("--portfolio-state-path", default=None)
     parser.add_argument("--source", default="codex")
     parser.add_argument("--max-intents", type=int, default=10)
     args = parser.parse_args()
@@ -27,8 +29,8 @@ def main() -> None:
         "account_id": args.account_id,
         "dry_run": not bool(args.live_money),
         "execute": bool(args.execute),
-        "market_state": _loads_dict(args.market_state_json),
-        "portfolio_state": _loads_dict(args.portfolio_state_json),
+        "market_state": _loads_dict(args.market_state_json, args.market_state_path),
+        "portfolio_state": _loads_dict(args.portfolio_state_json, args.portfolio_state_path),
         "source": args.source,
         "max_intents": args.max_intents,
     }
@@ -39,10 +41,12 @@ def main() -> None:
 def _read_json(path: str | None):
     if not path:
         return None
-    return json.loads(Path(path).read_text(encoding="utf-8"))
+    return json.loads(Path(path).read_text(encoding="utf-8-sig"))
 
 
-def _loads_dict(value: str | None) -> dict:
+def _loads_dict(value: str | None, path: str | None = None) -> dict:
+    if path:
+        value = Path(path).read_text(encoding="utf-8-sig")
     if not value:
         return {}
     payload = json.loads(value)
