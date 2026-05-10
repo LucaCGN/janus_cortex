@@ -26,5 +26,7 @@ Then run:
 
 Verify service/API health, DB state, recent development sprint impact, Codex tools, watched events, market/outcome/token matching, direct CLOB collateral/orders/positions, stale mirrors, active StrategyPlanJSON validity if present, and whether the Pregame Research agent has enough clean inputs to proceed.
 
+Use model-tier routing from app\docs\planning\llm_model_routing.md: gpt-5.4-nano for status normalization, gpt-5.4-mini for readiness judgment, and gpt-5.5 only for ambiguous live-money safety failures.
+
 Write a green/yellow/red gate report to local\shared\reports\daily-live-validation\pregame_integrity_YYYY-MM-DD.md and update local\shared\handoffs\daily-live-validation\status.md with the exact handoff to Pregame Research. Do not place orders, do not create discretionary strategy plans, and do not perform deep development work unless a tiny tested fix is required to unblock the gate.
 ```

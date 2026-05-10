@@ -23,5 +23,7 @@ Every postgame review must cover three layers:
 2. Operational integrity of the last run, including direct CLOB truth, stale mirrors, fills, orderbook/scoreboard freshness, watch-session persistence, replay creation, and missing targets/stops/hedges.
 3. Postgame research and development handoff: explain what happened in each game, what Janus should have done differently, and what exact tasks the development agent should implement next.
 
+Use model-tier routing from app\docs\planning\llm_model_routing.md: gpt-5.4-nano for raw summaries, gpt-5.4-mini for normal review, and gpt-5.5 for material PnL failures, missed opportunities, manual-intervention ambiguity, or development prioritization.
+
 Write the postgame report, write the development handoff, and update daily-live-validation status. Do not place orders.
 ```

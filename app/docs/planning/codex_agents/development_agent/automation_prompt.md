@@ -28,5 +28,7 @@ Continue the previous Development Agent task if it is mid-flight and still valid
 
 Use the automation window for substantive engineering. Do not stop after a trivial 5-minute fix if there is safe queued work available. If the first slice finishes early, continue into the next compatible task, run a meaningful backtest/shadow experiment, or write an implementation-ready design with tests and acceptance criteria.
 
+Use model-tier routing from app\docs\planning\llm_model_routing.md: gpt-5.4-mini for normal implementation, gpt-5.5 for architecture, strategy redesign, ML/replay methodology, live-execution bug clusters, and high-impact promotion/demotion decisions. Use gpt-5.4-nano only for summaries/extraction.
+
 Do not place orders. Do not touch runtime local artifacts except handoff/report updates. Do not commit unrelated dirty files. Run targeted tests, then broader tests when practical. Update local\shared\handoffs\daily-live-validation\status.md and local\shared\handoffs\development-agent\status.md. Optionally write local\shared\reports\daily-live-validation\development_pass_YYYY-MM-DD.md with files changed, tests run, remaining blockers, readiness impact, and the exact next recommended task for the next 30-minute trigger.
 ```

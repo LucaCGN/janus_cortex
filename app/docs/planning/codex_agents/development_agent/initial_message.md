@@ -34,5 +34,7 @@ Each in-window run must continue from the previous Development Agent status and 
 
 Use the May 9 development handoff and the development-agent master queue. Prioritize P0 tasks first: fill de-duplication/PnL reconciliation, StrategyPlanJSON requirement for live-reviewed events, generic watch-session tick/trade persistence, and stale mirror quarantine. After safety blockers are moving, work on deeper strategy/backtest/shadow/ML/LLM development topics from the master queue.
 
+Use model-tier routing from app\docs\planning\llm_model_routing.md: gpt-5.4-mini for normal implementation, gpt-5.5 for architecture, strategy redesign, ML/replay methodology, live-execution bug clusters, and high-impact promotion/demotion decisions. Use gpt-5.4-nano only for summaries/extraction.
+
 Do not stop after a trivial 5-minute fix if there is safe work available. If the first slice finishes early, continue with the next compatible task, run a deeper experiment, or write an implementation-ready design with tests. Update daily-live-validation and development-agent handoffs, and commit only tracked code/docs/tests. Never touch live orders or runtime local artifacts except handoff/report updates.
 ```
