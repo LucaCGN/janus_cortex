@@ -86,7 +86,8 @@ def run_tick(
     )
     events: list[dict[str, Any]] = []
     all_ok = bool(integrity.get("ok", True)) and bool(live_monitor.get("ok", True))
-    ready_for_live = bool(((integrity.get("integrity") or {}).get("ready_for_live_minimum_orders")))
+    integrity_snapshot = integrity.get("integrity") if isinstance(integrity.get("integrity"), dict) else {}
+    ready_for_live = bool(integrity_snapshot.get("ready_for_live_minimum_orders"))
     for event_id in event_ids:
         event_result = _run_event_tick(
             api_root=api_root,
@@ -100,6 +101,7 @@ def run_tick(
             orderbook_sample_count=orderbook_sample_count,
             orderbook_sample_interval_sec=orderbook_sample_interval_sec,
             integrity_ready=ready_for_live,
+            integrity_snapshot=integrity_snapshot,
             min_size=min_size,
             min_buy_notional_usd=min_buy_notional_usd,
             share_precision=share_precision,
@@ -140,6 +142,7 @@ def _run_event_tick(
     orderbook_sample_count: int,
     orderbook_sample_interval_sec: float,
     integrity_ready: bool,
+    integrity_snapshot: dict[str, Any],
     min_size: float,
     min_buy_notional_usd: float,
     share_precision: int,
@@ -203,8 +206,10 @@ def _run_event_tick(
             "share_precision": share_precision,
         },
     }
-    integrity = context.get("integrity") or {}
-    direct_clob = integrity.get("direct_clob") if isinstance(integrity, dict) else None
+    direct_clob = integrity_snapshot.get("direct_clob") if isinstance(integrity_snapshot, dict) else None
+    if not isinstance(direct_clob, dict):
+        integrity = context.get("integrity") or {}
+        direct_clob = integrity.get("direct_clob") if isinstance(integrity, dict) else None
     if isinstance(direct_clob, dict):
         portfolio_state["open_orders"] = direct_clob.get("open_order_count", portfolio_state["open_orders"])
         portfolio_state["open_positions"] = len(((direct_clob.get("open_positions") or {}).get("positions") or []))

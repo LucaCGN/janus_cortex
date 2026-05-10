@@ -647,6 +647,55 @@ def test_strategy_plan_evaluate_operator_sizing_overrides_llm_size_pytest(tmp_pa
     assert intent["metadata"]["sizing_policy"]["llm_strategy_budget_usd"] == 0.25
 
 
+def test_strategy_plan_evaluate_counts_open_orders_as_unresolved_exposure_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_strategy_decisions",
+        lambda result, **kwargs: {"ok": True, "row_count": 1},
+    )
+    client = TestClient(create_app())
+
+    plan = _strategy_plan_payload()
+    plan["active_strategies"][0]["max_positions"] = 1
+    plan["active_strategies"][0]["entry_rules"].update(
+        {
+            "max_open_positions": 2,
+            "max_orderbook_age_seconds": 90,
+            "max_scoreboard_age_seconds": 90,
+            "max_spread_cents": 2,
+            "max_abs_score_gap": 10,
+        }
+    )
+
+    response = client.post(
+        "/v1/events/event-123/strategy-plan/evaluate",
+        json={
+            "dry_run": True,
+            "market_state": {
+                "outcome_states": {
+                    "outcome-1": {
+                        "price": 0.2,
+                        "orderbook_age_seconds": 1,
+                        "scoreboard_age_seconds": 1,
+                        "spread": 0.01,
+                        "score_gap": 2,
+                    }
+                }
+            },
+            "portfolio_state": {"open_positions": 0, "open_orders": 1},
+            "plan": plan,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["intent_count"] == 0
+    assert payload["blockers"][0]["reason"] == "position_limit_reached"
+    assert payload["blockers"][0]["open_orders"] == 1
+
+
 def test_strategy_plan_execute_endpoint_hands_intent_to_order_manager_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

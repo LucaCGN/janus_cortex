@@ -49,6 +49,7 @@ def evaluate_strategy_plan(
             market_state=market_state,
             portfolio_state=portfolio_state,
             strategy_id=strategy.strategy_id,
+            strategy_max_positions=strategy.max_positions,
         )
         if rule_gate is not None:
             blockers.append({"strategy_id": strategy.strategy_id, **rule_gate})
@@ -368,6 +369,7 @@ def _rules_blocker(
     market_state: dict[str, Any],
     portfolio_state: dict[str, Any],
     strategy_id: str | None = None,
+    strategy_max_positions: int | None = None,
 ) -> dict[str, Any] | None:
     strategy_state = _strategy_market_state(entry_rules, market_state, strategy_id=strategy_id)
 
@@ -413,12 +415,24 @@ def _rules_blocker(
         if low is not None and high is not None and not low <= current_price <= high:
             return {"reason": "price_band_not_met", "price": current_price, "price_band": [low, high]}
 
-    max_open_positions = _safe_float(entry_rules.get("max_open_positions"))
+    explicit_position_cap = _safe_float(entry_rules.get("max_open_positions"))
+    has_exposure_state = "open_positions" in portfolio_state or "open_orders" in portfolio_state
+    max_open_positions = None
+    if explicit_position_cap is not None or has_exposure_state:
+        max_open_positions = _min_present(explicit_position_cap, _safe_float(strategy_max_positions))
     open_positions = _safe_float(portfolio_state.get("open_positions"))
-    if max_open_positions is not None and open_positions is None:
+    open_orders = _safe_float(portfolio_state.get("open_orders")) or 0.0
+    unresolved_exposure = (open_positions or 0.0) + open_orders
+    if explicit_position_cap is not None and open_positions is None:
         return {"reason": "position_state_required", "max_open_positions": max_open_positions}
-    if max_open_positions is not None and open_positions is not None and open_positions >= max_open_positions:
-        return {"reason": "position_limit_reached", "open_positions": open_positions, "max_open_positions": max_open_positions}
+    if max_open_positions is not None and unresolved_exposure >= max_open_positions:
+        return {
+            "reason": "position_limit_reached",
+            "open_positions": open_positions,
+            "open_orders": open_orders,
+            "unresolved_exposure": unresolved_exposure,
+            "max_open_positions": max_open_positions,
+        }
 
     return None
 
