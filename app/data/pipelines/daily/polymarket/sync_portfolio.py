@@ -4,6 +4,7 @@ import argparse
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import requests
@@ -216,6 +217,50 @@ def _first_present(raw: dict[str, Any], keys: list[str]) -> str | None:
         if text:
             return text
     return None
+
+
+def _normalize_trade_identity_number(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    try:
+        normalized = Decimal(text).normalize()
+    except (InvalidOperation, ValueError):
+        return text
+    number_text = format(normalized, "f")
+    if "." in number_text:
+        number_text = number_text.rstrip("0").rstrip(".")
+    return number_text or "0"
+
+
+def _portfolio_trade_id(
+    *,
+    account_id: str,
+    market_id: str,
+    outcome_id: str | None,
+    external_trade_id: str | None,
+    tx_hash: str | None,
+    side: str,
+    price: Any,
+    size: Any,
+    trade_time: datetime,
+) -> str:
+    if external_trade_id:
+        return _uuid_for("trade", external_trade_id)
+    trade_time_utc = _safe_dt(trade_time).isoformat(timespec="microseconds")
+    return _uuid_for(
+        "trade_fallback",
+        account_id,
+        tx_hash or "",
+        market_id,
+        outcome_id or "",
+        str(side or "").strip().lower(),
+        _normalize_trade_identity_number(price),
+        _normalize_trade_identity_number(size),
+        trade_time_utc,
+    )
 
 
 def _insert_sync_run(connection: Any, *, provider_id: str, module_id: str, wallet_address: str) -> str:
@@ -723,6 +768,7 @@ def run_portfolio_mirror_sync(
                     order_events_written += 1
                     rows_written += 1
 
+            seen_trade_ids: set[str] = set()
             for raw in payload.get("trades", []):
                 rows_read += 1
                 market_id, outcome_id = _resolve_market_outcome(raw, maps)
@@ -730,8 +776,25 @@ def run_portfolio_mirror_sync(
                     unresolved_trades += 1
                     continue
                 external_trade_id = _first_present(raw, ["id", "tradeID", "trade_id"])
-                trade_id = _uuid_for("trade", external_trade_id or str(uuid.uuid4()))
                 trade_time = _safe_dt(raw.get("timestamp") or raw.get("createdAt"), default=now)
+                tx_hash = _first_present(raw, ["transactionHash", "txHash", "tx_hash"])
+                side = str(raw.get("side") or "buy").lower()
+                price = _safe_float(raw.get("price"))
+                size = _safe_float(raw.get("size"))
+                trade_id = _portfolio_trade_id(
+                    account_id=account_id,
+                    market_id=market_id,
+                    outcome_id=outcome_id,
+                    external_trade_id=external_trade_id,
+                    tx_hash=tx_hash,
+                    side=side,
+                    price=price,
+                    size=size,
+                    trade_time=trade_time,
+                )
+                if trade_id in seen_trade_ids:
+                    continue
+                seen_trade_ids.add(trade_id)
                 order_external_id = _first_present(raw, ["orderID", "orderId", "order_id"])
                 resolved_order_id = None
                 if order_external_id:
@@ -745,10 +808,10 @@ def run_portfolio_mirror_sync(
                     market_id=market_id,
                     outcome_id=outcome_id,
                     external_trade_id=external_trade_id,
-                    tx_hash=_first_present(raw, ["transactionHash", "txHash", "tx_hash"]),
-                    side=str(raw.get("side") or "buy").lower(),
-                    price=_safe_float(raw.get("price")),
-                    size=_safe_float(raw.get("size")),
+                    tx_hash=tx_hash,
+                    side=side,
+                    price=price,
+                    size=size,
                     fee=_safe_float(raw.get("fee")),
                     fee_asset=_first_present(raw, ["feeAsset", "fee_asset"]),
                     liquidity_role=_first_present(raw, ["liquidityRole", "liquidity_role"]),

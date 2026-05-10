@@ -62,7 +62,7 @@ Always-running services:
 
 - NBA/hoopstats watcher updates schedule, live scoreboard, play-by-play, team context, player context, advanced stats, and availability.
 - Polymarket watcher captures selected CLOB ticks every 1-3 seconds while events are watched.
-- Portfolio watcher reconciles direct CLOB collateral, orders, fills, positions, manual interventions, and stale local mirrors.
+- Portfolio watcher reconciles direct CLOB collateral, orders, account-scoped de-duplicated fills, positions, manual interventions, and stale local mirrors.
 - Replay watcher persists observed latency and tick cadence so future backtests replay what Janus actually saw live.
 
 Pregame:
