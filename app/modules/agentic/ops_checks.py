@@ -16,6 +16,14 @@ from app.modules.nba.execution.adapter import (
 )
 
 
+PORTFOLIO_MIRROR_NON_BLOCKING_REASONS = {
+    "portfolio_mirror_missing_summary",
+    "portfolio_mirror_cash_mismatch",
+    "portfolio_mirror_equity_mismatch",
+    "portfolio_mirror_position_mismatch",
+}
+
+
 def build_integrity_snapshot(
     connection: PsycopgConnection,
     *,
@@ -59,8 +67,17 @@ def build_integrity_snapshot(
     account_id_value = str(account["account_id"])
     mirror_summary = fetch_account_summary(connection, account_id=account_id_value)
     mirror_positions = list_latest_positions(connection, account_id=account_id_value)
+    mirror_authority = classify_portfolio_mirror_authority(
+        collateral=collateral,
+        direct_positions=direct_positions,
+        mirror_summary=mirror_summary,
+        mirror_positions=mirror_positions,
+    )
     snapshot["portfolio_mirror"] = {
-        "ok": True,
+        "ok": not mirror_authority["quarantined"],
+        "status": mirror_authority["status"],
+        "authoritative_for_live": mirror_authority["authoritative_for_live"],
+        "quarantine_reasons": mirror_authority["quarantine_reasons"],
         "summary": to_jsonable(mirror_summary),
         "position_count": len(mirror_positions),
         "positions_preview": to_jsonable(mirror_positions[:20]),
@@ -74,26 +91,83 @@ def build_integrity_snapshot(
         snapshot["blockers"].append({"reason": "direct_open_order_check_failed", "error": direct_orders.get("error")})
     if direct_positions.get("ok") is False:
         snapshot["blockers"].append({"reason": "direct_open_position_check_failed", "error": direct_positions.get("error")})
-    if mirror_summary and float(mirror_summary.get("cash_usd") or 0.0) <= 0.0 and float(collateral.get("balance_usd") or 0.0) > 0.0:
-        snapshot["blockers"].append(
-            {
-                "reason": "portfolio_mirror_cash_mismatch",
-                "mirror_cash_usd": mirror_summary.get("cash_usd"),
-                "direct_clob_balance_usd": collateral.get("balance_usd"),
-                "severity": "non_blocking_for_live_if_direct_clob_ready",
-            }
-        )
+    for reason in mirror_authority["quarantine_reasons"]:
+        blocker = {
+            **reason,
+            "severity": "non_blocking_for_live_if_direct_clob_ready",
+            "mirror_authoritative_for_live": False,
+        }
+        snapshot["blockers"].append(blocker)
 
     hard_blockers = [
         blocker
         for blocker in snapshot["blockers"]
-        if blocker.get("reason")
-        not in {
-            "portfolio_mirror_cash_mismatch",
-        }
+        if blocker.get("reason") not in PORTFOLIO_MIRROR_NON_BLOCKING_REASONS
     ]
     snapshot["ready_for_live_minimum_orders"] = bool(collateral.get("ready")) and not hard_blockers
     return snapshot
+
+
+def classify_portfolio_mirror_authority(
+    *,
+    collateral: dict[str, Any] | None,
+    direct_positions: dict[str, Any] | None,
+    mirror_summary: dict[str, Any] | None,
+    mirror_positions: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    direct_balance_usd = _float_or_none((collateral or {}).get("balance_usd"))
+    direct_position_count = len((direct_positions or {}).get("positions") or [])
+    mirror_cash_usd = _float_or_none((mirror_summary or {}).get("cash_usd"))
+    mirror_equity_usd = _float_or_none((mirror_summary or {}).get("equity_usd"))
+    mirror_position_count = len(mirror_positions or [])
+    reasons: list[dict[str, Any]] = []
+    if not mirror_summary:
+        reasons.append(
+            {
+                "reason": "portfolio_mirror_missing_summary",
+                "direct_clob_balance_usd": direct_balance_usd,
+            }
+        )
+    if mirror_cash_usd is not None and direct_balance_usd is not None and mirror_cash_usd <= 0.0 < direct_balance_usd:
+        reasons.append(
+            {
+                "reason": "portfolio_mirror_cash_mismatch",
+                "mirror_cash_usd": mirror_cash_usd,
+                "direct_clob_balance_usd": direct_balance_usd,
+            }
+        )
+    if mirror_equity_usd is not None and direct_balance_usd is not None and mirror_equity_usd <= 0.0 < direct_balance_usd:
+        reasons.append(
+            {
+                "reason": "portfolio_mirror_equity_mismatch",
+                "mirror_equity_usd": mirror_equity_usd,
+                "direct_clob_balance_usd": direct_balance_usd,
+            }
+        )
+    if (direct_positions or {}).get("ok") is True and mirror_position_count > 0 and direct_position_count == 0:
+        reasons.append(
+            {
+                "reason": "portfolio_mirror_position_mismatch",
+                "mirror_position_count": mirror_position_count,
+                "direct_clob_position_count": direct_position_count,
+            }
+        )
+    quarantined = bool(reasons)
+    return {
+        "status": "quarantined" if quarantined else "authoritative",
+        "authoritative_for_live": not quarantined,
+        "quarantined": quarantined,
+        "quarantine_reasons": reasons,
+    }
+
+
+def _float_or_none(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _safe_direct_orders(creds: Any) -> dict[str, Any]:
@@ -112,4 +186,4 @@ def _safe_direct_positions(creds: Any) -> dict[str, Any]:
         return {"ok": False, "error": str(exc), "positions": []}
 
 
-__all__ = ["build_integrity_snapshot"]
+__all__ = ["build_integrity_snapshot", "classify_portfolio_mirror_authority"]
