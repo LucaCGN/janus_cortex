@@ -11,7 +11,7 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 | Agent | Folder | Automation Prompt |
 |---|---|---|
 | `JANUS - Post Game System Review` | `app\docs\planning\codex_agents\post_game_system_review` | `automation_prompt.md` |
-| `JANUS - Development Agent` | `app\docs\planning\codex_agents\development_agent` | pending focused contract |
+| `JANUS - Development Agent` | `app\docs\planning\codex_agents\development_agent` | `automation_prompt.md` |
 | `JANUS - Pregame Integrity Check` | `app\docs\planning\codex_agents\pregame_integrity_check` | pending focused contract |
 | `JANUS - Pregame Research & Planning` | `app\docs\planning\codex_agents\pregame_research_planning` | pending focused contract |
 | `JANUS - Live System Monitor` | `app\docs\planning\codex_agents\live_system_monitor` | pending focused contract |
@@ -47,6 +47,6 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 
 ## Current Focus
 
-The Post Game System Review contract has been split and strengthened first because it is the source of daily learning for the Development Agent.
+The Post Game System Review and Development Agent contracts are active.
 
-Next folders should be refined one at a time after the postgame contract is validated in a real run.
+Next folders should be refined one at a time after the Development Agent contract is validated in a real run.
