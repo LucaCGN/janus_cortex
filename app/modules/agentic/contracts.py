@@ -56,6 +56,7 @@ class OpsCycleRequest(BaseModel):
     session_date: str | None = None
     event_ids: list[str] = Field(default_factory=list)
     run_id: str | None = None
+    account_id: str | None = None
     source: str = "codex"
     notes: str | None = None
     execute: bool = False

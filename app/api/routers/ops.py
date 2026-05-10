@@ -19,6 +19,7 @@ from app.modules.agentic.contracts import (
     WatchlistRequest,
 )
 from app.modules.agentic.engine import evaluate_strategy_plan
+from app.modules.agentic.ops_checks import build_integrity_snapshot
 from app.modules.agentic.repository import (
     get_agentic_database_status,
     try_persist_market_trades,
@@ -30,6 +31,7 @@ from app.modules.agentic.repository import (
     try_persist_watchlist_event,
 )
 from app.modules.agentic.store import (
+    append_pregame_research,
     append_jsonl,
     build_event_agent_context,
     build_ops_status,
@@ -56,24 +58,51 @@ def run_ops_data_refresh(payload: OpsCycleRequest) -> dict[str, Any]:
 
 
 @router.post("/ops/integrity-check", status_code=status.HTTP_202_ACCEPTED)
-def run_ops_integrity_check(payload: OpsCycleRequest) -> dict[str, Any]:
+def run_ops_integrity_check(
+    payload: OpsCycleRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
     ops_status = build_ops_status()
+    integrity = build_integrity_snapshot(connection, account_id=payload.account_id)
     recorded = record_ops_stage(
         "integrity-check",
-        {**payload.model_dump(mode="json"), "ops_status": ops_status},
+        {**payload.model_dump(mode="json"), "ops_status": ops_status, "integrity": integrity},
         day=payload.session_date,
     )
-    return {**recorded, "ops_status": ops_status}
+    return {**recorded, "ops_status": ops_status, "integrity": integrity}
 
 
 @router.post("/ops/pregame-plan", status_code=status.HTTP_202_ACCEPTED)
 def run_ops_pregame_plan(payload: PregamePlanRequest) -> dict[str, Any]:
-    return record_ops_stage("pregame-plan", payload.model_dump(mode="json"), day=payload.session_date)
+    pregame_file = append_pregame_research(
+        day=payload.session_date,
+        research_markdown=payload.research_markdown,
+        research_path=payload.research_path,
+        source=payload.source,
+        event_ids=payload.event_ids,
+        notes=payload.notes,
+    )
+    recorded = record_ops_stage(
+        "pregame-plan",
+        {**payload.model_dump(mode="json"), "pregame_file": pregame_file},
+        day=payload.session_date,
+    )
+    return {**recorded, "pregame_file": pregame_file}
 
 
 @router.post("/ops/live-monitor", status_code=status.HTTP_202_ACCEPTED)
-def run_ops_live_monitor(payload: OpsCycleRequest) -> dict[str, Any]:
-    return record_ops_stage("live-monitor", payload.model_dump(mode="json"), day=payload.session_date)
+def run_ops_live_monitor(
+    payload: OpsCycleRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    ops_status = build_ops_status()
+    integrity = build_integrity_snapshot(connection, account_id=payload.account_id)
+    recorded = record_ops_stage(
+        "live-monitor",
+        {**payload.model_dump(mode="json"), "ops_status": ops_status, "integrity": integrity},
+        day=payload.session_date,
+    )
+    return {**recorded, "ops_status": ops_status, "integrity": integrity}
 
 
 @router.post("/ops/postgame-review", status_code=status.HTTP_202_ACCEPTED)

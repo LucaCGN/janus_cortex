@@ -48,7 +48,7 @@ Schedule:
 Prompt:
 
 ```text
-Run the Janus pregame integrity check. Read the operating plan and current ops status. Run python codex_tool\run_integrity_check.py. Verify local root resolution, API availability, DB/migration state, current watchlist, CLOB collateral, direct CLOB open orders, portfolio mirror, stale feeds, current strategy-plan schema validity, and live-run safety gates.
+Run the Janus pregame integrity check. Read the operating plan and current ops status. Run python codex_tool\run_integrity_check.py --account-id 56964015-5935-5035-bdab-b056c9277146. Verify local root resolution, API availability, DB/migration state, current watchlist, CLOB collateral, direct CLOB open orders, portfolio mirror, stale feeds, current strategy-plan schema validity, and live-run safety gates.
 
 If a code or config bug blocks safe operation, fix the smallest safe issue and run targeted tests. If live money is not safe, write the blocker and force dry-run/entries-disabled posture in the daily-live-validation handoff. Do not create discretionary trades.
 ```

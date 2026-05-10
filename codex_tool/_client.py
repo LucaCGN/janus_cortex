@@ -74,6 +74,7 @@ def cycle_payload(args: argparse.Namespace) -> dict[str, Any]:
         "session_date": getattr(args, "session_date", None),
         "event_ids": getattr(args, "event_ids", []) or [],
         "run_id": getattr(args, "run_id", None),
+        "account_id": getattr(args, "account_id", None),
         "source": getattr(args, "source", "codex"),
         "notes": getattr(args, "notes", None),
         "execute": bool(getattr(args, "execute", False)),
@@ -84,6 +85,7 @@ def add_cycle_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--session-date", default=None)
     parser.add_argument("--event-id", action="append", dest="event_ids", default=[])
     parser.add_argument("--run-id", default=None)
+    parser.add_argument("--account-id", default=None)
     parser.add_argument("--source", default="codex")
     parser.add_argument("--notes", default=None)
     parser.add_argument("--execute", action="store_true")

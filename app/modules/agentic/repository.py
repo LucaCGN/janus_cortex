@@ -264,7 +264,8 @@ def try_persist_watchlist_event(event: WatchlistEvent, *, source: str) -> dict[s
 
 
 def try_persist_watch_session(payload: MarketWatchSessionRequest) -> dict[str, Any]:
-    watch_session_id = payload.watch_session_id or str(uuid.uuid4())
+    watch_session_key = payload.watch_session_id or str(uuid.uuid4())
+    watch_session_id = _coerce_uuid(watch_session_key, namespace="watch-session")
     try:
         with managed_connection() as connection:
             with connection.cursor() as cursor:
@@ -296,13 +297,13 @@ def try_persist_watch_session(payload: MarketWatchSessionRequest) -> dict[str, A
                         payload.cadence_ms,
                         payload.passive_only,
                         payload.reason,
-                        Json(to_jsonable(payload.metadata)),
+                        Json(to_jsonable({**payload.metadata, "watch_session_key": watch_session_key})),
                     ),
                 )
             connection.commit()
-        return {"ok": True, "watch_session_id": watch_session_id}
+        return {"ok": True, "watch_session_id": watch_session_id, "watch_session_key": watch_session_key}
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc), "watch_session_id": watch_session_id}
+        return {"ok": False, "error": str(exc), "watch_session_id": watch_session_id, "watch_session_key": watch_session_key}
 
 
 def try_persist_orderbook_ticks(payload: MarketOrderbookTickRequest) -> dict[str, Any]:
@@ -457,6 +458,7 @@ def try_persist_operator_intervention(payload: OperatorInterventionRequest) -> d
 
 
 def try_persist_replay_request(payload: ReplayFromWatchSessionRequest, *, output_root: str | None = None) -> dict[str, Any]:
+    watch_session_id = _coerce_uuid(payload.watch_session_id, namespace="watch-session")
     try:
         with managed_connection() as connection:
             with connection.cursor() as cursor:
@@ -474,17 +476,17 @@ def try_persist_replay_request(payload: ReplayFromWatchSessionRequest, *, output
                     """,
                     (
                         str(uuid.uuid4()),
-                        payload.watch_session_id,
+                        watch_session_id,
                         payload.event_key,
                         payload.output_name,
-                        Json(to_jsonable(payload.model_dump(mode="json"))),
+                        Json(to_jsonable({**payload.model_dump(mode="json"), "watch_session_key": payload.watch_session_id})),
                         output_root,
                     ),
                 )
             connection.commit()
-        return {"ok": True}
+        return {"ok": True, "watch_session_id": watch_session_id, "watch_session_key": payload.watch_session_id}
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc)}
+        return {"ok": False, "error": str(exc), "watch_session_id": watch_session_id, "watch_session_key": payload.watch_session_id}
 
 
 __all__ = [
@@ -505,3 +507,10 @@ def _strategy_id_from_intent_id(intent_id: str) -> str | None:
     if len(parts) >= 2:
         return parts[1] or None
     return None
+
+
+def _coerce_uuid(value: str, *, namespace: str) -> str:
+    try:
+        return str(uuid.UUID(str(value)))
+    except (TypeError, ValueError):
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"janus:{namespace}:{value}"))

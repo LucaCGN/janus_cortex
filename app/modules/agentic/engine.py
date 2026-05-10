@@ -6,6 +6,10 @@ from typing import Any
 from app.modules.agentic.contracts import OrderIntent, StrategyPlan, StrategyPlanEvaluationResult
 
 
+MIN_ORDER_SIZE = 5.0
+MIN_BUY_NOTIONAL_USD = 1.0
+
+
 def evaluate_strategy_plan(
     plan: StrategyPlan,
     *,
@@ -54,6 +58,9 @@ def evaluate_strategy_plan(
         if order_type not in {"limit", "market"}:
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "invalid_order_type", "order_type": order_type})
             continue
+        if order_type == "market":
+            blockers.append({"strategy_id": strategy.strategy_id, "reason": "market_orders_disabled"})
+            continue
         price = _safe_float(order_payload.get("price"))
         size = _safe_float(order_payload.get("size"))
         if price is None or not 0.0 <= price <= 1.0:
@@ -62,7 +69,32 @@ def evaluate_strategy_plan(
         if size is None or size <= 0.0:
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "invalid_size", "size": order_payload.get("size")})
             continue
+        min_size = _safe_float(order_payload.get("min_size") or order_payload.get("minimum_size")) or MIN_ORDER_SIZE
+        if size < min_size:
+            blockers.append(
+                {
+                    "strategy_id": strategy.strategy_id,
+                    "reason": "minimum_size_not_met",
+                    "size": size,
+                    "minimum_size": min_size,
+                }
+            )
+            continue
         notional = price * size
+        min_buy_notional = (
+            _safe_float(order_payload.get("min_buy_notional_usd") or order_payload.get("minimum_buy_notional_usd"))
+            or MIN_BUY_NOTIONAL_USD
+        )
+        if side == "buy" and notional < min_buy_notional:
+            blockers.append(
+                {
+                    "strategy_id": strategy.strategy_id,
+                    "reason": "minimum_buy_notional_not_met",
+                    "minimum_buy_notional_usd": min_buy_notional,
+                    "required_notional_usd": round(notional, 6),
+                }
+            )
+            continue
         if side == "buy" and strategy.budget_usd > 0 and notional > strategy.budget_usd + 1e-9:
             blockers.append(
                 {
@@ -165,4 +197,4 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
-__all__ = ["evaluate_strategy_plan"]
+__all__ = ["MIN_BUY_NOTIONAL_USD", "MIN_ORDER_SIZE", "evaluate_strategy_plan"]

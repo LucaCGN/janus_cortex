@@ -99,6 +99,64 @@ def test_watchlist_and_ops_cycle_endpoints_record_runtime_artifacts_pytest(tmp_p
     assert (local_root / "shared" / "artifacts" / "ops" / "2026-05-09").exists()
 
 
+def test_pregame_plan_endpoint_writes_shared_research_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-10",
+            "event_ids": ["0042500214"],
+            "source": "pytest",
+            "notes": "fixture",
+            "research_markdown": "Knicks-76ers test thesis.",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["pregame_file"]["status"] == "stored"
+    research_path = local_root / "shared" / "reports" / "daily-live-validation" / "pregame_research_2026-05-10.md"
+    assert "Knicks-76ers test thesis." in research_path.read_text(encoding="utf-8")
+
+
+def test_live_monitor_endpoint_includes_direct_integrity_snapshot_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None: {
+            "connection_matches": connection is fake_connection,
+            "account_id": account_id,
+            "ready_for_live_minimum_orders": True,
+        },
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-10", "account_id": "account-123", "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["integrity"]["connection_matches"] is True
+    assert payload["integrity"]["account_id"] == "account-123"
+    assert payload["integrity"]["ready_for_live_minimum_orders"] is True
+
+
 def test_watch_session_tick_and_trade_endpoints_record_batches_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

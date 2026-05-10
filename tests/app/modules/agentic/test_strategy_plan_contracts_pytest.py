@@ -119,3 +119,80 @@ def test_strategy_plan_evaluator_blocks_stale_orderbook_pytest() -> None:
 
     assert result.intent_count == 0
     assert result.blockers[0]["reason"] == "orderbook_stale"
+
+
+def test_strategy_plan_evaluator_blocks_market_orders_and_too_small_buys_pytest() -> None:
+    market_plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="market-order",
+                family="grid",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-1",
+                    "token_id": "token-1",
+                    "side": "buy",
+                    "order_type": "market",
+                    "price": 0.2,
+                    "size": 5,
+                },
+            )
+        ],
+    )
+    tiny_buy_plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="tiny-buy",
+                family="grid",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-1",
+                    "token_id": "token-1",
+                    "side": "buy",
+                    "price": 0.1,
+                    "size": 5,
+                },
+            )
+        ],
+    )
+
+    market_result = evaluate_strategy_plan(market_plan)
+    tiny_buy_result = evaluate_strategy_plan(tiny_buy_plan)
+
+    assert market_result.intent_count == 0
+    assert market_result.blockers[0]["reason"] == "market_orders_disabled"
+    assert tiny_buy_result.intent_count == 0
+    assert tiny_buy_result.blockers[0]["reason"] == "minimum_buy_notional_not_met"
+
+
+def test_strategy_plan_evaluator_allows_low_notional_sell_targets_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="target-sell",
+                family="bracket_exit",
+                side="underdog",
+                budget_usd=0.0,
+                entry_rules={
+                    "outcome_id": "outcome-1",
+                    "token_id": "token-1",
+                    "side": "sell",
+                    "price": 0.02,
+                    "size": 5,
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(plan)
+
+    assert result.intent_count == 1
+    assert result.intents[0].side == "sell"

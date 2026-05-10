@@ -52,6 +52,11 @@ def write_json(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_json_default), encoding="utf-8")
 
 
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def append_jsonl(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
@@ -67,6 +72,60 @@ def read_json(path: Path) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else {"items": payload}
+
+
+def append_pregame_research(
+    *,
+    day: str | None,
+    research_markdown: str | None,
+    research_path: str | None,
+    source: str,
+    event_ids: list[str],
+    notes: str | None,
+) -> dict[str, Any]:
+    resolved_day = session_date(day)
+    content = research_markdown or _read_optional_text(research_path)
+    if not content:
+        return {
+            "status": "skipped",
+            "reason": "no_research_markdown_or_readable_path",
+            "path": str(reports_root() / "daily-live-validation" / f"pregame_research_{resolved_day}.md"),
+        }
+
+    path = reports_root() / "daily-live-validation" / f"pregame_research_{resolved_day}.md"
+    now = utc_now().isoformat()
+    section = "\n".join(
+        [
+            "",
+            f"## Submission - {now}",
+            "",
+            f"- source: `{source}`",
+            f"- event_ids: `{', '.join(event_ids) if event_ids else 'all'}`",
+            f"- original_path: `{research_path or ''}`",
+            f"- notes: {notes or ''}",
+            "",
+            content.strip(),
+            "",
+        ]
+    )
+    if path.exists():
+        existing = path.read_text(encoding="utf-8")
+        write_text(path, existing.rstrip() + "\n" + section)
+    else:
+        write_text(path, f"# Pregame Research - {resolved_day}\n{section}")
+    append_jsonl(
+        reports_root() / "daily-live-validation" / "pregame_research_submissions.jsonl",
+        {
+            "timestamp_utc": now,
+            "session_date": resolved_day,
+            "source": source,
+            "event_ids": event_ids,
+            "path": str(path),
+            "original_path": research_path,
+            "char_count": len(content),
+        },
+    )
+    return {"status": "stored", "path": str(path), "char_count": len(content)}
 
 
 def write_strategy_plan(plan: StrategyPlan, *, day: str | None = None) -> dict[str, Any]:
@@ -182,16 +241,27 @@ def _read_text_preview(path: Path, *, max_chars: int = 12000) -> dict[str, Any]:
     return {"path": str(path), "exists": True, "text": text[:max_chars]}
 
 
+def _read_optional_text(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+    path = Path(path_value)
+    if not path.exists() or not path.is_file():
+        return None
+    return path.read_text(encoding="utf-8")
+
+
 def _safe_name(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value))[:160] or "unknown"
 
 
 __all__ = [
     "append_jsonl",
+    "append_pregame_research",
     "build_event_agent_context",
     "build_ops_status",
     "load_current_strategy_plan",
     "record_ops_stage",
     "write_json",
     "write_strategy_plan",
+    "write_text",
 ]
