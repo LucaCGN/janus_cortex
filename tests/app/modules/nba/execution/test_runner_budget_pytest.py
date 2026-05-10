@@ -7,6 +7,7 @@ from app.modules.nba.execution import runner as runner_mod
 from app.modules.nba.execution.contracts import LiveRunConfig
 from app.modules.nba.execution.runner import (
     LiveRunWorker,
+    _controller_ultra_low_underdog_entry_blocker,
     _evaluate_exit_reason,
     _resolve_resting_target_exit_price,
     _run_game_entry_budget_state,
@@ -180,6 +181,61 @@ def test_contextual_scalp_stop_requires_confirmation_when_score_context_survives
 
     assert should_confirm is True
     assert should_exit_immediately is False
+
+
+def test_controller_ultra_low_underdog_blocks_missing_sustained_context_pytest() -> None:
+    blocker = _controller_ultra_low_underdog_entry_blocker(
+        {"source_strategy_family": "underdog_range_scalp"},
+        {"score_diff": -4, "event_at": "2026-05-09T01:00:00+00:00"},
+        entry_price=0.12,
+        entry_metadata={"target_price": 0.24, "stop_price": 0.08, "max_close_score_gap": 6},
+    )
+
+    assert blocker is not None
+    assert blocker["reason"] == "ultra_low_underdog_guardrail"
+    assert blocker["missing_requirements"] == [
+        "low_price_strategy_rule",
+        "fresh_sustained_scoreboard_context",
+    ]
+
+
+def test_controller_ultra_low_underdog_blocks_sub_10c_as_manual_only_pytest() -> None:
+    blocker = _controller_ultra_low_underdog_entry_blocker(
+        {"source_strategy_family": "underdog_range_scalp"},
+        {"score_diff": -1},
+        entry_price=0.08,
+        entry_metadata={
+            "entry_context": "close_score_floor",
+            "target_price": 0.20,
+            "stop_price": 0.04,
+            "max_close_score_gap": 6,
+            "context_seconds": 120,
+            "floor_context_seconds": 90,
+            "context_current_score_gap": 1,
+        },
+    )
+
+    assert blocker is not None
+    assert blocker["reason"] == "ultra_low_underdog_manual_only"
+
+
+def test_controller_ultra_low_underdog_allows_guarded_floor_entry_pytest() -> None:
+    blocker = _controller_ultra_low_underdog_entry_blocker(
+        {"source_strategy_family": "underdog_range_scalp"},
+        {"score_diff": -2, "event_at": "2026-05-09T01:00:00+00:00"},
+        entry_price=0.12,
+        entry_metadata={
+            "entry_context": "close_score_floor",
+            "target_price": 0.27,
+            "stop_price": 0.08,
+            "max_close_score_gap": 6,
+            "context_seconds": 120,
+            "floor_context_seconds": 90,
+            "context_current_score_gap": 2,
+        },
+    )
+
+    assert blocker is None
 
 
 def test_resolve_resting_target_exit_price_uses_strategy_target_or_minimum_gain_pytest() -> None:

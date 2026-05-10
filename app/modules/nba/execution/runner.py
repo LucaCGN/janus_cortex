@@ -123,6 +123,8 @@ LIVE_UNIFIED_LLM_LANE = {
     "require_core_for_extra": True,
 }
 LIVE_FEED_STALL_THRESHOLD_SECONDS = 180.0
+UNDERDOG_WATCH_ONLY_PRICE = 0.19
+UNDERDOG_MANUAL_ONLY_PRICE = 0.10
 
 
 @dataclass(slots=True)
@@ -1268,6 +1270,79 @@ def _safe_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _controller_ultra_low_underdog_entry_blocker(
+    record: dict[str, Any],
+    latest_state: dict[str, Any],
+    *,
+    entry_price: float,
+    entry_metadata: dict[str, Any],
+) -> dict[str, Any] | None:
+    family = str(record.get("source_strategy_family") or record.get("strategy_family") or "").lower()
+    if "underdog" not in family:
+        return None
+    if entry_price >= UNDERDOG_WATCH_ONLY_PRICE:
+        return None
+    base = {
+        "reason": "ultra_low_underdog_guardrail",
+        "guardrail": "ultra_low_underdog",
+        "entry_price": round(entry_price, 6),
+        "watch_only_threshold": UNDERDOG_WATCH_ONLY_PRICE,
+        "manual_only_threshold": UNDERDOG_MANUAL_ONLY_PRICE,
+    }
+    if entry_price < UNDERDOG_MANUAL_ONLY_PRICE:
+        return {
+            **base,
+            "reason": "ultra_low_underdog_manual_only",
+            "message": "Underdog buys below 10c require manual-only adoption and cannot be submitted by the live controller.",
+        }
+
+    missing: list[str] = []
+    if str(entry_metadata.get("entry_context") or "") != "close_score_floor":
+        missing.append("low_price_strategy_rule")
+
+    score_diff = _safe_float(latest_state.get("score_diff"))
+    max_score_gap = (
+        _safe_float(entry_metadata.get("floor_close_score_gap"))
+        or _safe_float(entry_metadata.get("max_close_score_gap"))
+        or _safe_float(entry_metadata.get("max_abs_score_gap"))
+    )
+    if score_diff is None or max_score_gap is None or abs(score_diff) > max_score_gap:
+        missing.append("score_gap_constraint")
+
+    context_seconds = _safe_float(entry_metadata.get("context_seconds"))
+    required_context_seconds = _safe_float(entry_metadata.get("floor_context_seconds")) or 90.0
+    context_gap = _safe_float(
+        entry_metadata.get("context_current_score_gap")
+        if "context_current_score_gap" in entry_metadata
+        else entry_metadata.get("context_max_abs_score_gap")
+    )
+    if (
+        context_seconds is None
+        or context_seconds < required_context_seconds
+        or context_gap is None
+        or max_score_gap is None
+        or context_gap > max_score_gap
+    ):
+        missing.append("fresh_sustained_scoreboard_context")
+
+    if _safe_float(entry_metadata.get("target_price")) is None:
+        missing.append("target_policy")
+    if _safe_float(entry_metadata.get("stop_price")) is None:
+        missing.append("stop_policy")
+
+    if missing:
+        return {
+            **base,
+            "missing_requirements": missing,
+            "score_diff": score_diff,
+            "max_score_gap": max_score_gap,
+            "context_seconds": context_seconds,
+            "required_context_seconds": required_context_seconds,
+            "context_score_gap": context_gap,
+        }
+    return None
 
 
 def _signal_id_for_trade(record: dict[str, Any]) -> str:
@@ -2574,6 +2649,40 @@ class LiveRunWorker:
             orderbook_meta = orderbook
             signal_price = float(record.get("entry_price") or latest_state.get("team_price") or entry_price)
             entry_metadata = _parse_json_dict(record.get("entry_metadata_json"))
+            ultra_low_blocker = _controller_ultra_low_underdog_entry_blocker(
+                record,
+                latest_state,
+                entry_price=entry_price,
+                entry_metadata=entry_metadata,
+            )
+            if ultra_low_blocker is not None:
+                self._record_event(
+                    "warn",
+                    "Entry skipped",
+                    "Ultra-low underdog guardrail blocked autonomous entry.",
+                    game_id=game_id,
+                    details={
+                        "signal_id": signal_id,
+                        **ultra_low_blocker,
+                    },
+                )
+                self._append_controller_trace(
+                    "entry_gate",
+                    game_id=game_id,
+                    payload={
+                        "signal_id": signal_id,
+                        "result": "skip",
+                        **ultra_low_blocker,
+                        "trade": self._trade_trace_row(record),
+                        "latest_state": self._state_trace_row(latest_state),
+                        "orderbook": {
+                            "best_bid": best_bid,
+                            "best_ask": best_ask,
+                            "spread_cents": spread_cents,
+                        },
+                    },
+                )
+                continue
             max_live_entry_drift = float(entry_metadata.get("max_live_entry_drift") or 0.02)
             entry_drift = entry_price - signal_price
             target_price = _safe_float(entry_metadata.get("target_price"))

@@ -8,6 +8,8 @@ from app.modules.agentic.contracts import OrderIntent, StrategyPlan, StrategyPla
 
 MIN_ORDER_SIZE = 5.0
 MIN_BUY_NOTIONAL_USD = 1.0
+UNDERDOG_WATCH_ONLY_PRICE = 0.19
+UNDERDOG_MANUAL_ONLY_PRICE = 0.10
 
 
 def evaluate_strategy_plan(
@@ -105,6 +107,15 @@ def evaluate_strategy_plan(
                 }
             )
             continue
+        ultra_low_blocker = _ultra_low_underdog_blocker(
+            strategy,
+            order_side=side,
+            order_price=price,
+            market_state=market_state,
+        )
+        if ultra_low_blocker is not None:
+            blockers.append({"strategy_id": strategy.strategy_id, **ultra_low_blocker})
+            continue
         intents.append(
             OrderIntent(
                 intent_id=f"{plan.event_id}|{strategy.strategy_id}|{len(intents) + 1}",
@@ -154,6 +165,121 @@ def _extract_order_payload(entry_rules: dict[str, Any]) -> dict[str, Any]:
     if isinstance(nested, dict):
         return {**entry_rules, **nested}
     return dict(entry_rules)
+
+
+def _ultra_low_underdog_blocker(
+    strategy: Any,
+    *,
+    order_side: str,
+    order_price: float,
+    market_state: dict[str, Any],
+) -> dict[str, Any] | None:
+    if order_side != "buy" or not _is_underdog_strategy(strategy):
+        return None
+    guardrail_price = _min_present(
+        order_price,
+        _safe_float(market_state.get("price")),
+        _safe_float(market_state.get("team_price")),
+    )
+    if guardrail_price is None or guardrail_price >= UNDERDOG_WATCH_ONLY_PRICE:
+        return None
+
+    base = {
+        "guardrail": "ultra_low_underdog",
+        "price": round(guardrail_price, 6),
+        "watch_only_threshold": UNDERDOG_WATCH_ONLY_PRICE,
+        "manual_only_threshold": UNDERDOG_MANUAL_ONLY_PRICE,
+    }
+    if guardrail_price < UNDERDOG_MANUAL_ONLY_PRICE:
+        return {
+            **base,
+            "reason": "ultra_low_underdog_manual_only",
+            "message": "Underdog buys below 10c require manual-only adoption and cannot compile autonomous order intents.",
+        }
+
+    entry_rules = dict(strategy.entry_rules or {})
+    missing: list[str] = []
+    if not _truthy_any(entry_rules, ("allow_ultra_low_underdog", "allow_underdog_below_19c")):
+        missing.append("allow_ultra_low_underdog")
+
+    max_scoreboard_age = _safe_float(
+        entry_rules.get("max_scoreboard_age_seconds") or entry_rules.get("max_live_scoreboard_age_seconds")
+    )
+    scoreboard_age = _safe_float(
+        market_state.get("scoreboard_age_seconds")
+        if "scoreboard_age_seconds" in market_state
+        else market_state.get("scoreboard_age")
+    )
+    if max_scoreboard_age is None or scoreboard_age is None or scoreboard_age > max_scoreboard_age:
+        missing.append("fresh_scoreboard")
+
+    max_score_gap = _safe_float(
+        entry_rules.get("max_abs_score_gap")
+        or entry_rules.get("max_close_score_gap")
+        or entry_rules.get("max_trailing_score_gap")
+    )
+    score_gap = _safe_float(market_state.get("score_gap") if "score_gap" in market_state else market_state.get("score_diff"))
+    if max_score_gap is None or score_gap is None or abs(score_gap) > max_score_gap:
+        missing.append("score_gap_constraint")
+
+    if not _has_target_policy(strategy.exit_rules, entry_rules):
+        missing.append("target_policy")
+    if not _has_stop_policy(strategy.stop_rules, entry_rules):
+        missing.append("stop_policy")
+    if missing:
+        return {
+            **base,
+            "reason": "ultra_low_underdog_guardrail",
+            "missing_requirements": missing,
+            "score_gap": score_gap,
+            "max_abs_score_gap": max_score_gap,
+            "scoreboard_age_seconds": scoreboard_age,
+            "max_scoreboard_age_seconds": max_scoreboard_age,
+        }
+    return None
+
+
+def _is_underdog_strategy(strategy: Any) -> bool:
+    family = str(getattr(strategy, "family", "") or "").lower()
+    side = str(getattr(strategy, "side", "") or "").lower()
+    return "underdog" in family or side in {"underdog", "dog", "away_underdog", "home_underdog"}
+
+
+def _truthy_any(values: dict[str, Any], keys: tuple[str, ...]) -> bool:
+    for key in keys:
+        value = values.get(key)
+        if isinstance(value, str):
+            if value.strip().lower() in {"1", "true", "yes", "y"}:
+                return True
+            continue
+        if bool(value):
+            return True
+    return False
+
+
+def _has_target_policy(exit_rules: dict[str, Any], entry_rules: dict[str, Any]) -> bool:
+    for values in (exit_rules, entry_rules):
+        for key in ("target_price", "target_cents", "target_gain", "min_exit_price"):
+            if _safe_float(values.get(key)) is not None:
+                return True
+        for key in ("targets_cents", "target_prices"):
+            value = values.get(key)
+            if isinstance(value, (list, tuple)) and value:
+                return True
+    return False
+
+
+def _has_stop_policy(stop_rules: dict[str, Any], entry_rules: dict[str, Any]) -> bool:
+    for values in (stop_rules, entry_rules):
+        for key in ("stop_price", "max_loss_cents", "max_adverse_cents", "stop_loss", "exit_threshold"):
+            if _safe_float(values.get(key)) is not None:
+                return True
+    return False
+
+
+def _min_present(*values: float | None) -> float | None:
+    present = [value for value in values if value is not None]
+    return min(present) if present else None
 
 
 def _rules_blocker(

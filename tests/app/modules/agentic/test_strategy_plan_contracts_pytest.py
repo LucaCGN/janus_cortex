@@ -196,3 +196,111 @@ def test_strategy_plan_evaluator_allows_low_notional_sell_targets_pytest() -> No
 
     assert result.intent_count == 1
     assert result.intents[0].side == "sell"
+
+
+def test_strategy_plan_evaluator_blocks_ultra_low_underdog_without_fresh_context_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-lal-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-low",
+                family="underdog_range_scalp",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "price": 0.12,
+                    "size": 10,
+                    "price_band": [0.1, 0.18],
+                },
+                exit_rules={"target_price": 0.22},
+                stop_rules={"stop_price": 0.08},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(plan, market_state={"price": 0.12})
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "ultra_low_underdog_guardrail"
+    assert result.blockers[0]["missing_requirements"] == [
+        "allow_ultra_low_underdog",
+        "fresh_scoreboard",
+        "score_gap_constraint",
+    ]
+
+
+def test_strategy_plan_evaluator_blocks_sub_10c_underdog_as_manual_only_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-lal-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-below-10c",
+                family="underdog_range_scalp",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "price": 0.08,
+                    "size": 15,
+                    "price_band": [0.01, 0.09],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 6,
+                },
+                exit_rules={"target_price": 0.18},
+                stop_rules={"stop_price": 0.04},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.08, "score_gap": -3, "scoreboard_age_seconds": 1},
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "ultra_low_underdog_manual_only"
+
+
+def test_strategy_plan_evaluator_allows_explicit_low_underdog_with_protection_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-det-cle",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="det-low-guarded",
+                family="underdog_range_scalp",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-det",
+                    "token_id": "token-det",
+                    "side": "buy",
+                    "price": 0.15,
+                    "size": 10,
+                    "price_band": [0.1, 0.18],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 6,
+                },
+                exit_rules={"target_price": 0.27},
+                stop_rules={"stop_price": 0.11},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.15, "score_gap": -2, "scoreboard_age_seconds": 1},
+    )
+
+    assert result.intent_count == 1
+    assert result.blocked_count == 0
+    assert result.intents[0].price == 0.15
