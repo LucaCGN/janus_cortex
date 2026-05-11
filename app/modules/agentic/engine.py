@@ -405,6 +405,10 @@ def _rules_blocker(
     if max_score_gap is not None and score_gap is not None and abs(score_gap) > max_score_gap:
         return {"reason": "score_gap_outside_rule", "score_gap": score_gap, "max_abs_score_gap": max_score_gap}
 
+    player_status_blocker = _player_status_shock_blocker(entry_rules, strategy_state)
+    if player_status_blocker is not None:
+        return player_status_blocker
+
     price_band = entry_rules.get("price_band") or entry_rules.get("price_range")
     current_price = _first_float(strategy_state, ("price", "team_price", "current_price"))
     if isinstance(price_band, (list, tuple)) and len(price_band) == 2 and current_price is None:
@@ -457,6 +461,66 @@ def _rules_blocker(
         }
 
     return None
+
+
+def _player_status_shock_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) -> dict[str, Any] | None:
+    order_side = str(entry_rules.get("side") or "buy").strip().lower()
+    if order_side != "buy":
+        return None
+    if _truthy_any(
+        entry_rules,
+        (
+            "allow_player_status_shock",
+            "allow_after_player_status_shock",
+            "player_status_shock_reviewed",
+            "fresh_strategy_plan_after_player_status_shock",
+        ),
+    ):
+        return None
+
+    shocks = _revision_required_player_status_shocks(strategy_state)
+    explicit_count = _safe_float(strategy_state.get("player_status_shock_count"))
+    if not shocks and not explicit_count:
+        return None
+
+    shock_tags = sorted(
+        {
+            str(tag)
+            for shock in shocks
+            for tag in (shock.get("tags") or shock.get("shock_tags") or [])
+            if str(tag).strip()
+        }
+    )
+    player_names = sorted({str(shock.get("player_name")) for shock in shocks if str(shock.get("player_name") or "").strip()})
+    event_indexes = [
+        shock.get("event_index")
+        for shock in shocks
+        if shock.get("event_index") not in (None, "")
+    ]
+    return {
+        "reason": "player_status_shock_revision_required",
+        "shock_count": len(shocks) if shocks else int(explicit_count or 0),
+        "shock_tags": shock_tags,
+        "player_names": player_names,
+        "event_indexes": event_indexes,
+        "requires_strategy_plan_revision": True,
+        "message": "Player-status shock detected from play-by-play; autonomous buys require a fresh StrategyPlanJSON revision.",
+    }
+
+
+def _revision_required_player_status_shocks(strategy_state: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = (
+        strategy_state.get("player_status_shocks")
+        or strategy_state.get("player_status_shock_events")
+        or strategy_state.get("player_status_shock")
+    )
+    if isinstance(raw, dict):
+        values = [raw]
+    elif isinstance(raw, list):
+        values = [item for item in raw if isinstance(item, dict)]
+    else:
+        values = []
+    return [item for item in values if item.get("requires_strategy_plan_revision") is not False]
 
 
 def _has_pending_intent_state(portfolio_state: dict[str, Any]) -> bool:

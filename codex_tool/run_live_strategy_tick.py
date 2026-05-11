@@ -273,10 +273,16 @@ def _run_event_tick(
         portfolio_state["pending_intents_unavailable"] = True
         portfolio_state["pending_intents_error"] = pending_intents.get("error")
 
+    player_status_shocks = _player_status_shocks_from_live_state(live_state, plan=plan, game=game)
+    revision_required_shocks = [
+        shock for shock in player_status_shocks if shock.get("requires_strategy_plan_revision") is not False
+    ]
     market_state = {
         "outcome_states": outcome_states,
         "game": game,
         "live_state": _compact_live_state(live_state),
+        "player_status_shocks": player_status_shocks,
+        "player_status_shock_count": len(revision_required_shocks),
     }
     operator_reaction = _auto_protect_direct_positions(
         api_root=api_root,
@@ -798,6 +804,232 @@ def _scoreboard_state(outcome_label: str | None, *, game: dict[str, Any], live_s
         "home_score": home_score,
         "away_score": away_score,
     }
+
+
+def _player_status_shocks_from_live_state(
+    live_state: dict[str, Any],
+    *,
+    plan: dict[str, Any] | None = None,
+    game: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    rows = live_state.get("recent_play_by_play") or live_state.get("play_by_play") or []
+    if not isinstance(rows, list):
+        return []
+
+    watched_tokens = _watched_player_tokens(plan or {})
+    active_player_names = _active_player_names_from_live_state(live_state)
+    shocks: list[dict[str, Any]] = []
+    seen: set[tuple[Any, str, str]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+        text = _normalize_text(" ".join(_iter_text_values(row, include_keys=False)))
+        player_name = _player_name_from_pbp_row(row, payload)
+        watched_player = _player_is_watched(player_name, text, watched_tokens)
+        period = _int(row.get("period") or payload.get("period"))
+        tags = _player_status_shock_tags(row=row, payload=payload, text=text, period=period, watched_player=watched_player)
+        if not tags:
+            continue
+
+        normalized_player = _normalize_text(player_name)
+        if normalized_player and normalized_player in active_player_names and any(
+            tag in tags for tag in ("ejection", "injury", "sub_out_star")
+        ):
+            tags = _unique([*tags, "status_conflict", "feed_status_conflict"])
+
+        requires_revision = _shock_requires_revision(tags, watched_player=watched_player)
+        key = (row.get("event_index") or row.get("action_id"), normalized_player, "|".join(tags))
+        if key in seen:
+            continue
+        seen.add(key)
+        shocks.append(
+            {
+                "shock_type": "player_status_shock",
+                "source": "play_by_play",
+                "game_id": live_state.get("game_id") or (game or {}).get("game_id"),
+                "event_index": row.get("event_index"),
+                "action_id": row.get("action_id"),
+                "period": row.get("period") or payload.get("period"),
+                "clock": row.get("clock") or payload.get("clock"),
+                "home_score": row.get("home_score"),
+                "away_score": row.get("away_score"),
+                "description": row.get("description") or payload.get("description") or payload.get("actionDescription"),
+                "player_name": player_name,
+                "team": row.get("team") or payload.get("teamTricode") or payload.get("teamAbbreviation"),
+                "tags": tags,
+                "role_weight": 1.0 if watched_player else 0.7,
+                "watched_player": watched_player,
+                "requires_strategy_plan_revision": requires_revision,
+            }
+        )
+    return shocks
+
+
+def _player_status_shock_tags(
+    *,
+    row: dict[str, Any],
+    payload: dict[str, Any],
+    text: str,
+    period: int | None,
+    watched_player: bool,
+) -> list[str]:
+    tags: list[str] = []
+    if any(value in text for value in ("eject", "ejected", "ejection", "disqualified")):
+        tags.append("ejection")
+    if "flagrant" in text:
+        if any(value in text for value in ("type 2", "type ii", "flagrant 2", "flagrant two", "flagrant2")):
+            tags.append("flagrant_type_2")
+        else:
+            tags.append("flagrant")
+    if "technical" in text:
+        tags.append("technical")
+    if any(value in text for value in ("injury", "injured", "hurt", "limp", "left game", "will not return")):
+        tags.append("injury")
+    if watched_player and any(value in text for value in ("substitution", "subbed", "sub out", "substitution out")) and "out" in text:
+        tags.append("sub_out_star")
+
+    foul_count = _first_int(row, payload, ("person_fouls", "personFouls", "personal_fouls", "fouls", "foul_count"))
+    if "foul" in text and (
+        (foul_count is not None and foul_count >= 4 and (period is None or period < 4))
+        or "fourth personal" in text
+        or "4th personal" in text
+        or "fifth personal" in text
+        or "5th personal" in text
+    ):
+        tags.append("foul_count_threshold")
+    return _unique(tags)
+
+
+def _shock_requires_revision(tags: list[str], *, watched_player: bool) -> bool:
+    critical = {
+        "ejection",
+        "flagrant_type_2",
+        "injury",
+        "sub_out_star",
+        "foul_count_threshold",
+        "status_conflict",
+        "feed_status_conflict",
+    }
+    if any(tag in critical for tag in tags):
+        return True
+    return watched_player and "technical" in tags
+
+
+def _watched_player_tokens(plan: dict[str, Any]) -> set[str]:
+    text = _normalize_text(" ".join(_iter_text_values(plan, include_keys=True)))
+    return {token for token in text.split() if len(token) >= 4}
+
+
+def _player_is_watched(player_name: str | None, text: str, watched_tokens: set[str]) -> bool:
+    if not watched_tokens:
+        return False
+    player_tokens = {token for token in _normalize_text(player_name).split() if len(token) >= 4}
+    if player_tokens and player_tokens.intersection(watched_tokens):
+        return True
+    return any(token in text for token in watched_tokens if token in {"wembanyama", "edwards", "embiid", "anunoby"})
+
+
+def _player_name_from_pbp_row(row: dict[str, Any], payload: dict[str, Any]) -> str | None:
+    value = _first_value(
+        row,
+        payload,
+        (
+            "player_name",
+            "playerName",
+            "playerNameI",
+            "person_name",
+            "personName",
+            "athlete_name",
+            "athleteName",
+            "displayName",
+            "name",
+        ),
+    )
+    return str(value).strip() if value not in (None, "") else None
+
+
+def _active_player_names_from_live_state(live_state: dict[str, Any]) -> set[str]:
+    latest = live_state.get("latest_snapshot") if isinstance(live_state.get("latest_snapshot"), dict) else {}
+    payload = latest.get("payload_json") if isinstance(latest.get("payload_json"), dict) else latest
+    active_names: set[str] = set()
+    for node in _iter_dict_nodes(payload):
+        name = _first_value(
+            node,
+            {},
+            ("player_name", "playerName", "playerNameI", "person_name", "personName", "displayName", "name"),
+        )
+        status = _first_value(node, {}, ("status", "availability", "availability_status", "injury_status"))
+        normalized_status = _normalize_text(status)
+        if name not in (None, "") and normalized_status in {"active", "available", "ok", "playing"}:
+            active_names.add(_normalize_text(name))
+    return active_names
+
+
+def _iter_dict_nodes(value: Any):
+    if isinstance(value, dict):
+        yield value
+        for item in value.values():
+            yield from _iter_dict_nodes(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_dict_nodes(item)
+
+
+def _iter_text_values(value: Any, *, include_keys: bool):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if include_keys:
+                yield str(key)
+            yield from _iter_text_values(item, include_keys=include_keys)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _iter_text_values(item, include_keys=include_keys)
+    elif value not in (None, ""):
+        yield str(value)
+
+
+def _first_value(primary: dict[str, Any], secondary: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for mapping in (primary, secondary):
+        for key in keys:
+            value = mapping.get(key)
+            if value not in (None, ""):
+                return value
+    return None
+
+
+def _first_int(primary: dict[str, Any], secondary: dict[str, Any], keys: tuple[str, ...]) -> int | None:
+    for mapping in (primary, secondary):
+        for key in keys:
+            value = _int(mapping.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _int(value: Any) -> int | None:
+    try:
+        if value is None or value == "":
+            return None
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_text(value: Any) -> str:
+    raw = "".join(character.lower() if str(character).isalnum() else " " for character in str(value or ""))
+    return " ".join(raw.split())
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
 
 
 def _resolve_game(api_root: str, event_id: str, session_date: str) -> dict[str, Any]:

@@ -351,3 +351,96 @@ def test_strategy_plan_evaluator_blocks_pending_buy_intent_before_direct_mirror_
     assert result.blockers[0]["pending_intents"] == 1.0
     assert result.blockers[0]["direct_unresolved_exposure"] == 0.0
     assert result.blockers[0]["unresolved_exposure"] == 1.0
+
+
+def test_strategy_plan_evaluator_blocks_buy_after_player_status_shock_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="nba-sas-min-2026-05-10",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="sas-favorite-floor-rebound-v2",
+                family="favorite_floor_rebound",
+                side="Spurs",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-sas",
+                    "token_id": "token-sas",
+                    "side": "buy",
+                    "price": 0.18,
+                    "size": 6,
+                    "price_band": [0.1, 0.2],
+                    "requires_wembanyama_available": True,
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.18,
+            "player_status_shocks": [
+                {
+                    "player_name": "Victor Wembanyama",
+                    "event_index": 179,
+                    "tags": ["flagrant_type_2", "ejection", "feed_status_conflict"],
+                    "requires_strategy_plan_revision": True,
+                }
+            ],
+            "player_status_shock_count": 1,
+        },
+        portfolio_state={"open_positions": 0, "open_orders": 0},
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "player_status_shock_revision_required"
+    assert result.blockers[0]["shock_count"] == 1
+    assert result.blockers[0]["shock_tags"] == ["ejection", "feed_status_conflict", "flagrant_type_2"]
+    assert result.blockers[0]["player_names"] == ["Victor Wembanyama"]
+    assert result.blockers[0]["requires_strategy_plan_revision"] is True
+
+
+def test_strategy_plan_evaluator_allows_explicit_post_shock_revision_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="nba-sas-min-2026-05-10",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="min-post-shock-reopen-v1",
+                family="resistance_band_rebound_grid",
+                side="Timberwolves",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-min",
+                    "token_id": "token-min",
+                    "side": "buy",
+                    "price": 0.34,
+                    "size": 5,
+                    "price_band": [0.3, 0.4],
+                    "fresh_strategy_plan_after_player_status_shock": True,
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.34,
+            "player_status_shocks": [
+                {
+                    "player_name": "Victor Wembanyama",
+                    "tags": ["ejection"],
+                    "requires_strategy_plan_revision": True,
+                }
+            ],
+            "player_status_shock_count": 1,
+        },
+        portfolio_state={"open_positions": 0, "open_orders": 0},
+    )
+
+    assert result.intent_count == 1
+    assert result.blocked_count == 0
