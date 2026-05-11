@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import copy
+import json
+import os
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
+
+from pydantic import ValidationError
 
 from app.modules.agentic.contracts import (
     LLMModelRoutingDecision,
@@ -12,12 +17,15 @@ from app.modules.agentic.contracts import (
     LLMRuntimeTrace,
     LLMRuntimeTrigger,
 )
+from app.runtime.local_paths import repo_root, resolve_shared_root
 
 
 NANO_MODEL = "gpt-5.4-nano"
 MINI_MODEL = "gpt-5.4-mini"
 FRONTIER_MODEL = "gpt-5.5"
 ROUTING_RULES_VERSION = "llm_model_routing_2026-05-11"
+ARTIFACT_SCHEMA_VERSION = "llm_runtime_trace_artifact_v1"
+DEFAULT_OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 _TRIGGER_NAMESPACE = uuid.UUID("4f61cce7-2098-44d7-a59e-2b3c92a48f0f")
 _CRITICAL_TRIGGER_TYPES = {
@@ -430,6 +438,286 @@ def build_llm_runtime_trace(
     )
 
 
+def process_llm_runtime_trace(
+    trace: LLMRuntimeTrace,
+    *,
+    dispatch_enabled: bool = False,
+    artifact_root: str | Path | None = None,
+    session_date: str | None = None,
+    client: Any | None = None,
+    client_factory: Any | None = None,
+    api_key_env: str = DEFAULT_OPENAI_API_KEY_ENV,
+) -> tuple[LLMRuntimeTrace, dict[str, Any]]:
+    """Dispatch fail-closed when enabled, then persist the complete runtime trace artifact."""
+
+    dispatched = dispatch_llm_revision(
+        trace,
+        dispatch_enabled=dispatch_enabled,
+        client=client,
+        client_factory=client_factory,
+        api_key_env=api_key_env,
+    )
+    persistence = persist_llm_runtime_trace(
+        dispatched,
+        artifact_root=artifact_root,
+        session_date=session_date,
+    )
+    return dispatched, persistence
+
+
+def dispatch_llm_revision(
+    trace: LLMRuntimeTrace,
+    *,
+    dispatch_enabled: bool = False,
+    client: Any | None = None,
+    client_factory: Any | None = None,
+    api_key_env: str = DEFAULT_OPENAI_API_KEY_ENV,
+) -> LLMRuntimeTrace:
+    """Call the configured LLM only when explicitly enabled; every failure returns a skipped response."""
+
+    request = trace.revision_request
+    if request is None or not trace.triggers:
+        return trace.model_copy(
+            update={
+                "notes": "No LLM runtime trigger requires dispatch for this tick.",
+                "audit_only": not dispatch_enabled,
+            },
+            deep=True,
+        )
+
+    if not dispatch_enabled:
+        return _trace_with_skipped_response(
+            trace,
+            request=request,
+            reason="dispatch_disabled",
+            metadata={
+                "dispatch_enabled": False,
+                "openai_call_attempted": False,
+                "order_endpoint_call_allowed": False,
+            },
+        )
+
+    resolved_client = client
+    if resolved_client is None:
+        _load_dotenv_if_available()
+        if not str(os.getenv(api_key_env) or "").strip():
+            return _trace_with_skipped_response(
+                trace,
+                request=request,
+                reason=f"{api_key_env.lower()}_missing",
+                metadata={
+                    "dispatch_enabled": True,
+                    "openai_call_attempted": False,
+                    "openai_client_available": False,
+                    "order_endpoint_call_allowed": False,
+                },
+            )
+        try:
+            resolved_client = client_factory() if client_factory is not None else _resolve_openai_client()
+        except Exception as exc:  # noqa: BLE001
+            return _trace_with_skipped_response(
+                trace,
+                request=request,
+                reason=f"openai_client_unavailable:{_exception_detail(exc)}",
+                metadata={
+                    "dispatch_enabled": True,
+                    "openai_call_attempted": False,
+                    "openai_client_available": False,
+                    "order_endpoint_call_allowed": False,
+                },
+            )
+
+    if resolved_client is None:
+        return _trace_with_skipped_response(
+            trace,
+            request=request,
+            reason="openai_client_unavailable",
+            metadata={
+                "dispatch_enabled": True,
+                "openai_call_attempted": False,
+                "openai_client_available": False,
+                "order_endpoint_call_allowed": False,
+            },
+        )
+
+    try:
+        parsed, usage = _call_openai_revision(client=resolved_client, request=request)
+        response = _coerce_llm_revision_response(parsed)
+    except (ValidationError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        return _trace_with_skipped_response(
+            trace,
+            request=request,
+            reason=f"response_schema_validation_failed:{_exception_detail(exc)}",
+            metadata={
+                "dispatch_enabled": True,
+                "openai_call_attempted": True,
+                "openai_client_available": True,
+                "order_endpoint_call_allowed": False,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        return _trace_with_skipped_response(
+            trace,
+            request=request,
+            reason=f"openai_call_error:{_exception_detail(exc)}",
+            metadata={
+                "dispatch_enabled": True,
+                "openai_call_attempted": True,
+                "openai_client_available": True,
+                "order_endpoint_call_allowed": False,
+            },
+        )
+
+    response = response.model_copy(
+        update={
+            "request_id": request.request_id,
+            "selected_model": request.model_routing.selected_model,
+            "status": "response_recorded",
+            "skipped_reason": None,
+            "trace_metadata": {
+                **response.trace_metadata,
+                "dispatch_enabled": True,
+                "openai_call_attempted": True,
+                "openai_client_available": True,
+                "order_endpoint_call_allowed": False,
+                "strategy_plan_auto_replace_attempted": False,
+                "usage": usage,
+            },
+        },
+        deep=True,
+    )
+    return trace.model_copy(
+        update={
+            "revision_response": response,
+            "status": "response_recorded",
+            "audit_only": False,
+            "notes": "LLM revision response recorded; order authority remains with Janus validators and reviewed StrategyPlanJSON flow.",
+        },
+        deep=True,
+    )
+
+
+def persist_llm_runtime_trace(
+    trace: LLMRuntimeTrace,
+    *,
+    artifact_root: str | Path | None = None,
+    session_date: str | None = None,
+) -> dict[str, Any]:
+    resolved_day = _resolve_session_date(trace, session_date=session_date)
+    root = Path(artifact_root) if artifact_root is not None else default_llm_runtime_artifact_root()
+    root = root.expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    day_root = root / resolved_day
+    day_root.mkdir(parents=True, exist_ok=True)
+    timestamp = trace.created_at_utc.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    filename = f"{timestamp}_{_safe_filename(trace.event_id)}_{trace.trace_id[:8]}.json"
+    path = day_root / filename
+    now = datetime.now(timezone.utc)
+    response = trace.revision_response.model_dump(mode="json") if trace.revision_response else None
+    request = trace.revision_request.model_dump(mode="json") if trace.revision_request else None
+    payload = {
+        "schema_version": ARTIFACT_SCHEMA_VERSION,
+        "artifact_kind": "llm_runtime_trace",
+        "persisted_at_utc": now.isoformat(),
+        "session_date": resolved_day,
+        "event_id": trace.event_id,
+        "event_ids": [trace.event_id],
+        "trace_id": trace.trace_id,
+        "status": trace.status,
+        "response_status": response.get("status") if isinstance(response, dict) else None,
+        "trigger_count": trace.trigger_count,
+        "trigger_types": [trigger.trigger_type for trigger in trace.triggers],
+        "selected_model": trace.model_routing.selected_model,
+        "model_routing_decision": trace.model_routing.model_dump(mode="json"),
+        "trigger_list": [trigger.model_dump(mode="json") for trigger in trace.triggers],
+        "prompt_payload": request,
+        "response": response,
+        "trace": trace.model_dump(mode="json"),
+    }
+    _write_json(path, payload)
+    _append_jsonl(day_root / "llm_runtime_events.jsonl", {**_status_from_artifact_payload(payload), "path": str(path)})
+    return {
+        "enabled": True,
+        "ok": True,
+        "status": "persisted",
+        "artifact_schema_version": ARTIFACT_SCHEMA_VERSION,
+        "path": str(path),
+        "event_id": trace.event_id,
+        "event_ids": [trace.event_id],
+        "trace_id": trace.trace_id,
+        "trigger_count": trace.trigger_count,
+        "response_status": payload["response_status"],
+        "selected_model": trace.model_routing.selected_model,
+        "persisted_at_utc": now.isoformat(),
+    }
+
+
+def default_llm_runtime_artifact_root() -> Path:
+    return resolve_shared_root() / "artifacts" / "llm-runtime"
+
+
+def load_latest_llm_runtime_status(
+    *,
+    session_date: str | None,
+    event_ids: list[str],
+    artifact_root: str | Path | None = None,
+) -> dict[str, Any]:
+    normalized_event_ids = [event_id for event_id in dict.fromkeys(str(item).strip() for item in event_ids) if event_id]
+    resolved_day = session_date or datetime.now(timezone.utc).date().isoformat()
+    if not normalized_event_ids:
+        return {
+            "status": "not_requested",
+            "session_date": resolved_day,
+            "event_count": 0,
+            "items": [],
+            "artifact_root": str(Path(artifact_root).expanduser().resolve() if artifact_root else default_llm_runtime_artifact_root()),
+        }
+
+    root = Path(artifact_root) if artifact_root is not None else default_llm_runtime_artifact_root()
+    root = root.expanduser().resolve()
+    day_root = root / resolved_day
+    latest_by_event: dict[str, dict[str, Any]] = {}
+    if day_root.exists():
+        for path in sorted(day_root.glob("*.json")):
+            payload = _read_json(path)
+            if not isinstance(payload, dict):
+                continue
+            event_id = str(payload.get("event_id") or ((payload.get("trace") or {}).get("event_id") if isinstance(payload.get("trace"), dict) else "")).strip()
+            if not event_id:
+                continue
+            status_payload = _status_from_artifact_payload(payload)
+            status_payload["path"] = str(path)
+            latest_by_event[event_id] = status_payload
+
+    items: list[dict[str, Any]] = []
+    for event_id in normalized_event_ids:
+        item = latest_by_event.get(event_id)
+        if item is None:
+            items.append(
+                {
+                    "event_id": event_id,
+                    "status": "not_recorded",
+                    "path": None,
+                    "trace_id": None,
+                    "trigger_count": 0,
+                    "response_status": None,
+                    "selected_model": None,
+                }
+            )
+        else:
+            items.append(item)
+
+    recorded_count = sum(1 for item in items if item.get("status") != "not_recorded")
+    return {
+        "status": "recorded" if recorded_count == len(items) else ("partial" if recorded_count else "not_recorded"),
+        "session_date": resolved_day,
+        "event_count": len(items),
+        "recorded_event_count": recorded_count,
+        "items": items,
+        "artifact_root": str(root),
+    }
+
+
 def _make_trigger(
     *,
     event_id: str,
@@ -453,6 +741,181 @@ def _make_trigger(
         current_plan_stale_reason=current_plan_stale_reason,
         evidence=evidence,
     )
+
+
+def _trace_with_skipped_response(
+    trace: LLMRuntimeTrace,
+    *,
+    request: LLMRevisionRequest,
+    reason: str,
+    metadata: dict[str, Any],
+) -> LLMRuntimeTrace:
+    response = LLMRevisionResponse(
+        request_id=request.request_id,
+        selected_model=request.model_routing.selected_model,
+        status="skipped_unavailable",
+        skipped_reason=reason,
+        trace_metadata={
+            **metadata,
+            "strategy_plan_auto_replace_attempted": False,
+            "llm_never_calls_order_endpoints": True,
+        },
+    )
+    return trace.model_copy(
+        update={
+            "revision_response": response,
+            "status": "skipped_unavailable",
+            "audit_only": not bool(metadata.get("dispatch_enabled")),
+            "notes": f"LLM revision failed closed: {reason}.",
+        },
+        deep=True,
+    )
+
+
+def _resolve_openai_client() -> Any | None:
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None
+
+    _load_dotenv_if_available()
+    try:
+        return OpenAI()
+    except Exception:
+        return None
+
+
+def _load_dotenv_if_available() -> None:
+    try:
+        from dotenv import load_dotenv
+    except Exception:
+        return
+    load_dotenv(repo_root() / ".env", override=False)
+
+
+def _call_openai_revision(*, client: Any, request: LLMRevisionRequest) -> tuple[Any, dict[str, int]]:
+    prompt_payload = request.model_dump(mode="json")
+    system_prompt = _build_live_revision_system_prompt(request)
+    responses = getattr(client, "responses", None)
+    parser = getattr(responses, "parse", None)
+    if not callable(parser):
+        raise TypeError("OpenAI client does not expose responses.parse")
+    response = parser(
+        model=request.model_routing.selected_model,
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": json.dumps(prompt_payload, separators=(",", ":"), sort_keys=True, ensure_ascii=True)},
+        ],
+        text_format=LLMRevisionResponse,
+        reasoning={"effort": "medium"},
+        max_output_tokens=1800,
+        store=False,
+    )
+    parsed = getattr(response, "output_parsed", None)
+    if parsed is None:
+        parsed = response
+    return parsed, _usage_from_response(response)
+
+
+def _build_live_revision_system_prompt(request: LLMRevisionRequest) -> str:
+    return "\n".join(
+        [
+            str(request.prompt_contract.get("system_persona") or JANUS_LIVE_LLM_PROMPT_CONTRACT["system_persona"]),
+            "Use only the supplied JSON payload.",
+            "Return strict JSON matching LLMRevisionResponse.",
+            "Do not call tools, order endpoints, exchange endpoints, or external APIs.",
+            "Output StrategyPlanJSON/reconciliation actions only; Janus validators own all live-order authority.",
+        ]
+    )
+
+
+def _coerce_llm_revision_response(value: Any) -> LLMRevisionResponse:
+    if isinstance(value, LLMRevisionResponse):
+        return value
+    if hasattr(value, "model_dump") and callable(value.model_dump):
+        value = value.model_dump(mode="json")
+    if isinstance(value, str):
+        return LLMRevisionResponse.model_validate_json(value)
+    if isinstance(value, dict):
+        return LLMRevisionResponse.model_validate(value)
+    raise TypeError(f"unsupported LLM response type: {type(value).__name__}")
+
+
+def _usage_from_response(response: Any) -> dict[str, int]:
+    usage = getattr(response, "usage", None)
+    input_tokens = int(getattr(usage, "input_tokens", 0) or 0)
+    output_tokens = int(getattr(usage, "output_tokens", 0) or 0)
+    input_details = getattr(usage, "input_tokens_details", None)
+    output_details = getattr(usage, "output_tokens_details", None)
+    cached_input_tokens = int(getattr(input_details, "cached_tokens", 0) or 0)
+    reasoning_tokens = int(getattr(output_details, "reasoning_tokens", 0) or 0)
+    return {
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "output_tokens": output_tokens,
+        "reasoning_tokens": reasoning_tokens,
+    }
+
+
+def _resolve_session_date(trace: LLMRuntimeTrace, *, session_date: str | None) -> str:
+    request_day = trace.revision_request.session_date if trace.revision_request else None
+    return str(session_date or request_day or trace.created_at_utc.astimezone(timezone.utc).date().isoformat())
+
+
+def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    trace = payload.get("trace") if isinstance(payload.get("trace"), dict) else {}
+    response = payload.get("response") if isinstance(payload.get("response"), dict) else {}
+    model_routing = payload.get("model_routing_decision") if isinstance(payload.get("model_routing_decision"), dict) else {}
+    trigger_list = payload.get("trigger_list") if isinstance(payload.get("trigger_list"), list) else []
+    event_id = str(payload.get("event_id") or trace.get("event_id") or "").strip()
+    return {
+        "event_id": event_id,
+        "trace_id": payload.get("trace_id") or trace.get("trace_id"),
+        "status": payload.get("status") or trace.get("status"),
+        "response_status": payload.get("response_status") or response.get("status"),
+        "skipped_reason": response.get("skipped_reason"),
+        "trigger_count": int(payload.get("trigger_count") or trace.get("trigger_count") or 0),
+        "trigger_types": payload.get("trigger_types") or [item.get("trigger_type") for item in trigger_list if isinstance(item, dict)],
+        "selected_model": payload.get("selected_model") or model_routing.get("selected_model"),
+        "selected_tier": model_routing.get("selected_tier"),
+        "persisted_at_utc": payload.get("persisted_at_utc"),
+        "artifact_schema_version": payload.get("schema_version"),
+    }
+
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=_json_default), encoding="utf-8")
+
+
+def _append_jsonl(path: Path, payload: dict[str, Any]) -> None:
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True, default=_json_default))
+        handle.write("\n")
+
+
+def _read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if hasattr(value, "model_dump") and callable(value.model_dump):
+        return value.model_dump(mode="json")
+    return str(value)
+
+
+def _exception_detail(exc: Exception) -> str:
+    return " ".join(str(exc).split())[:500]
+
+
+def _safe_filename(value: str) -> str:
+    text = "".join(ch.lower() if ch.isalnum() else "-" for ch in str(value or "event"))
+    text = "-".join(part for part in text.split("-") if part)
+    return text[:96] or "event"
 
 
 def _quarter_end_evidence(live_state: dict[str, Any]) -> dict[str, Any] | None:
@@ -774,6 +1237,11 @@ __all__ = [
     "build_llm_prompt_contract",
     "build_llm_revision_request",
     "build_llm_runtime_trace",
+    "default_llm_runtime_artifact_root",
     "detect_llm_runtime_triggers",
+    "dispatch_llm_revision",
+    "load_latest_llm_runtime_status",
+    "persist_llm_runtime_trace",
+    "process_llm_runtime_trace",
     "route_llm_model",
 ]

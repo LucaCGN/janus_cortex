@@ -589,7 +589,7 @@ def test_player_status_shocks_from_live_state_tags_watched_sub_out_pytest() -> N
     assert shocks[0]["requires_strategy_plan_revision"] is True
 
 
-def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(monkeypatch) -> None:
+def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(monkeypatch, tmp_path) -> None:
     calls: list[dict[str, Any]] = []
     plan = {
         "market_id": "market-1",
@@ -693,9 +693,12 @@ def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(mo
         share_precision=3,
         auto_protect_manual_positions=True,
         manual_target_delta_cents=5.0,
+        llm_runtime_artifact_root=str(tmp_path / "llm-runtime"),
+        persist_llm_runtime_trace=True,
     )
 
     evaluate_calls = [call for call in calls if call["path"] == "/v1/events/nba-sas-min-2026-05-10/strategy-plan/evaluate"]
+    order_calls = [call for call in calls if call["path"] == "/v1/portfolio/orders" and call["method"] == "POST"]
     assert result["market_state"]["player_status_shock_count"] == 1
     assert result["market_state"]["player_status_shocks"][0]["tags"] == [
         "ejection",
@@ -709,9 +712,19 @@ def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(mo
     assert result["llm_runtime_trace"]["trigger_count"] == 1
     assert result["llm_runtime_trace"]["triggers"][0]["trigger_type"] == "player_status_shock"
     assert result["llm_runtime_trace"]["model_routing"]["selected_model"] == "gpt-5.5"
+    assert result["llm_runtime_trace"]["status"] == "skipped_unavailable"
+    assert result["llm_runtime_trace"]["revision_response"]["status"] == "skipped_unavailable"
+    assert result["llm_runtime_trace"]["revision_response"]["skipped_reason"] == "dispatch_disabled"
     assert result["llm_runtime_trace"]["revision_response"]["trace_metadata"]["openai_call_attempted"] is False
+    assert result["llm_runtime_trace"]["revision_response"]["trace_metadata"]["order_endpoint_call_allowed"] is False
+    assert result["llm_runtime_persistence"]["status"] == "persisted"
+    assert result["llm_runtime_status"]["persisted"] is True
+    assert result["llm_runtime_status"]["live_blocker"] == "llm_revision_unavailable"
+    assert (tmp_path / "llm-runtime" / "2026-05-10").exists()
+    assert order_calls == []
     assert evaluate_calls[0]["payload"]["market_state"]["player_status_shock_count"] == 1
     assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_trigger_count"] == 1
+    assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_status"]["response_status"] == "skipped_unavailable"
 
 
 def test_persist_orderbook_watch_ticks_records_sampled_outcomes_pytest(monkeypatch) -> None:

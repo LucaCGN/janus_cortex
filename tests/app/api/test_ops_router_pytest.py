@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 from pathlib import Path
 
@@ -292,6 +293,61 @@ def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_pat
     assert payload["strategy_plan_gate"]["status"] == "blocked"
     assert payload["strategy_plan_gate"]["missing_event_ids"] == ["event-missing"]
     assert payload["strategy_plan_gate"]["ready_for_strategy_evaluation"] is False
+
+
+def test_live_monitor_endpoint_exposes_latest_llm_runtime_status_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+    artifact_dir = local_root / "shared" / "artifacts" / "llm-runtime" / "2026-05-10"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "trace.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "event-123",
+                "trace_id": "trace-1",
+                "status": "skipped_unavailable",
+                "response_status": "skipped_unavailable",
+                "trigger_count": 1,
+                "trigger_types": ["quarter_end"],
+                "selected_model": "gpt-5.4-mini",
+                "model_routing_decision": {"selected_model": "gpt-5.4-mini", "selected_tier": "mini"},
+                "response": {"status": "skipped_unavailable", "skipped_reason": "dispatch_disabled"},
+                "persisted_at_utc": "2026-05-10T20:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "ready_for_live_minimum_orders": True,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+        },
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-10", "event_ids": ["event-123"], "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["llm_runtime_status"]["status"] == "recorded"
+    assert payload["llm_runtime_status"]["items"][0]["event_id"] == "event-123"
+    assert payload["llm_runtime_status"]["items"][0]["response_status"] == "skipped_unavailable"
+    assert payload["llm_runtime_status"]["items"][0]["skipped_reason"] == "dispatch_disabled"
 
 
 def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_path, monkeypatch) -> None:

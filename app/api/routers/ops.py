@@ -27,6 +27,7 @@ from app.modules.agentic.contracts import (
     WatchlistRequest,
 )
 from app.modules.agentic.engine import evaluate_strategy_plan
+from app.modules.agentic.llm_runtime import load_latest_llm_runtime_status
 from app.modules.agentic.ops_checks import build_integrity_snapshot
 from app.modules.agentic.repository import (
     get_agentic_database_status,
@@ -133,6 +134,10 @@ def run_ops_live_monitor(
         direct_trade_token_ids=direct_trade_token_ids,
     )
     strategy_plan_gate = _build_strategy_plan_gate(payload.event_ids, day=payload.session_date)
+    llm_runtime_status = load_latest_llm_runtime_status(
+        session_date=payload.session_date,
+        event_ids=payload.event_ids,
+    )
     recorded = record_ops_stage(
         "live-monitor",
         {
@@ -140,6 +145,7 @@ def run_ops_live_monitor(
             "ops_status": ops_status,
             "integrity": integrity,
             "strategy_plan_gate": strategy_plan_gate,
+            "llm_runtime_status": llm_runtime_status,
         },
         day=payload.session_date,
     )
@@ -148,6 +154,7 @@ def run_ops_live_monitor(
         "ops_status": ops_status,
         "integrity": integrity,
         "strategy_plan_gate": strategy_plan_gate,
+        "llm_runtime_status": llm_runtime_status,
     }
 
 

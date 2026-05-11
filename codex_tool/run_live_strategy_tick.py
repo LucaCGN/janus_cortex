@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.modules.agentic.llm_runtime import build_llm_runtime_trace
+from app.modules.agentic.contracts import LLMRuntimeTrace
+from app.modules.agentic.llm_runtime import build_llm_runtime_trace, process_llm_runtime_trace
 
 try:
     from codex_tool._client import api_json, base_parser, exit_for_response
@@ -68,6 +69,16 @@ def main() -> None:
         action="store_true",
         help="After reviewed operator intervention detection, submit the generated candidate StrategyPlanJSON as the current plan.",
     )
+    parser.add_argument(
+        "--enable-llm-dispatch",
+        action="store_true",
+        help="Call the routed internal LLM when runtime triggers exist. Disabled by default; skipped traces are still persisted.",
+    )
+    parser.add_argument(
+        "--llm-runtime-artifact-root",
+        default=None,
+        help="Override root for LLM runtime trace artifacts. Defaults to local/shared/artifacts/llm-runtime.",
+    )
     args = parser.parse_args()
 
     result = run_tick(
@@ -87,6 +98,8 @@ def main() -> None:
         auto_protect_manual_positions=args.auto_protect_manual_positions,
         manual_target_delta_cents=args.manual_target_delta_cents,
         submit_candidate_strategy_plan=args.submit_candidate_strategy_plan,
+        enable_llm_dispatch=args.enable_llm_dispatch,
+        llm_runtime_artifact_root=args.llm_runtime_artifact_root,
     )
     exit_for_response(result)
 
@@ -109,6 +122,8 @@ def run_tick(
     auto_protect_manual_positions: bool,
     manual_target_delta_cents: float,
     submit_candidate_strategy_plan: bool = False,
+    enable_llm_dispatch: bool = False,
+    llm_runtime_artifact_root: str | None = None,
 ) -> dict[str, Any]:
     integrity = api_json(
         api_root,
@@ -159,6 +174,9 @@ def run_tick(
             auto_protect_manual_positions=auto_protect_manual_positions,
             manual_target_delta_cents=manual_target_delta_cents,
             submit_candidate_strategy_plan=submit_candidate_strategy_plan,
+            enable_llm_dispatch=enable_llm_dispatch,
+            llm_runtime_artifact_root=llm_runtime_artifact_root,
+            persist_llm_runtime_trace=True,
         )
         events.append(event_result)
         all_ok = all_ok and bool(event_result.get("ok", True))
@@ -203,6 +221,9 @@ def _run_event_tick(
     auto_protect_manual_positions: bool,
     manual_target_delta_cents: float,
     submit_candidate_strategy_plan: bool = False,
+    enable_llm_dispatch: bool = False,
+    llm_runtime_artifact_root: str | None = None,
+    persist_llm_runtime_trace: bool = False,
 ) -> dict[str, Any]:
     context = api_json(
         api_root,
@@ -370,6 +391,19 @@ def _run_event_tick(
         ml_pbp_evidence={"status": "placeholder_schema_ready", "signals": []},
         source=f"{source}:llm_runtime_detector",
     )
+    llm_runtime_persistence: dict[str, Any] = {
+        "enabled": False,
+        "ok": True,
+        "status": "not_persisted",
+        "reason": "persistence_disabled_for_direct_call",
+    }
+    if persist_llm_runtime_trace:
+        llm_runtime_trace, llm_runtime_persistence = process_llm_runtime_trace(
+            llm_runtime_trace,
+            dispatch_enabled=enable_llm_dispatch,
+            artifact_root=llm_runtime_artifact_root,
+            session_date=session_date,
+        )
     market_state["llm_runtime_trigger_count"] = llm_runtime_trace.trigger_count
     market_state["llm_runtime_triggers"] = [
         {
@@ -381,6 +415,11 @@ def _run_event_tick(
         }
         for trigger in llm_runtime_trace.triggers
     ]
+    market_state["llm_runtime_status"] = _llm_runtime_status_summary(
+        llm_runtime_trace,
+        persistence=llm_runtime_persistence,
+        dispatch_enabled=enable_llm_dispatch,
+    )
     shadow = api_json(
         api_root,
         "POST",
@@ -405,6 +444,9 @@ def _run_event_tick(
             live_blocked_by.append("integrity_not_ready_for_live_minimum_orders")
         if direct_trade_persistence.get("ok") is False:
             live_blocked_by.append("direct_clob_trade_persistence_failed")
+        llm_blocker = _llm_runtime_live_blocker(llm_runtime_trace)
+        if llm_blocker:
+            live_blocked_by.append(llm_blocker)
         if not live_blocked_by:
             live = api_json(
                 api_root,
@@ -438,9 +480,44 @@ def _run_event_tick(
         "live_blocked_by": live_blocked_by,
         "operator_reaction": operator_reaction,
         "llm_runtime_trace": llm_runtime_trace.model_dump(mode="json"),
+        "llm_runtime_persistence": llm_runtime_persistence,
+        "llm_runtime_status": market_state["llm_runtime_status"],
         "orderbook_results": _summarize_orderbooks(orderbook_results),
         "watch_persistence": watch_persistence,
     }
+
+
+def _llm_runtime_status_summary(
+    trace: LLMRuntimeTrace,
+    *,
+    persistence: dict[str, Any],
+    dispatch_enabled: bool,
+) -> dict[str, Any]:
+    response = trace.revision_response
+    return {
+        "trace_id": trace.trace_id,
+        "event_id": trace.event_id,
+        "status": trace.status,
+        "trigger_count": trace.trigger_count,
+        "trigger_types": [trigger.trigger_type for trigger in trace.triggers],
+        "selected_model": trace.model_routing.selected_model,
+        "selected_tier": trace.model_routing.selected_tier,
+        "dispatch_enabled": dispatch_enabled,
+        "response_status": response.status if response else None,
+        "skipped_reason": response.skipped_reason if response else None,
+        "persisted": bool(persistence.get("ok")) and persistence.get("status") == "persisted",
+        "artifact_path": persistence.get("path"),
+        "live_blocker": _llm_runtime_live_blocker(trace),
+    }
+
+
+def _llm_runtime_live_blocker(trace: LLMRuntimeTrace) -> str | None:
+    if not any(trigger.requires_revision for trigger in trace.triggers):
+        return None
+    response = trace.revision_response
+    if response is None or response.status != "response_recorded":
+        return "llm_revision_unavailable"
+    return "llm_revision_review_required"
 
 
 def _submit_candidate_strategy_plan(

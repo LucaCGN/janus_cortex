@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import json
+from types import SimpleNamespace
+
 from app.modules.agentic.contracts import LLMRevisionRequest, LLMRuntimeTrigger
 from app.modules.agentic.llm_runtime import (
     FRONTIER_MODEL,
     MINI_MODEL,
     build_llm_prompt_contract,
     build_llm_revision_request,
+    build_llm_runtime_trace,
     detect_llm_runtime_triggers,
+    load_latest_llm_runtime_status,
+    process_llm_runtime_trace,
     route_llm_model,
 )
 
@@ -141,3 +147,154 @@ def test_prompt_contract_and_revision_request_include_safety_sections_pytest() -
     assert "operator_sizing_policy" in request.prompt_contract["required_input_sections"]
     assert prompt_contract["required_json_output_schema"]["revised_strategy_plan"] == "StrategyPlanJSON or null"
     assert prompt_contract["authority_boundaries"][0] == "The LLM never calls order endpoints."
+
+
+def test_quarter_end_runtime_trace_persists_to_artifact_pytest(tmp_path) -> None:
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+        source="pytest",
+    )
+
+    trace, persistence = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=False,
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert trace.status == "skipped_unavailable"
+    assert trace.revision_response is not None
+    assert trace.revision_response.skipped_reason == "dispatch_disabled"
+    assert persistence["status"] == "persisted"
+    payload = json.loads((tmp_path / "llm-runtime" / "2026-05-11").glob("*.json").__next__().read_text())
+    assert payload["event_id"] == "nba-det-cle-2026-05-11"
+    assert payload["trigger_types"] == ["quarter_end"]
+    assert payload["model_routing_decision"]["selected_model"] == MINI_MODEL
+    assert payload["prompt_payload"]["event_id"] == "nba-det-cle-2026-05-11"
+    assert payload["response"]["status"] == "skipped_unavailable"
+
+
+def test_missing_openai_key_records_skipped_unavailable_pytest(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("JANUS_TEST_OPENAI_KEY", raising=False)
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+    )
+
+    trace, persistence = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+        api_key_env="JANUS_TEST_OPENAI_KEY",
+    )
+
+    assert persistence["ok"] is True
+    assert trace.status == "skipped_unavailable"
+    assert trace.revision_response is not None
+    assert trace.revision_response.skipped_reason == "janus_test_openai_key_missing"
+    assert trace.revision_response.trace_metadata["openai_call_attempted"] is False
+
+
+def test_valid_mocked_llm_response_is_schema_validated_and_stored_pytest(tmp_path) -> None:
+    class FakeResponses:
+        def parse(self, **kwargs):
+            request_id = json.loads(kwargs["input"][1]["content"])["request_id"]
+            return SimpleNamespace(
+                output_parsed={
+                    "schema_version": "llm_revision_response_v1",
+                    "request_id": request_id,
+                    "status": "response_recorded",
+                    "selected_model": kwargs["model"],
+                    "revised_strategy_plan": None,
+                    "reconciliation_actions": [{"action": "no_new_entry", "reason": "test"}],
+                    "blocked_actions": [],
+                    "confidence": 0.73,
+                    "skipped_reason": None,
+                    "trace_metadata": {"mock": True},
+                },
+                usage=SimpleNamespace(input_tokens=11, output_tokens=7),
+            )
+
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+    )
+
+    trace, persistence = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FakeResponses()),
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert trace.status == "response_recorded"
+    assert trace.revision_response is not None
+    assert trace.revision_response.status == "response_recorded"
+    assert trace.revision_response.confidence == 0.73
+    assert trace.revision_response.trace_metadata["openai_call_attempted"] is True
+    assert trace.revision_response.trace_metadata["order_endpoint_call_allowed"] is False
+    assert persistence["response_status"] == "response_recorded"
+    payload = json.loads((tmp_path / "llm-runtime" / "2026-05-11").glob("*.json").__next__().read_text())
+    assert payload["response"]["trace_metadata"]["usage"]["input_tokens"] == 11
+
+
+def test_invalid_mocked_llm_response_fails_closed_pytest(tmp_path) -> None:
+    class FakeResponses:
+        def parse(self, **kwargs):
+            return SimpleNamespace(output_parsed={"status": "response_recorded"}, usage=SimpleNamespace())
+
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+    )
+
+    trace, persistence = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FakeResponses()),
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert persistence["status"] == "persisted"
+    assert trace.status == "skipped_unavailable"
+    assert trace.revision_response is not None
+    assert trace.revision_response.skipped_reason.startswith("response_schema_validation_failed:")
+    assert trace.revision_response.trace_metadata["order_endpoint_call_allowed"] is False
+
+
+def test_latest_llm_runtime_status_loads_persisted_event_trace_pytest(tmp_path) -> None:
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+    )
+    process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=False,
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    status = load_latest_llm_runtime_status(
+        session_date="2026-05-11",
+        event_ids=["nba-det-cle-2026-05-11"],
+        artifact_root=tmp_path / "llm-runtime",
+    )
+
+    assert status["status"] == "recorded"
+    assert status["items"][0]["event_id"] == "nba-det-cle-2026-05-11"
+    assert status["items"][0]["response_status"] == "skipped_unavailable"
+    assert status["items"][0]["trigger_types"] == ["quarter_end"]
