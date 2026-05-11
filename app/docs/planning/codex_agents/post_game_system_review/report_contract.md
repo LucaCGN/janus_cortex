@@ -16,6 +16,7 @@ Every postgame report must use this structure.
 - realized portfolio impact
 - whether Janus was flat or exposed at end of review
 - largest win/loss drivers
+- whether operator/manual intervention or Janus algorithmic logic caused the largest loss driver
 - biggest strategy insight
 - biggest system failure
 - one-sentence readiness for next live slate
@@ -29,6 +30,7 @@ One section per game:
 - live market path and major price bands
 - key player, rotation, injury, foul, pace, or run context
 - manual interventions
+- whether manual interventions helped, hurt, or were untestable versus the system strategy
 - what Janus did
 - what Janus should have done
 - whether the game creates a new hypothesis for backtest/live shadow
@@ -72,10 +74,14 @@ Required checks:
 Explain final-game context using local data and web research when needed:
 
 - decisive game dynamics
+- player-status shocks such as injury, foul trouble, ejection, rotation changes, or starter/bench availability
 - market overreaction or underreaction
 - contextual factors Janus did not model
 - price bands worth testing
+- small-target opportunities such as `+1c`, `+2c`, or `10%` mean-reversion/repricing moves
 - strategy families that should have captured the move
+
+If `postgame_operator_observations_YYYY-MM-DD.md` exists, include an `Operator Observations Review` subsection that verifies, rejects, or partially supports each operator hypothesis. When the operator observation conflicts with local Janus data, identify whether the conflict is due to operator error, stale local data, missing provider context, or missing strategy instrumentation.
 
 ## Development Handoff
 
@@ -88,6 +94,13 @@ Write exact tasks:
 - expected behavior
 - likely code/docs/artifacts to inspect
 - test or replay requirement
+
+Include high-frequency and ML-feature tasks when supported by the day's evidence:
+
+- orderbook-depth and latency capture needed to replay micro-grid/micro-scalp behavior;
+- deterministic microstructure lane ideas for `+1c` to `10%` short-target trades;
+- play-by-play tagging and player-role weighting needed for short-horizon price-impact ML;
+- whether these tasks are live-minimum-size, shadow-only, replay-only, or research-only.
 
 ## Status Update Text
 

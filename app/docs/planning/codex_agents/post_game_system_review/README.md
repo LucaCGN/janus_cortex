@@ -18,6 +18,7 @@ Required reads:
 - `app\docs\planning\codex_agent_automation_prompts.md`
 - `app\docs\planning\codex_agents\post_game_system_review\report_contract.md`
 - `local\shared\handoffs\daily-live-validation\status.md`
+- `local\shared\reports\daily-live-validation\postgame_operator_observations_YYYY-MM-DD.md` when present
 - `local\shared\reports\daily-live-validation\pregame_research_YYYY-MM-DD.md`
 - `local\shared\reports\daily-live-validation\live_test_plan_YYYY-MM-DD.md`
 - `local\shared\artifacts\daily-live-validation\YYYY-MM-DD\`
@@ -34,6 +35,8 @@ python codex_tool\run_integrity_check.py --session-date <YYYY-MM-DD> --account-i
 ```
 
 Use `codex_tool\export_event_context.py` for every reviewed game when available. Use web research when local data is insufficient to explain injuries, rotations, final game context, market movement, or missed opportunities.
+
+Operator observations are not optional when present. Treat them as hypotheses and human-in-the-loop context to verify against direct CLOB truth, local play-by-play, StrategyPlanJSON revisions, watch-session ticks, and web research. If operator observations conflict with local Janus data, report the conflict explicitly and route a data-capture or context gap.
 
 ## Required Analysis
 
@@ -90,6 +93,14 @@ Use the same research discipline as pregame, but with final-game evidence:
 - Which price bands or score states produced opportunity?
 - Which Janus strategy should have captured it?
 - Was failure caused by logic, missing strategy coverage, stale data, CLOB execution, portfolio reconciliation, or missing LLM context?
+
+Also evaluate operator-declared lessons:
+
+- whether operator/manual intervention caused more loss than the active algorithm;
+- whether the live StrategyPlanJSON was too restrictive after the game dynamic changed;
+- whether small-target microstructure trades such as `+1c` or `10%` rebounds were available;
+- whether full orderbook depth and latency capture were sufficient to replay high-frequency behavior;
+- whether play-by-play/player-role tags should be added as ML/LLM inputs for short-horizon price-impact modeling.
 
 Write a development handoff that is implementable:
 
