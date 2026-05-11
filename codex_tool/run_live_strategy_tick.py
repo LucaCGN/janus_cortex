@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 try:
@@ -378,6 +378,7 @@ def _auto_protect_direct_positions(
         "covered_positions": [],
         "position_reactions": [],
         "revision_requests": [],
+        "candidate_strategy_plan_required": False,
         "intervention_records": [],
     }
     if not enabled:
@@ -537,7 +538,165 @@ def _auto_protect_direct_positions(
             },
         )
         reaction["intervention_records"].append(intervention)
+    candidate_plan = _operator_position_strategy_plan_candidate(
+        event_id=event_id,
+        plan=plan,
+        position_reactions=reaction["position_reactions"],
+        source=source,
+    )
+    reaction["candidate_strategy_plan_required"] = bool(reaction["revision_requests"])
+    if candidate_plan is not None:
+        reaction["candidate_strategy_plan"] = candidate_plan
     return reaction
+
+
+def _operator_position_strategy_plan_candidate(
+    *,
+    event_id: str,
+    plan: dict[str, Any],
+    position_reactions: list[dict[str, Any]],
+    source: str,
+) -> dict[str, Any] | None:
+    if not position_reactions:
+        return None
+    market_id = str(plan.get("market_id") or "").strip()
+    if not market_id:
+        return None
+
+    now = datetime.now(timezone.utc)
+    outcome_lookup = _plan_outcome_lookup(plan)
+    active_strategies: list[dict[str, Any]] = []
+    portfolio_reconciliation: list[dict[str, Any]] = []
+    for index, reaction in enumerate(position_reactions, start=1):
+        token_id = str(reaction.get("token_id") or "").strip()
+        if not token_id:
+            continue
+        outcome_ref = outcome_lookup.get(token_id) or {}
+        outcome_id = str(outcome_ref.get("outcome_id") or "").strip()
+        outcome_label = str(reaction.get("outcome_label") or outcome_id or token_id).strip()
+        strategy_suffix = _safe_slug(outcome_label or token_id)
+        revision_request = reaction.get("revision_request") if isinstance(reaction.get("revision_request"), dict) else {}
+        current_position = revision_request.get("current_position") if isinstance(revision_request, dict) else {}
+        if not isinstance(current_position, dict):
+            current_position = {}
+        position_size = _float(reaction.get("position_size"))
+        avg_price = _float(current_position.get("avg_price"))
+        open_sell_size = _float(reaction.get("open_sell_size")) or 0.0
+        uncovered_size = _float(reaction.get("uncovered_size")) or 0.0
+        active_strategies.append(
+            {
+                "strategy_id": f"operator-position-management-{strategy_suffix}-{index}",
+                "family": "operator_position_management",
+                "side": outcome_label or "operator_position",
+                "budget_usd": 0.0,
+                "max_positions": 0,
+                "entry_rules": {
+                    "entry_disabled": True,
+                    "no_new_entry": True,
+                    "side": "buy",
+                    "order_type": "limit",
+                    "market_id": str(outcome_ref.get("market_id") or market_id),
+                    "outcome_id": outcome_id,
+                    "token_id": token_id,
+                    "price": avg_price,
+                    "size": 0.0,
+                    "max_open_positions": 0,
+                    "reason": "operator_position_adopted_position_management_only",
+                    "revision_request_reason": revision_request.get("reason"),
+                },
+                "exit_rules": {
+                    "position_management_only": True,
+                    "current_position_size": position_size,
+                    "current_position_avg_price": avg_price,
+                    "covered_by_open_sell_size": open_sell_size,
+                    "uncovered_size": uncovered_size,
+                    "target_required": uncovered_size > 1e-9,
+                    "do_not_hold_to_final_without_fresh_revision": True,
+                },
+                "stop_rules": {
+                    "manual_or_llm_review_required": True,
+                    "stop_order_autonomy": "disabled_until_revision",
+                },
+                "hedge_rules": {
+                    "opposite_side_only_if_locks_profit_or_reduces_marked_loss": True,
+                    "new_bilateral_inventory_disabled": True,
+                },
+                "revision_triggers": [
+                    {"type": "operator_intervention_detected", "required": True},
+                    {"type": "target_fill_or_cancel", "required": True},
+                    {"type": "player_status_shock", "required": True},
+                    {"type": "quarter_end", "required": True},
+                    {"type": "score_gap_6_plus", "required": True},
+                    {"type": "clob_move_without_scoreboard_driver", "required": True},
+                ],
+                "shadow_flags": {
+                    "shadow_only": True,
+                    "execution_mode": "position_management_only",
+                    "requires_review_before_live": True,
+                },
+            }
+        )
+        portfolio_reconciliation.append(
+            {
+                "action": "adopt",
+                "reason": "operator_intervention_detected",
+                "token_id": token_id,
+                "outcome_id": outcome_id,
+                "outcome_label": outcome_label,
+                "position_size": position_size,
+                "open_sell_size": open_sell_size,
+                "uncovered_size": uncovered_size,
+                "no_new_entry": True,
+                "requires_strategy_plan_revision": True,
+            }
+        )
+
+    if not active_strategies:
+        return None
+    previous_strategy_ids = [
+        str(strategy.get("strategy_id"))
+        for strategy in plan.get("active_strategies") or []
+        if str(strategy.get("strategy_id") or "").strip()
+    ]
+    return {
+        "schema_version": "strategy_plan_v1",
+        "event_id": event_id,
+        "market_id": market_id,
+        "generated_at_utc": now.isoformat(),
+        "valid_until_utc": (now + timedelta(minutes=30)).isoformat(),
+        "plan_owner": "system",
+        "context_summary": {
+            "source": source,
+            "revision_owner": "janus_internal_reactor_v0",
+            "revision_source": "operator_position_reaction",
+            "previous_plan_owner": plan.get("plan_owner"),
+            "previous_strategy_ids": previous_strategy_ids,
+            "direct_position_count": len(position_reactions),
+            "no_new_entry": True,
+            "position_management_only": True,
+        },
+        "active_strategies": active_strategies,
+        "trigger_conditions": [
+            {
+                "type": "operator_intervention_detected",
+                "requires_strategy_plan_revision": True,
+                "disable_new_entries": True,
+            }
+        ],
+        "portfolio_reconciliation": portfolio_reconciliation,
+        "explainability": {
+            "summary": "Candidate plan adopts detected direct CLOB positions and disables fresh buys until reviewed.",
+            "invalidates_previous_entry_families": True,
+            "requires_operator_or_llm_review": True,
+        },
+    }
+
+
+def _safe_slug(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    chars = [ch if ch.isalnum() else "-" for ch in normalized]
+    slug = "-".join(part for part in "".join(chars).split("-") if part)
+    return (slug or "position")[:48]
 
 
 def _persist_orderbook_watch_ticks(

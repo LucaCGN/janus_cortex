@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.modules.agentic.contracts import StrategyPlan
 from codex_tool import run_live_strategy_tick as live_tick
 
 
@@ -60,6 +61,14 @@ def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> 
     intervention_calls = [call for call in calls if call["path"] == "/v1/operator/interventions/reconcile"]
     assert result["submitted_orders"] == [{"ok": True, "status": "submitted", "external_order_id": "0xabc"}]
     assert result["intervention_records"] == [{"ok": True, "status": "recorded"}]
+    assert result["candidate_strategy_plan_required"] is True
+    candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
+    assert candidate.plan_owner == "system"
+    assert candidate.context_summary["position_management_only"] is True
+    assert candidate.active_strategies[0].family == "operator_position_management"
+    assert candidate.active_strategies[0].entry_rules["entry_disabled"] is True
+    assert candidate.active_strategies[0].shadow_flags["shadow_only"] is True
+    assert candidate.portfolio_reconciliation[0]["action"] == "adopt"
     assert len(order_calls) == 1
     assert len(intervention_calls) == 1
     order_payload = order_calls[0]["payload"]
@@ -132,6 +141,9 @@ def test_auto_protect_direct_position_skips_when_target_already_covers_pytest(mo
 
     assert result["submitted_orders"] == []
     assert result["covered_positions"] == [{"token_id": "token-sas", "position_size": 5.0, "open_sell_size": 5.0}]
+    candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
+    assert candidate.active_strategies[0].exit_rules["target_required"] is False
+    assert candidate.portfolio_reconciliation[0]["open_sell_size"] == 5.0
     assert calls == []
 
 
