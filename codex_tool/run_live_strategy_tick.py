@@ -230,6 +230,15 @@ def _run_event_tick(
             live_state=live_state,
         )
 
+    watch_persistence = _persist_orderbook_watch_ticks(
+        api_root=api_root,
+        event_id=event_id,
+        plan=plan,
+        orderbooks=orderbook_results,
+        source=source,
+        game=game,
+        cadence_ms=max(0, int(orderbook_sample_interval_sec * 1000)),
+    )
     portfolio_state = {
         "open_orders": _direct_count(context, "direct_open_order_count"),
         "open_positions": _direct_count(context, "direct_open_position_count"),
@@ -335,6 +344,7 @@ def _run_event_tick(
         "live_blocked_by": live_blocked_by,
         "operator_reaction": operator_reaction,
         "orderbook_results": _summarize_orderbooks(orderbook_results),
+        "watch_persistence": watch_persistence,
     }
 
 
@@ -474,6 +484,138 @@ def _auto_protect_direct_positions(
     return reaction
 
 
+def _persist_orderbook_watch_ticks(
+    *,
+    api_root: str,
+    event_id: str,
+    plan: dict[str, Any],
+    orderbooks: dict[str, Any],
+    source: str,
+    game: dict[str, Any],
+    cadence_ms: int | None,
+) -> dict[str, Any]:
+    if not orderbooks:
+        return {"ok": True, "skipped": True, "reason": "no_orderbooks_sampled", "tick_count": 0}
+    watch_session_key = _watch_session_key_for_event(event_id)
+    session = api_json(
+        api_root,
+        "POST",
+        "/v1/watchlists/sessions",
+        {
+            "watch_session_id": watch_session_key,
+            "event_key": event_id,
+            "category": "nba",
+            "passive_only": True,
+            "cadence_ms": cadence_ms,
+            "reason": "live_strategy_tick_orderbook_capture",
+            "metadata": {
+                "source": source,
+                "event_id": event_id,
+                "game_id": game.get("game_id"),
+                "market_id": plan.get("market_id"),
+                "capture_owner": "run_live_strategy_tick",
+            },
+        },
+    )
+    db_persistence = session.get("db_persistence") if isinstance(session.get("db_persistence"), dict) else {}
+    watch_session_id = db_persistence.get("watch_session_id")
+    outcome_lookup = _plan_outcome_lookup(plan)
+    ticks = [
+        tick
+        for outcome_id, payload in orderbooks.items()
+        if (
+            tick := _orderbook_watch_tick_payload(
+                event_id=event_id,
+                outcome_id=outcome_id,
+                payload=payload,
+                outcome_lookup=outcome_lookup,
+                source=source,
+                watch_session_key=watch_session_key,
+                watch_session_id=watch_session_id,
+            )
+        )
+        is not None
+    ]
+    tick_result: dict[str, Any] = {"ok": True, "tick_count": 0, "skipped": True}
+    if ticks:
+        tick_result = api_json(
+            api_root,
+            "POST",
+            "/v1/watchlists/orderbook-ticks",
+            {
+                "source": f"{source}:strategy_tick_orderbook",
+                "ticks": ticks,
+            },
+        )
+    session_ok = bool(session.get("ok", True)) and bool(db_persistence.get("ok", True))
+    ticks_ok = bool(tick_result.get("ok", True)) and bool((tick_result.get("db_persistence") or {}).get("ok", True))
+    return {
+        "ok": session_ok and ticks_ok,
+        "watch_session_key": watch_session_key,
+        "watch_session_id": watch_session_id,
+        "tick_count": len(ticks),
+        "session": session,
+        "orderbook_ticks": tick_result,
+    }
+
+
+def _orderbook_watch_tick_payload(
+    *,
+    event_id: str,
+    outcome_id: str,
+    payload: dict[str, Any],
+    outcome_lookup: dict[str, dict[str, str]],
+    source: str,
+    watch_session_key: str,
+    watch_session_id: str | None,
+) -> dict[str, Any] | None:
+    snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
+    best_bid = _float(snapshot.get("best_bid"))
+    best_ask = _float(snapshot.get("best_ask"))
+    if best_bid is None and best_ask is None:
+        return None
+    spread = _float(snapshot.get("spread"))
+    if spread is None and best_bid is not None and best_ask is not None:
+        spread = round(max(0.0, best_ask - best_bid), 6)
+    mid_price = _float(snapshot.get("mid_price"))
+    if mid_price is None and best_bid is not None and best_ask is not None:
+        mid_price = round((best_bid + best_ask) / 2.0, 6)
+    source_at = _parse_dt(snapshot.get("captured_at"))
+    captured_at = datetime.now(timezone.utc)
+    outcome_ref = outcome_lookup.get(str(outcome_id)) or {}
+    return {
+        "event_key": event_id,
+        "market_id": outcome_ref.get("market_id") or snapshot.get("market_id"),
+        "outcome_id": outcome_id,
+        "token_id": outcome_ref.get("token_id") or snapshot.get("token_id"),
+        "captured_at_utc": captured_at.isoformat(),
+        "source_timestamp_utc": source_at.isoformat() if source_at is not None else None,
+        "best_bid": best_bid,
+        "best_ask": best_ask,
+        "spread": spread,
+        "mid_price": mid_price,
+        "bid_depth": _float(snapshot.get("bid_depth")),
+        "ask_depth": _float(snapshot.get("ask_depth")),
+        "source_latency_ms": max(0.0, (captured_at - source_at).total_seconds() * 1000.0) if source_at is not None else None,
+        "ingest_latency_ms": 0.0,
+        "levels": {
+            "bids": payload.get("bids") or [],
+            "asks": payload.get("asks") or [],
+            "levels_count": payload.get("levels_count"),
+        },
+        "raw": {
+            "source": source,
+            "capture_owner": "run_live_strategy_tick",
+            "event_id": event_id,
+            "watch_session_key": watch_session_key,
+            "watch_session_id": watch_session_id,
+            "orderbook_snapshot_id": snapshot.get("orderbook_snapshot_id"),
+            "outcome_ref": outcome_ref,
+            "latest": payload,
+        },
+    }
+
+
 def _pending_intent_summary(
     *,
     api_root: str,
@@ -572,8 +714,17 @@ def _plan_outcome_lookup(plan: dict[str, Any]) -> dict[str, dict[str, str]]:
         outcome_id = str(entry_rules.get("outcome_id") or "").strip()
         strategy_market_id = str(entry_rules.get("market_id") or market_id).strip()
         if token_id and outcome_id and strategy_market_id:
-            lookup[token_id] = {"market_id": strategy_market_id, "outcome_id": outcome_id}
+            ref = {"market_id": strategy_market_id, "outcome_id": outcome_id, "token_id": token_id}
+            lookup[token_id] = ref
+            lookup[outcome_id] = ref
     return lookup
+
+
+def _watch_session_key_for_event(event_key: str) -> str:
+    normalized = str(event_key or "").strip()
+    safe = "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "-" for ch in normalized)
+    safe = safe.strip("-")[:180]
+    return f"watch-{safe or 'unknown'}"
 
 
 def _open_sell_size_for_token(open_orders: list[dict[str, Any]], token_id: str) -> float:

@@ -224,3 +224,85 @@ def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest
     assert portfolio_state["open_orders"] == 0
     assert portfolio_state["open_positions"] == 0
     assert portfolio_state["pending_intents"] == 1
+
+
+def test_persist_orderbook_watch_ticks_records_sampled_outcomes_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"api_root": api_root, "method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/watchlists/sessions":
+            return {
+                "ok": True,
+                "status": "stored",
+                "db_persistence": {
+                    "ok": True,
+                    "watch_session_id": "watch-session-uuid",
+                    "watch_session_key": payload["watch_session_id"],
+                },
+            }
+        if path == "/v1/watchlists/orderbook-ticks":
+            return {"ok": True, "status": "stored", "tick_count": len(payload["ticks"]), "db_persistence": {"ok": True, "row_count": 2}}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._persist_orderbook_watch_ticks(
+        api_root="http://test",
+        event_id="nba-sas-min-2026-05-10",
+        plan={
+            "market_id": "market-1",
+            "active_strategies": [
+                {"entry_rules": {"outcome_id": "outcome-sas", "token_id": "token-sas"}},
+                {"entry_rules": {"outcome_id": "outcome-min", "token_id": "token-min"}},
+            ],
+        },
+        orderbooks={
+            "outcome-sas": {
+                "snapshot": {
+                    "orderbook_snapshot_id": "snapshot-sas",
+                    "best_bid": 0.4,
+                    "best_ask": 0.41,
+                    "spread": 0.01,
+                    "captured_at": "2026-05-11T01:16:00+00:00",
+                    "bid_depth": 25,
+                    "ask_depth": 30,
+                },
+                "bids": [{"price": 0.4, "size": 25}],
+                "asks": [{"price": 0.41, "size": 30}],
+                "levels_count": 2,
+            },
+            "outcome-min": {
+                "snapshot": {
+                    "orderbook_snapshot_id": "snapshot-min",
+                    "best_bid": 0.59,
+                    "best_ask": 0.6,
+                    "captured_at": "2026-05-11T01:16:00+00:00",
+                },
+                "bids": [],
+                "asks": [],
+                "levels_count": 0,
+            },
+        },
+        source="pytest-live-tick",
+        game={"game_id": "0042500234"},
+        cadence_ms=500,
+    )
+
+    session_calls = [call for call in calls if call["path"] == "/v1/watchlists/sessions"]
+    tick_calls = [call for call in calls if call["path"] == "/v1/watchlists/orderbook-ticks"]
+    assert result["ok"] is True
+    assert result["watch_session_key"] == "watch-nba-sas-min-2026-05-10"
+    assert result["tick_count"] == 2
+    assert len(session_calls) == 1
+    assert session_calls[0]["payload"]["watch_session_id"] == "watch-nba-sas-min-2026-05-10"
+    assert session_calls[0]["payload"]["event_key"] == "nba-sas-min-2026-05-10"
+    assert len(tick_calls) == 1
+    ticks = tick_calls[0]["payload"]["ticks"]
+    assert [tick["outcome_id"] for tick in ticks] == ["outcome-sas", "outcome-min"]
+    assert ticks[0]["event_key"] == "nba-sas-min-2026-05-10"
+    assert ticks[0]["market_id"] == "market-1"
+    assert ticks[0]["token_id"] == "token-sas"
+    assert ticks[0]["levels"]["bids"] == [{"price": 0.4, "size": 25}]
+    assert ticks[0]["raw"]["watch_session_key"] == "watch-nba-sas-min-2026-05-10"
+    assert ticks[0]["raw"]["watch_session_id"] == "watch-session-uuid"
