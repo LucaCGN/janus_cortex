@@ -7,6 +7,26 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 PlanOwner = Literal["janus_internal_llm", "codex_agent", "operator", "system"]
+LLMRuntimeTriggerType = Literal[
+    "quarter_end",
+    "janus_order_submitted",
+    "order_fill",
+    "order_cancel",
+    "order_stale",
+    "manual_operator_order",
+    "manual_operator_trade",
+    "manual_operator_position",
+    "player_status_shock",
+    "stale_feed_recovery",
+    "unexplained_clob_move",
+    "ml_pbp_undervaluation",
+    "ml_pbp_overvaluation",
+    "strategy_plan_revision_trigger",
+    "routine_live_review",
+    "compression_or_tagging",
+]
+LLMModelTier = Literal["nano", "mini", "frontier"]
+LLMRuntimeStatus = Literal["detected_only", "skipped_unavailable", "called", "response_recorded"]
 
 
 class ActiveStrategy(BaseModel):
@@ -48,6 +68,90 @@ class StrategyPlan(BaseModel):
         if len(strategy_ids) != len(set(strategy_ids)):
             raise ValueError("active_strategies strategy_id values must be unique")
         return self
+
+
+class LLMRuntimeTrigger(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trigger_id: str = Field(min_length=1)
+    event_id: str = Field(min_length=1)
+    trigger_type: LLMRuntimeTriggerType
+    source: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+    detected_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    severity: Literal["info", "routine", "critical"] = "routine"
+    requires_revision: bool = True
+    current_plan_stale_reason: str | None = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
+
+
+class LLMModelRoutingDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected_model: str = Field(min_length=1)
+    selected_tier: LLMModelTier
+    reason: str = Field(min_length=1)
+    trigger_ids: list[str] = Field(default_factory=list)
+    critical_reasons: list[str] = Field(default_factory=list)
+    fallback_alias: str | None = None
+    routing_rules_version: str = "llm_model_routing_2026-05-11"
+
+
+class LLMRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "llm_revision_request_v1"
+    request_id: str = Field(min_length=1)
+    event_id: str = Field(min_length=1)
+    market_id: str | None = None
+    session_date: str | None = None
+    created_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    triggers: list[LLMRuntimeTrigger] = Field(default_factory=list)
+    model_routing: LLMModelRoutingDecision
+    prompt_contract: dict[str, Any] = Field(default_factory=dict)
+    current_plan: dict[str, Any] = Field(default_factory=dict)
+    event_context: dict[str, Any] = Field(default_factory=dict)
+    deterministic_strategy_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    ml_pbp_trigger_evidence: dict[str, Any] = Field(default_factory=dict)
+    direct_clob_truth: dict[str, Any] = Field(default_factory=dict)
+    orderbook_state: dict[str, Any] = Field(default_factory=dict)
+    portfolio_state: dict[str, Any] = Field(default_factory=dict)
+    operator_interventions: list[dict[str, Any]] = Field(default_factory=list)
+    strategy_decisions: list[dict[str, Any]] = Field(default_factory=list)
+    scoreboard_pbp_summary: dict[str, Any] = Field(default_factory=dict)
+    current_plan_stale_reason: str | None = None
+    operator_sizing_policy: dict[str, Any] = Field(default_factory=dict)
+
+
+class LLMRevisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "llm_revision_response_v1"
+    request_id: str = Field(min_length=1)
+    status: LLMRuntimeStatus = "detected_only"
+    selected_model: str = Field(min_length=1)
+    revised_strategy_plan: dict[str, Any] | None = None
+    reconciliation_actions: list[dict[str, Any]] = Field(default_factory=list)
+    blocked_actions: list[dict[str, Any]] = Field(default_factory=list)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    skipped_reason: str | None = "detection_only_no_openai_call"
+    trace_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class LLMRuntimeTrace(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    trace_id: str = Field(min_length=1)
+    event_id: str = Field(min_length=1)
+    created_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    trigger_count: int = Field(default=0, ge=0)
+    triggers: list[LLMRuntimeTrigger] = Field(default_factory=list)
+    model_routing: LLMModelRoutingDecision
+    revision_request: LLMRevisionRequest | None = None
+    revision_response: LLMRevisionResponse | None = None
+    status: LLMRuntimeStatus = "detected_only"
+    audit_only: bool = True
+    notes: str | None = None
 
 
 class OpsCycleRequest(BaseModel):
@@ -230,6 +334,14 @@ class StrategyPlanEvaluationResult(BaseModel):
 
 __all__ = [
     "ActiveStrategy",
+    "LLMModelRoutingDecision",
+    "LLMModelTier",
+    "LLMRevisionRequest",
+    "LLMRevisionResponse",
+    "LLMRuntimeStatus",
+    "LLMRuntimeTrace",
+    "LLMRuntimeTrigger",
+    "LLMRuntimeTriggerType",
     "MarketOrderbookTick",
     "MarketOrderbookTickRequest",
     "MarketTradeObservation",

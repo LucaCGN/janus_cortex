@@ -703,7 +703,15 @@ def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(mo
         "status_conflict",
         "feed_status_conflict",
     ]
+    assert result["market_state"]["llm_runtime_trigger_count"] == 1
+    assert result["market_state"]["llm_runtime_triggers"][0]["trigger_type"] == "player_status_shock"
+    assert result["market_state"]["llm_runtime_triggers"][0]["selected_model"] == "gpt-5.5"
+    assert result["llm_runtime_trace"]["trigger_count"] == 1
+    assert result["llm_runtime_trace"]["triggers"][0]["trigger_type"] == "player_status_shock"
+    assert result["llm_runtime_trace"]["model_routing"]["selected_model"] == "gpt-5.5"
+    assert result["llm_runtime_trace"]["revision_response"]["trace_metadata"]["openai_call_attempted"] is False
     assert evaluate_calls[0]["payload"]["market_state"]["player_status_shock_count"] == 1
+    assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_trigger_count"] == 1
 
 
 def test_persist_orderbook_watch_ticks_records_sampled_outcomes_pytest(monkeypatch) -> None:

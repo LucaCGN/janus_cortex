@@ -28,6 +28,10 @@ The trading engine compiles the active plan into monitored triggers and order in
 
 Codex Pregame Research is context-only. It can propose game thesis, strategy families, trigger conditions, stop/target/hedge logic, and revision watchpoints, but it does not define order sizing or portfolio exposure. Operator sizing policy is configured by the owner and injected by Janus/live tooling at execution time.
 
+Pregame StrategyPlanJSON is not the live LLM brain. Pregame plans provide initial context, candidate families, and event-specific passive revision watchpoints. The application runtime owns the live LLM revision loop: it detects quarter boundaries, Janus order submissions, fills, cancels, stale orders, manual/operator orders/trades/positions, player-status shocks, stale-feed recovery, unexplained CLOB moves, and ML/PBP valuation triggers, then builds auditable `LLMRevisionRequest` payloads. StrategyPlanJSON `revision_triggers` are additional event-specific hints only; they are not the dispatcher.
+
+The first runtime slice is audit-only. `codex_tool/run_live_strategy_tick.py` now emits `LLMRuntimeTrigger`/`LLMRuntimeTrace` evidence and deterministic model routing without calling OpenAI, placing orders, or replacing the current StrategyPlanJSON. Future slices must fail closed and record skipped/unavailable status when an LLM client or API key is absent.
+
 Required plan fields:
 
 - `schema_version`
@@ -98,6 +102,7 @@ Pregame:
 Live:
 
 - Janus revises the active plan when an order fires, manual intervention is detected, a quarter ends, a pregame trigger occurs, a Codex monitor requests review, a player/stat trigger fires, or portfolio truth becomes inconsistent.
+- Live LLM revision triggers are application-owned and recorded as `LLMRuntimeTrigger`/`LLMRuntimeTrace` audit objects before any future model call. The prompt contract always includes Janus risk profile, event context, deterministic candidates, ML/PBP evidence, direct CLOB truth, portfolio/orders/positions/trades, scoreboard/play-by-play summary, current plan stale reason, operator sizing policy, and a JSON-only output schema. The LLM is never allowed to call order endpoints; it can only return structured revision/reconciliation actions for Janus to validate.
 - Each revision writes a new plan version and reconciles orders/positions before any new exposure.
 - Live monitor and postgame review calls that name reviewed events must report a StrategyPlanJSON gate; missing current plans are blockers, not implicit permission to trade from notes or chat context.
 - The trading engine compiles the active plan into triggers and order intents.

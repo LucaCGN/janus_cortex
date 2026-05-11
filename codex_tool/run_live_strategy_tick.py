@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from app.modules.agentic.llm_runtime import build_llm_runtime_trace
+
 try:
     from codex_tool._client import api_json, base_parser, exit_for_response
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
@@ -346,6 +348,39 @@ def _run_event_tick(
         operator_reaction=operator_reaction,
         enabled=submit_candidate_strategy_plan,
     )
+    llm_portfolio_state = dict(portfolio_state)
+    if operator_reaction.get("submitted_orders"):
+        llm_portfolio_state["submitted_orders"] = operator_reaction["submitted_orders"]
+    llm_runtime_trace = build_llm_runtime_trace(
+        event_id=event_id,
+        market_id=str(plan.get("market_id") or "") or None,
+        session_date=session_date,
+        current_plan=plan,
+        event_context=context,
+        live_state=live_state,
+        direct_clob_truth=direct_clob_state,
+        orderbook_state={
+            "outcome_states": outcome_states,
+            "orderbooks": _summarize_orderbooks(orderbook_results),
+        },
+        portfolio_state=llm_portfolio_state,
+        operator_interventions=_operator_reaction_revision_events(operator_reaction),
+        strategy_decisions=[],
+        pbp_shocks=player_status_shocks,
+        ml_pbp_evidence={"status": "placeholder_schema_ready", "signals": []},
+        source=f"{source}:llm_runtime_detector",
+    )
+    market_state["llm_runtime_trigger_count"] = llm_runtime_trace.trigger_count
+    market_state["llm_runtime_triggers"] = [
+        {
+            "trigger_id": trigger.trigger_id,
+            "trigger_type": trigger.trigger_type,
+            "severity": trigger.severity,
+            "reason": trigger.reason,
+            "selected_model": llm_runtime_trace.model_routing.selected_model,
+        }
+        for trigger in llm_runtime_trace.triggers
+    ]
     shadow = api_json(
         api_root,
         "POST",
@@ -402,6 +437,7 @@ def _run_event_tick(
         "live_execution": live,
         "live_blocked_by": live_blocked_by,
         "operator_reaction": operator_reaction,
+        "llm_runtime_trace": llm_runtime_trace.model_dump(mode="json"),
         "orderbook_results": _summarize_orderbooks(orderbook_results),
         "watch_persistence": watch_persistence,
     }
@@ -427,6 +463,15 @@ def _submit_candidate_strategy_plan(
         "ok": ok,
         "response": response,
     }
+
+
+def _operator_reaction_revision_events(operator_reaction: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in ("position_reactions", "order_reactions", "trade_reactions"):
+        value = operator_reaction.get(key)
+        if isinstance(value, list):
+            rows.extend(dict(item) for item in value if isinstance(item, dict))
+    return rows
 
 
 def _auto_protect_direct_positions(
