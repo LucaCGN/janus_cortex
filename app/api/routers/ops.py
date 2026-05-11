@@ -1,11 +1,19 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg2.extensions import connection as PsycopgConnection
 
+from app.api.db import to_jsonable
 from app.api.dependencies import get_db_connection
+from app.api.routers.portfolio import (
+    _fetch_order_lifecycle_reconciliation_rows,
+    _resolve_order_lifecycle_direct_context,
+    build_order_lifecycle_reconciliation_report,
+    build_portfolio_pnl_attribution_report,
+)
 from app.modules.agentic.contracts import (
     MarketOrderbookTickRequest,
     MarketTradeObservationRequest,
@@ -38,6 +46,7 @@ from app.modules.agentic.store import (
     load_current_strategy_plan,
     ops_artifact_root,
     record_ops_stage,
+    strategy_plan_root,
     write_json,
     write_strategy_plan,
 )
@@ -143,14 +152,33 @@ def run_ops_live_monitor(
 
 
 @router.post("/ops/postgame-review", status_code=status.HTTP_202_ACCEPTED)
-def run_ops_postgame_review(payload: OpsCycleRequest) -> dict[str, Any]:
-    strategy_plan_gate = _build_strategy_plan_gate(payload.event_ids, day=payload.session_date)
+def run_ops_postgame_review(
+    payload: OpsCycleRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewed_event_ids = _resolve_postgame_review_event_ids(payload.event_ids, day=payload.session_date)
+    strategy_plan_gate = _build_strategy_plan_gate(reviewed_event_ids, day=payload.session_date)
+    portfolio_pnl_attribution = _build_postgame_portfolio_pnl_attribution(
+        connection,
+        payload,
+        event_ids=reviewed_event_ids,
+    )
     recorded = record_ops_stage(
         "postgame-review",
-        {**payload.model_dump(mode="json"), "strategy_plan_gate": strategy_plan_gate},
+        {
+            **payload.model_dump(mode="json"),
+            "reviewed_event_ids": reviewed_event_ids,
+            "strategy_plan_gate": strategy_plan_gate,
+            "portfolio_pnl_attribution": portfolio_pnl_attribution,
+        },
         day=payload.session_date,
     )
-    return {**recorded, "strategy_plan_gate": strategy_plan_gate}
+    return {
+        **recorded,
+        "reviewed_event_ids": reviewed_event_ids,
+        "strategy_plan_gate": strategy_plan_gate,
+        "portfolio_pnl_attribution": portfolio_pnl_attribution,
+    }
 
 
 @router.get("/events/{event_id}/agent-context")
@@ -397,6 +425,143 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
     }
 
 
+def _resolve_postgame_review_event_ids(event_ids: list[str], *, day: str | None) -> list[str]:
+    explicit_event_ids = _normalized_unique_values(event_ids)
+    if explicit_event_ids:
+        return explicit_event_ids
+
+    root = strategy_plan_root(day)
+    if not root.exists():
+        return []
+
+    resolved: list[str] = []
+    for current_path in sorted(root.glob("*/current.json")):
+        event_id = current_path.parent.name
+        try:
+            plan = json.loads(current_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            plan = {}
+        if isinstance(plan, dict):
+            event_id = str(plan.get("event_id") or event_id).strip()
+        if event_id:
+            resolved.append(event_id)
+    return _normalized_unique_values(resolved)
+
+
+def _build_postgame_portfolio_pnl_attribution(
+    connection: PsycopgConnection,
+    payload: OpsCycleRequest,
+    *,
+    event_ids: list[str],
+) -> dict[str, Any]:
+    if not event_ids:
+        return {
+            "status": "not_requested",
+            "reason": "no_reviewed_event_ids",
+            "event_count": 0,
+            "items": [],
+        }
+    if not payload.account_id:
+        return {
+            "status": "skipped",
+            "reason": "account_id_required",
+            "event_count": len(event_ids),
+            "items": [],
+        }
+
+    try:
+        direct_context = _resolve_order_lifecycle_direct_context(
+            connection,
+            account_id=payload.account_id,
+            direct_open_order_external_id=None,
+            direct_open_order_count=None,
+            direct_open_position_count=None,
+            include_direct_clob_evidence=True,
+        )
+    except Exception as exc:  # noqa: BLE001
+        direct_context = {
+            "direct_open_order_external_ids": [],
+            "direct_open_order_count": None,
+            "direct_open_position_count": None,
+            "direct_trade_rows": [],
+            "direct_evidence": {
+                "enabled": True,
+                "ok": False,
+                "error": _exception_detail(exc),
+            },
+        }
+
+    direct_evidence = direct_context.get("direct_evidence") or {}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    items: list[dict[str, Any]] = []
+    for event_id in event_ids:
+        try:
+            rows = _fetch_order_lifecycle_reconciliation_rows(
+                connection,
+                account_id=payload.account_id,
+                event_slug=event_id,
+            )
+            lifecycle_report = build_order_lifecycle_reconciliation_report(
+                rows,
+                direct_open_order_external_ids=direct_context["direct_open_order_external_ids"],
+                direct_open_order_count=direct_context["direct_open_order_count"],
+                direct_open_position_count=direct_context["direct_open_position_count"],
+                direct_trade_rows=direct_context["direct_trade_rows"],
+            )
+            pnl_attribution = build_portfolio_pnl_attribution_report(lifecycle_report)
+            items.append(
+                {
+                    "ok": True,
+                    "event_id": event_id,
+                    "event_slug": event_id,
+                    "reconciliation": lifecycle_report,
+                    "pnl_attribution": pnl_attribution,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            items.append(
+                {
+                    "ok": False,
+                    "event_id": event_id,
+                    "event_slug": event_id,
+                    "error": _exception_detail(exc),
+                }
+            )
+
+    error_count = sum(1 for item in items if item.get("ok") is False)
+    ready_count = sum(
+        1
+        for item in items
+        if item.get("ok") is True and (item.get("pnl_attribution") or {}).get("pnl_attribution_ready") is True
+    )
+    if error_count == len(items):
+        status_text = "error"
+    elif error_count:
+        status_text = "partial"
+    elif ready_count == len(items):
+        status_text = "ready"
+    else:
+        status_text = "review_required"
+
+    return to_jsonable(
+        {
+            "status": status_text,
+            "source": "portfolio_order_lifecycle_pnl_attribution_v1",
+            "event_count": len(items),
+            "ready_event_count": ready_count,
+            "error_count": error_count,
+            "direct_evidence": direct_evidence_summary,
+            "items": items,
+        }
+    )
+
+
+def _exception_detail(exc: Exception) -> Any:
+    if isinstance(exc, HTTPException):
+        return exc.detail
+    return str(exc)
+
+
 def _direct_trade_token_ids_for_events(event_ids: list[str], *, day: str | None) -> list[str]:
     token_ids: list[str] = []
     seen: set[str] = set()
@@ -422,3 +587,7 @@ def _direct_trade_token_ids_for_events(event_ids: list[str], *, day: str | None)
                 token_ids.append(token_id)
                 seen.add(token_id)
     return token_ids
+
+
+def _normalized_unique_values(values: list[str]) -> list[str]:
+    return [value for value in dict.fromkeys(str(item).strip() for item in values) if value]

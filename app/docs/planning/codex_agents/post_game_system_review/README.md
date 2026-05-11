@@ -34,6 +34,8 @@ python codex_tool\run_postgame_review.py --session-date <YYYY-MM-DD> --account-i
 python codex_tool\run_integrity_check.py --session-date <YYYY-MM-DD> --account-id 56964015-5935-5035-bdab-b056c9277146 --source codex-postgame
 ```
 
+`run_postgame_review.py` records `reviewed_event_ids`, the StrategyPlanJSON gate, and `portfolio_pnl_attribution` when current StrategyPlanJSON files or explicit `--event-id` values are available for the reviewed session. Treat missing or `review_required` PnL attribution as an operational integrity finding.
+
 Use `codex_tool\export_event_context.py` for every reviewed game when available. Use web research when local data is insufficient to explain injuries, rotations, final game context, market movement, or missed opportunities.
 
 Operator observations are not optional when present. Treat them as hypotheses and human-in-the-loop context to verify against direct CLOB truth, local play-by-play, StrategyPlanJSON revisions, watch-session ticks, and web research. If operator observations conflict with local Janus data, report the conflict explicitly and route a data-capture or context gap.

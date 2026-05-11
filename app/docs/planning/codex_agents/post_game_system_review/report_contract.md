@@ -59,6 +59,7 @@ Required checks:
 
 - direct CLOB collateral, open orders, open positions, closed positions
 - fill ledger completeness
+- `run_postgame_review.py` `portfolio_pnl_attribution` status, actor buckets, and any unresolved residuals
 - stale local mirror status
 - orderbook freshness and spread
 - scoreboard/play-by-play freshness

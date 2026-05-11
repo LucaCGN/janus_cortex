@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -291,6 +292,96 @@ def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_pat
     assert payload["strategy_plan_gate"]["status"] == "blocked"
     assert payload["strategy_plan_gate"]["missing_event_ids"] == ["event-missing"]
     assert payload["strategy_plan_gate"]["ready_for_strategy_evaluation"] is False
+
+
+def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+    fetch_calls = []
+
+    def fake_db_connection():
+        yield fake_connection
+
+    def fake_direct_context(connection, **kwargs):
+        assert connection is fake_connection
+        assert kwargs["account_id"] == "56964015-5935-5035-bdab-b056c9277146"
+        assert kwargs["include_direct_clob_evidence"] is True
+        return {
+            "direct_open_order_external_ids": [],
+            "direct_open_order_count": 0,
+            "direct_open_position_count": 0,
+            "direct_trade_rows": [{"id": "direct-trade-1"}],
+            "direct_evidence": {
+                "enabled": True,
+                "ok": True,
+                "error": None,
+                "open_order_count": 0,
+                "open_position_count": 0,
+                "trade_count": 1,
+                "trades": [{"id": "direct-trade-1"}],
+            },
+        }
+
+    def fake_fetch_rows(connection, **kwargs):
+        assert connection is fake_connection
+        fetch_calls.append(kwargs)
+        return [{"order_id": "order-1"}]
+
+    def fake_lifecycle_report(rows, **kwargs):
+        assert rows == [{"order_id": "order-1"}]
+        assert kwargs["direct_trade_rows"] == [{"id": "direct-trade-1"}]
+        return {"order_count": 1, "pnl_attribution_ready": True, "items": []}
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(ops_router, "_resolve_order_lifecycle_direct_context", fake_direct_context)
+    monkeypatch.setattr(ops_router, "_fetch_order_lifecycle_reconciliation_rows", fake_fetch_rows)
+    monkeypatch.setattr(ops_router, "build_order_lifecycle_reconciliation_report", fake_lifecycle_report)
+    monkeypatch.setattr(
+        ops_router,
+        "build_portfolio_pnl_attribution_report",
+        lambda report: {
+            "pnl_attribution_ready": True,
+            "known_cashflow_usd": Decimal("0.80"),
+            "residual_status": "balanced",
+            "buckets": [{"actor_label": "janus_strategy", "known_cashflow_usd": Decimal("0.80")}],
+        },
+    )
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    try:
+        pregame_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-10",
+                "source": "pytest",
+                "strategy_plans": [_strategy_plan_payload(event_id="nba-sas-min-2026-05-10")],
+            },
+        )
+        response = client.post(
+            "/v1/ops/postgame-review",
+            json={
+                "session_date": "2026-05-10",
+                "account_id": "56964015-5935-5035-bdab-b056c9277146",
+                "source": "pytest",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert pregame_response.status_code == 202
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["reviewed_event_ids"] == ["nba-sas-min-2026-05-10"]
+    assert payload["strategy_plan_gate"]["status"] == "ready"
+    assert fetch_calls[0]["account_id"] == "56964015-5935-5035-bdab-b056c9277146"
+    assert fetch_calls[0]["event_slug"] == "nba-sas-min-2026-05-10"
+    attribution = payload["portfolio_pnl_attribution"]
+    assert attribution["status"] == "ready"
+    assert attribution["direct_evidence"]["trade_count"] == 1
+    assert attribution["items"][0]["pnl_attribution"]["known_cashflow_usd"] == 0.8
+    assert "portfolio_pnl_attribution" in Path(payload["path"]).read_text(encoding="utf-8")
 
 
 def test_watch_session_tick_and_trade_endpoints_record_batches_pytest(tmp_path, monkeypatch) -> None:
