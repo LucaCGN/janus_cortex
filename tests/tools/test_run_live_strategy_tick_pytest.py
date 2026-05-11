@@ -294,6 +294,121 @@ def test_auto_protect_direct_order_reacts_to_unknown_open_order_pytest(monkeypat
     assert candidate.portfolio_reconciliation[0]["action"] == "adopt_open_order"
 
 
+def test_auto_protect_direct_trade_reacts_to_unknown_fill_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="nba-sas-min-2026-05-10",
+        plan={
+            "market_id": "market-1",
+            "active_strategies": [{"entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"}}],
+        },
+        direct_clob={
+            "open_positions": {"positions": []},
+            "open_orders": {"orders": []},
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "clob-trade-1",
+                        "asset_id": "token-sas",
+                        "side": "BUY",
+                        "price": 0.60,
+                        "size": 5.0,
+                        "taker_order_id": "0xmanual-buy",
+                    }
+                ]
+            },
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+        known_external_order_ids=set(),
+    )
+
+    assert calls == []
+    assert result["trade_reactions"][0]["action"] == "adopt_operator_trade"
+    assert result["trade_reactions"][0]["direct_trade_id"] == "clob-trade-1"
+    assert result["trade_reactions"][0]["direct_order_ids"] == ["0xmanual-buy"]
+    assert result["trade_reactions"][0]["estimated_cashflow_usd"] == -3.0
+    assert result["revision_requests"][0]["reason"] == "unknown_direct_clob_trade_detected"
+    candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
+    assert candidate.context_summary["unknown_direct_trade_count"] == 1
+    assert candidate.context_summary["trade_management_only"] is True
+    assert candidate.active_strategies[0].family == "operator_trade_management"
+    assert candidate.active_strategies[0].exit_rules["final_pnl_review_required"] is True
+    assert candidate.portfolio_reconciliation[0]["action"] == "adopt_trade_fill"
+
+
+def test_persist_direct_trade_watch_observations_records_plan_token_trades_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True, "trade_count": len(payload["trades"]), "db_persistence": {"ok": True, "row_count": len(payload["trades"])}}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._persist_direct_trade_watch_observations(
+        api_root="http://test",
+        event_id="nba-sas-min-2026-05-10",
+        plan={
+            "market_id": "market-1",
+            "active_strategies": [{"entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"}}],
+        },
+        direct_clob={
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "clob-trade-1",
+                        "asset_id": "token-sas",
+                        "side": "SELL",
+                        "price": 0.65,
+                        "size": 5.0,
+                        "timestamp": 1778452800,
+                        "maker_order_id": "0xtarget",
+                    },
+                    {
+                        "id": "unrelated-trade",
+                        "asset_id": "token-other",
+                        "side": "BUY",
+                        "price": 0.1,
+                        "size": 5.0,
+                    },
+                ]
+            }
+        },
+        source="pytest",
+    )
+
+    assert result["ok"] is True
+    assert result["trade_count"] == 1
+    assert len(calls) == 1
+    assert calls[0]["path"] == "/v1/watchlists/trades"
+    assert calls[0]["payload"]["source"] == "pytest:direct_clob_trade_observation"
+    trade = calls[0]["payload"]["trades"][0]
+    assert trade["event_key"] == "nba-sas-min-2026-05-10"
+    assert trade["market_id"] == "market-1"
+    assert trade["outcome_id"] == "outcome-sas"
+    assert trade["token_id"] == "token-sas"
+    assert trade["external_trade_id"] == "clob-trade-1"
+    assert trade["side"] == "sell"
+    assert trade["price"] == 0.65
+    assert trade["size"] == 5.0
+    assert trade["raw"]["direct_order_ids"] == ["0xtarget"]
+
+
 def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     plan = {

@@ -19,6 +19,18 @@ _LOCAL_PENDING_INTENT_STATUSES = {
     "partial",
 }
 _DIRECT_ORDER_ID_FIELDS = ("id", "orderID", "orderId", "order_id", "external_order_id")
+_DIRECT_TRADE_ID_FIELDS = ("id", "trade_id", "external_trade_id", "hash", "tx_hash", "transaction_hash")
+_DIRECT_TRADE_ORDER_ID_FIELDS = (
+    "taker_order_id",
+    "takerOrderId",
+    "maker_order_id",
+    "makerOrderId",
+    "order_id",
+    "orderID",
+    "orderId",
+    "external_order_id",
+)
+_DIRECT_TRADE_TOKEN_FIELDS = ("asset_id", "asset", "token_id")
 
 
 def main() -> None:
@@ -262,16 +274,17 @@ def _run_event_tick(
     if not isinstance(direct_clob, dict):
         integrity = context.get("integrity") or {}
         direct_clob = integrity.get("direct_clob") if isinstance(integrity, dict) else None
-    if isinstance(direct_clob, dict):
-        portfolio_state["open_orders"] = direct_clob.get("open_order_count", portfolio_state["open_orders"])
-        portfolio_state["open_positions"] = len(((direct_clob.get("open_positions") or {}).get("positions") or []))
+    direct_clob_state = direct_clob if isinstance(direct_clob, dict) else {}
+    if direct_clob_state:
+        portfolio_state["open_orders"] = direct_clob_state.get("open_order_count", portfolio_state["open_orders"])
+        portfolio_state["open_positions"] = len(((direct_clob_state.get("open_positions") or {}).get("positions") or []))
 
     pending_intents = _pending_intent_summary(
         api_root=api_root,
         account_id=account_id,
         event_id=event_id,
         plan=plan,
-        direct_clob=direct_clob if isinstance(direct_clob, dict) else {},
+        direct_clob=direct_clob_state,
     )
     known_order_ids = _known_portfolio_order_external_ids(
         api_root=api_root,
@@ -287,6 +300,17 @@ def _run_event_tick(
     if not pending_intents["ok"]:
         portfolio_state["pending_intents_unavailable"] = True
         portfolio_state["pending_intents_error"] = pending_intents.get("error")
+
+    direct_trade_persistence = _persist_direct_trade_watch_observations(
+        api_root=api_root,
+        event_id=event_id,
+        plan=plan,
+        direct_clob=direct_clob_state,
+        source=source,
+    )
+    portfolio_state["direct_clob_trade_observation_count"] = direct_trade_persistence["trade_count"]
+    if direct_trade_persistence.get("ok") is False:
+        portfolio_state["direct_clob_trade_persistence_failed"] = True
 
     player_status_shocks = _player_status_shocks_from_live_state(live_state, plan=plan, game=game)
     revision_required_shocks = [
@@ -304,7 +328,7 @@ def _run_event_tick(
         account_id=account_id,
         event_id=event_id,
         plan=plan,
-        direct_clob=direct_clob if isinstance(direct_clob, dict) else {},
+        direct_clob=direct_clob_state,
         execute=execute,
         live_money=live_money,
         integrity_ready=integrity_ready,
@@ -315,6 +339,7 @@ def _run_event_tick(
         known_external_order_ids=set(known_order_ids["external_order_ids"]) if known_order_ids["ok"] else None,
     )
     operator_reaction["known_order_lookup"] = known_order_ids
+    operator_reaction["direct_trade_persistence"] = direct_trade_persistence
     operator_reaction["candidate_strategy_plan_submission"] = _submit_candidate_strategy_plan(
         api_root=api_root,
         event_id=event_id,
@@ -343,6 +368,8 @@ def _run_event_tick(
             live_blocked_by.append("live_money_flag_required")
         if not integrity_ready:
             live_blocked_by.append("integrity_not_ready_for_live_minimum_orders")
+        if direct_trade_persistence.get("ok") is False:
+            live_blocked_by.append("direct_clob_trade_persistence_failed")
         if not live_blocked_by:
             live = api_json(
                 api_root,
@@ -362,8 +389,9 @@ def _run_event_tick(
 
     candidate_submission = operator_reaction.get("candidate_strategy_plan_submission") or {}
     candidate_submission_failed = bool(submit_candidate_strategy_plan) and candidate_submission.get("ok") is False
+    direct_trade_persistence_failed = direct_trade_persistence.get("ok") is False
     return {
-        "ok": not candidate_submission_failed,
+        "ok": not candidate_submission_failed and not direct_trade_persistence_failed,
         "event_id": event_id,
         "game": game,
         "market_id": plan.get("market_id"),
@@ -425,6 +453,7 @@ def _auto_protect_direct_positions(
         "blocked_by": [],
         "covered_positions": [],
         "order_reactions": [],
+        "trade_reactions": [],
         "position_reactions": [],
         "revision_requests": [],
         "candidate_strategy_plan_required": False,
@@ -442,6 +471,8 @@ def _auto_protect_direct_positions(
 
     positions = ((direct_clob.get("open_positions") or {}).get("positions") or [])
     open_orders = ((direct_clob.get("open_orders") or {}).get("orders") or [])
+    direct_trades = _direct_trade_rows(direct_clob)
+    reaction["direct_trade_count"] = len(direct_trades)
     plan_outcomes = _plan_outcome_lookup(plan)
     reaction["order_reactions"].extend(
         _unknown_direct_order_reactions(
@@ -453,6 +484,17 @@ def _auto_protect_direct_positions(
     )
     reaction["revision_requests"].extend(
         item["revision_request"] for item in reaction["order_reactions"] if isinstance(item.get("revision_request"), dict)
+    )
+    reaction["trade_reactions"].extend(
+        _unknown_direct_trade_reactions(
+            event_id=event_id,
+            trades=direct_trades,
+            plan_outcomes=plan_outcomes,
+            known_external_order_ids=known_external_order_ids,
+        )
+    )
+    reaction["revision_requests"].extend(
+        item["revision_request"] for item in reaction["trade_reactions"] if isinstance(item.get("revision_request"), dict)
     )
     for position in positions:
         event_slug = str(position.get("event_slug") or position.get("slug") or "")
@@ -603,6 +645,7 @@ def _auto_protect_direct_positions(
         plan=plan,
         position_reactions=reaction["position_reactions"],
         order_reactions=reaction["order_reactions"],
+        trade_reactions=reaction["trade_reactions"],
         source=source,
     )
     reaction["candidate_strategy_plan_required"] = bool(reaction["revision_requests"])
@@ -617,9 +660,10 @@ def _operator_position_strategy_plan_candidate(
     plan: dict[str, Any],
     position_reactions: list[dict[str, Any]],
     order_reactions: list[dict[str, Any]],
+    trade_reactions: list[dict[str, Any]],
     source: str,
 ) -> dict[str, Any] | None:
-    if not position_reactions and not order_reactions:
+    if not position_reactions and not order_reactions and not trade_reactions:
         return None
     market_id = str(plan.get("market_id") or "").strip()
     if not market_id:
@@ -786,6 +830,86 @@ def _operator_position_strategy_plan_candidate(
             }
         )
 
+    for index, reaction in enumerate(trade_reactions, start=1):
+        token_id = str(reaction.get("token_id") or "").strip()
+        if not token_id:
+            continue
+        outcome_ref = outcome_lookup.get(token_id) or {}
+        outcome_id = str(outcome_ref.get("outcome_id") or "").strip()
+        outcome_label = str(reaction.get("outcome_label") or outcome_id or token_id).strip()
+        trade_side = str(reaction.get("trade_side") or "").lower()
+        strategy_suffix = _safe_slug(outcome_label or token_id)
+        direct_trade = reaction.get("direct_trade") if isinstance(reaction.get("direct_trade"), dict) else {}
+        direct_order_ids = [str(item) for item in reaction.get("direct_order_ids") or [] if str(item).strip()]
+        active_strategies.append(
+            {
+                "strategy_id": f"operator-trade-management-{strategy_suffix}-{index}",
+                "family": "operator_trade_management",
+                "side": outcome_label or "operator_trade",
+                "budget_usd": 0.0,
+                "max_positions": 0,
+                "entry_rules": {
+                    "entry_disabled": True,
+                    "no_new_entry": True,
+                    "side": "buy",
+                    "order_type": "limit",
+                    "market_id": str(outcome_ref.get("market_id") or market_id),
+                    "outcome_id": outcome_id,
+                    "token_id": token_id,
+                    "price": _float(direct_trade.get("price")),
+                    "size": 0.0,
+                    "max_open_positions": 0,
+                    "reason": "unknown_direct_clob_trade_adopted_trade_management_only",
+                    "revision_request_reason": "unknown_direct_clob_trade_detected",
+                },
+                "exit_rules": {
+                    "trade_management_only": True,
+                    "direct_trade_id": reaction.get("direct_trade_id"),
+                    "direct_order_ids": direct_order_ids,
+                    "direct_trade_side": trade_side,
+                    "direct_trade_size": _float(direct_trade.get("size")),
+                    "direct_trade_price": _float(direct_trade.get("price")),
+                    "estimated_cashflow_usd": reaction.get("estimated_cashflow_usd"),
+                    "settlement_link_required": True,
+                    "final_pnl_review_required": True,
+                },
+                "stop_rules": {"manual_or_llm_review_required": True},
+                "hedge_rules": {
+                    "opposite_side_only_if_locks_profit_or_reduces_marked_loss": True,
+                    "new_bilateral_inventory_disabled": True,
+                },
+                "revision_triggers": [
+                    {"type": "unknown_direct_clob_trade_detected", "required": True},
+                    {"type": "settlement_or_offset_fill", "required": True},
+                    {"type": "player_status_shock", "required": True},
+                    {"type": "clob_move_without_scoreboard_driver", "required": True},
+                ],
+                "shadow_flags": {
+                    "shadow_only": True,
+                    "execution_mode": "trade_management_only",
+                    "requires_review_before_live": True,
+                },
+            }
+        )
+        portfolio_reconciliation.append(
+            {
+                "action": "adopt_trade_fill",
+                "reason": "unknown_direct_clob_trade_detected",
+                "direct_trade_id": reaction.get("direct_trade_id"),
+                "direct_order_ids": direct_order_ids,
+                "token_id": token_id,
+                "outcome_id": outcome_id,
+                "outcome_label": outcome_label,
+                "trade_side": trade_side,
+                "trade_size": _float(direct_trade.get("size")),
+                "trade_price": _float(direct_trade.get("price")),
+                "estimated_cashflow_usd": reaction.get("estimated_cashflow_usd"),
+                "no_new_entry": True,
+                "requires_strategy_plan_revision": True,
+                "final_pnl_review_required": True,
+            }
+        )
+
     if not active_strategies:
         return None
     previous_strategy_ids = [
@@ -808,9 +932,11 @@ def _operator_position_strategy_plan_candidate(
             "previous_strategy_ids": previous_strategy_ids,
             "direct_position_count": len(position_reactions),
             "unknown_direct_order_count": len(order_reactions),
+            "unknown_direct_trade_count": len(trade_reactions),
             "no_new_entry": True,
             "position_management_only": bool(position_reactions),
             "order_management_only": bool(order_reactions),
+            "trade_management_only": bool(trade_reactions),
         },
         "active_strategies": active_strategies,
         "trigger_conditions": [
@@ -822,7 +948,7 @@ def _operator_position_strategy_plan_candidate(
         ],
         "portfolio_reconciliation": portfolio_reconciliation,
         "explainability": {
-            "summary": "Candidate plan adopts detected direct CLOB positions/orders and disables fresh buys until reviewed.",
+            "summary": "Candidate plan adopts detected direct CLOB positions, orders, and trades, then disables fresh buys until reviewed.",
             "invalidates_previous_entry_families": True,
             "requires_operator_or_llm_review": True,
         },
@@ -897,6 +1023,169 @@ def _unknown_direct_order_reactions(
             }
         )
     return reactions
+
+
+def _unknown_direct_trade_reactions(
+    *,
+    event_id: str,
+    trades: list[dict[str, Any]],
+    plan_outcomes: dict[str, dict[str, str]],
+    known_external_order_ids: set[str] | None,
+) -> list[dict[str, Any]]:
+    if known_external_order_ids is None:
+        return []
+    known_ids = {str(item).strip().lower() for item in known_external_order_ids if str(item).strip()}
+    reactions: list[dict[str, Any]] = []
+    for trade in trades:
+        if not isinstance(trade, dict):
+            continue
+        event_slug = str(trade.get("event_slug") or trade.get("slug") or "").strip()
+        if event_slug and event_slug != event_id:
+            continue
+        token_id = _direct_trade_token_id(trade)
+        if not token_id or token_id not in plan_outcomes:
+            continue
+        direct_order_ids = _direct_trade_order_ids(trade)
+        direct_trade_id = _direct_trade_external_id(trade)
+        if not direct_trade_id and not direct_order_ids:
+            continue
+        if direct_order_ids and direct_order_ids.intersection(known_ids):
+            continue
+        trade_side = str(trade.get("side") or "").strip().lower()
+        price = _float(trade.get("price"))
+        size = _float(trade.get("size"))
+        fee = _float(trade.get("fee"))
+        estimated_cashflow = _estimated_trade_cashflow(side=trade_side, price=price, size=size, fee=fee)
+        outcome_ref = plan_outcomes.get(token_id) or {}
+        outcome_label = str(trade.get("outcome") or trade.get("outcome_label") or outcome_ref.get("outcome_id") or "").strip()
+        revision_request = {
+            "reason": "unknown_direct_clob_trade_detected",
+            "event_id": event_id,
+            "direct_trade_id": direct_trade_id,
+            "direct_order_ids": sorted(direct_order_ids),
+            "token_id": token_id,
+            "outcome_id": outcome_ref.get("outcome_id"),
+            "outcome_label": outcome_label or None,
+            "trade_management_only": True,
+            "disable_new_entries": True,
+            "required_context": [
+                "direct_clob_truth",
+                "local_portfolio_orders",
+                "local_portfolio_trades",
+                "latest_scoreboard",
+                "recent_play_by_play",
+                "current_orderbook",
+                "settlement_status",
+            ],
+            "current_trade": {
+                "side": trade_side or None,
+                "price": price,
+                "size": size,
+                "fee": fee,
+                "estimated_cashflow_usd": estimated_cashflow,
+            },
+        }
+        reactions.append(
+            {
+                "action": "adopt_operator_trade",
+                "direct_trade_id": direct_trade_id,
+                "direct_order_ids": sorted(direct_order_ids),
+                "token_id": token_id,
+                "outcome_id": outcome_ref.get("outcome_id"),
+                "outcome_label": outcome_label or None,
+                "trade_side": trade_side,
+                "estimated_cashflow_usd": estimated_cashflow,
+                "no_new_entry": True,
+                "requires_strategy_plan_revision": True,
+                "revision_request": revision_request,
+                "direct_trade": trade,
+            }
+        )
+    return reactions
+
+
+def _persist_direct_trade_watch_observations(
+    *,
+    api_root: str,
+    event_id: str,
+    plan: dict[str, Any],
+    direct_clob: dict[str, Any],
+    source: str,
+) -> dict[str, Any]:
+    trades = _direct_trade_rows(direct_clob)
+    if not trades:
+        return {"ok": True, "skipped": True, "reason": "no_direct_clob_trades", "trade_count": 0}
+    outcome_lookup = _plan_outcome_lookup(plan)
+    observations = [
+        observation
+        for trade in trades
+        if (
+            observation := _direct_trade_watch_observation(
+                event_id=event_id,
+                trade=trade,
+                outcome_lookup=outcome_lookup,
+                source=source,
+            )
+        )
+        is not None
+    ]
+    if not observations:
+        return {"ok": True, "skipped": True, "reason": "no_plan_token_trades", "trade_count": 0}
+    result = api_json(
+        api_root,
+        "POST",
+        "/v1/watchlists/trades",
+        {
+            "source": f"{source}:direct_clob_trade_observation",
+            "trades": observations,
+        },
+    )
+    persistence = result.get("db_persistence") if isinstance(result.get("db_persistence"), dict) else {}
+    ok = bool(result.get("ok", True)) and bool(persistence.get("ok", True))
+    return {
+        "ok": ok,
+        "skipped": False,
+        "trade_count": len(observations),
+        "result": result,
+    }
+
+
+def _direct_trade_watch_observation(
+    *,
+    event_id: str,
+    trade: dict[str, Any],
+    outcome_lookup: dict[str, dict[str, str]],
+    source: str,
+) -> dict[str, Any] | None:
+    token_id = _direct_trade_token_id(trade)
+    if not token_id:
+        return None
+    outcome_ref = outcome_lookup.get(token_id)
+    if outcome_ref is None:
+        return None
+    observed_at = datetime.now(timezone.utc)
+    trade_time = _direct_trade_time_utc(trade)
+    order_ids = sorted(_direct_trade_order_ids(trade))
+    return {
+        "event_key": event_id,
+        "market_id": outcome_ref.get("market_id"),
+        "outcome_id": outcome_ref.get("outcome_id"),
+        "token_id": token_id,
+        "external_trade_id": _direct_trade_external_id(trade),
+        "trade_time_utc": trade_time.isoformat() if trade_time is not None else observed_at.isoformat(),
+        "observed_at_utc": observed_at.isoformat(),
+        "side": str(trade.get("side") or "").strip().lower() or None,
+        "price": _float(trade.get("price")),
+        "size": _float(trade.get("size")),
+        "source_latency_ms": max(0.0, (observed_at - trade_time).total_seconds() * 1000.0) if trade_time is not None else None,
+        "raw": {
+            "source": source,
+            "capture_owner": "run_live_strategy_tick",
+            "event_id": event_id,
+            "direct_order_ids": order_ids,
+            "direct_trade": trade,
+        },
+    }
 
 
 def _safe_slug(value: str) -> str:
@@ -1164,6 +1453,122 @@ def _direct_open_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:
         if value:
             ids.add(value.lower())
     return ids
+
+
+def _direct_trade_rows(direct_clob: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for key in ("current_token_trades", "trades", "market_trades", "direct_trades"):
+        for trade in _direct_trade_section_rows(direct_clob.get(key)):
+            if not isinstance(trade, dict):
+                continue
+            stable_key = _direct_trade_stable_key(trade)
+            if stable_key in seen:
+                continue
+            seen.add(stable_key)
+            rows.append(trade)
+    return rows
+
+
+def _direct_trade_section_rows(section: Any) -> list[dict[str, Any]]:
+    if isinstance(section, list):
+        return [_direct_item_to_dict(item) for item in section]
+    if isinstance(section, dict):
+        for key in ("trades", "items", "data", "results"):
+            nested = section.get(key)
+            if isinstance(nested, list):
+                return [_direct_item_to_dict(item) for item in nested]
+    return []
+
+
+def _direct_item_to_dict(item: Any) -> dict[str, Any]:
+    if isinstance(item, dict):
+        return dict(item)
+    if hasattr(item, "model_dump") and callable(item.model_dump):
+        return dict(item.model_dump())
+    if hasattr(item, "dict") and callable(item.dict):
+        return dict(item.dict())
+    if hasattr(item, "__dict__"):
+        return dict(item.__dict__)
+    return {"value": str(item)}
+
+
+def _direct_trade_stable_key(trade: dict[str, Any]) -> str:
+    trade_id = _direct_trade_external_id(trade)
+    if trade_id:
+        return f"id:{trade_id.lower()}"
+    order_ids = ",".join(sorted(_direct_trade_order_ids(trade)))
+    return "|".join(
+        [
+            "fields",
+            order_ids,
+            _direct_trade_token_id(trade) or "",
+            str(trade.get("side") or "").strip().lower(),
+            str(trade.get("price") or "").strip(),
+            str(trade.get("size") or "").strip(),
+            str(trade.get("timestamp") or trade.get("trade_time") or trade.get("created_at") or "").strip(),
+        ]
+    )
+
+
+def _direct_trade_external_id(trade: dict[str, Any]) -> str | None:
+    for field in _DIRECT_TRADE_ID_FIELDS:
+        value = str(trade.get(field) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _direct_trade_order_ids(trade: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for field in _DIRECT_TRADE_ORDER_ID_FIELDS:
+        value = str(trade.get(field) or "").strip()
+        if value:
+            ids.add(value.lower())
+    return ids
+
+
+def _direct_trade_token_id(trade: dict[str, Any]) -> str | None:
+    for field in _DIRECT_TRADE_TOKEN_FIELDS:
+        value = str(trade.get(field) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _direct_trade_time_utc(trade: dict[str, Any]) -> datetime | None:
+    for field in ("trade_time_utc", "trade_time", "timestamp", "created_at", "createdAt"):
+        value = trade.get(field)
+        parsed = _parse_dt(value)
+        if parsed is not None:
+            return parsed
+        if isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit()):
+            timestamp = float(value)
+            if timestamp > 10_000_000_000:
+                timestamp /= 1000.0
+            try:
+                return datetime.fromtimestamp(timestamp, timezone.utc)
+            except (OSError, OverflowError, ValueError):
+                continue
+    return None
+
+
+def _estimated_trade_cashflow(
+    *,
+    side: str,
+    price: float | None,
+    size: float | None,
+    fee: float | None,
+) -> float | None:
+    if price is None or size is None:
+        return None
+    notional = price * size
+    fee_value = fee or 0.0
+    if side.strip().lower() == "sell":
+        return round(notional - fee_value, 6)
+    if side.strip().lower() == "buy":
+        return round(-notional - fee_value, 6)
+    return None
 
 
 def _direct_order_external_id(order: dict[str, Any]) -> str | None:
