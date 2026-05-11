@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -33,6 +34,9 @@ from app.data.nodes.polymarket.blockchain.manage_portfolio import (
     PolymarketCredentials,
     cancel_order,
     place_new_order,
+    view_open_positions,
+    view_orders,
+    view_trades,
 )
 
 
@@ -216,6 +220,8 @@ _UNKNOWN_LIFECYCLE_STATUSES = {
     "direct_status_unknown",
     "local_open_without_external_id",
 }
+_DIRECT_TRADE_ORDER_ID_FIELDS = ("taker_order_id", "maker_order_id", "order_id", "orderID", "external_order_id")
+_DIRECT_ORDER_ID_FIELDS = ("id", "orderID", "orderId", "order_id", "external_order_id")
 
 
 def _json_dict(value: Any) -> dict[str, Any]:
@@ -273,6 +279,223 @@ def _direct_flat_snapshot_known(
     return direct_open_order_count == 0 and direct_open_position_count == 0
 
 
+def _direct_trade_value(trade: Any, key: str) -> Any:
+    if isinstance(trade, dict):
+        return trade.get(key)
+    return getattr(trade, key, None)
+
+
+def _direct_trade_order_ids(trade: Any) -> set[str]:
+    order_ids: set[str] = set()
+    for key in _DIRECT_TRADE_ORDER_ID_FIELDS:
+        value = _direct_trade_value(trade, key)
+        if value is not None and str(value).strip():
+            order_ids.add(str(value).strip().lower())
+    return order_ids
+
+
+def _direct_trade_id(trade: Any) -> str | None:
+    for key in ("id", "trade_id", "external_trade_id", "hash", "tx_hash"):
+        value = _direct_trade_value(trade, key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _direct_item_to_dict(item: Any) -> dict[str, Any]:
+    if isinstance(item, dict):
+        return dict(item)
+    if is_dataclass(item):
+        return asdict(item)
+    if hasattr(item, "model_dump") and callable(item.model_dump):
+        return dict(item.model_dump())
+    if hasattr(item, "dict") and callable(item.dict):
+        return dict(item.dict())
+    if hasattr(item, "__dict__"):
+        return dict(item.__dict__)
+    return {"value": str(item)}
+
+
+def _direct_order_external_id(order: Any) -> str | None:
+    item = order if isinstance(order, dict) else _direct_item_to_dict(order)
+    for key in _DIRECT_ORDER_ID_FIELDS:
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
+
+
+def _credentials_for_account(account: dict[str, Any]) -> PolymarketCredentials:
+    creds = PolymarketCredentials.from_env()
+    wallet = str(account.get("wallet_address") or "").strip()
+    proxy_wallet = str(account.get("proxy_wallet_address") or "").strip()
+    if wallet:
+        creds.wallet_address = wallet
+    if proxy_wallet:
+        creds.funder_address = proxy_wallet
+    elif wallet:
+        creds.funder_address = wallet
+    return creds
+
+
+def _fetch_direct_order_lifecycle_evidence(
+    connection: PsycopgConnection,
+    *,
+    account_id: str,
+) -> dict[str, Any]:
+    account = _fetch_account_wallet(connection, account_id=account_id)
+    creds = _credentials_for_account(account)
+    if not creds.private_key:
+        return {
+            "enabled": True,
+            "ok": False,
+            "error": "clob_private_key_missing",
+            "open_order_external_ids": [],
+            "open_order_count": None,
+            "open_position_count": None,
+            "trade_count": None,
+            "trades": [],
+        }
+
+    try:
+        open_orders = view_orders(creds, open_only=True)
+        open_positions = view_open_positions(creds, min_size=0.0)
+        trades = view_trades(creds)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "enabled": True,
+            "ok": False,
+            "error": str(exc),
+            "open_order_external_ids": [],
+            "open_order_count": None,
+            "open_position_count": None,
+            "trade_count": None,
+            "trades": [],
+        }
+
+    open_order_ids = [
+        order_id
+        for order_id in (_direct_order_external_id(order) for order in open_orders)
+        if order_id is not None
+    ]
+    trade_rows = [_direct_item_to_dict(trade) for trade in trades]
+    return {
+        "enabled": True,
+        "ok": True,
+        "error": None,
+        "open_order_external_ids": open_order_ids,
+        "open_order_count": len(open_orders),
+        "open_position_count": len(open_positions),
+        "trade_count": len(trade_rows),
+        "trades": trade_rows,
+    }
+
+
+def _trade_cashflow_for_order_side(
+    *,
+    order_side: Any,
+    price: Any,
+    size: Any,
+    fee: Any = None,
+) -> Decimal:
+    side = str(order_side or "").strip().lower()
+    notional = _decimal_or_zero(price) * _decimal_or_zero(size)
+    fee_value = _decimal_or_zero(fee)
+    if side == "sell":
+        return notional - fee_value
+    return -notional - fee_value
+
+
+def _direct_trade_evidence_by_order_id(direct_trade_rows: list[Any] | None) -> dict[str, list[Any]]:
+    evidence: dict[str, list[Any]] = {}
+    for trade in direct_trade_rows or []:
+        for order_id in _direct_trade_order_ids(trade):
+            evidence.setdefault(order_id, []).append(trade)
+    return evidence
+
+
+def _direct_trade_summary_for_order(
+    row: dict[str, Any],
+    direct_trades: list[Any],
+) -> dict[str, Any]:
+    fill_size = Decimal("0")
+    cashflow_usd = Decimal("0")
+    fee_usd = Decimal("0")
+    trade_ids: list[str] = []
+    for trade in direct_trades:
+        size = _decimal_or_zero(_direct_trade_value(trade, "size"))
+        price = _decimal_or_zero(_direct_trade_value(trade, "price"))
+        fee = _decimal_or_zero(_direct_trade_value(trade, "fee"))
+        fill_size += size
+        fee_usd += fee
+        cashflow_usd += _trade_cashflow_for_order_side(
+            order_side=row.get("side"),
+            price=price,
+            size=size,
+            fee=fee,
+        )
+        trade_id = _direct_trade_id(trade)
+        if trade_id:
+            trade_ids.append(trade_id)
+    return {
+        "direct_trade_count": len(direct_trades),
+        "direct_trade_ids": trade_ids,
+        "direct_fill_size": fill_size,
+        "direct_cashflow_usd": cashflow_usd,
+        "direct_fee_usd": fee_usd,
+    }
+
+
+def _effective_fill_summary(
+    *,
+    linked_fill_size: Decimal,
+    linked_cashflow_usd: Decimal,
+    linked_fee_usd: Decimal,
+    direct_fill_size: Decimal,
+    direct_cashflow_usd: Decimal,
+    direct_fee_usd: Decimal,
+) -> dict[str, Any]:
+    if linked_fill_size > Decimal("0") and direct_fill_size > Decimal("0"):
+        if direct_fill_size > linked_fill_size + Decimal("0.000001"):
+            return {
+                "fill_evidence_source": "direct_clob_trades",
+                "effective_fill_size": direct_fill_size,
+                "effective_cashflow_usd": direct_cashflow_usd,
+                "effective_fee_usd": direct_fee_usd,
+                "direct_local_fill_mismatch": True,
+            }
+        return {
+            "fill_evidence_source": "local_and_direct_trades",
+            "effective_fill_size": linked_fill_size,
+            "effective_cashflow_usd": linked_cashflow_usd,
+            "effective_fee_usd": linked_fee_usd,
+            "direct_local_fill_mismatch": direct_fill_size + Decimal("0.000001") < linked_fill_size,
+        }
+    if linked_fill_size > Decimal("0"):
+        return {
+            "fill_evidence_source": "local_trades",
+            "effective_fill_size": linked_fill_size,
+            "effective_cashflow_usd": linked_cashflow_usd,
+            "effective_fee_usd": linked_fee_usd,
+            "direct_local_fill_mismatch": False,
+        }
+    if direct_fill_size > Decimal("0"):
+        return {
+            "fill_evidence_source": "direct_clob_trades",
+            "effective_fill_size": direct_fill_size,
+            "effective_cashflow_usd": direct_cashflow_usd,
+            "effective_fee_usd": direct_fee_usd,
+            "direct_local_fill_mismatch": False,
+        }
+    return {
+        "fill_evidence_source": "none",
+        "effective_fill_size": Decimal("0"),
+        "effective_cashflow_usd": Decimal("0"),
+        "effective_fee_usd": Decimal("0"),
+        "direct_local_fill_mismatch": False,
+    }
+
+
 def _order_lifecycle_status(
     row: dict[str, Any],
     *,
@@ -283,7 +506,7 @@ def _order_lifecycle_status(
     status = str(row.get("status") or "").strip().lower()
     external_order_id = str(row.get("external_order_id") or "").strip().lower()
     requested_size = _decimal_or_zero(row.get("size"))
-    linked_fill_size = _decimal_or_zero(row.get("linked_fill_size"))
+    linked_fill_size = _decimal_or_zero(row.get("effective_fill_size") or row.get("linked_fill_size"))
     if external_order_id and external_order_id in direct_open_order_external_ids:
         return "direct_live"
     if linked_fill_size > Decimal("0"):
@@ -314,10 +537,12 @@ def build_order_lifecycle_reconciliation_report(
     direct_open_order_external_ids: list[str] | None = None,
     direct_open_order_count: int | None = None,
     direct_open_position_count: int | None = None,
+    direct_trade_rows: list[Any] | None = None,
 ) -> dict[str, Any]:
     direct_ids = {str(item or "").strip().lower() for item in direct_open_order_external_ids or [] if str(item or "").strip()}
     if direct_open_order_count is None and direct_ids:
         direct_open_order_count = len(direct_ids)
+    direct_trade_evidence = _direct_trade_evidence_by_order_id(direct_trade_rows)
 
     lifecycle_counts: dict[str, int] = {}
     actor_summary: dict[str, dict[str, Any]] = {}
@@ -326,18 +551,12 @@ def build_order_lifecycle_reconciliation_report(
     linked_order_count = 0
     linked_trade_count = 0
     unknown_lifecycle_count = 0
+    direct_trade_matched_order_ids: set[str] = set()
 
     for row in rows:
         external_order_id = str(row.get("external_order_id") or "").strip()
         if external_order_id:
             external_order_count += 1
-        row_lifecycle = _order_lifecycle_status(
-            row,
-            direct_open_order_external_ids=direct_ids,
-            direct_open_order_count=direct_open_order_count,
-            direct_open_position_count=direct_open_position_count,
-        )
-        lifecycle_counts[row_lifecycle] = lifecycle_counts.get(row_lifecycle, 0) + 1
         linked_count = int(row.get("linked_trade_count") or 0)
         if linked_count:
             linked_order_count += 1
@@ -345,6 +564,28 @@ def build_order_lifecycle_reconciliation_report(
         linked_fill_size = _decimal_or_zero(row.get("linked_fill_size"))
         linked_cashflow_usd = _decimal_or_zero(row.get("linked_cashflow_usd"))
         linked_fee_usd = _decimal_or_zero(row.get("linked_fee_usd"))
+        direct_summary = _direct_trade_summary_for_order(
+            row,
+            direct_trade_evidence.get(external_order_id.lower(), []),
+        )
+        if external_order_id and direct_summary["direct_trade_count"]:
+            direct_trade_matched_order_ids.add(external_order_id.lower())
+        fill_summary = _effective_fill_summary(
+            linked_fill_size=linked_fill_size,
+            linked_cashflow_usd=linked_cashflow_usd,
+            linked_fee_usd=linked_fee_usd,
+            direct_fill_size=direct_summary["direct_fill_size"],
+            direct_cashflow_usd=direct_summary["direct_cashflow_usd"],
+            direct_fee_usd=direct_summary["direct_fee_usd"],
+        )
+        row_for_status = {**row, "effective_fill_size": fill_summary["effective_fill_size"]}
+        row_lifecycle = _order_lifecycle_status(
+            row_for_status,
+            direct_open_order_external_ids=direct_ids,
+            direct_open_order_count=direct_open_order_count,
+            direct_open_position_count=direct_open_position_count,
+        )
+        lifecycle_counts[row_lifecycle] = lifecycle_counts.get(row_lifecycle, 0) + 1
         actor = _order_actor_label(row)
         actor_bucket = actor_summary.setdefault(
             actor,
@@ -355,6 +596,13 @@ def build_order_lifecycle_reconciliation_report(
                 "linked_fill_size": Decimal("0"),
                 "linked_cashflow_usd": Decimal("0"),
                 "linked_fee_usd": Decimal("0"),
+                "direct_trade_count": 0,
+                "direct_fill_size": Decimal("0"),
+                "direct_cashflow_usd": Decimal("0"),
+                "direct_fee_usd": Decimal("0"),
+                "effective_fill_size": Decimal("0"),
+                "effective_cashflow_usd": Decimal("0"),
+                "effective_fee_usd": Decimal("0"),
                 "unknown_lifecycle_count": 0,
             },
         )
@@ -364,6 +612,13 @@ def build_order_lifecycle_reconciliation_report(
         actor_bucket["linked_fill_size"] += linked_fill_size
         actor_bucket["linked_cashflow_usd"] += linked_cashflow_usd
         actor_bucket["linked_fee_usd"] += linked_fee_usd
+        actor_bucket["direct_trade_count"] += direct_summary["direct_trade_count"]
+        actor_bucket["direct_fill_size"] += direct_summary["direct_fill_size"]
+        actor_bucket["direct_cashflow_usd"] += direct_summary["direct_cashflow_usd"]
+        actor_bucket["direct_fee_usd"] += direct_summary["direct_fee_usd"]
+        actor_bucket["effective_fill_size"] += fill_summary["effective_fill_size"]
+        actor_bucket["effective_cashflow_usd"] += fill_summary["effective_cashflow_usd"]
+        actor_bucket["effective_fee_usd"] += fill_summary["effective_fee_usd"]
         if row_lifecycle in _UNKNOWN_LIFECYCLE_STATUSES:
             unknown_lifecycle_count += 1
             actor_bucket["unknown_lifecycle_count"] += 1
@@ -389,6 +644,16 @@ def build_order_lifecycle_reconciliation_report(
                 "linked_fill_size": linked_fill_size,
                 "linked_cashflow_usd": linked_cashflow_usd,
                 "linked_fee_usd": linked_fee_usd,
+                "direct_trade_count": direct_summary["direct_trade_count"],
+                "direct_trade_ids": direct_summary["direct_trade_ids"],
+                "direct_fill_size": direct_summary["direct_fill_size"],
+                "direct_cashflow_usd": direct_summary["direct_cashflow_usd"],
+                "direct_fee_usd": direct_summary["direct_fee_usd"],
+                "fill_evidence_source": fill_summary["fill_evidence_source"],
+                "effective_fill_size": fill_summary["effective_fill_size"],
+                "effective_cashflow_usd": fill_summary["effective_cashflow_usd"],
+                "effective_fee_usd": fill_summary["effective_fee_usd"],
+                "direct_local_fill_mismatch": fill_summary["direct_local_fill_mismatch"],
                 "missing_evidence": row_lifecycle in _UNKNOWN_LIFECYCLE_STATUSES,
             }
         )
@@ -406,6 +671,9 @@ def build_order_lifecycle_reconciliation_report(
             "open_order_external_ids": sorted(direct_ids),
             "open_order_count": direct_open_order_count,
             "open_position_count": direct_open_position_count,
+            "trade_count": len(direct_trade_rows or []),
+            "trade_matched_order_count": len(direct_trade_matched_order_ids),
+            "trade_order_id_count": len(direct_trade_evidence),
             "direct_flat_snapshot": _direct_flat_snapshot_known(
                 direct_open_order_count=direct_open_order_count,
                 direct_open_position_count=direct_open_position_count,
@@ -925,6 +1193,7 @@ def reconcile_portfolio_orders(
     direct_open_order_external_id: list[str] | None = Query(default=None),
     direct_open_order_count: int | None = Query(default=None, ge=0),
     direct_open_position_count: int | None = Query(default=None, ge=0),
+    include_direct_clob_evidence: bool = Query(default=False),
     limit: int = Query(default=5000, ge=1, le=20000),
     connection: PsycopgConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
@@ -1010,12 +1279,51 @@ def reconcile_portfolio_orders(
             tuple(params),
         )
         rows = fetchall_dicts(cursor)
+    resolved_direct_open_order_external_ids = list(direct_open_order_external_id or [])
+    resolved_direct_open_order_count = direct_open_order_count
+    resolved_direct_open_position_count = direct_open_position_count
+    direct_trade_rows: list[Any] = []
+    direct_evidence: dict[str, Any] = {
+        "enabled": include_direct_clob_evidence,
+        "ok": None,
+        "error": None,
+    }
+    if include_direct_clob_evidence:
+        if account_id is None:
+            direct_evidence = {
+                "enabled": True,
+                "ok": False,
+                "error": "account_id_required",
+                "open_order_count": None,
+                "open_position_count": None,
+                "trade_count": None,
+            }
+        else:
+            direct_evidence = _fetch_direct_order_lifecycle_evidence(connection, account_id=str(account_id))
+            if direct_evidence.get("ok"):
+                direct_trade_rows = list(direct_evidence.get("trades") or [])
+                seen_order_ids = {
+                    str(item or "").strip().lower()
+                    for item in resolved_direct_open_order_external_ids
+                    if str(item or "").strip()
+                }
+                for order_id in direct_evidence.get("open_order_external_ids") or []:
+                    normalized_order_id = str(order_id or "").strip()
+                    if normalized_order_id and normalized_order_id.lower() not in seen_order_ids:
+                        resolved_direct_open_order_external_ids.append(normalized_order_id)
+                        seen_order_ids.add(normalized_order_id.lower())
+                if resolved_direct_open_order_count is None:
+                    resolved_direct_open_order_count = direct_evidence.get("open_order_count")
+                if resolved_direct_open_position_count is None:
+                    resolved_direct_open_position_count = direct_evidence.get("open_position_count")
     report = build_order_lifecycle_reconciliation_report(
         rows,
-        direct_open_order_external_ids=direct_open_order_external_id,
-        direct_open_order_count=direct_open_order_count,
-        direct_open_position_count=direct_open_position_count,
+        direct_open_order_external_ids=resolved_direct_open_order_external_ids,
+        direct_open_order_count=resolved_direct_open_order_count,
+        direct_open_position_count=resolved_direct_open_position_count,
+        direct_trade_rows=direct_trade_rows,
     )
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
     return {
         "filters": {
             "account_id": str(account_id) if account_id is not None else None,
@@ -1024,8 +1332,10 @@ def reconcile_portfolio_orders(
             "event_slug": event_slug,
             "start_time": start_time,
             "end_time": end_time,
+            "include_direct_clob_evidence": include_direct_clob_evidence,
             "limit": limit,
         },
+        "direct_evidence": to_jsonable(direct_evidence_summary),
         "reconciliation": to_jsonable(report),
     }
 

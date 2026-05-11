@@ -200,6 +200,45 @@ def test_order_lifecycle_report_flags_direct_flat_unknown_and_actor_cashflow_pyt
     assert report["items"][1]["lifecycle_status"] == "direct_flat_status_unknown"
 
 
+def test_order_lifecycle_report_uses_direct_trade_evidence_when_local_fill_missing_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="submitted",
+            size="5",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10", "strategy_family": "min-underdog-band-grid-v2"},
+        )
+    ]
+
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+        direct_trade_rows=[
+            {
+                "id": "clob-trade-1",
+                "taker_order_id": "0xbuy",
+                "price": "0.31",
+                "size": "5",
+            }
+        ],
+    )
+
+    assert report["unknown_lifecycle_count"] == 0
+    assert report["pnl_attribution_ready"] is True
+    assert report["lifecycle_status_counts"] == {"filled": 1}
+    assert report["direct_context"]["trade_count"] == 1
+    assert report["direct_context"]["trade_matched_order_count"] == 1
+    assert report["items"][0]["fill_evidence_source"] == "direct_clob_trades"
+    assert report["items"][0]["direct_fill_size"] == Decimal("5")
+    assert report["items"][0]["effective_cashflow_usd"] == Decimal("-1.55")
+    assert report["actor_summary"]["janus_strategy"]["effective_cashflow_usd"] == Decimal("-1.55")
+
+
 def test_order_lifecycle_reconciliation_endpoint_returns_direct_flat_unknown_pytest(monkeypatch) -> None:
     rows = [
         _order_row(
@@ -257,3 +296,85 @@ def test_order_lifecycle_reconciliation_endpoint_returns_direct_flat_unknown_pyt
     assert reconciliation["direct_context"]["direct_flat_snapshot"] is True
     assert reconciliation["items"][0]["actor_label"] == "manual_target_exit"
     assert reconciliation["items"][0]["lifecycle_status"] == "direct_flat_status_unknown"
+
+
+def test_order_lifecycle_reconciliation_endpoint_uses_direct_clob_trade_evidence_pytest(monkeypatch) -> None:
+    rows = [
+        _order_row(
+            "manual-protect",
+            external_order_id="0xsell",
+            side="sell",
+            status="submitted",
+            size="5",
+            limit_price="0.65",
+            metadata_json={"reaction_type": "operator_intervention_target"},
+        )
+    ]
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+    class FakeConnection:
+        def cursor(self, *_, **__):
+            return FakeCursor()
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    def fake_direct_evidence(connection, *, account_id: str):
+        return {
+            "enabled": True,
+            "ok": True,
+            "error": None,
+            "open_order_external_ids": [],
+            "open_order_count": 0,
+            "open_position_count": 0,
+            "trade_count": 1,
+            "trades": [
+                {
+                    "id": "clob-trade-1",
+                    "maker_order_id": "0xsell",
+                    "price": "0.65",
+                    "size": "5",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(portfolio_router, "_fetch_direct_order_lifecycle_evidence", fake_direct_evidence)
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.get(
+            "/v1/portfolio/orders/reconciliation",
+            params={
+                "account_id": ACCOUNT_ID,
+                "event_slug": EVENT_SLUG,
+                "include_direct_clob_evidence": "true",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    reconciliation = payload["reconciliation"]
+    assert payload["filters"]["include_direct_clob_evidence"] is True
+    assert payload["direct_evidence"]["ok"] is True
+    assert reconciliation["unknown_lifecycle_count"] == 0
+    assert reconciliation["direct_context"]["trade_count"] == 1
+    assert reconciliation["items"][0]["lifecycle_status"] == "filled"
+    assert reconciliation["items"][0]["fill_evidence_source"] == "direct_clob_trades"
+    assert reconciliation["items"][0]["effective_cashflow_usd"] == 3.25
