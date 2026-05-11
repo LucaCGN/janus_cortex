@@ -545,6 +545,178 @@ def test_direct_trade_backfill_plan_creates_missing_portfolio_trade_actions_pyte
     assert action["liquidity_role"] == "taker"
 
 
+def test_pnl_attribution_report_splits_actor_cashflow_and_residual_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="filled",
+            size="10",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10"},
+            linked_trade_count=1,
+            linked_fill_size="10",
+            linked_cashflow_usd="-3.10",
+        ),
+        _order_row(
+            "janus-target",
+            external_order_id="0xsell",
+            side="sell",
+            status="filled",
+            size="10",
+            limit_price="0.39",
+            metadata_json={"run_id": "live-2026-05-10"},
+            linked_trade_count=1,
+            linked_fill_size="10",
+            linked_cashflow_usd="3.90",
+        ),
+    ]
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+        direct_trade_rows=[],
+    )
+
+    attribution = portfolio_router.build_portfolio_pnl_attribution_report(
+        report,
+        opening_collateral_usd=Decimal("100.00"),
+        closing_collateral_usd=Decimal("100.80"),
+        final_winning_outcome_id=OUTCOME_ID,
+    )
+
+    buckets = {bucket["actor_label"]: bucket for bucket in attribution["buckets"]}
+    assert attribution["known_cashflow_usd"] == Decimal("0.80")
+    assert attribution["direct_collateral_delta_usd"] == Decimal("0.80")
+    assert attribution["residual_cashflow_usd"] == Decimal("0.00")
+    assert attribution["residual_status"] == "balanced"
+    assert attribution["pnl_attribution_ready"] is True
+    assert buckets["janus_strategy"]["known_cashflow_usd"] == Decimal("-3.10")
+    assert buckets["janus_target_exit"]["known_cashflow_usd"] == Decimal("3.90")
+    assert buckets["janus_strategy"]["winning_outcome_cashflow_usd"] == Decimal("-3.10")
+
+
+def test_pnl_attribution_report_marks_unexplained_direct_residual_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="filled",
+            size="5",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10"},
+            linked_trade_count=1,
+            linked_fill_size="5",
+            linked_cashflow_usd="-1.55",
+        )
+    ]
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+        direct_trade_rows=[],
+    )
+
+    attribution = portfolio_router.build_portfolio_pnl_attribution_report(
+        report,
+        opening_collateral_usd=Decimal("100.00"),
+        closing_collateral_usd=Decimal("99.00"),
+        final_winning_outcome_id=OUTCOME_ID,
+    )
+
+    residual_bucket = attribution["buckets"][-1]
+    assert attribution["known_cashflow_usd"] == Decimal("-1.55")
+    assert attribution["direct_collateral_delta_usd"] == Decimal("-1.00")
+    assert attribution["residual_cashflow_usd"] == Decimal("0.55")
+    assert attribution["residual_status"] == "unexplained_residual"
+    assert attribution["pnl_attribution_ready"] is False
+    assert residual_bucket["actor_label"] == "unknown_residual"
+    assert residual_bucket["known_cashflow_usd"] == Decimal("0.55")
+
+
+def test_pnl_attribution_endpoint_returns_actor_buckets_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="filled",
+            size="10",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10"},
+            linked_trade_count=1,
+            linked_fill_size="10",
+            linked_cashflow_usd="-3.10",
+        ),
+        _order_row(
+            "janus-target",
+            external_order_id="0xsell",
+            side="sell",
+            status="filled",
+            size="10",
+            limit_price="0.39",
+            metadata_json={"run_id": "live-2026-05-10"},
+            linked_trade_count=1,
+            linked_fill_size="10",
+            linked_cashflow_usd="3.90",
+        ),
+    ]
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+    class FakeConnection:
+        def cursor(self, *_, **__):
+            return FakeCursor()
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.get(
+            "/v1/portfolio/orders/reconciliation/pnl-attribution",
+            params={
+                "account_id": ACCOUNT_ID,
+                "event_slug": EVENT_SLUG,
+                "direct_open_order_count": 0,
+                "direct_open_position_count": 0,
+                "opening_collateral_usd": "100.00",
+                "closing_collateral_usd": "100.80",
+                "final_winning_outcome_id": OUTCOME_ID,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    attribution = payload["pnl_attribution"]
+    buckets = {bucket["actor_label"]: bucket for bucket in attribution["buckets"]}
+    assert attribution["known_cashflow_usd"] == 0.8
+    assert attribution["residual_status"] == "balanced"
+    assert attribution["pnl_attribution_ready"] is True
+    assert buckets["janus_strategy"]["known_cashflow_usd"] == -3.1
+    assert buckets["janus_target_exit"]["known_cashflow_usd"] == 3.9
+
+
 def test_direct_trade_backfill_endpoint_dry_run_returns_reviewed_trade_actions_pytest(monkeypatch) -> None:
     rows = [
         _order_row(

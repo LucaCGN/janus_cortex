@@ -690,6 +690,135 @@ def build_order_lifecycle_reconciliation_report(
     }
 
 
+def _outcome_result_label(outcome_id: Any, *, final_winning_outcome_id: UUID | str | None) -> str:
+    if final_winning_outcome_id is None:
+        return "unknown"
+    outcome_text = str(outcome_id or "").strip().lower()
+    winner_text = str(final_winning_outcome_id or "").strip().lower()
+    if not outcome_text:
+        return "unknown"
+    return "winning" if outcome_text == winner_text else "losing"
+
+
+def _pnl_residual_status(
+    residual_cashflow_usd: Decimal | None,
+    *,
+    tolerance: Decimal = Decimal("0.000001"),
+) -> str:
+    if residual_cashflow_usd is None:
+        return "not_supplied"
+    if abs(residual_cashflow_usd) <= tolerance:
+        return "balanced"
+    return "unexplained_residual"
+
+
+def build_portfolio_pnl_attribution_report(
+    report: dict[str, Any],
+    *,
+    opening_collateral_usd: Any = None,
+    closing_collateral_usd: Any = None,
+    final_winning_outcome_id: UUID | str | None = None,
+) -> dict[str, Any]:
+    actor_buckets: dict[str, dict[str, Any]] = {}
+    known_cashflow_usd = Decimal("0")
+    known_fee_usd = Decimal("0")
+    lifecycle_unknown_count = int(report.get("unknown_lifecycle_count") or 0)
+
+    for item in report.get("items", []):
+        actor = str(item.get("actor_label") or "unknown")
+        outcome_result = _outcome_result_label(item.get("outcome_id"), final_winning_outcome_id=final_winning_outcome_id)
+        cashflow = _decimal_or_zero(item.get("effective_cashflow_usd"))
+        fee = _decimal_or_zero(item.get("effective_fee_usd"))
+        fill_size = _decimal_or_zero(item.get("effective_fill_size"))
+        side = str(item.get("side") or "").strip().lower()
+        bucket = actor_buckets.setdefault(
+            actor,
+            {
+                "actor_label": actor,
+                "order_count": 0,
+                "trade_count": 0,
+                "known_cashflow_usd": Decimal("0"),
+                "known_fee_usd": Decimal("0"),
+                "effective_fill_size": Decimal("0"),
+                "buy_order_count": 0,
+                "sell_order_count": 0,
+                "winning_outcome_cashflow_usd": Decimal("0"),
+                "losing_outcome_cashflow_usd": Decimal("0"),
+                "unknown_outcome_cashflow_usd": Decimal("0"),
+                "unknown_lifecycle_count": 0,
+            },
+        )
+        bucket["order_count"] += 1
+        bucket["trade_count"] += int(item.get("linked_trade_count") or item.get("direct_trade_count") or 0)
+        bucket["known_cashflow_usd"] += cashflow
+        bucket["known_fee_usd"] += fee
+        bucket["effective_fill_size"] += fill_size
+        if side == "buy":
+            bucket["buy_order_count"] += 1
+        elif side == "sell":
+            bucket["sell_order_count"] += 1
+        if outcome_result == "winning":
+            bucket["winning_outcome_cashflow_usd"] += cashflow
+        elif outcome_result == "losing":
+            bucket["losing_outcome_cashflow_usd"] += cashflow
+        else:
+            bucket["unknown_outcome_cashflow_usd"] += cashflow
+        if item.get("missing_evidence"):
+            bucket["unknown_lifecycle_count"] += 1
+        known_cashflow_usd += cashflow
+        known_fee_usd += fee
+
+    opening = _decimal_or_zero(opening_collateral_usd) if opening_collateral_usd is not None else None
+    closing = _decimal_or_zero(closing_collateral_usd) if closing_collateral_usd is not None else None
+    direct_collateral_delta_usd = closing - opening if opening is not None and closing is not None else None
+    residual_cashflow_usd = (
+        direct_collateral_delta_usd - known_cashflow_usd
+        if direct_collateral_delta_usd is not None
+        else None
+    )
+    residual_status = _pnl_residual_status(residual_cashflow_usd)
+    direct_context = report.get("direct_context") or {}
+    direct_final_flat = bool(direct_context.get("direct_flat_snapshot"))
+    attribution_ready = lifecycle_unknown_count == 0 and direct_final_flat and residual_status in {"balanced", "not_supplied"}
+
+    residual_bucket = None
+    if residual_cashflow_usd is not None and residual_status != "balanced":
+        residual_bucket = {
+            "actor_label": "unknown_residual",
+            "order_count": 0,
+            "trade_count": 0,
+            "known_cashflow_usd": residual_cashflow_usd,
+            "known_fee_usd": Decimal("0"),
+            "effective_fill_size": Decimal("0"),
+            "buy_order_count": 0,
+            "sell_order_count": 0,
+            "winning_outcome_cashflow_usd": Decimal("0"),
+            "losing_outcome_cashflow_usd": Decimal("0"),
+            "unknown_outcome_cashflow_usd": residual_cashflow_usd,
+            "unknown_lifecycle_count": 0,
+            "residual_status": residual_status,
+        }
+
+    buckets = [actor_buckets[key] for key in sorted(actor_buckets)]
+    if residual_bucket is not None:
+        buckets.append(residual_bucket)
+
+    return {
+        "known_cashflow_usd": known_cashflow_usd,
+        "known_fee_usd": known_fee_usd,
+        "opening_collateral_usd": opening,
+        "closing_collateral_usd": closing,
+        "direct_collateral_delta_usd": direct_collateral_delta_usd,
+        "residual_cashflow_usd": residual_cashflow_usd,
+        "residual_status": residual_status,
+        "direct_final_flat": direct_final_flat,
+        "final_winning_outcome_id": str(final_winning_outcome_id) if final_winning_outcome_id is not None else None,
+        "unknown_lifecycle_count": lifecycle_unknown_count,
+        "pnl_attribution_ready": attribution_ready,
+        "buckets": buckets,
+    }
+
+
 def _order_status_backfill_action(item: dict[str, Any]) -> dict[str, Any]:
     old_status = str(item.get("status") or "").strip().lower()
     lifecycle_status = str(item.get("lifecycle_status") or "").strip().lower()
@@ -1773,6 +1902,77 @@ def reconcile_portfolio_orders(
         },
         "direct_evidence": to_jsonable(direct_evidence_summary),
         "reconciliation": to_jsonable(report),
+    }
+
+
+@router.get("/orders/reconciliation/pnl-attribution")
+def reconcile_portfolio_order_pnl_attribution(
+    account_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
+    outcome_id: UUID | None = Query(default=None),
+    event_slug: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    direct_open_order_external_id: list[str] | None = Query(default=None),
+    direct_open_order_count: int | None = Query(default=None, ge=0),
+    direct_open_position_count: int | None = Query(default=None, ge=0),
+    include_direct_clob_evidence: bool = Query(default=False),
+    opening_collateral_usd: Decimal | None = Query(default=None),
+    closing_collateral_usd: Decimal | None = Query(default=None),
+    final_winning_outcome_id: UUID | None = Query(default=None),
+    limit: int = Query(default=5000, ge=1, le=20000),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    rows = _fetch_order_lifecycle_reconciliation_rows(
+        connection,
+        account_id=account_id,
+        market_id=market_id,
+        outcome_id=outcome_id,
+        event_slug=event_slug,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+    )
+    direct_context = _resolve_order_lifecycle_direct_context(
+        connection,
+        account_id=account_id,
+        direct_open_order_external_id=direct_open_order_external_id,
+        direct_open_order_count=direct_open_order_count,
+        direct_open_position_count=direct_open_position_count,
+        include_direct_clob_evidence=include_direct_clob_evidence,
+    )
+    report = build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=direct_context["direct_open_order_external_ids"],
+        direct_open_order_count=direct_context["direct_open_order_count"],
+        direct_open_position_count=direct_context["direct_open_position_count"],
+        direct_trade_rows=direct_context["direct_trade_rows"],
+    )
+    attribution = build_portfolio_pnl_attribution_report(
+        report,
+        opening_collateral_usd=opening_collateral_usd,
+        closing_collateral_usd=closing_collateral_usd,
+        final_winning_outcome_id=final_winning_outcome_id,
+    )
+    direct_evidence = direct_context["direct_evidence"]
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    return {
+        "filters": {
+            "account_id": str(account_id) if account_id is not None else None,
+            "market_id": str(market_id) if market_id is not None else None,
+            "outcome_id": str(outcome_id) if outcome_id is not None else None,
+            "event_slug": event_slug,
+            "start_time": start_time,
+            "end_time": end_time,
+            "include_direct_clob_evidence": include_direct_clob_evidence,
+            "opening_collateral_usd": opening_collateral_usd,
+            "closing_collateral_usd": closing_collateral_usd,
+            "final_winning_outcome_id": str(final_winning_outcome_id) if final_winning_outcome_id is not None else None,
+            "limit": limit,
+        },
+        "direct_evidence": to_jsonable(direct_evidence_summary),
+        "reconciliation": to_jsonable(report),
+        "pnl_attribution": to_jsonable(attribution),
     }
 
 
