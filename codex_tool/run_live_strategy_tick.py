@@ -49,6 +49,11 @@ def main() -> None:
     )
     parser.set_defaults(auto_protect_manual_positions=True)
     parser.add_argument("--manual-target-delta-cents", type=float, default=5.0)
+    parser.add_argument(
+        "--submit-candidate-strategy-plan",
+        action="store_true",
+        help="After reviewed operator intervention detection, submit the generated candidate StrategyPlanJSON as the current plan.",
+    )
     args = parser.parse_args()
 
     result = run_tick(
@@ -67,6 +72,7 @@ def main() -> None:
         share_precision=args.share_precision,
         auto_protect_manual_positions=args.auto_protect_manual_positions,
         manual_target_delta_cents=args.manual_target_delta_cents,
+        submit_candidate_strategy_plan=args.submit_candidate_strategy_plan,
     )
     exit_for_response(result)
 
@@ -88,6 +94,7 @@ def run_tick(
     share_precision: int,
     auto_protect_manual_positions: bool,
     manual_target_delta_cents: float,
+    submit_candidate_strategy_plan: bool = False,
 ) -> dict[str, Any]:
     integrity = api_json(
         api_root,
@@ -137,6 +144,7 @@ def run_tick(
             share_precision=share_precision,
             auto_protect_manual_positions=auto_protect_manual_positions,
             manual_target_delta_cents=manual_target_delta_cents,
+            submit_candidate_strategy_plan=submit_candidate_strategy_plan,
         )
         events.append(event_result)
         all_ok = all_ok and bool(event_result.get("ok", True))
@@ -180,6 +188,7 @@ def _run_event_tick(
     share_precision: int,
     auto_protect_manual_positions: bool,
     manual_target_delta_cents: float,
+    submit_candidate_strategy_plan: bool = False,
 ) -> dict[str, Any]:
     context = api_json(
         api_root,
@@ -298,6 +307,12 @@ def _run_event_tick(
         target_delta_cents=manual_target_delta_cents,
         enabled=auto_protect_manual_positions,
     )
+    operator_reaction["candidate_strategy_plan_submission"] = _submit_candidate_strategy_plan(
+        api_root=api_root,
+        event_id=event_id,
+        operator_reaction=operator_reaction,
+        enabled=submit_candidate_strategy_plan,
+    )
     shadow = api_json(
         api_root,
         "POST",
@@ -337,8 +352,10 @@ def _run_event_tick(
                 },
             )
 
+    candidate_submission = operator_reaction.get("candidate_strategy_plan_submission") or {}
+    candidate_submission_failed = bool(submit_candidate_strategy_plan) and candidate_submission.get("ok") is False
     return {
-        "ok": True,
+        "ok": not candidate_submission_failed,
         "event_id": event_id,
         "game": game,
         "market_id": plan.get("market_id"),
@@ -351,6 +368,28 @@ def _run_event_tick(
         "operator_reaction": operator_reaction,
         "orderbook_results": _summarize_orderbooks(orderbook_results),
         "watch_persistence": watch_persistence,
+    }
+
+
+def _submit_candidate_strategy_plan(
+    *,
+    api_root: str,
+    event_id: str,
+    operator_reaction: dict[str, Any],
+    enabled: bool,
+) -> dict[str, Any]:
+    if not enabled:
+        return {"enabled": False, "submitted": False, "reason": "review_flag_required"}
+    candidate = operator_reaction.get("candidate_strategy_plan")
+    if not isinstance(candidate, dict):
+        return {"enabled": True, "submitted": False, "reason": "candidate_strategy_plan_missing"}
+    response = api_json(api_root, "POST", f"/v1/events/{event_id}/strategy-plan", candidate)
+    ok = bool(response.get("ok", True))
+    return {
+        "enabled": True,
+        "submitted": ok,
+        "ok": ok,
+        "response": response,
     }
 
 

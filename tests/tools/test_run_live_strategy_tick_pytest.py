@@ -147,6 +147,101 @@ def test_auto_protect_direct_position_skips_when_target_already_covers_pytest(mo
     assert calls == []
 
 
+def test_event_tick_can_submit_reviewed_candidate_strategy_plan_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+    plan = {
+        "market_id": "market-1",
+        "active_strategies": [
+            {
+                "strategy_id": "sas-favorite-floor-rebound-v2",
+                "side": "Spurs",
+                "entry_rules": {
+                    "outcome_id": "outcome-sas",
+                    "token_id": "token-sas",
+                    "side": "buy",
+                    "price": 0.18,
+                    "size": 5,
+                },
+            }
+        ],
+    }
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/events/nba-sas-min-2026-05-10/agent-context":
+            return {"ok": True, "current_strategy_plan": plan, "direct_open_order_count": 0, "direct_open_position_count": 1}
+        if path == "/v1/nba/games":
+            return {"ok": True, "items": []}
+        if path == "/v1/sync/polymarket/orderbook":
+            return {"ok": True}
+        if path == "/v1/outcomes/outcome-sas/orderbook/latest":
+            return {
+                "ok": True,
+                "snapshot": {
+                    "best_bid": 0.4,
+                    "best_ask": 0.41,
+                    "spread": 0.01,
+                    "captured_at": "2026-05-11T01:16:00+00:00",
+                },
+            }
+        if path == "/v1/portfolio/orders":
+            return {"ok": True, "items": []}
+        if path == "/v1/events/nba-sas-min-2026-05-10/strategy-plan":
+            return {"ok": True, "status": "stored", "strategy_count": len(payload["active_strategies"])}
+        if path == "/v1/events/nba-sas-min-2026-05-10/strategy-plan/evaluate":
+            return {"ok": True, "intent_count": 0, "blocked_count": 1}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._run_event_tick(
+        api_root="http://test",
+        session_date="2026-05-10",
+        event_id="nba-sas-min-2026-05-10",
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+        max_intents=2,
+        orderbook_sample_count=1,
+        orderbook_sample_interval_sec=0.0,
+        integrity_ready=True,
+        integrity_snapshot={
+            "direct_clob": {
+                "open_order_count": 0,
+                "open_orders": {"orders": []},
+                "open_positions": {
+                    "positions": [
+                        {
+                            "asset": "token-sas",
+                            "avg_price": 0.60,
+                            "event_slug": "nba-sas-min-2026-05-10",
+                            "outcome": "Spurs",
+                            "size": 5.0,
+                        }
+                    ]
+                },
+            }
+        },
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        share_precision=3,
+        auto_protect_manual_positions=True,
+        manual_target_delta_cents=5.0,
+        submit_candidate_strategy_plan=True,
+    )
+
+    plan_submit_index = next(i for i, call in enumerate(calls) if call["path"] == "/v1/events/nba-sas-min-2026-05-10/strategy-plan")
+    evaluate_index = next(i for i, call in enumerate(calls) if call["path"] == "/v1/events/nba-sas-min-2026-05-10/strategy-plan/evaluate")
+    submitted_plan = calls[plan_submit_index]["payload"]
+    StrategyPlan.model_validate(submitted_plan)
+    assert plan_submit_index < evaluate_index
+    assert submitted_plan["active_strategies"][0]["family"] == "operator_position_management"
+    assert submitted_plan["active_strategies"][0]["entry_rules"]["entry_disabled"] is True
+    assert result["operator_reaction"]["candidate_strategy_plan_submission"]["submitted"] is True
+    assert result["ok"] is True
+
+
 def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     plan = {
