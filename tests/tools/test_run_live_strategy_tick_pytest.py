@@ -242,6 +242,58 @@ def test_event_tick_can_submit_reviewed_candidate_strategy_plan_pytest(monkeypat
     assert result["ok"] is True
 
 
+def test_auto_protect_direct_order_reacts_to_unknown_open_order_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="nba-sas-min-2026-05-10",
+        plan={
+            "market_id": "market-1",
+            "active_strategies": [{"entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"}}],
+        },
+        direct_clob={
+            "open_positions": {"positions": []},
+            "open_orders": {
+                "orders": [
+                    {
+                        "id": "0xmanual",
+                        "token_id": "token-sas",
+                        "side": "BUY",
+                        "status": "LIVE",
+                        "size": 10.0,
+                        "price": 0.18,
+                    }
+                ]
+            },
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+        known_external_order_ids=set(),
+    )
+
+    assert calls == []
+    assert result["order_reactions"][0]["action"] == "adopt_operator_open_order"
+    assert result["order_reactions"][0]["direct_order_id"] == "0xmanual"
+    assert result["revision_requests"][0]["reason"] == "unknown_direct_clob_order_detected"
+    candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
+    assert candidate.context_summary["unknown_direct_order_count"] == 1
+    assert candidate.active_strategies[0].family == "operator_order_management"
+    assert candidate.portfolio_reconciliation[0]["action"] == "adopt_open_order"
+
+
 def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     plan = {

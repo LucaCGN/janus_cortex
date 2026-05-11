@@ -273,6 +273,12 @@ def _run_event_tick(
         plan=plan,
         direct_clob=direct_clob if isinstance(direct_clob, dict) else {},
     )
+    known_order_ids = _known_portfolio_order_external_ids(
+        api_root=api_root,
+        account_id=account_id,
+        event_id=event_id,
+        plan=plan,
+    )
     portfolio_state["pending_intents"] = pending_intents["pending_intent_count"]
     portfolio_state["pending_buy_intents"] = pending_intents["pending_buy_intent_count"]
     portfolio_state["pending_intents_side"] = "buy"
@@ -306,7 +312,9 @@ def _run_event_tick(
         min_size=min_size,
         target_delta_cents=manual_target_delta_cents,
         enabled=auto_protect_manual_positions,
+        known_external_order_ids=set(known_order_ids["external_order_ids"]) if known_order_ids["ok"] else None,
     )
+    operator_reaction["known_order_lookup"] = known_order_ids
     operator_reaction["candidate_strategy_plan_submission"] = _submit_candidate_strategy_plan(
         api_root=api_root,
         event_id=event_id,
@@ -407,6 +415,7 @@ def _auto_protect_direct_positions(
     min_size: float,
     target_delta_cents: float,
     enabled: bool,
+    known_external_order_ids: set[str] | None = None,
 ) -> dict[str, Any]:
     reaction: dict[str, Any] = {
         "enabled": enabled,
@@ -415,6 +424,7 @@ def _auto_protect_direct_positions(
         "recommended_orders": [],
         "blocked_by": [],
         "covered_positions": [],
+        "order_reactions": [],
         "position_reactions": [],
         "revision_requests": [],
         "candidate_strategy_plan_required": False,
@@ -433,6 +443,17 @@ def _auto_protect_direct_positions(
     positions = ((direct_clob.get("open_positions") or {}).get("positions") or [])
     open_orders = ((direct_clob.get("open_orders") or {}).get("orders") or [])
     plan_outcomes = _plan_outcome_lookup(plan)
+    reaction["order_reactions"].extend(
+        _unknown_direct_order_reactions(
+            event_id=event_id,
+            open_orders=open_orders,
+            plan_outcomes=plan_outcomes,
+            known_external_order_ids=known_external_order_ids,
+        )
+    )
+    reaction["revision_requests"].extend(
+        item["revision_request"] for item in reaction["order_reactions"] if isinstance(item.get("revision_request"), dict)
+    )
     for position in positions:
         event_slug = str(position.get("event_slug") or position.get("slug") or "")
         if event_slug and event_slug != event_id:
@@ -581,6 +602,7 @@ def _auto_protect_direct_positions(
         event_id=event_id,
         plan=plan,
         position_reactions=reaction["position_reactions"],
+        order_reactions=reaction["order_reactions"],
         source=source,
     )
     reaction["candidate_strategy_plan_required"] = bool(reaction["revision_requests"])
@@ -594,9 +616,10 @@ def _operator_position_strategy_plan_candidate(
     event_id: str,
     plan: dict[str, Any],
     position_reactions: list[dict[str, Any]],
+    order_reactions: list[dict[str, Any]],
     source: str,
 ) -> dict[str, Any] | None:
-    if not position_reactions:
+    if not position_reactions and not order_reactions:
         return None
     market_id = str(plan.get("market_id") or "").strip()
     if not market_id:
@@ -690,6 +713,79 @@ def _operator_position_strategy_plan_candidate(
             }
         )
 
+    for index, reaction in enumerate(order_reactions, start=1):
+        token_id = str(reaction.get("token_id") or "").strip()
+        if not token_id:
+            continue
+        outcome_ref = outcome_lookup.get(token_id) or {}
+        outcome_id = str(outcome_ref.get("outcome_id") or "").strip()
+        outcome_label = str(reaction.get("outcome_label") or outcome_id or token_id).strip()
+        order_side = str(reaction.get("order_side") or "").lower()
+        strategy_suffix = _safe_slug(outcome_label or token_id)
+        direct_order = reaction.get("direct_order") if isinstance(reaction.get("direct_order"), dict) else {}
+        active_strategies.append(
+            {
+                "strategy_id": f"operator-open-order-management-{strategy_suffix}-{index}",
+                "family": "operator_order_management",
+                "side": outcome_label or "operator_order",
+                "budget_usd": 0.0,
+                "max_positions": 0,
+                "entry_rules": {
+                    "entry_disabled": True,
+                    "no_new_entry": True,
+                    "side": "buy",
+                    "order_type": "limit",
+                    "market_id": str(outcome_ref.get("market_id") or market_id),
+                    "outcome_id": outcome_id,
+                    "token_id": token_id,
+                    "price": _float(direct_order.get("price")),
+                    "size": 0.0,
+                    "max_open_positions": 0,
+                    "reason": "unknown_direct_clob_order_adopted_order_management_only",
+                    "revision_request_reason": "unknown_direct_clob_order_detected",
+                },
+                "exit_rules": {
+                    "order_management_only": True,
+                    "direct_order_id": reaction.get("direct_order_id"),
+                    "direct_order_side": order_side,
+                    "direct_order_status": reaction.get("order_status"),
+                    "direct_order_size": _float(direct_order.get("size")),
+                    "direct_order_price": _float(direct_order.get("price")),
+                    "cancel_replace_review_required": True,
+                },
+                "stop_rules": {"manual_or_llm_review_required": True},
+                "hedge_rules": {
+                    "opposite_side_only_if_locks_profit_or_reduces_marked_loss": True,
+                    "new_bilateral_inventory_disabled": True,
+                },
+                "revision_triggers": [
+                    {"type": "unknown_direct_clob_order_detected", "required": True},
+                    {"type": "order_fill_cancel_or_expire", "required": True},
+                    {"type": "player_status_shock", "required": True},
+                    {"type": "clob_move_without_scoreboard_driver", "required": True},
+                ],
+                "shadow_flags": {
+                    "shadow_only": True,
+                    "execution_mode": "order_management_only",
+                    "requires_review_before_live": True,
+                },
+            }
+        )
+        portfolio_reconciliation.append(
+            {
+                "action": "adopt_open_order",
+                "reason": "unknown_direct_clob_order_detected",
+                "direct_order_id": reaction.get("direct_order_id"),
+                "token_id": token_id,
+                "outcome_id": outcome_id,
+                "outcome_label": outcome_label,
+                "order_side": order_side,
+                "order_status": reaction.get("order_status"),
+                "no_new_entry": True,
+                "requires_strategy_plan_revision": True,
+            }
+        )
+
     if not active_strategies:
         return None
     previous_strategy_ids = [
@@ -711,8 +807,10 @@ def _operator_position_strategy_plan_candidate(
             "previous_plan_owner": plan.get("plan_owner"),
             "previous_strategy_ids": previous_strategy_ids,
             "direct_position_count": len(position_reactions),
+            "unknown_direct_order_count": len(order_reactions),
             "no_new_entry": True,
-            "position_management_only": True,
+            "position_management_only": bool(position_reactions),
+            "order_management_only": bool(order_reactions),
         },
         "active_strategies": active_strategies,
         "trigger_conditions": [
@@ -724,11 +822,81 @@ def _operator_position_strategy_plan_candidate(
         ],
         "portfolio_reconciliation": portfolio_reconciliation,
         "explainability": {
-            "summary": "Candidate plan adopts detected direct CLOB positions and disables fresh buys until reviewed.",
+            "summary": "Candidate plan adopts detected direct CLOB positions/orders and disables fresh buys until reviewed.",
             "invalidates_previous_entry_families": True,
             "requires_operator_or_llm_review": True,
         },
     }
+
+
+def _unknown_direct_order_reactions(
+    *,
+    event_id: str,
+    open_orders: list[dict[str, Any]],
+    plan_outcomes: dict[str, dict[str, str]],
+    known_external_order_ids: set[str] | None,
+) -> list[dict[str, Any]]:
+    if known_external_order_ids is None:
+        return []
+    known_ids = {str(item).strip().lower() for item in known_external_order_ids if str(item).strip()}
+    reactions: list[dict[str, Any]] = []
+    for order in open_orders:
+        if not isinstance(order, dict):
+            continue
+        event_slug = str(order.get("event_slug") or order.get("slug") or "").strip()
+        if event_slug and event_slug != event_id:
+            continue
+        token_id = str(order.get("token_id") or order.get("asset_id") or order.get("asset") or "").strip()
+        if not token_id or token_id not in plan_outcomes:
+            continue
+        direct_order_id = _direct_order_external_id(order)
+        if not direct_order_id:
+            continue
+        if direct_order_id.lower() in known_ids:
+            continue
+        order_side = str(order.get("side") or "").strip().lower()
+        outcome_ref = plan_outcomes.get(token_id) or {}
+        outcome_label = str(order.get("outcome") or order.get("outcome_label") or outcome_ref.get("outcome_id") or "").strip()
+        revision_request = {
+            "reason": "unknown_direct_clob_order_detected",
+            "event_id": event_id,
+            "direct_order_id": direct_order_id,
+            "token_id": token_id,
+            "outcome_id": outcome_ref.get("outcome_id"),
+            "outcome_label": outcome_label or None,
+            "order_management_only": True,
+            "disable_new_entries": True,
+            "required_context": [
+                "direct_clob_truth",
+                "latest_scoreboard",
+                "recent_play_by_play",
+                "current_orderbook",
+                "local_portfolio_orders",
+            ],
+            "current_order": {
+                "side": order_side,
+                "status": order.get("status"),
+                "price": _float(order.get("price")),
+                "size": _float(order.get("size")),
+                "filled_size": _float(order.get("filled_size") or order.get("filled")),
+            },
+        }
+        reactions.append(
+            {
+                "action": "adopt_operator_open_order",
+                "direct_order_id": direct_order_id,
+                "token_id": token_id,
+                "outcome_id": outcome_ref.get("outcome_id"),
+                "outcome_label": outcome_label or None,
+                "order_side": order_side,
+                "order_status": order.get("status"),
+                "no_new_entry": True,
+                "requires_strategy_plan_revision": True,
+                "revision_request": revision_request,
+                "direct_order": order,
+            }
+        )
+    return reactions
 
 
 def _safe_slug(value: str) -> str:
@@ -947,16 +1115,63 @@ def _pending_intent_summary(
     }
 
 
+def _known_portfolio_order_external_ids(
+    *,
+    api_root: str,
+    account_id: str,
+    event_id: str,
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    market_id = str(plan.get("market_id") or "").strip()
+    source = "/v1/portfolio/orders"
+    payload = api_json(
+        api_root,
+        "GET",
+        source,
+        query={
+            "account_id": account_id,
+            "market_id": market_id or None,
+            "limit": 5000,
+        },
+        timeout=60,
+    )
+    if payload.get("ok") is False:
+        return {
+            "ok": False,
+            "source": source,
+            "external_order_ids": [],
+            "error": payload.get("error") or payload.get("status_code") or "portfolio_order_query_failed",
+        }
+    ids: set[str] = set()
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        event_slug = str(item.get("event_slug") or "").strip()
+        if event_slug and event_slug != event_id:
+            continue
+        external_order_id = str(item.get("external_order_id") or "").strip().lower()
+        if external_order_id:
+            ids.add(external_order_id)
+    return {"ok": True, "source": source, "external_order_ids": sorted(ids), "known_order_count": len(ids)}
+
+
 def _direct_open_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:
     ids: set[str] = set()
     for order in ((direct_clob.get("open_orders") or {}).get("orders") or []):
         if not isinstance(order, dict):
             continue
-        for field in _DIRECT_ORDER_ID_FIELDS:
-            value = str(order.get(field) or "").strip()
-            if value:
-                ids.add(value.lower())
+        value = _direct_order_external_id(order)
+        if value:
+            ids.add(value.lower())
     return ids
+
+
+def _direct_order_external_id(order: dict[str, Any]) -> str | None:
+    for field in _DIRECT_ORDER_ID_FIELDS:
+        value = str(order.get(field) or "").strip()
+        if value:
+            return value
+    return None
 
 
 def _plan_outcome_lookup(plan: dict[str, Any]) -> dict[str, dict[str, str]]:
