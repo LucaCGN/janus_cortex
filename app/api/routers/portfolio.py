@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from uuid import UUID, uuid4
@@ -21,6 +21,7 @@ from app.api.models import (
     ManualOrderCancelRequest,
     ManualOrderCreateRequest,
     ManualOrderResponse,
+    PortfolioDirectTradeBackfillRequest,
     PortfolioOrderStatusBackfillRequest,
     PortfolioPositionHistoryQuery,
     PortfolioPositionsQuery,
@@ -44,10 +45,15 @@ from app.data.nodes.polymarket.blockchain.manage_portfolio import (
 router = APIRouter(prefix="/v1/portfolio", tags=["portfolio"])
 
 _PROVIDER_NAMESPACE = uuid.UUID("41395777-ed5f-474f-a5b7-c97567f5ca56")
+_PORTFOLIO_SYNC_NAMESPACE = uuid.UUID("44ecb08d-f092-4a67-b542-c944bcf1c352")
 
 
 def _provider_uuid_for(code: str) -> str:
     return str(uuid.uuid5(_PROVIDER_NAMESPACE, code.strip().lower()))
+
+
+def _portfolio_sync_uuid_for(*parts: str) -> str:
+    return str(uuid.uuid5(_PORTFOLIO_SYNC_NAMESPACE, "|".join(parts)))
 
 
 def _resolve_provider_id(
@@ -826,6 +832,243 @@ def apply_order_status_backfill_actions(
     return applied
 
 
+def _direct_trade_raw_value(trade: Any, *keys: str) -> Any:
+    for key in keys:
+        value = _direct_trade_value(trade, key)
+        if value is not None and str(value).strip():
+            return value
+    return None
+
+
+def _direct_trade_time(trade: Any, *, fallback: datetime) -> datetime:
+    fallback_utc = fallback if fallback.tzinfo is not None else fallback.replace(tzinfo=timezone.utc)
+    fallback_utc = fallback_utc.astimezone(timezone.utc)
+    raw_value = _direct_trade_raw_value(trade, "trade_time", "timestamp", "createdAt", "created_at", "executed_at")
+    if isinstance(raw_value, datetime):
+        parsed = raw_value if raw_value.tzinfo is not None else raw_value.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    raw_text = str(raw_value or "").strip()
+    if raw_text:
+        try:
+            numeric = Decimal(raw_text)
+            if numeric > Decimal("100000000000"):
+                numeric = numeric / Decimal("1000")
+            if numeric > Decimal("0"):
+                return datetime.fromtimestamp(float(numeric), tz=timezone.utc)
+        except (InvalidOperation, ValueError, OverflowError):
+            pass
+        try:
+            parsed = datetime.fromisoformat(raw_text.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+    trade_id = _direct_trade_id(trade) or str(_direct_trade_order_ids(trade))
+    offset = uuid.uuid5(_PORTFOLIO_SYNC_NAMESPACE, f"direct_trade_time|{trade_id}").int % 1_000_000
+    return fallback_utc + timedelta(microseconds=offset)
+
+
+def _direct_trade_tx_hash(trade: Any) -> str | None:
+    value = _direct_trade_raw_value(trade, "tx_hash", "transaction_hash", "transactionHash", "hash")
+    return str(value).strip() if value is not None and str(value).strip() else None
+
+
+def _direct_trade_liquidity_role(*, trade: Any, external_order_id: str) -> str | None:
+    raw_role = _direct_trade_raw_value(trade, "liquidity_role", "liquidityRole")
+    if raw_role is not None and str(raw_role).strip():
+        return str(raw_role).strip().lower()
+    normalized_external_id = str(external_order_id or "").strip().lower()
+    if normalized_external_id:
+        taker_order_id = str(_direct_trade_value(trade, "taker_order_id") or "").strip().lower()
+        maker_order_id = str(_direct_trade_value(trade, "maker_order_id") or "").strip().lower()
+        if normalized_external_id and normalized_external_id == taker_order_id:
+            return "taker"
+        if normalized_external_id and normalized_external_id == maker_order_id:
+            return "maker"
+    return None
+
+
+def _portfolio_trade_id_for_backfill(action: dict[str, Any]) -> str:
+    external_trade_id = str(action.get("external_trade_id") or "").strip()
+    if external_trade_id:
+        return _portfolio_sync_uuid_for("trade", external_trade_id)
+    trade_time = action.get("trade_time")
+    if isinstance(trade_time, datetime):
+        trade_time_key = trade_time.astimezone(timezone.utc).isoformat(timespec="microseconds")
+    else:
+        trade_time_key = _normalized_trade_timestamp(trade_time)
+    return _portfolio_sync_uuid_for(
+        "trade_fallback",
+        str(action.get("account_id") or ""),
+        str(action.get("tx_hash") or ""),
+        str(action.get("market_id") or ""),
+        str(action.get("outcome_id") or ""),
+        str(action.get("side") or "").strip().lower(),
+        _normalized_trade_decimal(action.get("price")),
+        _normalized_trade_decimal(action.get("size")),
+        trade_time_key,
+    )
+
+
+def build_direct_trade_backfill_plan(
+    report: dict[str, Any],
+    *,
+    direct_trade_rows: list[Any],
+) -> dict[str, Any]:
+    direct_trade_evidence = _direct_trade_evidence_by_order_id(direct_trade_rows)
+    actions: list[dict[str, Any]] = []
+    planned_trade_ids: set[str] = set()
+
+    for item in report.get("items", []):
+        external_order_id = str(item.get("external_order_id") or "").strip()
+        if not external_order_id:
+            continue
+        direct_trades = direct_trade_evidence.get(external_order_id.lower(), [])
+        if not direct_trades:
+            continue
+        linked_trade_count = int(item.get("linked_trade_count") or 0)
+        order_id = str(item.get("order_id") or "").strip()
+        account_id = str(item.get("account_id") or "").strip()
+        market_id = str(item.get("market_id") or "").strip()
+        side = str(item.get("side") or "").strip().lower()
+        outcome_id = str(item.get("outcome_id") or "").strip() or None
+        placed_at = item.get("placed_at")
+        fallback_time = placed_at if isinstance(placed_at, datetime) else datetime.now(timezone.utc)
+
+        for trade in direct_trades:
+            external_trade_id = _direct_trade_id(trade)
+            tx_hash = _direct_trade_tx_hash(trade)
+            price = _decimal_or_zero(_direct_trade_value(trade, "price"))
+            size = _decimal_or_zero(_direct_trade_value(trade, "size"))
+            fee = _decimal_or_zero(_direct_trade_raw_value(trade, "fee", "fees"))
+            trade_time = _direct_trade_time(trade, fallback=fallback_time)
+            action: dict[str, Any] = {
+                "action": "upsert_trade",
+                "reason": "direct_clob_trade_missing_from_local_portfolio",
+                "order_id": order_id or None,
+                "external_order_id": external_order_id,
+                "account_id": account_id or None,
+                "market_id": market_id or None,
+                "outcome_id": outcome_id,
+                "event_slug": item.get("event_slug"),
+                "actor_label": item.get("actor_label"),
+                "side": side or None,
+                "price": price,
+                "size": size,
+                "fee": fee,
+                "fee_asset": str(_direct_trade_raw_value(trade, "fee_asset", "feeAsset") or "").strip() or None,
+                "liquidity_role": _direct_trade_liquidity_role(trade=trade, external_order_id=external_order_id),
+                "trade_time": trade_time,
+                "external_trade_id": external_trade_id,
+                "tx_hash": tx_hash,
+                "cashflow_usd": _trade_cashflow_for_order_side(order_side=side, price=price, size=size, fee=fee),
+                "raw_direct_trade": _direct_item_to_dict(trade),
+            }
+            action["trade_id"] = _portfolio_trade_id_for_backfill(action)
+            trade_id = str(action["trade_id"])
+            if trade_id in planned_trade_ids:
+                action["action"] = "no_update"
+                action["reason"] = "direct_trade_already_planned"
+            elif linked_trade_count > 0 and not bool(item.get("direct_local_fill_mismatch")):
+                action["action"] = "no_update"
+                action["reason"] = "local_trade_already_linked"
+            elif linked_trade_count > 0:
+                action["action"] = "review_required"
+                action["reason"] = "direct_local_fill_mismatch_requires_manual_review"
+            elif not order_id or not account_id or not market_id or not side:
+                action["action"] = "review_required"
+                action["reason"] = "missing_local_order_trade_identity"
+            elif size <= Decimal("0"):
+                action["action"] = "review_required"
+                action["reason"] = "direct_trade_size_missing"
+            else:
+                planned_trade_ids.add(trade_id)
+            actions.append(action)
+
+    action_counts: dict[str, int] = {}
+    cashflow_usd = Decimal("0")
+    for action in actions:
+        action_name = str(action.get("action") or "unknown")
+        action_counts[action_name] = action_counts.get(action_name, 0) + 1
+        if action_name == "upsert_trade":
+            cashflow_usd += _decimal_or_zero(action.get("cashflow_usd"))
+    return {
+        "action_counts": dict(sorted(action_counts.items())),
+        "eligible_upsert_count": action_counts.get("upsert_trade", 0),
+        "review_required_count": action_counts.get("review_required", 0),
+        "planned_cashflow_usd": cashflow_usd,
+        "actions": actions,
+    }
+
+
+def apply_direct_trade_backfill_actions(
+    connection: PsycopgConnection,
+    *,
+    actions: list[dict[str, Any]],
+    reviewed_by: str,
+    reason: str,
+) -> list[dict[str, Any]]:
+    repo = JanusUpsertRepository(connection)
+    applied: list[dict[str, Any]] = []
+    for action in actions:
+        if action.get("action") != "upsert_trade":
+            continue
+        order_id = str(action.get("order_id") or "").strip()
+        trade_id = str(action.get("trade_id") or "").strip()
+        if not order_id or not trade_id:
+            continue
+        trade_time = action.get("trade_time")
+        if not isinstance(trade_time, datetime):
+            trade_time = datetime.now(timezone.utc)
+        raw_json = {
+            "source": "reconciliation_direct_trade_backfill",
+            "reviewed_by": reviewed_by,
+            "reason": reason,
+            "external_order_id": action.get("external_order_id"),
+            "actor_label": action.get("actor_label"),
+            "cashflow_usd": to_jsonable(action.get("cashflow_usd")),
+            "raw_direct_trade": action.get("raw_direct_trade"),
+        }
+        repo.upsert_trade(
+            trade_id=trade_id,
+            account_id=str(action["account_id"]),
+            order_id=order_id,
+            market_id=str(action["market_id"]),
+            outcome_id=str(action.get("outcome_id")) if action.get("outcome_id") else None,
+            external_trade_id=str(action.get("external_trade_id") or "") or None,
+            tx_hash=str(action.get("tx_hash") or "") or None,
+            side=str(action["side"]),
+            price=float(_decimal_or_zero(action.get("price"))),
+            size=float(_decimal_or_zero(action.get("size"))),
+            fee=float(_decimal_or_zero(action.get("fee"))),
+            fee_asset=str(action.get("fee_asset") or "") or None,
+            liquidity_role=str(action.get("liquidity_role") or "") or None,
+            trade_time=trade_time,
+            raw_json=raw_json,
+        )
+        event_inserted = repo.insert_order_event(
+            order_event_id=_portfolio_sync_uuid_for("order_event", order_id, trade_id, "reconciliation_direct_trade_backfill"),
+            order_id=order_id,
+            event_time=trade_time,
+            event_type=f"reconciliation_direct_trade_backfill:{trade_id}",
+            filled_size_delta=float(_decimal_or_zero(action.get("size"))),
+            filled_notional_delta=float(_decimal_or_zero(action.get("price")) * _decimal_or_zero(action.get("size"))),
+            raw_json=raw_json,
+            ignore_duplicates=True,
+        )
+        applied.append(
+            {
+                "order_id": order_id,
+                "trade_id": trade_id,
+                "external_trade_id": action.get("external_trade_id"),
+                "applied": True,
+                "order_event_inserted": event_inserted,
+            }
+        )
+    return applied
+
+
 def build_trade_reconciliation_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1595,6 +1838,75 @@ def backfill_portfolio_order_statuses(
         "direct_evidence": to_jsonable(direct_evidence_summary),
         "reconciliation": to_jsonable(report),
         "status_backfill": to_jsonable(plan),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.post("/orders/reconciliation/trade-backfill")
+def backfill_portfolio_order_trades(
+    payload: PortfolioDirectTradeBackfillRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewed_by = str(payload.reviewed_by or "").strip()
+    reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewed_by or not reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    rows = _fetch_order_lifecycle_reconciliation_rows(
+        connection,
+        account_id=payload.account_id,
+        market_id=payload.market_id,
+        outcome_id=payload.outcome_id,
+        event_slug=payload.event_slug,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        limit=payload.limit,
+    )
+    direct_context = _resolve_order_lifecycle_direct_context(
+        connection,
+        account_id=payload.account_id,
+        direct_open_order_external_id=payload.direct_open_order_external_id,
+        direct_open_order_count=payload.direct_open_order_count,
+        direct_open_position_count=payload.direct_open_position_count,
+        include_direct_clob_evidence=payload.include_direct_clob_evidence,
+    )
+    report = build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=direct_context["direct_open_order_external_ids"],
+        direct_open_order_count=direct_context["direct_open_order_count"],
+        direct_open_position_count=direct_context["direct_open_position_count"],
+        direct_trade_rows=direct_context["direct_trade_rows"],
+    )
+    plan = build_direct_trade_backfill_plan(
+        report,
+        direct_trade_rows=direct_context["direct_trade_rows"],
+    )
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied = apply_direct_trade_backfill_actions(
+            connection,
+            actions=plan["actions"],
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
+
+    direct_evidence = direct_context["direct_evidence"]
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    return {
+        "dry_run": payload.dry_run,
+        "filters": {
+            "account_id": str(payload.account_id),
+            "market_id": str(payload.market_id) if payload.market_id is not None else None,
+            "outcome_id": str(payload.outcome_id) if payload.outcome_id is not None else None,
+            "event_slug": payload.event_slug,
+            "start_time": payload.start_time,
+            "end_time": payload.end_time,
+            "include_direct_clob_evidence": payload.include_direct_clob_evidence,
+            "limit": payload.limit,
+        },
+        "direct_evidence": to_jsonable(direct_evidence_summary),
+        "reconciliation": to_jsonable(report),
+        "trade_backfill": to_jsonable(plan),
         "applied": to_jsonable(applied),
     }
 

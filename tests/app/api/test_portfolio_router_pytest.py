@@ -503,6 +503,203 @@ def test_order_status_backfill_endpoint_dry_run_returns_reviewed_actions_pytest(
     assert payload["applied"] == []
 
 
+def test_direct_trade_backfill_plan_creates_missing_portfolio_trade_actions_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="submitted",
+            size="5",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10"},
+        )
+    ]
+    direct_trades = [
+        {
+            "id": "clob-trade-1",
+            "taker_order_id": "0xbuy",
+            "price": "0.31",
+            "size": "5",
+            "timestamp": 1_778_439_600,
+        }
+    ]
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+        direct_trade_rows=direct_trades,
+    )
+
+    plan = portfolio_router.build_direct_trade_backfill_plan(report, direct_trade_rows=direct_trades)
+
+    assert plan["eligible_upsert_count"] == 1
+    assert plan["review_required_count"] == 0
+    action = plan["actions"][0]
+    assert action["action"] == "upsert_trade"
+    assert action["order_id"] == "janus-buy"
+    assert action["external_trade_id"] == "clob-trade-1"
+    assert action["side"] == "buy"
+    assert action["cashflow_usd"] == Decimal("-1.55")
+    assert action["liquidity_role"] == "taker"
+
+
+def test_direct_trade_backfill_endpoint_dry_run_returns_reviewed_trade_actions_pytest(monkeypatch) -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="submitted",
+            size="5",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10"},
+        )
+    ]
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+    class FakeConnection:
+        def cursor(self, *_, **__):
+            return FakeCursor()
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    def fake_direct_evidence(connection, *, account_id: str):
+        return {
+            "enabled": True,
+            "ok": True,
+            "error": None,
+            "open_order_external_ids": [],
+            "open_order_count": 0,
+            "open_position_count": 0,
+            "trade_count": 1,
+            "trades": [
+                {
+                    "id": "clob-trade-1",
+                    "taker_order_id": "0xbuy",
+                    "price": "0.31",
+                    "size": "5",
+                    "timestamp": 1_778_439_600,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(portfolio_router, "_fetch_direct_order_lifecycle_evidence", fake_direct_evidence)
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/orders/reconciliation/trade-backfill",
+            json={
+                "account_id": ACCOUNT_ID,
+                "event_slug": EVENT_SLUG,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dry_run"] is True
+    assert payload["trade_backfill"]["eligible_upsert_count"] == 1
+    assert payload["trade_backfill"]["actions"][0]["action"] == "upsert_trade"
+    assert payload["trade_backfill"]["actions"][0]["external_trade_id"] == "clob-trade-1"
+    assert payload["applied"] == []
+
+
+def test_apply_direct_trade_backfill_actions_persists_trade_and_event_pytest() -> None:
+    class FakeCursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.connection.executed.append((query, params))
+            if "INSERT INTO portfolio.trades" in query:
+                self.row = (params[0],)
+            elif "INSERT INTO portfolio.order_events" in query:
+                self.row = (params[0],)
+            else:
+                self.row = None
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        def cursor(self, *_, **__):
+            return FakeCursor(self)
+
+    connection = FakeConnection()
+    trade_id = "22222222-2222-4222-8222-222222222222"
+
+    applied = portfolio_router.apply_direct_trade_backfill_actions(
+        connection,
+        actions=[
+            {
+                "action": "upsert_trade",
+                "order_id": "janus-buy",
+                "trade_id": trade_id,
+                "account_id": ACCOUNT_ID,
+                "market_id": MARKET_ID,
+                "outcome_id": OUTCOME_ID,
+                "side": "buy",
+                "price": Decimal("0.31"),
+                "size": Decimal("5"),
+                "fee": Decimal("0"),
+                "fee_asset": None,
+                "liquidity_role": "taker",
+                "trade_time": datetime(2026, 5, 10, 23, 52, tzinfo=timezone.utc),
+                "external_trade_id": "clob-trade-1",
+                "tx_hash": None,
+                "external_order_id": "0xbuy",
+                "actor_label": "janus_strategy",
+                "cashflow_usd": Decimal("-1.55"),
+                "raw_direct_trade": {"id": "clob-trade-1"},
+            }
+        ],
+        reviewed_by="postgame-review",
+        reason="direct CLOB fill evidence matched external order id",
+    )
+
+    assert applied == [
+        {
+            "order_id": "janus-buy",
+            "trade_id": trade_id,
+            "external_trade_id": "clob-trade-1",
+            "applied": True,
+            "order_event_inserted": True,
+        }
+    ]
+    assert any("INSERT INTO portfolio.trades" in query for query, _ in connection.executed)
+    assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
+
+
 def test_apply_order_status_backfill_actions_updates_idempotently_pytest() -> None:
     class FakeCursor:
         def __init__(self, connection):
