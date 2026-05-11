@@ -21,6 +21,7 @@ from app.api.models import (
     ManualOrderCancelRequest,
     ManualOrderCreateRequest,
     ManualOrderResponse,
+    PortfolioOrderStatusBackfillRequest,
     PortfolioPositionHistoryQuery,
     PortfolioPositionsQuery,
     PortfolioSummaryQuery,
@@ -683,6 +684,148 @@ def build_order_lifecycle_reconciliation_report(
     }
 
 
+def _order_status_backfill_action(item: dict[str, Any]) -> dict[str, Any]:
+    old_status = str(item.get("status") or "").strip().lower()
+    lifecycle_status = str(item.get("lifecycle_status") or "").strip().lower()
+    effective_fill_size = _decimal_or_zero(item.get("effective_fill_size"))
+    requested_size = _decimal_or_zero(item.get("size"))
+    fill_evidence_source = str(item.get("fill_evidence_source") or "none")
+    base = {
+        "order_id": item.get("order_id"),
+        "external_order_id": item.get("external_order_id"),
+        "actor_label": item.get("actor_label"),
+        "old_status": old_status or None,
+        "lifecycle_status": lifecycle_status or None,
+        "target_status": None,
+        "fill_evidence_source": fill_evidence_source,
+        "effective_fill_size": effective_fill_size,
+        "effective_cashflow_usd": _decimal_or_zero(item.get("effective_cashflow_usd")),
+        "reason": None,
+    }
+    if lifecycle_status == "filled" and effective_fill_size > Decimal("0"):
+        if requested_size > Decimal("0") and effective_fill_size + Decimal("0.000001") < requested_size:
+            return {
+                **base,
+                "action": "review_required",
+                "reason": "fill_size_below_requested_size",
+            }
+        if old_status == "filled":
+            return {
+                **base,
+                "action": "no_update",
+                "target_status": "filled",
+                "reason": "status_already_matches_lifecycle",
+            }
+        if old_status in _OPEN_ORDER_STATUSES:
+            return {
+                **base,
+                "action": "update_status",
+                "target_status": "filled",
+                "reason": "full_fill_evidence_available",
+            }
+        return {
+            **base,
+            "action": "review_required",
+            "target_status": "filled",
+            "reason": "non_open_status_requires_manual_review",
+        }
+    if lifecycle_status == "partially_filled":
+        return {
+            **base,
+            "action": "review_required",
+            "target_status": "partially_filled",
+            "reason": "partial_fill_final_status_requires_manual_review",
+        }
+    if lifecycle_status in _UNKNOWN_LIFECYCLE_STATUSES:
+        return {
+            **base,
+            "action": "review_required",
+            "reason": "missing_direct_fill_or_terminal_status_evidence",
+        }
+    return {
+        **base,
+        "action": "no_update",
+        "target_status": lifecycle_status or None,
+        "reason": "lifecycle_does_not_require_backfill",
+    }
+
+
+def build_order_status_backfill_plan(report: dict[str, Any]) -> dict[str, Any]:
+    actions = [_order_status_backfill_action(item) for item in report.get("items", [])]
+    action_counts: dict[str, int] = {}
+    for action in actions:
+        action_name = str(action.get("action") or "unknown")
+        action_counts[action_name] = action_counts.get(action_name, 0) + 1
+    return {
+        "action_counts": dict(sorted(action_counts.items())),
+        "eligible_update_count": action_counts.get("update_status", 0),
+        "review_required_count": action_counts.get("review_required", 0),
+        "actions": actions,
+    }
+
+
+def apply_order_status_backfill_actions(
+    connection: PsycopgConnection,
+    *,
+    actions: list[dict[str, Any]],
+    reviewed_by: str,
+    reason: str,
+) -> list[dict[str, Any]]:
+    now = datetime.now(timezone.utc)
+    repo = JanusUpsertRepository(connection)
+    applied: list[dict[str, Any]] = []
+    for action in actions:
+        if action.get("action") != "update_status":
+            continue
+        order_id = str(action.get("order_id") or "").strip()
+        old_status = str(action.get("old_status") or "").strip()
+        target_status = str(action.get("target_status") or "").strip()
+        if not order_id or not old_status or not target_status:
+            continue
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE portfolio.orders
+                SET status = %s, updated_at = %s
+                WHERE order_id = %s AND status = %s
+                RETURNING order_id;
+                """,
+                (target_status, now, order_id, old_status),
+            )
+            updated = cursor.fetchone() is not None
+        if updated:
+            repo.insert_order_event(
+                order_event_id=str(uuid4()),
+                order_id=order_id,
+                event_time=now,
+                event_type="reconciliation_status_backfill_applied",
+                filled_size_delta=None,
+                filled_notional_delta=None,
+                raw_json={
+                    "reviewed_by": reviewed_by,
+                    "reason": reason,
+                    "old_status": old_status,
+                    "target_status": target_status,
+                    "lifecycle_status": action.get("lifecycle_status"),
+                    "fill_evidence_source": action.get("fill_evidence_source"),
+                    "effective_fill_size": to_jsonable(action.get("effective_fill_size")),
+                    "effective_cashflow_usd": to_jsonable(action.get("effective_cashflow_usd")),
+                    "external_order_id": action.get("external_order_id"),
+                    "actor_label": action.get("actor_label"),
+                },
+                ignore_duplicates=True,
+            )
+        applied.append(
+            {
+                "order_id": order_id,
+                "old_status": old_status,
+                "target_status": target_status,
+                "applied": updated,
+            }
+        )
+    return applied
+
+
 def build_trade_reconciliation_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -1182,21 +1325,17 @@ def list_portfolio_orders(
     return {"items": to_jsonable(rows), "count": len(rows)}
 
 
-@router.get("/orders/reconciliation")
-def reconcile_portfolio_orders(
-    account_id: UUID | None = Query(default=None),
-    market_id: UUID | None = Query(default=None),
-    outcome_id: UUID | None = Query(default=None),
-    event_slug: str | None = Query(default=None),
-    start_time: datetime | None = Query(default=None),
-    end_time: datetime | None = Query(default=None),
-    direct_open_order_external_id: list[str] | None = Query(default=None),
-    direct_open_order_count: int | None = Query(default=None, ge=0),
-    direct_open_position_count: int | None = Query(default=None, ge=0),
-    include_direct_clob_evidence: bool = Query(default=False),
-    limit: int = Query(default=5000, ge=1, le=20000),
-    connection: PsycopgConnection = Depends(get_db_connection),
-) -> dict[str, Any]:
+def _fetch_order_lifecycle_reconciliation_rows(
+    connection: PsycopgConnection,
+    *,
+    account_id: UUID | None = None,
+    market_id: UUID | None = None,
+    outcome_id: UUID | None = None,
+    event_slug: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    limit: int = 5000,
+) -> list[dict[str, Any]]:
     conditions: list[str] = []
     params: list[Any] = []
     if account_id is not None:
@@ -1278,7 +1417,18 @@ def reconcile_portfolio_orders(
             """,
             tuple(params),
         )
-        rows = fetchall_dicts(cursor)
+        return fetchall_dicts(cursor)
+
+
+def _resolve_order_lifecycle_direct_context(
+    connection: PsycopgConnection,
+    *,
+    account_id: UUID | None,
+    direct_open_order_external_id: list[str] | None,
+    direct_open_order_count: int | None,
+    direct_open_position_count: int | None,
+    include_direct_clob_evidence: bool,
+) -> dict[str, Any]:
     resolved_direct_open_order_external_ids = list(direct_open_order_external_id or [])
     resolved_direct_open_order_count = direct_open_order_count
     resolved_direct_open_position_count = direct_open_position_count
@@ -1316,13 +1466,56 @@ def reconcile_portfolio_orders(
                     resolved_direct_open_order_count = direct_evidence.get("open_order_count")
                 if resolved_direct_open_position_count is None:
                     resolved_direct_open_position_count = direct_evidence.get("open_position_count")
+    return {
+        "direct_open_order_external_ids": resolved_direct_open_order_external_ids,
+        "direct_open_order_count": resolved_direct_open_order_count,
+        "direct_open_position_count": resolved_direct_open_position_count,
+        "direct_trade_rows": direct_trade_rows,
+        "direct_evidence": direct_evidence,
+    }
+
+
+@router.get("/orders/reconciliation")
+def reconcile_portfolio_orders(
+    account_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
+    outcome_id: UUID | None = Query(default=None),
+    event_slug: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    direct_open_order_external_id: list[str] | None = Query(default=None),
+    direct_open_order_count: int | None = Query(default=None, ge=0),
+    direct_open_position_count: int | None = Query(default=None, ge=0),
+    include_direct_clob_evidence: bool = Query(default=False),
+    limit: int = Query(default=5000, ge=1, le=20000),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    rows = _fetch_order_lifecycle_reconciliation_rows(
+        connection,
+        account_id=account_id,
+        market_id=market_id,
+        outcome_id=outcome_id,
+        event_slug=event_slug,
+        start_time=start_time,
+        end_time=end_time,
+        limit=limit,
+    )
+    direct_context = _resolve_order_lifecycle_direct_context(
+        connection,
+        account_id=account_id,
+        direct_open_order_external_id=direct_open_order_external_id,
+        direct_open_order_count=direct_open_order_count,
+        direct_open_position_count=direct_open_position_count,
+        include_direct_clob_evidence=include_direct_clob_evidence,
+    )
     report = build_order_lifecycle_reconciliation_report(
         rows,
-        direct_open_order_external_ids=resolved_direct_open_order_external_ids,
-        direct_open_order_count=resolved_direct_open_order_count,
-        direct_open_position_count=resolved_direct_open_position_count,
-        direct_trade_rows=direct_trade_rows,
+        direct_open_order_external_ids=direct_context["direct_open_order_external_ids"],
+        direct_open_order_count=direct_context["direct_open_order_count"],
+        direct_open_position_count=direct_context["direct_open_position_count"],
+        direct_trade_rows=direct_context["direct_trade_rows"],
     )
+    direct_evidence = direct_context["direct_evidence"]
     direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
     return {
         "filters": {
@@ -1337,6 +1530,72 @@ def reconcile_portfolio_orders(
         },
         "direct_evidence": to_jsonable(direct_evidence_summary),
         "reconciliation": to_jsonable(report),
+    }
+
+
+@router.post("/orders/reconciliation/status-backfill")
+def backfill_portfolio_order_statuses(
+    payload: PortfolioOrderStatusBackfillRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewed_by = str(payload.reviewed_by or "").strip()
+    reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewed_by or not reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    rows = _fetch_order_lifecycle_reconciliation_rows(
+        connection,
+        account_id=payload.account_id,
+        market_id=payload.market_id,
+        outcome_id=payload.outcome_id,
+        event_slug=payload.event_slug,
+        start_time=payload.start_time,
+        end_time=payload.end_time,
+        limit=payload.limit,
+    )
+    direct_context = _resolve_order_lifecycle_direct_context(
+        connection,
+        account_id=payload.account_id,
+        direct_open_order_external_id=payload.direct_open_order_external_id,
+        direct_open_order_count=payload.direct_open_order_count,
+        direct_open_position_count=payload.direct_open_position_count,
+        include_direct_clob_evidence=payload.include_direct_clob_evidence,
+    )
+    report = build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=direct_context["direct_open_order_external_ids"],
+        direct_open_order_count=direct_context["direct_open_order_count"],
+        direct_open_position_count=direct_context["direct_open_position_count"],
+        direct_trade_rows=direct_context["direct_trade_rows"],
+    )
+    plan = build_order_status_backfill_plan(report)
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied = apply_order_status_backfill_actions(
+            connection,
+            actions=plan["actions"],
+            reviewed_by=reviewed_by,
+            reason=reason,
+        )
+
+    direct_evidence = direct_context["direct_evidence"]
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    return {
+        "dry_run": payload.dry_run,
+        "filters": {
+            "account_id": str(payload.account_id),
+            "market_id": str(payload.market_id) if payload.market_id is not None else None,
+            "outcome_id": str(payload.outcome_id) if payload.outcome_id is not None else None,
+            "event_slug": payload.event_slug,
+            "start_time": payload.start_time,
+            "end_time": payload.end_time,
+            "include_direct_clob_evidence": payload.include_direct_clob_evidence,
+            "limit": payload.limit,
+        },
+        "direct_evidence": to_jsonable(direct_evidence_summary),
+        "reconciliation": to_jsonable(report),
+        "status_backfill": to_jsonable(plan),
+        "applied": to_jsonable(applied),
     }
 
 

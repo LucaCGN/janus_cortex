@@ -311,6 +311,25 @@ class ManualOrderCancelRequest(BaseModel):
     dry_run: bool = True
 
 
+class PortfolioOrderStatusBackfillRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID
+    market_id: UUID | None = None
+    outcome_id: UUID | None = None
+    event_slug: str | None = None
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    direct_open_order_external_id: list[str] = Field(default_factory=list)
+    direct_open_order_count: int | None = Field(default=None, ge=0)
+    direct_open_position_count: int | None = Field(default=None, ge=0)
+    include_direct_clob_evidence: bool = True
+    limit: int = Field(default=5000, ge=1, le=20000)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
 class ManualOrderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
