@@ -23,6 +23,20 @@ def main() -> None:
     parser.add_argument("--min-size", type=float, default=5.0)
     parser.add_argument("--min-buy-notional-usd", type=float, default=1.0)
     parser.add_argument("--share-precision", type=int, default=3)
+    parser.add_argument(
+        "--auto-protect-manual-positions",
+        dest="auto_protect_manual_positions",
+        action="store_true",
+        help="Place target sells for uncovered direct CLOB positions before evaluating new entries.",
+    )
+    parser.add_argument(
+        "--no-auto-protect-manual-positions",
+        dest="auto_protect_manual_positions",
+        action="store_false",
+        help="Disable automatic target sells for uncovered direct CLOB positions.",
+    )
+    parser.set_defaults(auto_protect_manual_positions=True)
+    parser.add_argument("--manual-target-delta-cents", type=float, default=5.0)
     args = parser.parse_args()
 
     result = run_tick(
@@ -39,6 +53,8 @@ def main() -> None:
         min_size=args.min_size,
         min_buy_notional_usd=args.min_buy_notional_usd,
         share_precision=args.share_precision,
+        auto_protect_manual_positions=args.auto_protect_manual_positions,
+        manual_target_delta_cents=args.manual_target_delta_cents,
     )
     exit_for_response(result)
 
@@ -58,6 +74,8 @@ def run_tick(
     min_size: float,
     min_buy_notional_usd: float,
     share_precision: int,
+    auto_protect_manual_positions: bool,
+    manual_target_delta_cents: float,
 ) -> dict[str, Any]:
     integrity = api_json(
         api_root,
@@ -105,6 +123,8 @@ def run_tick(
             min_size=min_size,
             min_buy_notional_usd=min_buy_notional_usd,
             share_precision=share_precision,
+            auto_protect_manual_positions=auto_protect_manual_positions,
+            manual_target_delta_cents=manual_target_delta_cents,
         )
         events.append(event_result)
         all_ok = all_ok and bool(event_result.get("ok", True))
@@ -146,6 +166,8 @@ def _run_event_tick(
     min_size: float,
     min_buy_notional_usd: float,
     share_precision: int,
+    auto_protect_manual_positions: bool,
+    manual_target_delta_cents: float,
 ) -> dict[str, Any]:
     context = api_json(
         api_root,
@@ -219,6 +241,20 @@ def _run_event_tick(
         "game": game,
         "live_state": _compact_live_state(live_state),
     }
+    operator_reaction = _auto_protect_direct_positions(
+        api_root=api_root,
+        account_id=account_id,
+        event_id=event_id,
+        plan=plan,
+        direct_clob=direct_clob if isinstance(direct_clob, dict) else {},
+        execute=execute,
+        live_money=live_money,
+        integrity_ready=integrity_ready,
+        source=source,
+        min_size=min_size,
+        target_delta_cents=manual_target_delta_cents,
+        enabled=auto_protect_manual_positions,
+    )
     shadow = api_json(
         api_root,
         "POST",
@@ -269,8 +305,169 @@ def _run_event_tick(
         "shadow_evaluation": shadow,
         "live_execution": live,
         "live_blocked_by": live_blocked_by,
+        "operator_reaction": operator_reaction,
         "orderbook_results": _summarize_orderbooks(orderbook_results),
     }
+
+
+def _auto_protect_direct_positions(
+    *,
+    api_root: str,
+    account_id: str,
+    event_id: str,
+    plan: dict[str, Any],
+    direct_clob: dict[str, Any],
+    execute: bool,
+    live_money: bool,
+    integrity_ready: bool,
+    source: str,
+    min_size: float,
+    target_delta_cents: float,
+    enabled: bool,
+) -> dict[str, Any]:
+    reaction: dict[str, Any] = {
+        "enabled": enabled,
+        "checked": False,
+        "submitted_orders": [],
+        "recommended_orders": [],
+        "blocked_by": [],
+        "covered_positions": [],
+    }
+    if not enabled:
+        return reaction
+    reaction["checked"] = True
+    if not execute:
+        reaction["blocked_by"].append("execute_flag_required")
+    if not live_money:
+        reaction["blocked_by"].append("live_money_flag_required")
+    if not integrity_ready:
+        reaction["blocked_by"].append("integrity_not_ready_for_live_minimum_orders")
+
+    positions = ((direct_clob.get("open_positions") or {}).get("positions") or [])
+    open_orders = ((direct_clob.get("open_orders") or {}).get("orders") or [])
+    plan_outcomes = _plan_outcome_lookup(plan)
+    for position in positions:
+        event_slug = str(position.get("event_slug") or position.get("slug") or "")
+        if event_slug and event_slug != event_id:
+            continue
+        token_id = str(position.get("asset") or position.get("token_id") or "").strip()
+        if not token_id:
+            reaction["blocked_by"].append("position_token_missing")
+            continue
+        position_size = _float(position.get("size")) or 0.0
+        open_sell_size = _open_sell_size_for_token(open_orders, token_id)
+        uncovered_size = max(0.0, position_size - open_sell_size)
+        if uncovered_size <= 1e-9:
+            reaction["covered_positions"].append({"token_id": token_id, "position_size": position_size, "open_sell_size": open_sell_size})
+            continue
+        if uncovered_size < min_size:
+            reaction["recommended_orders"].append(
+                {
+                    "reason": "uncovered_size_below_minimum",
+                    "token_id": token_id,
+                    "uncovered_size": uncovered_size,
+                    "minimum_size": min_size,
+                }
+            )
+            continue
+        outcome_ref = plan_outcomes.get(token_id)
+        if outcome_ref is None:
+            reaction["recommended_orders"].append(
+                {
+                    "reason": "outcome_mapping_missing",
+                    "token_id": token_id,
+                    "uncovered_size": uncovered_size,
+                }
+            )
+            continue
+        avg_price = _float(position.get("avg_price"))
+        if avg_price is None:
+            current_value = _float(position.get("current_value"))
+            avg_price = current_value / position_size if current_value is not None and position_size > 0 else None
+        if avg_price is None:
+            reaction["recommended_orders"].append(
+                {
+                    "reason": "position_price_missing",
+                    "token_id": token_id,
+                    "uncovered_size": uncovered_size,
+                }
+            )
+            continue
+        target_price = round(min(0.95, max(0.01, avg_price + target_delta_cents / 100.0)), 4)
+        order_payload = {
+            "account_id": account_id,
+            "market_id": str(outcome_ref["market_id"]),
+            "outcome_id": str(outcome_ref["outcome_id"]),
+            "side": "sell",
+            "order_type": "limit",
+            "time_in_force": "gtc",
+            "limit_price": target_price,
+            "size": round(uncovered_size, 6),
+            "metadata_json": {
+                "source": source,
+                "event_id": event_id,
+                "reason": "automatic target for uncovered direct CLOB position",
+                "reaction_type": "operator_intervention_target",
+                "reaction_owner": "janus_internal_reactor_v0",
+                "outcome_label": position.get("outcome"),
+                "entry_avg_price": avg_price,
+                "target_delta_cents": target_delta_cents,
+                "position_size": position_size,
+                "open_sell_size": open_sell_size,
+            },
+            "dry_run": False,
+        }
+        reaction["recommended_orders"].append({k: v for k, v in order_payload.items() if k != "metadata_json"})
+        if reaction["blocked_by"]:
+            continue
+        submitted = api_json(api_root, "POST", "/v1/portfolio/orders", order_payload)
+        reaction["submitted_orders"].append(submitted)
+        api_json(
+            api_root,
+            "POST",
+            "/v1/operator/interventions/reconcile",
+            {
+                "account_id": account_id,
+                "event_id": event_id,
+                "market_id": str(outcome_ref["market_id"]),
+                "action": "scan",
+                "manual_reason": "auto-protected uncovered direct CLOB position",
+                "protective_order_status": submitted.get("status"),
+                "expected_close_path": f"target_sell_{target_price}",
+                "metadata": {
+                    "token_id": token_id,
+                    "outcome_id": str(outcome_ref["outcome_id"]),
+                    "target_order": submitted,
+                    "position": position,
+                },
+                "notes": "Live monitor auto-protection for operator/manual or otherwise uncovered position.",
+            },
+        )
+    return reaction
+
+
+def _plan_outcome_lookup(plan: dict[str, Any]) -> dict[str, dict[str, str]]:
+    lookup: dict[str, dict[str, str]] = {}
+    market_id = str(plan.get("market_id") or "")
+    for strategy in plan.get("active_strategies") or []:
+        entry_rules = strategy.get("entry_rules") or {}
+        token_id = str(entry_rules.get("token_id") or "").strip()
+        outcome_id = str(entry_rules.get("outcome_id") or "").strip()
+        strategy_market_id = str(entry_rules.get("market_id") or market_id).strip()
+        if token_id and outcome_id and strategy_market_id:
+            lookup[token_id] = {"market_id": strategy_market_id, "outcome_id": outcome_id}
+    return lookup
+
+
+def _open_sell_size_for_token(open_orders: list[dict[str, Any]], token_id: str) -> float:
+    total = 0.0
+    for order in open_orders:
+        side = str(order.get("side") or "").lower()
+        status = str(order.get("status") or "").lower()
+        order_token = str(order.get("token_id") or order.get("asset_id") or "").strip()
+        if side == "sell" and order_token == token_id and status in {"live", "open", "submitted"}:
+            total += _float(order.get("size")) or 0.0
+    return total
 
 
 def _state_from_orderbook(
