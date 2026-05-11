@@ -207,6 +207,214 @@ def _trade_cashflow(row: dict[str, Any]) -> Decimal:
     return -notional - fee
 
 
+_OPEN_ORDER_STATUSES = {"open", "submitted", "working", "pending", "partially_filled", "partial", "pending_submit"}
+_CANCELED_ORDER_STATUSES = {"canceled", "cancelled"}
+_FAILED_ORDER_STATUSES = {"submit_error", "cancel_error", "rejected", "failed", "error"}
+_EXPIRED_ORDER_STATUSES = {"expired"}
+_UNKNOWN_LIFECYCLE_STATUSES = {
+    "direct_flat_status_unknown",
+    "direct_status_unknown",
+    "local_open_without_external_id",
+}
+
+
+def _json_dict(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
+def _metadata_text(metadata: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = metadata.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _nested_metadata_text(metadata: dict[str, Any], nested_key: str, *keys: str) -> str:
+    nested = metadata.get(nested_key)
+    if not isinstance(nested, dict):
+        return ""
+    return _metadata_text(nested, *keys)
+
+
+def _order_actor_label(row: dict[str, Any]) -> str:
+    metadata = _json_dict(row.get("metadata_json"))
+    side = str(row.get("side") or "").strip().lower()
+    status = str(row.get("status") or "").strip().lower()
+    source = _metadata_text(metadata, "source", "run_id", "controller_source")
+    source = source or _nested_metadata_text(metadata, "request_metadata", "source", "run_id")
+    strategy_family = _metadata_text(metadata, "strategy_family", "source_strategy_family")
+    strategy_family = strategy_family or _nested_metadata_text(metadata, "request_metadata", "strategy_family", "source_strategy_family")
+    reaction_type = _metadata_text(metadata, "reaction_type", "reaction_owner")
+    reason = _metadata_text(metadata, "reason")
+    reason = reason or _nested_metadata_text(metadata, "request_metadata", "reason")
+    combined = " ".join([source, strategy_family, reaction_type, reason, status]).lower()
+
+    if "settlement" in combined or status == "settled":
+        return "settlement"
+    if "operator_intervention" in combined or "manual" in combined or "operator" in combined:
+        return "manual_target_exit" if side == "sell" else "manual_operator"
+    if strategy_family or source:
+        return "janus_target_exit" if side == "sell" else "janus_strategy"
+    if side == "sell":
+        return "manual_target_exit"
+    if side == "buy":
+        return "manual_operator"
+    return "unknown"
+
+
+def _direct_flat_snapshot_known(
+    *,
+    direct_open_order_count: int | None,
+    direct_open_position_count: int | None,
+) -> bool:
+    return direct_open_order_count == 0 and direct_open_position_count == 0
+
+
+def _order_lifecycle_status(
+    row: dict[str, Any],
+    *,
+    direct_open_order_external_ids: set[str],
+    direct_open_order_count: int | None,
+    direct_open_position_count: int | None,
+) -> str:
+    status = str(row.get("status") or "").strip().lower()
+    external_order_id = str(row.get("external_order_id") or "").strip().lower()
+    requested_size = _decimal_or_zero(row.get("size"))
+    linked_fill_size = _decimal_or_zero(row.get("linked_fill_size"))
+    if external_order_id and external_order_id in direct_open_order_external_ids:
+        return "direct_live"
+    if linked_fill_size > Decimal("0"):
+        if requested_size > Decimal("0") and linked_fill_size + Decimal("0.000001") >= requested_size:
+            return "filled"
+        return "partially_filled"
+    if status in _CANCELED_ORDER_STATUSES:
+        return "canceled"
+    if status in _EXPIRED_ORDER_STATUSES:
+        return "expired"
+    if status in _FAILED_ORDER_STATUSES:
+        return status
+    if status in _OPEN_ORDER_STATUSES:
+        if not external_order_id:
+            return "local_open_without_external_id"
+        if _direct_flat_snapshot_known(
+            direct_open_order_count=direct_open_order_count,
+            direct_open_position_count=direct_open_position_count,
+        ):
+            return "direct_flat_status_unknown"
+        return "direct_status_unknown"
+    return status or "unknown"
+
+
+def build_order_lifecycle_reconciliation_report(
+    rows: list[dict[str, Any]],
+    *,
+    direct_open_order_external_ids: list[str] | None = None,
+    direct_open_order_count: int | None = None,
+    direct_open_position_count: int | None = None,
+) -> dict[str, Any]:
+    direct_ids = {str(item or "").strip().lower() for item in direct_open_order_external_ids or [] if str(item or "").strip()}
+    if direct_open_order_count is None and direct_ids:
+        direct_open_order_count = len(direct_ids)
+
+    lifecycle_counts: dict[str, int] = {}
+    actor_summary: dict[str, dict[str, Any]] = {}
+    items: list[dict[str, Any]] = []
+    external_order_count = 0
+    linked_order_count = 0
+    linked_trade_count = 0
+    unknown_lifecycle_count = 0
+
+    for row in rows:
+        external_order_id = str(row.get("external_order_id") or "").strip()
+        if external_order_id:
+            external_order_count += 1
+        row_lifecycle = _order_lifecycle_status(
+            row,
+            direct_open_order_external_ids=direct_ids,
+            direct_open_order_count=direct_open_order_count,
+            direct_open_position_count=direct_open_position_count,
+        )
+        lifecycle_counts[row_lifecycle] = lifecycle_counts.get(row_lifecycle, 0) + 1
+        linked_count = int(row.get("linked_trade_count") or 0)
+        if linked_count:
+            linked_order_count += 1
+            linked_trade_count += linked_count
+        linked_fill_size = _decimal_or_zero(row.get("linked_fill_size"))
+        linked_cashflow_usd = _decimal_or_zero(row.get("linked_cashflow_usd"))
+        linked_fee_usd = _decimal_or_zero(row.get("linked_fee_usd"))
+        actor = _order_actor_label(row)
+        actor_bucket = actor_summary.setdefault(
+            actor,
+            {
+                "order_count": 0,
+                "linked_order_count": 0,
+                "linked_trade_count": 0,
+                "linked_fill_size": Decimal("0"),
+                "linked_cashflow_usd": Decimal("0"),
+                "linked_fee_usd": Decimal("0"),
+                "unknown_lifecycle_count": 0,
+            },
+        )
+        actor_bucket["order_count"] += 1
+        actor_bucket["linked_order_count"] += 1 if linked_count else 0
+        actor_bucket["linked_trade_count"] += linked_count
+        actor_bucket["linked_fill_size"] += linked_fill_size
+        actor_bucket["linked_cashflow_usd"] += linked_cashflow_usd
+        actor_bucket["linked_fee_usd"] += linked_fee_usd
+        if row_lifecycle in _UNKNOWN_LIFECYCLE_STATUSES:
+            unknown_lifecycle_count += 1
+            actor_bucket["unknown_lifecycle_count"] += 1
+
+        items.append(
+            {
+                "order_id": row.get("order_id"),
+                "account_id": row.get("account_id"),
+                "market_id": row.get("market_id"),
+                "outcome_id": row.get("outcome_id"),
+                "event_slug": row.get("event_slug"),
+                "external_order_id": external_order_id or None,
+                "side": row.get("side"),
+                "limit_price": row.get("limit_price"),
+                "size": row.get("size"),
+                "status": row.get("status"),
+                "placed_at": row.get("placed_at"),
+                "updated_at": row.get("updated_at"),
+                "actor_label": actor,
+                "lifecycle_status": row_lifecycle,
+                "linked_trade_count": linked_count,
+                "linked_trade_ids": row.get("linked_trade_ids") or [],
+                "linked_fill_size": linked_fill_size,
+                "linked_cashflow_usd": linked_cashflow_usd,
+                "linked_fee_usd": linked_fee_usd,
+                "missing_evidence": row_lifecycle in _UNKNOWN_LIFECYCLE_STATUSES,
+            }
+        )
+
+    return {
+        "order_count": len(rows),
+        "external_order_count": external_order_count,
+        "linked_order_count": linked_order_count,
+        "linked_trade_count": linked_trade_count,
+        "unknown_lifecycle_count": unknown_lifecycle_count,
+        "pnl_attribution_ready": unknown_lifecycle_count == 0,
+        "lifecycle_status_counts": dict(sorted(lifecycle_counts.items())),
+        "actor_summary": {key: actor_summary[key] for key in sorted(actor_summary)},
+        "direct_context": {
+            "open_order_external_ids": sorted(direct_ids),
+            "open_order_count": direct_open_order_count,
+            "open_position_count": direct_open_position_count,
+            "direct_flat_snapshot": _direct_flat_snapshot_known(
+                direct_open_order_count=direct_open_order_count,
+                direct_open_position_count=direct_open_position_count,
+            ),
+        },
+        "items": items,
+    }
+
+
 def build_trade_reconciliation_report(rows: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[str, dict[str, Any]] = {}
     for row in rows:
@@ -704,6 +912,122 @@ def list_portfolio_orders(
         )
         rows = fetchall_dicts(cursor)
     return {"items": to_jsonable(rows), "count": len(rows)}
+
+
+@router.get("/orders/reconciliation")
+def reconcile_portfolio_orders(
+    account_id: UUID | None = Query(default=None),
+    market_id: UUID | None = Query(default=None),
+    outcome_id: UUID | None = Query(default=None),
+    event_slug: str | None = Query(default=None),
+    start_time: datetime | None = Query(default=None),
+    end_time: datetime | None = Query(default=None),
+    direct_open_order_external_id: list[str] | None = Query(default=None),
+    direct_open_order_count: int | None = Query(default=None, ge=0),
+    direct_open_position_count: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=5000, ge=1, le=20000),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if account_id is not None:
+        conditions.append("o.account_id = %s")
+        params.append(str(account_id))
+    if market_id is not None:
+        conditions.append("o.market_id = %s")
+        params.append(str(market_id))
+    if outcome_id is not None:
+        conditions.append("o.outcome_id = %s")
+        params.append(str(outcome_id))
+    if event_slug:
+        conditions.append("e.canonical_slug = %s")
+        params.append(event_slug)
+    if start_time is not None:
+        conditions.append("o.placed_at >= %s")
+        params.append(start_time)
+    if end_time is not None:
+        conditions.append("o.placed_at <= %s")
+        params.append(end_time)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.append(limit)
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                o.order_id,
+                o.account_id,
+                o.market_id,
+                o.outcome_id,
+                o.external_order_id,
+                o.client_order_id,
+                o.side,
+                o.order_type,
+                o.time_in_force,
+                o.limit_price,
+                o.size,
+                o.status,
+                o.placed_at,
+                o.updated_at,
+                o.metadata_json,
+                m.question AS market_question,
+                oc.outcome_label,
+                oc.token_id,
+                e.event_id,
+                e.canonical_slug AS event_slug,
+                COALESCE(tr.linked_trade_count, 0)::int AS linked_trade_count,
+                COALESCE(tr.linked_fill_size, 0) AS linked_fill_size,
+                COALESCE(tr.linked_cashflow_usd, 0) AS linked_cashflow_usd,
+                COALESCE(tr.linked_fee_usd, 0) AS linked_fee_usd,
+                COALESCE(tr.linked_trade_ids, ARRAY[]::text[]) AS linked_trade_ids
+            FROM portfolio.orders o
+            JOIN catalog.markets m ON m.market_id = o.market_id
+            LEFT JOIN catalog.outcomes oc ON oc.outcome_id = o.outcome_id
+            JOIN catalog.events e ON e.event_id = m.event_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    count(*)::int AS linked_trade_count,
+                    COALESCE(sum(t.size), 0) AS linked_fill_size,
+                    COALESCE(sum(COALESCE(t.fee, 0)), 0) AS linked_fee_usd,
+                    COALESCE(
+                        sum(
+                            CASE
+                                WHEN lower(COALESCE(t.side, '')) = 'sell'
+                                    THEN COALESCE(t.price, 0) * COALESCE(t.size, 0) - COALESCE(t.fee, 0)
+                                ELSE -(COALESCE(t.price, 0) * COALESCE(t.size, 0)) - COALESCE(t.fee, 0)
+                            END
+                        ),
+                        0
+                    ) AS linked_cashflow_usd,
+                    array_agg(t.trade_id::text ORDER BY t.trade_time ASC, t.trade_id ASC) AS linked_trade_ids
+                FROM portfolio.trades t
+                WHERE t.order_id = o.order_id
+            ) tr ON TRUE
+            {where_sql}
+            ORDER BY o.updated_at DESC, o.order_id ASC
+            LIMIT %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    report = build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=direct_open_order_external_id,
+        direct_open_order_count=direct_open_order_count,
+        direct_open_position_count=direct_open_position_count,
+    )
+    return {
+        "filters": {
+            "account_id": str(account_id) if account_id is not None else None,
+            "market_id": str(market_id) if market_id is not None else None,
+            "outcome_id": str(outcome_id) if outcome_id is not None else None,
+            "event_slug": event_slug,
+            "start_time": start_time,
+            "end_time": end_time,
+            "limit": limit,
+        },
+        "reconciliation": to_jsonable(report),
+    }
 
 
 @router.get("/orders/{order_id}")

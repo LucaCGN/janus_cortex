@@ -41,6 +41,48 @@ def _trade_row(
     }
 
 
+def _order_row(
+    order_id: str,
+    *,
+    external_order_id: str | None,
+    side: str,
+    status: str,
+    size: str,
+    limit_price: str,
+    metadata_json: dict[str, object] | None = None,
+    linked_trade_count: int = 0,
+    linked_fill_size: str = "0",
+    linked_cashflow_usd: str = "0",
+) -> dict[str, object]:
+    return {
+        "order_id": order_id,
+        "account_id": ACCOUNT_ID,
+        "market_id": MARKET_ID,
+        "outcome_id": OUTCOME_ID,
+        "external_order_id": external_order_id,
+        "client_order_id": None,
+        "side": side,
+        "order_type": "limit",
+        "time_in_force": "gtc",
+        "limit_price": Decimal(limit_price),
+        "size": Decimal(size),
+        "status": status,
+        "placed_at": datetime(2026, 5, 10, 23, 51, tzinfo=timezone.utc),
+        "updated_at": datetime(2026, 5, 10, 23, 54, tzinfo=timezone.utc),
+        "metadata_json": metadata_json or {},
+        "market_question": "Demo market",
+        "outcome_label": "Demo",
+        "token_id": "token-demo",
+        "event_id": "event-demo",
+        "event_slug": EVENT_SLUG,
+        "linked_trade_count": linked_trade_count,
+        "linked_fill_size": Decimal(linked_fill_size),
+        "linked_cashflow_usd": Decimal(linked_cashflow_usd),
+        "linked_fee_usd": Decimal("0"),
+        "linked_trade_ids": ["trade-1"] if linked_trade_count else [],
+    }
+
+
 def test_trade_reconciliation_report_collapses_may_9_duplicate_groups_pytest() -> None:
     unique_rows = [
         _trade_row("buy-7", tx_hash="0xdetbuy7", side="buy", price="0.15", size="7", trade_time="2026-05-09T22:01:00Z"),
@@ -111,3 +153,107 @@ def test_trade_reconciliation_endpoint_returns_deduped_summary_pytest(monkeypatc
     assert reconciliation["duplicate_count"] == 1
     assert reconciliation["flat_after_deduplication"] is True
     assert reconciliation["net_cashflow_usd"] == 0.14
+
+
+def test_order_lifecycle_report_flags_direct_flat_unknown_and_actor_cashflow_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="submitted",
+            size="5",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10", "strategy_family": "min-underdog-band-grid-v2"},
+            linked_trade_count=1,
+            linked_fill_size="5",
+            linked_cashflow_usd="-1.55",
+        ),
+        _order_row(
+            "manual-protect",
+            external_order_id="0xsell",
+            side="sell",
+            status="submitted",
+            size="5",
+            limit_price="0.65",
+            metadata_json={
+                "reaction_type": "operator_intervention_target",
+                "reaction_owner": "janus_internal_reactor_v0",
+            },
+        ),
+    ]
+
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+    )
+
+    assert report["order_count"] == 2
+    assert report["linked_order_count"] == 1
+    assert report["unknown_lifecycle_count"] == 1
+    assert report["pnl_attribution_ready"] is False
+    assert report["lifecycle_status_counts"] == {"direct_flat_status_unknown": 1, "filled": 1}
+    assert report["actor_summary"]["janus_strategy"]["linked_cashflow_usd"] == Decimal("-1.55")
+    assert report["actor_summary"]["manual_target_exit"]["unknown_lifecycle_count"] == 1
+    assert report["items"][1]["lifecycle_status"] == "direct_flat_status_unknown"
+
+
+def test_order_lifecycle_reconciliation_endpoint_returns_direct_flat_unknown_pytest(monkeypatch) -> None:
+    rows = [
+        _order_row(
+            "manual-protect",
+            external_order_id="0xsell",
+            side="sell",
+            status="submitted",
+            size="5",
+            limit_price="0.65",
+            metadata_json={"reaction_type": "operator_intervention_target"},
+        )
+    ]
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            return rows
+
+    class FakeConnection:
+        def cursor(self, *_, **__):
+            return FakeCursor()
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.get(
+            "/v1/portfolio/orders/reconciliation",
+            params={
+                "account_id": ACCOUNT_ID,
+                "event_slug": EVENT_SLUG,
+                "direct_open_order_count": 0,
+                "direct_open_position_count": 0,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    reconciliation = payload["reconciliation"]
+    assert payload["filters"]["event_slug"] == EVENT_SLUG
+    assert reconciliation["direct_context"]["direct_flat_snapshot"] is True
+    assert reconciliation["items"][0]["actor_label"] == "manual_target_exit"
+    assert reconciliation["items"][0]["lifecycle_status"] == "direct_flat_status_unknown"

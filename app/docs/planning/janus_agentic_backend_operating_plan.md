@@ -130,7 +130,7 @@ NBA watchlists are generated from the daily slate and Polymarket matching. Crypt
 Implementation status:
 
 - As of 2026-05-10, the NBA live controller mirrors captured live CLOB orderbook ticks into generic `market_watch_sessions` and `market_orderbook_ticks` while preserving the legacy `live_orderbook_ticks.jsonl` trace. Reconciled live-run order fills are also mirrored into `agentic.market_trades` with deterministic upsert ids and `live_controller_order_fills` source metadata. `POST /v1/replay/from-watch-session` resolves persisted watch data into `replay_sessions` with source tick/trade counts, latency/cadence summary, and controller-decision comparison metadata. Public CLOB market-trade polling remains a separate feed integration task.
-- Portfolio reconciliation exposes a non-destructive duplicate-fill report at `GET /v1/portfolio/trades/reconciliation` and through `codex_tool/reconcile_trades.py`; destructive historical cleanup must remain a separately reviewed operation.
+- Portfolio reconciliation exposes a non-destructive duplicate-fill report at `GET /v1/portfolio/trades/reconciliation` and through `codex_tool/reconcile_trades.py`; destructive historical cleanup must remain a separately reviewed operation. Order lifecycle reconciliation now also exposes `GET /v1/portfolio/orders/reconciliation`, joining local orders to linked fills, actor labels, cashflow, and direct-flat unknown classifications without mutating order rows.
 - Operator-intervention reconciliation stores adoption/rejection metadata in `raw_json` and reports whether the record includes external order/trade references, matched strategy family or manual-only reason, target/stop/hedge status, expected close path, and final PnL. `codex_tool/reconcile_orders.py` exposes the same fields for postgame cleanup.
 - Ultra-low underdog buys are guarded in both StrategyPlan evaluation and the legacy live-controller entry path. Underdog buys below `19c` require explicit low-price allowance, fresh scoreboard/score-gap evidence, and target/stop policy; buys below `10c` are manual-only and cannot compile autonomous order intents.
 - NBA schedule sync now captures a capped set of recently finished scoreboard games into the same per-game live context path as active games, persisting final score snapshots and play-by-play rows so postgame reviews can tie fills and market moves to score/clock context.
@@ -156,6 +156,7 @@ Implementation status:
 - `POST /v1/replay/from-watch-session`
 - `POST /v1/operator/interventions/reconcile`
 - `GET /v1/portfolio/trades/reconciliation`
+- `GET /v1/portfolio/orders/reconciliation`
 
 ## Codex Tooling
 
