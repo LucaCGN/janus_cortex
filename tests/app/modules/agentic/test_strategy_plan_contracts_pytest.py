@@ -304,3 +304,50 @@ def test_strategy_plan_evaluator_allows_explicit_low_underdog_with_protection_py
     assert result.intent_count == 1
     assert result.blocked_count == 0
     assert result.intents[0].price == 0.15
+
+
+def test_strategy_plan_evaluator_blocks_pending_buy_intent_before_direct_mirror_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-det-cle",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="det-grid-1",
+                family="resistance_band_rebound_grid",
+                side="underdog",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-det",
+                    "token_id": "token-det",
+                    "side": "buy",
+                    "price": 0.22,
+                    "size": 5,
+                    "price_band": [0.2, 0.25],
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.22},
+        portfolio_state={
+            "open_positions": 0,
+            "open_orders": 0,
+            "pending_intent_orders": [
+                {
+                    "strategy_id": "det-grid-1",
+                    "outcome_id": "outcome-det",
+                    "side": "buy",
+                    "status": "submitted",
+                }
+            ],
+        },
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "pending_intent_limit_reached"
+    assert result.blockers[0]["pending_intents"] == 1.0
+    assert result.blockers[0]["direct_unresolved_exposure"] == 0.0
+    assert result.blockers[0]["unresolved_exposure"] == 1.0

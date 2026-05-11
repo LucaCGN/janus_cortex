@@ -415,26 +415,115 @@ def _rules_blocker(
         if low is not None and high is not None and not low <= current_price <= high:
             return {"reason": "price_band_not_met", "price": current_price, "price_band": [low, high]}
 
+    if bool(portfolio_state.get("pending_intents_unavailable")):
+        return {
+            "reason": "pending_intent_state_unavailable",
+            "source": portfolio_state.get("pending_intent_source"),
+            "error": portfolio_state.get("pending_intents_error"),
+        }
+
     explicit_position_cap = _safe_float(entry_rules.get("max_open_positions"))
-    has_exposure_state = "open_positions" in portfolio_state or "open_orders" in portfolio_state
+    pending_intents = _pending_intent_exposure(
+        portfolio_state,
+        entry_rules=entry_rules,
+        strategy_id=strategy_id,
+    )
+    has_exposure_state = (
+        "open_positions" in portfolio_state
+        or "open_orders" in portfolio_state
+        or _has_pending_intent_state(portfolio_state)
+    )
     max_open_positions = None
     if explicit_position_cap is not None or has_exposure_state:
         max_open_positions = _min_present(explicit_position_cap, _safe_float(strategy_max_positions))
     open_positions = _safe_float(portfolio_state.get("open_positions"))
     open_orders = _safe_float(portfolio_state.get("open_orders")) or 0.0
-    unresolved_exposure = (open_positions or 0.0) + open_orders
+    direct_unresolved_exposure = (open_positions or 0.0) + open_orders
+    unresolved_exposure = direct_unresolved_exposure + pending_intents
     if explicit_position_cap is not None and open_positions is None:
         return {"reason": "position_state_required", "max_open_positions": max_open_positions}
     if max_open_positions is not None and unresolved_exposure >= max_open_positions:
+        reason = "position_limit_reached"
+        if pending_intents > 0.0 and direct_unresolved_exposure < max_open_positions:
+            reason = "pending_intent_limit_reached"
         return {
-            "reason": "position_limit_reached",
+            "reason": reason,
             "open_positions": open_positions,
             "open_orders": open_orders,
+            "pending_intents": pending_intents,
+            "direct_unresolved_exposure": direct_unresolved_exposure,
             "unresolved_exposure": unresolved_exposure,
             "max_open_positions": max_open_positions,
         }
 
     return None
+
+
+def _has_pending_intent_state(portfolio_state: dict[str, Any]) -> bool:
+    if "pending_intent_orders" in portfolio_state:
+        return True
+    for key in ("pending_intents", "pending_buy_intents", "pending_sell_intents", "pending_orders"):
+        if key in portfolio_state:
+            return True
+    return False
+
+
+def _pending_intent_exposure(
+    portfolio_state: dict[str, Any],
+    *,
+    entry_rules: dict[str, Any],
+    strategy_id: str | None,
+) -> float:
+    order_side = str(entry_rules.get("side") or "buy").strip().lower()
+    pending_orders = portfolio_state.get("pending_intent_orders")
+    if isinstance(pending_orders, list):
+        return float(
+            sum(
+                1
+                for order in pending_orders
+                if isinstance(order, dict)
+                and _pending_intent_order_matches(order, entry_rules=entry_rules, strategy_id=strategy_id, order_side=order_side)
+            )
+        )
+
+    side_specific = _safe_float(portfolio_state.get(f"pending_{order_side}_intents"))
+    if side_specific is not None:
+        return side_specific
+
+    pending_side = str(portfolio_state.get("pending_intents_side") or "").strip().lower()
+    if pending_side and pending_side != order_side:
+        return 0.0
+    return (
+        _safe_float(portfolio_state.get("pending_intents"))
+        or _safe_float(portfolio_state.get("pending_orders"))
+        or 0.0
+    )
+
+
+def _pending_intent_order_matches(
+    order: dict[str, Any],
+    *,
+    entry_rules: dict[str, Any],
+    strategy_id: str | None,
+    order_side: str,
+) -> bool:
+    pending_side = str(order.get("side") or order.get("order_side") or "").strip().lower()
+    if pending_side and pending_side != order_side:
+        return False
+
+    entry_outcome_id = str(entry_rules.get("outcome_id") or "").strip()
+    entry_token_id = str(entry_rules.get("token_id") or "").strip()
+    pending_strategy_id = str(order.get("strategy_id") or "").strip()
+    pending_outcome_id = str(order.get("outcome_id") or "").strip()
+    pending_token_id = str(order.get("token_id") or "").strip()
+
+    if pending_strategy_id and strategy_id and pending_strategy_id == strategy_id:
+        return True
+    if pending_outcome_id and entry_outcome_id and pending_outcome_id == entry_outcome_id:
+        return True
+    if pending_token_id and entry_token_id and pending_token_id == entry_token_id:
+        return True
+    return not (pending_strategy_id or pending_outcome_id or pending_token_id)
 
 
 def _strategy_market_state(

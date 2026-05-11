@@ -9,6 +9,18 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
     from _client import api_json, base_parser, exit_for_response
 
 
+_LOCAL_PENDING_INTENT_STATUSES = {
+    "pending_submit",
+    "submitted",
+    "open",
+    "working",
+    "pending",
+    "partially_filled",
+    "partial",
+}
+_DIRECT_ORDER_ID_FIELDS = ("id", "orderID", "orderId", "order_id", "external_order_id")
+
+
 def main() -> None:
     parser = base_parser("Run one quote-aware StrategyPlanJSON tick with shadow and optional live execution.")
     parser.add_argument("--session-date", required=True)
@@ -236,6 +248,22 @@ def _run_event_tick(
         portfolio_state["open_orders"] = direct_clob.get("open_order_count", portfolio_state["open_orders"])
         portfolio_state["open_positions"] = len(((direct_clob.get("open_positions") or {}).get("positions") or []))
 
+    pending_intents = _pending_intent_summary(
+        api_root=api_root,
+        account_id=account_id,
+        event_id=event_id,
+        plan=plan,
+        direct_clob=direct_clob if isinstance(direct_clob, dict) else {},
+    )
+    portfolio_state["pending_intents"] = pending_intents["pending_intent_count"]
+    portfolio_state["pending_buy_intents"] = pending_intents["pending_buy_intent_count"]
+    portfolio_state["pending_intents_side"] = "buy"
+    portfolio_state["pending_intent_orders"] = pending_intents["orders"]
+    portfolio_state["pending_intent_source"] = pending_intents["source"]
+    if not pending_intents["ok"]:
+        portfolio_state["pending_intents_unavailable"] = True
+        portfolio_state["pending_intents_error"] = pending_intents.get("error")
+
     market_state = {
         "outcome_states": outcome_states,
         "game": game,
@@ -444,6 +472,95 @@ def _auto_protect_direct_positions(
             },
         )
     return reaction
+
+
+def _pending_intent_summary(
+    *,
+    api_root: str,
+    account_id: str,
+    event_id: str,
+    plan: dict[str, Any],
+    direct_clob: dict[str, Any],
+) -> dict[str, Any]:
+    market_id = str(plan.get("market_id") or "").strip()
+    source = "/v1/portfolio/orders"
+    payload = api_json(
+        api_root,
+        "GET",
+        source,
+        query={
+            "account_id": account_id,
+            "market_id": market_id or None,
+            "side": "buy",
+            "limit": 5000,
+        },
+        timeout=60,
+    )
+    if payload.get("ok") is False:
+        return {
+            "ok": False,
+            "source": source,
+            "pending_intent_count": 0,
+            "pending_buy_intent_count": 0,
+            "orders": [],
+            "error": payload.get("error") or payload.get("status_code") or "portfolio_order_query_failed",
+        }
+
+    direct_open_order_ids = _direct_open_order_external_ids(direct_clob)
+    pending_orders: list[dict[str, Any]] = []
+    for item in payload.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        event_slug = str(item.get("event_slug") or "").strip()
+        if event_slug and event_slug != event_id:
+            continue
+        side = str(item.get("side") or "").strip().lower()
+        if side != "buy":
+            continue
+        status = str(item.get("status") or "").strip().lower()
+        if status not in _LOCAL_PENDING_INTENT_STATUSES:
+            continue
+        external_order_id = str(item.get("external_order_id") or "").strip()
+        if external_order_id and external_order_id.lower() in direct_open_order_ids:
+            continue
+        metadata = item.get("metadata_json") if isinstance(item.get("metadata_json"), dict) else {}
+        pending_orders.append(
+            {
+                "order_id": item.get("order_id"),
+                "external_order_id": external_order_id or None,
+                "client_order_id": item.get("client_order_id"),
+                "event_slug": event_slug or None,
+                "market_id": item.get("market_id"),
+                "outcome_id": item.get("outcome_id"),
+                "side": side,
+                "status": status,
+                "size": item.get("size"),
+                "limit_price": item.get("limit_price"),
+                "strategy_id": metadata.get("strategy_id"),
+                "strategy_family": metadata.get("strategy_family"),
+                "signal_id": metadata.get("signal_id"),
+                "source": "portfolio.orders",
+            }
+        )
+    return {
+        "ok": True,
+        "source": source,
+        "pending_intent_count": len(pending_orders),
+        "pending_buy_intent_count": len(pending_orders),
+        "orders": pending_orders,
+    }
+
+
+def _direct_open_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for order in ((direct_clob.get("open_orders") or {}).get("orders") or []):
+        if not isinstance(order, dict):
+            continue
+        for field in _DIRECT_ORDER_ID_FIELDS:
+            value = str(order.get(field) or "").strip()
+            if value:
+                ids.add(value.lower())
+    return ids
 
 
 def _plan_outcome_lookup(plan: dict[str, Any]) -> dict[str, dict[str, str]]:
