@@ -179,9 +179,10 @@ def test_live_monitor_endpoint_includes_direct_integrity_snapshot_pytest(tmp_pat
     monkeypatch.setattr(
         ops_router,
         "build_integrity_snapshot",
-        lambda connection, *, account_id=None: {
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
             "connection_matches": connection is fake_connection,
             "account_id": account_id,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
             "ready_for_live_minimum_orders": True,
         },
     )
@@ -200,7 +201,62 @@ def test_live_monitor_endpoint_includes_direct_integrity_snapshot_pytest(tmp_pat
     payload = response.json()
     assert payload["integrity"]["connection_matches"] is True
     assert payload["integrity"]["account_id"] == "account-123"
+    assert payload["integrity"]["direct_trade_token_ids"] == []
     assert payload["integrity"]["ready_for_live_minimum_orders"] is True
+
+
+def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+    captured: dict[str, object] = {}
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: captured.setdefault(
+            "integrity",
+            {
+                "connection_matches": connection is fake_connection,
+                "account_id": account_id,
+                "direct_trade_token_ids": direct_trade_token_ids or [],
+                "ready_for_live_minimum_orders": True,
+            },
+        ),
+    )
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    plan_payload = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    plan_payload["active_strategies"].append(
+        {
+            **plan_payload["active_strategies"][0],
+            "strategy_id": "grid-2",
+            "entry_rules": {
+                **plan_payload["active_strategies"][0]["entry_rules"],
+                "outcome_id": "outcome-2",
+                "token_id": "token-2",
+            },
+        }
+    )
+
+    try:
+        submit_response = client.post("/v1/events/event-123/strategy-plan", json=plan_payload)
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-11", "event_ids": ["event-123"], "account_id": "account-123", "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert submit_response.status_code == 201
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["integrity"]["direct_trade_token_ids"] == ["token-1", "token-2"]
 
 
 def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_path, monkeypatch) -> None:
@@ -214,7 +270,10 @@ def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_pat
     monkeypatch.setattr(
         ops_router,
         "build_integrity_snapshot",
-        lambda connection, *, account_id=None: {"ready_for_live_minimum_orders": True},
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "ready_for_live_minimum_orders": True,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+        },
     )
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = fake_db_connection

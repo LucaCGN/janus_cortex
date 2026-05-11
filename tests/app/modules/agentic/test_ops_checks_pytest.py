@@ -100,3 +100,53 @@ def test_build_integrity_snapshot_marks_healthy_mirror_authoritative_pytest(monk
     assert snapshot["portfolio_mirror"]["status"] == "authoritative"
     assert snapshot["portfolio_mirror"]["authoritative_for_live"] is True
     assert snapshot["blockers"] == []
+
+
+def test_build_integrity_snapshot_includes_current_token_direct_trades_pytest(monkeypatch) -> None:
+    fake_account = {
+        "account_id": "account-123",
+        "provider_code": "polymarket",
+        "wallet_address": "0xwallet",
+        "proxy_wallet_address": "0xproxy",
+        "chain_id": 137,
+        "is_active": True,
+    }
+
+    monkeypatch.setattr(ops_checks, "get_agentic_database_status", lambda: {"ok": True})
+    monkeypatch.setattr(ops_checks, "resolve_trading_account", lambda connection, *, account_id=None: fake_account)
+    monkeypatch.setattr(ops_checks, "build_live_creds", lambda account: {"creds": True})
+    monkeypatch.setattr(
+        ops_checks,
+        "fetch_clob_collateral_status",
+        lambda creds, *, required_notional_usd: {"ready": True, "balance_usd": 103.81},
+    )
+    monkeypatch.setattr(ops_checks, "_safe_direct_orders", lambda creds: {"ok": True, "orders": []})
+    monkeypatch.setattr(ops_checks, "_safe_direct_positions", lambda creds: {"ok": True, "positions": []})
+    monkeypatch.setattr(
+        ops_checks,
+        "view_trades",
+        lambda creds: [
+            {"id": "trade-1", "asset_id": "token-1", "side": "BUY", "price": 0.31, "size": 5},
+            {"id": "trade-2", "asset_id": "other-token", "side": "SELL", "price": 0.44, "size": 5},
+        ],
+    )
+    monkeypatch.setattr(
+        ops_checks,
+        "fetch_account_summary",
+        lambda connection, *, account_id: {"cash_usd": 103.81, "equity_usd": 103.81},
+    )
+    monkeypatch.setattr(ops_checks, "list_latest_positions", lambda connection, *, account_id: [])
+
+    snapshot = ops_checks.build_integrity_snapshot(
+        object(),
+        account_id="account-123",
+        direct_trade_token_ids=["token-1"],
+    )
+
+    trades = snapshot["direct_clob"]["current_token_trades"]
+    assert trades["ok"] is True
+    assert trades["token_ids"] == ["token-1"]
+    assert trades["trade_count"] == 1
+    assert trades["raw_trade_count"] == 2
+    assert trades["trades"][0]["id"] == "trade-1"
+    assert snapshot["direct_clob"]["current_token_trade_count"] == 1

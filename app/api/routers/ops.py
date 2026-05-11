@@ -63,7 +63,12 @@ def run_ops_integrity_check(
     connection: PsycopgConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
     ops_status = build_ops_status()
-    integrity = build_integrity_snapshot(connection, account_id=payload.account_id)
+    direct_trade_token_ids = _direct_trade_token_ids_for_events(payload.event_ids, day=payload.session_date)
+    integrity = build_integrity_snapshot(
+        connection,
+        account_id=payload.account_id,
+        direct_trade_token_ids=direct_trade_token_ids,
+    )
     recorded = record_ops_stage(
         "integrity-check",
         {**payload.model_dump(mode="json"), "ops_status": ops_status, "integrity": integrity},
@@ -112,7 +117,12 @@ def run_ops_live_monitor(
     connection: PsycopgConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
     ops_status = build_ops_status()
-    integrity = build_integrity_snapshot(connection, account_id=payload.account_id)
+    direct_trade_token_ids = _direct_trade_token_ids_for_events(payload.event_ids, day=payload.session_date)
+    integrity = build_integrity_snapshot(
+        connection,
+        account_id=payload.account_id,
+        direct_trade_token_ids=direct_trade_token_ids,
+    )
     strategy_plan_gate = _build_strategy_plan_gate(payload.event_ids, day=payload.session_date)
     recorded = record_ops_stage(
         "live-monitor",
@@ -385,3 +395,30 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
         "ready_for_strategy_evaluation": bool(unique_event_ids) and not missing_event_ids,
         "blocker_reason": "missing_current_strategy_plan" if missing_event_ids else None,
     }
+
+
+def _direct_trade_token_ids_for_events(event_ids: list[str], *, day: str | None) -> list[str]:
+    token_ids: list[str] = []
+    seen: set[str] = set()
+    for event_id in dict.fromkeys(str(item).strip() for item in event_ids):
+        if not event_id:
+            continue
+        plan = load_current_strategy_plan(event_id, day=day)
+        if not isinstance(plan, dict):
+            continue
+        for strategy in plan.get("active_strategies") or []:
+            if not isinstance(strategy, dict):
+                continue
+            entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+            token_id = str(entry_rules.get("token_id") or "").strip()
+            if token_id and token_id not in seen:
+                token_ids.append(token_id)
+                seen.add(token_id)
+        for item in plan.get("portfolio_reconciliation") or []:
+            if not isinstance(item, dict):
+                continue
+            token_id = str(item.get("token_id") or "").strip()
+            if token_id and token_id not in seen:
+                token_ids.append(token_id)
+                seen.add(token_id)
+    return token_ids

@@ -5,7 +5,7 @@ from typing import Any
 from psycopg2.extensions import connection as PsycopgConnection
 
 from app.api.db import to_jsonable
-from app.data.nodes.polymarket.blockchain.manage_portfolio import view_open_positions, view_orders
+from app.data.nodes.polymarket.blockchain.manage_portfolio import view_open_positions, view_orders, view_trades
 from app.modules.agentic.repository import get_agentic_database_status
 from app.modules.nba.execution.adapter import (
     build_live_creds,
@@ -29,6 +29,7 @@ def build_integrity_snapshot(
     *,
     account_id: str | None = None,
     required_notional_usd: float = 1.0,
+    direct_trade_token_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     snapshot: dict[str, Any] = {
         "database": get_agentic_database_status(),
@@ -56,12 +57,15 @@ def build_integrity_snapshot(
     collateral = fetch_clob_collateral_status(creds, required_notional_usd=required_notional_usd)
     direct_orders = _safe_direct_orders(creds)
     direct_positions = _safe_direct_positions(creds)
+    direct_trades = _safe_direct_trades(creds, token_ids=direct_trade_token_ids)
     snapshot["direct_clob"] = {
         "ok": bool(collateral.get("ready")),
         "collateral": collateral,
         "open_order_count": len(direct_orders.get("orders") or []),
         "open_orders": direct_orders,
         "open_positions": direct_positions,
+        "current_token_trades": direct_trades,
+        "current_token_trade_count": len(direct_trades.get("trades") or []),
     }
 
     account_id_value = str(account["account_id"])
@@ -91,6 +95,8 @@ def build_integrity_snapshot(
         snapshot["blockers"].append({"reason": "direct_open_order_check_failed", "error": direct_orders.get("error")})
     if direct_positions.get("ok") is False:
         snapshot["blockers"].append({"reason": "direct_open_position_check_failed", "error": direct_positions.get("error")})
+    if direct_trades.get("ok") is False:
+        snapshot["blockers"].append({"reason": "direct_trade_check_failed", "error": direct_trades.get("error")})
     for reason in mirror_authority["quarantine_reasons"]:
         blocker = {
             **reason,
@@ -184,6 +190,30 @@ def _safe_direct_positions(creds: Any) -> dict[str, Any]:
         return {"ok": True, "positions": [to_jsonable(getattr(position, "__dict__", position)) for position in positions]}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "positions": []}
+
+
+def _safe_direct_trades(creds: Any, *, token_ids: list[str] | None = None) -> dict[str, Any]:
+    normalized_tokens = {str(token_id).strip() for token_id in token_ids or [] if str(token_id).strip()}
+    if not normalized_tokens:
+        return {"ok": True, "token_ids": [], "trades": [], "skipped": True, "reason": "no_token_ids"}
+    try:
+        trades = view_trades(creds)
+        trade_rows = [to_jsonable(getattr(trade, "__dict__", trade)) for trade in trades]
+        filtered = [
+            trade
+            for trade in trade_rows
+            if isinstance(trade, dict)
+            and str(trade.get("asset_id") or trade.get("asset") or trade.get("token_id") or "").strip() in normalized_tokens
+        ]
+        return {
+            "ok": True,
+            "token_ids": sorted(normalized_tokens),
+            "trades": filtered,
+            "trade_count": len(filtered),
+            "raw_trade_count": len(trade_rows),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc), "token_ids": sorted(normalized_tokens), "trades": []}
 
 
 __all__ = ["build_integrity_snapshot", "classify_portfolio_mirror_authority"]
