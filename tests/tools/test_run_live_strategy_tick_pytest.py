@@ -57,8 +57,11 @@ def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> 
     )
 
     order_calls = [call for call in calls if call["path"] == "/v1/portfolio/orders"]
+    intervention_calls = [call for call in calls if call["path"] == "/v1/operator/interventions/reconcile"]
     assert result["submitted_orders"] == [{"ok": True, "status": "submitted", "external_order_id": "0xabc"}]
+    assert result["intervention_records"] == [{"ok": True, "status": "recorded"}]
     assert len(order_calls) == 1
+    assert len(intervention_calls) == 1
     order_payload = order_calls[0]["payload"]
     assert order_payload["side"] == "sell"
     assert order_payload["market_id"] == "market-1"
@@ -66,6 +69,15 @@ def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> 
     assert order_payload["limit_price"] == 0.65
     assert order_payload["size"] == 5.0
     assert order_payload["metadata_json"]["reaction_type"] == "operator_intervention_target"
+    assert order_payload["metadata_json"]["no_new_entry_until_revision"] is True
+    assert order_payload["metadata_json"]["revision_request"]["position_management_only"] is True
+    intervention_payload = intervention_calls[0]["payload"]
+    assert intervention_payload["external_order_ids"] == ["0xabc"]
+    assert intervention_payload["target_status"] == "target_order_submitted"
+    assert intervention_payload["stop_status"] == "not_configured_review_required"
+    assert intervention_payload["hedge_status"] == "opposite_side_disabled_without_profit_lock"
+    assert intervention_payload["metadata"]["reaction"]["no_new_entry"] is True
+    assert intervention_payload["metadata"]["reaction"]["requires_strategy_plan_revision"] is True
 
 
 def test_auto_protect_direct_position_skips_when_target_already_covers_pytest(monkeypatch) -> None:

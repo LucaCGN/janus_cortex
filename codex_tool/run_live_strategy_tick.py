@@ -376,6 +376,9 @@ def _auto_protect_direct_positions(
         "recommended_orders": [],
         "blocked_by": [],
         "covered_positions": [],
+        "position_reactions": [],
+        "revision_requests": [],
+        "intervention_records": [],
     }
     if not enabled:
         return reaction
@@ -401,6 +404,39 @@ def _auto_protect_direct_positions(
         position_size = _float(position.get("size")) or 0.0
         open_sell_size = _open_sell_size_for_token(open_orders, token_id)
         uncovered_size = max(0.0, position_size - open_sell_size)
+        position_reaction = {
+            "action": "adopt_operator_position",
+            "token_id": token_id,
+            "outcome_label": position.get("outcome"),
+            "position_size": position_size,
+            "open_sell_size": open_sell_size,
+            "uncovered_size": uncovered_size,
+            "no_new_entry": True,
+            "requires_strategy_plan_revision": True,
+            "revision_request": {
+                "reason": "operator_intervention_detected",
+                "event_id": event_id,
+                "token_id": token_id,
+                "outcome_label": position.get("outcome"),
+                "position_management_only": True,
+                "disable_new_entries": True,
+                "required_context": [
+                    "direct_clob_truth",
+                    "latest_scoreboard",
+                    "recent_play_by_play",
+                    "current_orderbook",
+                    "existing_targets",
+                ],
+                "current_position": {
+                    "size": position_size,
+                    "avg_price": _float(position.get("avg_price")),
+                    "open_sell_size": open_sell_size,
+                    "uncovered_size": uncovered_size,
+                },
+            },
+        }
+        reaction["position_reactions"].append(position_reaction)
+        reaction["revision_requests"].append(position_reaction["revision_request"])
         if uncovered_size <= 1e-9:
             reaction["covered_positions"].append({"token_id": token_id, "position_size": position_size, "open_sell_size": open_sell_size})
             continue
@@ -458,6 +494,8 @@ def _auto_protect_direct_positions(
                 "target_delta_cents": target_delta_cents,
                 "position_size": position_size,
                 "open_sell_size": open_sell_size,
+                "no_new_entry_until_revision": True,
+                "revision_request": position_reaction["revision_request"],
             },
             "dry_run": False,
         }
@@ -466,7 +504,12 @@ def _auto_protect_direct_positions(
             continue
         submitted = api_json(api_root, "POST", "/v1/portfolio/orders", order_payload)
         reaction["submitted_orders"].append(submitted)
-        api_json(
+        external_order_ids = [
+            str(submitted.get(key))
+            for key in ("external_order_id", "order_id", "id")
+            if str(submitted.get(key) or "").strip()
+        ]
+        intervention = api_json(
             api_root,
             "POST",
             "/v1/operator/interventions/reconcile",
@@ -475,7 +518,11 @@ def _auto_protect_direct_positions(
                 "event_id": event_id,
                 "market_id": str(outcome_ref["market_id"]),
                 "action": "scan",
+                "external_order_ids": external_order_ids,
                 "manual_reason": "auto-protected uncovered direct CLOB position",
+                "target_status": "target_order_submitted" if submitted.get("ok", True) else "target_order_submit_failed",
+                "stop_status": "not_configured_review_required",
+                "hedge_status": "opposite_side_disabled_without_profit_lock",
                 "protective_order_status": submitted.get("status"),
                 "expected_close_path": f"target_sell_{target_price}",
                 "metadata": {
@@ -483,10 +530,13 @@ def _auto_protect_direct_positions(
                     "outcome_id": str(outcome_ref["outcome_id"]),
                     "target_order": submitted,
                     "position": position,
+                    "reaction": position_reaction,
+                    "recommended_order": {k: v for k, v in order_payload.items() if k != "metadata_json"},
                 },
                 "notes": "Live monitor auto-protection for operator/manual or otherwise uncovered position.",
             },
         )
+        reaction["intervention_records"].append(intervention)
     return reaction
 
 
