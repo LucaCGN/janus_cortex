@@ -250,6 +250,50 @@ def test_order_submitted_and_fill_emit_lifecycle_triggers_pytest() -> None:
     assert [trigger.trigger_type for trigger in triggers] == ["janus_order_submitted", "order_fill"]
 
 
+def test_target_lifecycle_events_emit_specific_runtime_triggers_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-sas-min-2026-05-10",
+        portfolio_state={
+            "recent_order_events": [
+                {
+                    "order_id": "target-fill-1",
+                    "event_type": "fill",
+                    "status": "filled",
+                    "order_role": "protective_target",
+                },
+                {
+                    "order_id": "target-cancel-1",
+                    "event_type": "cancel",
+                    "status": "canceled",
+                    "metadata": {"purpose": "target_exit"},
+                },
+                {
+                    "order_id": "target-error-1",
+                    "event_type": "submit_error",
+                    "status": "submit_error",
+                    "order_role": "protective_target",
+                    "error": "CLOB balance/allowance does not cover target placement",
+                },
+            ],
+            "missing_protection": True,
+        },
+    )
+
+    decision = route_llm_model(triggers, portfolio_state={"missing_protection": True})
+
+    assert [trigger.trigger_type for trigger in triggers] == [
+        "target_fill",
+        "target_cancel",
+        "target_placement_failed",
+    ]
+    assert triggers[0].severity == "routine"
+    assert triggers[1].severity == "critical"
+    assert triggers[2].severity == "critical"
+    assert decision.selected_model == FRONTIER_MODEL
+    assert "target_placement_failed" in decision.critical_reasons
+    assert "missing_protection_or_stop_hedge" in decision.critical_reasons
+
+
 def test_no_position_no_shock_state_emits_no_trigger_and_mini_route_pytest() -> None:
     triggers = detect_llm_runtime_triggers(
         event_id="nba-det-cle-2026-05-11",

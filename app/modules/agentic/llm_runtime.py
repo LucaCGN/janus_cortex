@@ -39,12 +39,16 @@ _CRITICAL_TRIGGER_TYPES = {
     "price_flip",
     "leadership_switch",
     "garbage_time",
+    "target_placement_failed",
 }
 _ORDER_LIFECYCLE_TRIGGER_TYPES = {
     "janus_order_submitted",
     "order_fill",
     "order_cancel",
     "order_stale",
+    "target_fill",
+    "target_cancel",
+    "target_placement_failed",
 }
 _NANO_TRIGGER_TYPES = {"compression_or_tagging"}
 
@@ -214,7 +218,11 @@ def detect_llm_runtime_triggers(
         trigger_type = _order_lifecycle_trigger_type(event)
         if trigger_type is None:
             continue
-        severity = "critical" if trigger_type in {"order_fill", "order_cancel", "order_stale"} else "routine"
+        severity = (
+            "critical"
+            if trigger_type in {"order_fill", "order_cancel", "order_stale", "target_cancel", "target_placement_failed"}
+            else "routine"
+        )
         triggers.append(
             _make_trigger(
                 event_id=event_id,
@@ -1172,6 +1180,9 @@ def _order_lifecycle_trigger_type(event: dict[str, Any]) -> str | None:
     status = str(event.get("status") or event.get("order_status") or event.get("decision_type") or "").strip().lower()
     event_type = str(event.get("event_type") or event.get("type") or event.get("action") or "").strip().lower()
     text = f"{status} {event_type}"
+    target_trigger = _target_lifecycle_trigger_type(event, text=text)
+    if target_trigger is not None:
+        return target_trigger
     if any(value in text for value in ("pending_submit", "submitted", "open", "working", "order_intent")):
         return "janus_order_submitted"
     if any(value in text for value in ("filled", "fill", "partially_filled", "trade")):
@@ -1181,6 +1192,60 @@ def _order_lifecycle_trigger_type(event: dict[str, Any]) -> str | None:
     if any(value in text for value in ("stale", "stale_order", "stale_status")):
         return "order_stale"
     return None
+
+
+def _target_lifecycle_trigger_type(event: dict[str, Any], *, text: str) -> str | None:
+    if not _is_target_order_event(event):
+        return None
+    if any(
+        value in text
+        for value in (
+            "submit_error",
+            "placement_failed",
+            "target_placement_failed",
+            "target_submit_error",
+            "protection_failed",
+            "failed_target_placement",
+            "balance",
+            "allowance",
+            "error",
+        )
+    ):
+        return "target_placement_failed"
+    if any(value in text for value in ("filled", "fill", "partially_filled", "trade")):
+        return "target_fill"
+    if any(value in text for value in ("cancel", "canceled", "cancelled", "expired", "reject")):
+        return "target_cancel"
+    return None
+
+
+def _is_target_order_event(event: dict[str, Any]) -> bool:
+    fields = [
+        event.get("role"),
+        event.get("order_role"),
+        event.get("intent_role"),
+        event.get("purpose"),
+        event.get("reason"),
+        event.get("action"),
+        event.get("event_type"),
+        event.get("type"),
+    ]
+    metadata = event.get("metadata") or event.get("raw_json") or event.get("order_metadata")
+    if isinstance(metadata, dict):
+        fields.extend(
+            [
+                metadata.get("role"),
+                metadata.get("order_role"),
+                metadata.get("intent_role"),
+                metadata.get("purpose"),
+                metadata.get("reason"),
+                metadata.get("action"),
+                metadata.get("target_order"),
+                metadata.get("protective_target"),
+            ]
+        )
+    haystack = " ".join(str(item or "").strip().lower() for item in fields)
+    return "target" in haystack or "protective" in haystack
 
 
 def _shock_rows(pbp_shocks: list[dict[str, Any]] | None, live_state: dict[str, Any]) -> list[dict[str, Any]]:
