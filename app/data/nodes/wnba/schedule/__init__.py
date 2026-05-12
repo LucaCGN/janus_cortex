@@ -1,0 +1,2 @@
+"""WNBA schedule adapters."""
+
