@@ -1,0 +1,235 @@
+{
+  "schedule": {
+    "leagueSchedule": {
+      "gameDates": [
+        {
+          "gameDate": "04/25/2026 00:00:00",
+          "games": [
+            {
+              "gameId": "1012600001",
+              "gameCode": "20260425/INDNYL",
+              "gameStatus": 3,
+              "gameStatusText": "Final",
+              "gameDateTimeUTC": "2026-04-25T19:00:00Z",
+              "gameLabel": "Preseason",
+              "gameSubLabel": "",
+              "gameSubtype": "",
+              "seriesText": "",
+              "seriesGameNumber": "",
+              "arenaName": "Barclays Center",
+              "arenaState": "NY",
+              "arenaCity": "Brooklyn",
+              "postponedStatus": "N",
+              "isNeutral": false,
+              "homeTeam": {
+                "teamId": 1611661313,
+                "teamName": "Liberty",
+                "teamCity": "New York",
+                "teamTricode": "NYL",
+                "teamSlug": "liberty",
+                "score": 91
+              },
+              "awayTeam": {
+                "teamId": 1611661325,
+                "teamName": "Fever",
+                "teamCity": "Indiana",
+                "teamTricode": "IND",
+                "teamSlug": "fever",
+                "score": 109
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "boxscore": {
+    "game": {
+      "gameId": "1012600001",
+      "gameStatus": 3,
+      "gameStatusText": "Final",
+      "period": 4,
+      "gameClock": "PT00M00.00S",
+      "homeTeam": {
+        "teamId": 1611661313,
+        "teamName": "Liberty",
+        "teamCity": "New York",
+        "teamTricode": "NYL",
+        "score": 91,
+        "periods": [
+          {"period": 1, "periodType": "REGULAR", "score": 24},
+          {"period": 2, "periodType": "REGULAR", "score": 24},
+          {"period": 3, "periodType": "REGULAR", "score": 20},
+          {"period": 4, "periodType": "REGULAR", "score": 23}
+        ],
+        "players": [
+          {
+            "status": "ACTIVE",
+            "order": 1,
+            "personId": 1627668,
+            "jerseyNum": "30",
+            "position": "PF",
+            "starter": "1",
+            "oncourt": "0",
+            "played": "1",
+            "statistics": {
+              "minutes": "PT11M45.00S",
+              "minutesCalculated": "PT12M",
+              "points": 16,
+              "reboundsTotal": 5,
+              "assists": 0,
+              "steals": 0,
+              "blocks": 0,
+              "turnovers": 1,
+              "fieldGoalsMade": 6,
+              "fieldGoalsAttempted": 7,
+              "threePointersMade": 2,
+              "threePointersAttempted": 2,
+              "freeThrowsMade": 2,
+              "freeThrowsAttempted": 2,
+              "foulsPersonal": 1,
+              "plusMinusPoints": -5.0
+            },
+            "name": "Breanna Stewart",
+            "nameI": "B. Stewart",
+            "firstName": "Breanna",
+            "familyName": "Stewart"
+          }
+        ],
+        "statistics": {
+          "minutes": "PT200M00.00S",
+          "points": 91,
+          "reboundsTotal": 33,
+          "assists": 22,
+          "steals": 6,
+          "blocks": 3,
+          "turnoversTotal": 18,
+          "fieldGoalsMade": 32,
+          "fieldGoalsAttempted": 77,
+          "threePointersMade": 7,
+          "threePointersAttempted": 28,
+          "freeThrowsMade": 20,
+          "freeThrowsAttempted": 27
+        }
+      },
+      "awayTeam": {
+        "teamId": 1611661325,
+        "teamName": "Fever",
+        "teamCity": "Indiana",
+        "teamTricode": "IND",
+        "score": 109,
+        "players": [
+          {
+            "status": "ACTIVE",
+            "order": 1,
+            "personId": 1642286,
+            "jerseyNum": "22",
+            "position": "PG",
+            "starter": "1",
+            "oncourt": "0",
+            "played": "1",
+            "statistics": {
+              "minutes": "PT20M00.00S",
+              "minutesCalculated": "PT20M",
+              "points": 14,
+              "reboundsTotal": 3,
+              "assists": 5,
+              "steals": 1,
+              "blocks": 0,
+              "turnovers": 2,
+              "fieldGoalsMade": 5,
+              "fieldGoalsAttempted": 11,
+              "threePointersMade": 2,
+              "threePointersAttempted": 6,
+              "freeThrowsMade": 2,
+              "freeThrowsAttempted": 2,
+              "foulsPersonal": 2,
+              "plusMinusPoints": 8.0
+            },
+            "name": "Caitlin Clark",
+            "nameI": "C. Clark",
+            "firstName": "Caitlin",
+            "familyName": "Clark"
+          }
+        ],
+        "statistics": {
+          "minutes": "PT200M00.00S",
+          "points": 109,
+          "reboundsTotal": 35,
+          "assists": 27,
+          "steals": 11,
+          "blocks": 8,
+          "turnoversTotal": 12,
+          "fieldGoalsMade": 39,
+          "fieldGoalsAttempted": 76,
+          "threePointersMade": 11,
+          "threePointersAttempted": 26,
+          "freeThrowsMade": 20,
+          "freeThrowsAttempted": 23
+        }
+      }
+    }
+  },
+  "play_by_play": {
+    "game": {
+      "gameId": "1012600001",
+      "actions": [
+        {
+          "actionNumber": 2,
+          "clock": "PT10M00.00S",
+          "timeActual": "2026-04-25T19:03:10.0Z",
+          "period": 1,
+          "periodType": "REGULAR",
+          "actionType": "period",
+          "subType": "start",
+          "personId": 0,
+          "scoreHome": "0",
+          "scoreAway": "0",
+          "orderNumber": 20000,
+          "description": "Period Start",
+          "personIdsFilter": []
+        },
+        {
+          "actionNumber": 7,
+          "clock": "PT09M46.00S",
+          "timeActual": "2026-04-25T19:03:23.4Z",
+          "period": 1,
+          "periodType": "REGULAR",
+          "teamId": 1611661325,
+          "teamTricode": "IND",
+          "actionType": "2pt",
+          "subType": "Jump Shot",
+          "personId": 1642286,
+          "scoreHome": "0",
+          "scoreAway": "2",
+          "orderNumber": 70000,
+          "shotResult": "Made",
+          "pointsTotal": 2,
+          "description": "C. Clark 9' driving floating Jump Shot (2 PTS)",
+          "playerName": "Clark",
+          "playerNameI": "C. Clark",
+          "personIdsFilter": [1642286]
+        },
+        {
+          "actionNumber": 53,
+          "clock": "PT05M15.00S",
+          "timeActual": "2026-04-25T19:09:19.9Z",
+          "period": 1,
+          "periodType": "REGULAR",
+          "teamId": 1611661313,
+          "teamTricode": "NYL",
+          "actionType": "substitution",
+          "subType": "out",
+          "personId": 1627668,
+          "scoreHome": "10",
+          "scoreAway": "17",
+          "orderNumber": 530000,
+          "description": "SUB out: B. Stewart",
+          "playerName": "Stewart",
+          "playerNameI": "B. Stewart",
+          "personIdsFilter": [1627668]
+        }
+      ]
+    }
+  }
+}

@@ -48,6 +48,9 @@ def test_expected_analysis_tables_exist_after_migration_pytest() -> None:
         ("nba", "nba_games"),
         ("nba", "nba_analysis_game_team_profiles"),
         ("nba", "nba_analysis_state_panel"),
+        ("wnba", "wnba_games"),
+        ("wnba", "wnba_play_by_play"),
+        ("wnba", "wnba_clob_watch_targets"),
     }
     with managed_connection() as connection:
         with connection.cursor() as cursor:
@@ -62,7 +65,10 @@ def test_expected_analysis_tables_exist_after_migration_pytest() -> None:
                     ('catalog', 'events'),
                     ('nba', 'nba_games'),
                     ('nba', 'nba_analysis_game_team_profiles'),
-                    ('nba', 'nba_analysis_state_panel')
+                    ('nba', 'nba_analysis_state_panel'),
+                    ('wnba', 'wnba_games'),
+                    ('wnba', 'wnba_play_by_play'),
+                    ('wnba', 'wnba_clob_watch_targets')
                   );
                 """
             )

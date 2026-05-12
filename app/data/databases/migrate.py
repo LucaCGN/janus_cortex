@@ -23,6 +23,7 @@ MANAGED_SCHEMAS = (
     "portfolio",
     "strategy",
     "nba",
+    "wnba",
     "research",
     "ops",
 )
