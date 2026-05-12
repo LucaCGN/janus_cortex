@@ -36,6 +36,9 @@ _CRITICAL_TRIGGER_TYPES = {
     "player_status_shock",
     "stale_feed_recovery",
     "unexplained_clob_move",
+    "price_flip",
+    "leadership_switch",
+    "garbage_time",
 }
 _ORDER_LIFECYCLE_TRIGGER_TYPES = {
     "janus_order_submitted",
@@ -164,6 +167,18 @@ def detect_llm_runtime_triggers(
                 reason="Quarter boundary detected by application runtime.",
                 severity="routine",
                 evidence=quarter_evidence,
+            )
+        )
+
+    for event in _live_state_revision_events(live=live, orderbook=orderbook):
+        triggers.append(
+            _make_trigger(
+                event_id=event_id,
+                trigger_type=event["trigger_type"],
+                source=source,
+                reason=event["reason"],
+                severity=event["severity"],
+                evidence=event["evidence"],
             )
         )
 
@@ -1200,6 +1215,138 @@ def _ml_pbp_trigger_type(evidence: dict[str, Any]) -> str | None:
     return None
 
 
+def _live_state_revision_events(*, live: dict[str, Any], orderbook: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    price_flip = _first_runtime_signal(
+        (orderbook, ("price_flip", "price_flip_detected", "favorite_flip", "favorite_side_changed", "price_crossed_midpoint")),
+        (live, ("price_flip", "price_flip_detected", "favorite_flip", "favorite_side_changed", "price_crossed_midpoint")),
+    )
+    if price_flip is not None:
+        rows.append(
+            {
+                "trigger_type": "price_flip",
+                "reason": "Application runtime detected a material price/favorite flip.",
+                "severity": "critical",
+                "evidence": price_flip,
+            }
+        )
+
+    leadership_switch = _first_runtime_signal(
+        (live, ("leadership_switch", "lead_change", "lead_changed", "leader_changed", "score_leader_changed")),
+    )
+    if leadership_switch is not None:
+        rows.append(
+            {
+                "trigger_type": "leadership_switch",
+                "reason": "Application runtime detected a scoreboard leadership switch.",
+                "severity": "critical",
+                "evidence": leadership_switch,
+            }
+        )
+
+    recent_run = _first_runtime_signal(
+        (live, ("recent_run", "scoring_run", "momentum_run", "current_run")),
+    )
+    if recent_run is None:
+        recent_run = _computed_recent_run_evidence(live)
+    if recent_run is not None:
+        rows.append(
+            {
+                "trigger_type": "recent_run",
+                "reason": "Application runtime detected a recent scoring run that may stale the live plan.",
+                "severity": "routine",
+                "evidence": recent_run,
+            }
+        )
+
+    garbage_time = _first_runtime_signal(
+        (live, ("garbage_time", "garbage_time_state", "is_garbage_time")),
+    )
+    if garbage_time is None:
+        garbage_time = _computed_garbage_time_evidence(live)
+    if garbage_time is not None:
+        rows.append(
+            {
+                "trigger_type": "garbage_time",
+                "reason": "Application runtime detected garbage-time state; no-new-entry/exit posture needs review.",
+                "severity": "critical",
+                "evidence": garbage_time,
+            }
+        )
+
+    return rows
+
+
+def _first_runtime_signal(*groups: tuple[dict[str, Any], tuple[str, ...]]) -> dict[str, Any] | None:
+    for source, keys in groups:
+        for key in keys:
+            evidence = _runtime_signal_evidence(source.get(key), key=key)
+            if evidence is not None:
+                return evidence
+    return None
+
+
+def _runtime_signal_evidence(value: Any, *, key: str) -> dict[str, Any] | None:
+    if isinstance(value, dict):
+        if value.get("emit_trigger") is False or value.get("triggered") is False:
+            return None
+        return _compact_evidence({"signal_key": key, **value})
+    if isinstance(value, list):
+        rows = [dict(item) for item in value if isinstance(item, dict)]
+        if not rows:
+            return None
+        return _compact_evidence({"signal_key": key, "signals": rows})
+    if _truthy(value):
+        return {"signal_key": key, "value": value}
+    return None
+
+
+def _computed_recent_run_evidence(live: dict[str, Any]) -> dict[str, Any] | None:
+    points_for = _safe_float(live.get("run_points_for") or live.get("recent_run_points_for") or live.get("scoring_run_for"))
+    points_against = _safe_float(
+        live.get("run_points_against") or live.get("recent_run_points_against") or live.get("scoring_run_against")
+    )
+    run_margin = _safe_float(live.get("run_margin") or live.get("recent_run_margin"))
+    if run_margin is None and points_for is not None and points_against is not None:
+        run_margin = points_for - points_against
+    if run_margin is None or abs(run_margin) < 6:
+        return None
+    return _compact_evidence(
+        {
+            "computed": True,
+            "run_margin": run_margin,
+            "run_points_for": points_for,
+            "run_points_against": points_against,
+            "team": live.get("run_team") or live.get("recent_run_team"),
+            "window_seconds": live.get("run_window_seconds") or live.get("recent_run_window_seconds"),
+        }
+    )
+
+
+def _computed_garbage_time_evidence(live: dict[str, Any]) -> dict[str, Any] | None:
+    latest = live.get("latest_snapshot") if isinstance(live.get("latest_snapshot"), dict) else live
+    period = _safe_int((latest or {}).get("period") or live.get("period"))
+    if period is None or period < 4:
+        return None
+    clock = (latest or {}).get("game_clock") or (latest or {}).get("clock") or live.get("game_clock") or live.get("clock")
+    seconds_remaining = _clock_seconds_remaining(clock)
+    if seconds_remaining is None or seconds_remaining > 180:
+        return None
+    score_gap = _score_gap(live, latest if isinstance(latest, dict) else {})
+    if score_gap is None or abs(score_gap) < 15:
+        return None
+    return _compact_evidence(
+        {
+            "computed": True,
+            "period": period,
+            "clock": clock,
+            "seconds_remaining": seconds_remaining,
+            "score_gap": score_gap,
+            "threshold": "period>=4, seconds_remaining<=180, abs(score_gap)>=15",
+        }
+    )
+
+
 def _passive_plan_trigger_rows(
     plan: dict[str, Any],
     *,
@@ -1528,6 +1675,46 @@ def _pbp_rows(live_state: dict[str, Any]) -> list[dict[str, Any]]:
 def _clock_is_zero(value: str) -> bool:
     normalized = str(value or "").strip().lower()
     return normalized in {"0:00", "00:00", "pt00m00.00s", "pt0m0.00s", "end"}
+
+
+def _clock_seconds_remaining(value: Any) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        return max(int(value), 0)
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text in {"end", "final"}:
+        return 0
+    if text.startswith("pt") and "m" in text and "s" in text:
+        try:
+            minutes_text = text.split("pt", 1)[1].split("m", 1)[0]
+            seconds_text = text.split("m", 1)[1].split("s", 1)[0]
+            return max(int(float(minutes_text) * 60 + float(seconds_text)), 0)
+        except (IndexError, ValueError):
+            return None
+    if ":" in text:
+        pieces = text.split(":")
+        try:
+            minutes = int(float(pieces[-2]))
+            seconds = int(float(pieces[-1]))
+            return max(minutes * 60 + seconds, 0)
+        except ValueError:
+            return None
+    parsed = _safe_int(text)
+    return parsed if parsed is not None and parsed >= 0 else None
+
+
+def _score_gap(live: dict[str, Any], latest: dict[str, Any]) -> float | None:
+    score_gap = _safe_float(latest.get("score_gap") or live.get("score_gap"))
+    if score_gap is not None:
+        return score_gap
+    home_score = _safe_float(latest.get("home_score") or live.get("home_score"))
+    away_score = _safe_float(latest.get("away_score") or live.get("away_score"))
+    if home_score is None or away_score is None:
+        return None
+    return home_score - away_score
 
 
 def _truthy(value: Any) -> bool:

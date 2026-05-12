@@ -148,6 +148,61 @@ def test_player_status_shock_routes_to_frontier_pytest() -> None:
     assert "player_status_shock" in decision.critical_reasons
 
 
+def test_price_flip_and_leadership_switch_emit_frontier_triggers_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-okc-lal-2026-05-11",
+        live_state={
+            "leadership_switch": {
+                "previous_leader": "LAL",
+                "current_leader": "OKC",
+                "home_score": 88,
+                "away_score": 87,
+            },
+        },
+        orderbook_state={
+            "price_flip": {
+                "token_id": "token-okc",
+                "previous_mid": 0.48,
+                "current_mid": 0.53,
+                "crossed": "0.50",
+            }
+        },
+    )
+
+    decision = route_llm_model(triggers)
+
+    assert [trigger.trigger_type for trigger in triggers] == ["price_flip", "leadership_switch"]
+    assert decision.selected_model == FRONTIER_MODEL
+    assert "price_flip" in decision.critical_reasons
+    assert "leadership_switch" in decision.critical_reasons
+
+
+def test_recent_run_and_garbage_time_emit_runtime_triggers_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-okc-lal-2026-05-11",
+        live_state={
+            "recent_run": {
+                "team": "LAL",
+                "points_for": 10,
+                "points_against": 0,
+                "window_seconds": 120,
+            },
+            "period": 4,
+            "clock": "1:35",
+            "score_gap": 18,
+        },
+    )
+
+    decision = route_llm_model(triggers, live_state={"period": 4, "clock": "1:35", "score_gap": 18})
+
+    assert [trigger.trigger_type for trigger in triggers] == ["recent_run", "garbage_time"]
+    assert triggers[0].severity == "routine"
+    assert triggers[1].severity == "critical"
+    assert triggers[1].evidence["computed"] is True
+    assert decision.selected_model == FRONTIER_MODEL
+    assert "garbage_time" in decision.critical_reasons
+
+
 def test_order_submitted_and_fill_emit_lifecycle_triggers_pytest() -> None:
     triggers = detect_llm_runtime_triggers(
         event_id="nba-det-cle-2026-05-11",
