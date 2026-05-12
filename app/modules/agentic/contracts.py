@@ -40,6 +40,9 @@ class ActiveStrategy(BaseModel):
     strategy_id: str = Field(min_length=1)
     family: str = Field(min_length=1)
     side: str = Field(min_length=1)
+    sleeve_id: str | None = None
+    sleeve_group: str | None = None
+    sleeve_role: str | None = None
     budget_usd: float = Field(default=0.0, ge=0.0)
     max_positions: int = Field(default=1, ge=0, le=100)
     entry_rules: dict[str, Any] = Field(default_factory=dict)
@@ -319,6 +322,9 @@ class OrderIntent(BaseModel):
     token_id: str = Field(min_length=1)
     strategy_id: str = Field(min_length=1)
     strategy_family: str = Field(min_length=1)
+    sleeve_id: str | None = None
+    sleeve_group: str | None = None
+    sleeve_role: str | None = None
     side: Literal["buy", "sell"]
     order_type: Literal["limit", "market"] = "limit"
     price: float = Field(ge=0.0, le=1.0)
@@ -353,6 +359,7 @@ class StrategyPlanEvaluationResult(BaseModel):
     blocked_count: int = 0
     intents: list[OrderIntent] = Field(default_factory=list)
     blockers: list[dict[str, Any]] = Field(default_factory=list)
+    sleeve_states: list[dict[str, Any]] = Field(default_factory=list)
     executed_orders: list[dict[str, Any]] = Field(default_factory=list)
 
 

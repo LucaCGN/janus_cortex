@@ -62,6 +62,14 @@ Each active strategy must include:
 - `revision_triggers`
 - `shadow_flags`
 
+Active strategies may also carry first-class trader-sleeve metadata:
+
+- `sleeve_id`
+- `sleeve_group`
+- `sleeve_role`
+
+StrategyPlan evaluation reports sleeve states for every active strategy. Each order intent and blocker preserves sleeve identity so Live Monitor/Postgame can show that one sleeve was blocked, for example by garbage-time no-new-entry or unresolved exposure, while another reviewed sleeve remained eligible.
+
 Supported strategy families include deterministic lanes, grid trading, resistance-band rebound, winner definition, underdog optionality, high-frequency scalping, momentum capture, hedges, bracket exits, and subjective event-specific triggers.
 
 ## Operator Sizing Authority

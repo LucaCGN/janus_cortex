@@ -148,6 +148,7 @@ def evaluate_strategy_plan(
             blockers.append({"strategy_id": strategy.strategy_id, **ultra_low_blocker})
             continue
         resolved_exit_rules = _resolve_exit_rules(strategy.exit_rules, entry_price=price)
+        sleeve_metadata = _strategy_sleeve_metadata(strategy)
         intents.append(
             OrderIntent(
                 intent_id=f"{plan.event_id}|{strategy.strategy_id}|{len(intents) + 1}",
@@ -157,6 +158,9 @@ def evaluate_strategy_plan(
                 token_id=str(order_payload["token_id"]),
                 strategy_id=strategy.strategy_id,
                 strategy_family=strategy.family,
+                sleeve_id=sleeve_metadata["sleeve_id"],
+                sleeve_group=sleeve_metadata.get("sleeve_group"),
+                sleeve_role=sleeve_metadata.get("sleeve_role"),
                 side=side,  # type: ignore[arg-type]
                 order_type=order_type,  # type: ignore[arg-type]
                 price=price,
@@ -170,6 +174,7 @@ def evaluate_strategy_plan(
                     "context_summary": plan.context_summary,
                     "entry_rules": order_payload,
                     "original_entry_rules": strategy.entry_rules,
+                    "sleeve": sleeve_metadata,
                     "exit_rules": resolved_exit_rules,
                     "stop_rules": strategy.stop_rules,
                     "hedge_rules": strategy.hedge_rules,
@@ -181,6 +186,7 @@ def evaluate_strategy_plan(
             )
         )
 
+    blockers = _attach_sleeve_metadata(plan, blockers)
     return StrategyPlanEvaluationResult(
         event_id=plan.event_id,
         market_id=plan.market_id,
@@ -188,6 +194,7 @@ def evaluate_strategy_plan(
         blocked_count=len(blockers),
         intents=intents,
         blockers=blockers,
+        sleeve_states=_build_sleeve_states(plan, intents=intents, blockers=blockers),
     )
 
 
@@ -545,6 +552,10 @@ def _rules_blocker(
     if clock_blocker is not None:
         return clock_blocker
 
+    garbage_time_blocker = _garbage_time_blocker(entry_rules, strategy_state)
+    if garbage_time_blocker is not None:
+        return garbage_time_blocker
+
     player_status_blocker = _player_status_shock_blocker(entry_rules, strategy_state)
     if player_status_blocker is not None:
         return player_status_blocker
@@ -672,6 +683,36 @@ def _clock_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) 
             "max_clock_remaining_seconds": max_remaining,
         }
     return None
+
+
+def _garbage_time_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) -> dict[str, Any] | None:
+    order_side = str(entry_rules.get("side") or "buy").strip().lower()
+    if order_side != "buy":
+        return None
+    if _truthy_any(
+        entry_rules,
+        (
+            "allow_garbage_time",
+            "allow_garbage_time_entry",
+            "garbage_time_reviewed",
+            "q4_clutch_reviewed",
+            "fresh_strategy_plan_after_garbage_time",
+        ),
+    ):
+        return None
+    raw_state = (
+        strategy_state.get("garbage_time")
+        or strategy_state.get("garbage_time_state")
+        or strategy_state.get("is_garbage_time")
+    )
+    if not _truthy_any({"garbage_time": raw_state}, ("garbage_time",)):
+        return None
+    return {
+        "reason": "garbage_time_no_new_entry",
+        "garbage_time": raw_state,
+        "requires_strategy_plan_revision": True,
+        "message": "Garbage-time state detected; autonomous buys require a fresh or explicitly reviewed StrategyPlanJSON sleeve.",
+    }
 
 
 def _player_status_shock_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) -> dict[str, Any] | None:
@@ -919,6 +960,76 @@ def _clock_remaining_seconds(value: Any) -> float | None:
                 return max(0.0, minutes * 60.0 + seconds)
 
     return None
+
+
+def _strategy_sleeve_metadata(strategy: Any) -> dict[str, Any]:
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    strategy_id = str(getattr(strategy, "strategy_id", "") or "").strip()
+    sleeve_id = str(getattr(strategy, "sleeve_id", None) or entry_rules.get("sleeve_id") or strategy_id).strip()
+    sleeve_group = str(getattr(strategy, "sleeve_group", None) or entry_rules.get("sleeve_group") or "").strip()
+    sleeve_role = str(getattr(strategy, "sleeve_role", None) or entry_rules.get("sleeve_role") or "").strip()
+    metadata: dict[str, Any] = {
+        "sleeve_id": sleeve_id or strategy_id,
+        "sleeve_side": str(getattr(strategy, "side", "") or ""),
+    }
+    if sleeve_group:
+        metadata["sleeve_group"] = sleeve_group
+    if sleeve_role:
+        metadata["sleeve_role"] = sleeve_role
+    return metadata
+
+
+def _attach_sleeve_metadata(plan: StrategyPlan, blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sleeve_by_strategy = {
+        strategy.strategy_id: _strategy_sleeve_metadata(strategy)
+        for strategy in plan.active_strategies
+    }
+    enriched: list[dict[str, Any]] = []
+    for blocker in blockers:
+        strategy_id = str(blocker.get("strategy_id") or "")
+        sleeve = sleeve_by_strategy.get(strategy_id)
+        enriched.append({**sleeve, **blocker} if sleeve else dict(blocker))
+    return enriched
+
+
+def _build_sleeve_states(
+    plan: StrategyPlan,
+    *,
+    intents: list[OrderIntent],
+    blockers: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    intents_by_strategy: dict[str, list[OrderIntent]] = {}
+    for intent in intents:
+        intents_by_strategy.setdefault(intent.strategy_id, []).append(intent)
+    blockers_by_strategy: dict[str, list[dict[str, Any]]] = {}
+    for blocker in blockers:
+        strategy_id = str(blocker.get("strategy_id") or "")
+        if strategy_id:
+            blockers_by_strategy.setdefault(strategy_id, []).append(blocker)
+
+    states: list[dict[str, Any]] = []
+    for strategy in plan.active_strategies:
+        strategy_intents = intents_by_strategy.get(strategy.strategy_id, [])
+        strategy_blockers = blockers_by_strategy.get(strategy.strategy_id, [])
+        status = "eligible"
+        if strategy_intents:
+            status = "intent_created"
+        elif strategy_blockers:
+            status = "blocked"
+        sleeve = _strategy_sleeve_metadata(strategy)
+        states.append(
+            {
+                **sleeve,
+                "strategy_id": strategy.strategy_id,
+                "strategy_family": strategy.family,
+                "status": status,
+                "intent_count": len(strategy_intents),
+                "blocker_count": len(strategy_blockers),
+                "intent_ids": [intent.intent_id for intent in strategy_intents],
+                "blocker_reasons": [str(blocker.get("reason") or "") for blocker in strategy_blockers],
+            }
+        )
+    return states
 
 
 __all__ = ["MIN_BUY_NOTIONAL_USD", "MIN_ORDER_SIZE", "evaluate_strategy_plan"]

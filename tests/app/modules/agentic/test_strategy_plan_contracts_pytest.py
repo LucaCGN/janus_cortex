@@ -748,3 +748,76 @@ def test_strategy_plan_evaluator_blocks_inside_no_entry_clock_window_pytest() ->
     assert result.blockers[0]["reason"] == "clock_inside_no_entry_window"
     assert result.blockers[0]["clock_remaining_seconds"] == 32.8
     assert result.blockers[0]["min_clock_remaining_seconds"] == 120
+
+
+def test_strategy_plan_evaluator_reports_sleeve_states_and_garbage_time_blocks_one_sleeve_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="nba-okc-lal-2026-05-11",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-late-default-grid-v1",
+                family="close_game_micro_grid",
+                side="Lakers",
+                sleeve_id="lal-late-default",
+                sleeve_group="lal",
+                sleeve_role="standard_entry",
+                budget_usd=5.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "price": 0.22,
+                    "size": 5,
+                    "price_band": [0.2, 0.25],
+                },
+            ),
+            ActiveStrategy(
+                strategy_id="okc-reviewed-q4-clutch-v1",
+                family="q4_clutch_micro_grid",
+                side="Thunder",
+                sleeve_id="okc-q4-clutch",
+                sleeve_group="okc",
+                sleeve_role="reviewed_q4_clutch",
+                budget_usd=5.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "side": "buy",
+                    "price": 0.72,
+                    "size": 5,
+                    "price_band": [0.7, 0.82],
+                    "allow_garbage_time_entry": True,
+                },
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "garbage_time": True,
+            "strategy_states": {
+                "lal-late-default-grid-v1": {"price": 0.22},
+                "okc-reviewed-q4-clutch-v1": {"price": 0.72},
+            },
+        },
+        portfolio_state={"open_positions": 0, "open_orders": 0},
+    )
+
+    assert result.intent_count == 1
+    assert result.blocked_count == 1
+    assert result.blockers[0]["reason"] == "garbage_time_no_new_entry"
+    assert result.blockers[0]["sleeve_id"] == "lal-late-default"
+    assert result.intents[0].strategy_id == "okc-reviewed-q4-clutch-v1"
+    assert result.intents[0].sleeve_id == "okc-q4-clutch"
+    assert result.intents[0].metadata["sleeve"]["sleeve_role"] == "reviewed_q4_clutch"
+    assert [
+        (state["sleeve_id"], state["status"], state["blocker_reasons"], state["intent_count"])
+        for state in result.sleeve_states
+    ] == [
+        ("lal-late-default", "blocked", ["garbage_time_no_new_entry"], 0),
+        ("okc-q4-clutch", "intent_created", [], 1),
+    ]
