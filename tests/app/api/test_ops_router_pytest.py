@@ -234,10 +234,16 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = fake_db_connection
     plan_payload = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    plan_payload["active_strategies"][0]["sleeve_id"] = "underdog-grid"
+    plan_payload["active_strategies"][0]["sleeve_group"] = "underdog"
+    plan_payload["active_strategies"][0]["sleeve_role"] = "standard_entry"
     plan_payload["active_strategies"].append(
         {
             **plan_payload["active_strategies"][0],
             "strategy_id": "grid-2",
+            "sleeve_id": "favorite-grid",
+            "sleeve_group": "favorite",
+            "sleeve_role": "reviewed_q4_clutch",
             "entry_rules": {
                 **plan_payload["active_strategies"][0]["entry_rules"],
                 "outcome_id": "outcome-2",
@@ -267,6 +273,15 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     assert response.status_code == 202
     payload = response.json()
     assert payload["integrity"]["direct_trade_token_ids"] == ["token-1", "token-2"]
+    current_plan = payload["strategy_plan_gate"]["current_plans"][0]
+    assert current_plan["sleeve_count"] == 2
+    assert [
+        (sleeve["sleeve_id"], sleeve["sleeve_group"], sleeve["sleeve_role"])
+        for sleeve in current_plan["sleeves"]
+    ] == [
+        ("underdog-grid", "underdog", "standard_entry"),
+        ("favorite-grid", "favorite", "reviewed_q4_clutch"),
+    ]
 
 
 def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_path, monkeypatch) -> None:

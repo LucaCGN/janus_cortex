@@ -896,6 +896,9 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
             {
                 "strategy_id": "det-underdog-range-scalp-v1",
                 "side": "Pistons",
+                "sleeve_id": "det-q1-underdog",
+                "sleeve_group": "det",
+                "sleeve_role": "standard_entry",
                 "entry_rules": {
                     "outcome_id": "outcome-det",
                     "token_id": "token-det",
@@ -937,7 +940,23 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
         if path == "/v1/watchlists/orderbook-ticks":
             return {"ok": True, "tick_count": len(payload["ticks"]), "db_persistence": {"ok": True}}
         if path == "/v1/events/nba-det-cle-2026-05-11/strategy-plan/evaluate":
-            return {"ok": True, "intent_count": 1, "blocked_count": 0}
+            return {
+                "ok": True,
+                "intent_count": 1,
+                "blocked_count": 0,
+                "sleeve_states": [
+                    {
+                        "sleeve_id": "det-q1-underdog",
+                        "sleeve_group": "det",
+                        "sleeve_role": "standard_entry",
+                        "strategy_id": "det-underdog-range-scalp-v1",
+                        "status": "intent_created",
+                        "intent_count": 1,
+                        "blocker_count": 0,
+                        "blocker_reasons": [],
+                    }
+                ],
+            }
         return {"ok": True}
 
     monkeypatch.setattr(live_tick, "api_json", fake_api_json)
@@ -997,6 +1016,9 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
     assert result["portfolio_state"]["open_positions"] == 0
     assert result["portfolio_state"]["direct_clob_global_open_orders"] == 1
     assert result["portfolio_state"]["direct_clob_global_open_positions"] == 1
+    assert result["strategy_sleeve_status"]["status"] == "recorded"
+    assert result["strategy_sleeve_status"]["intent_sleeve_count"] == 1
+    assert result["sleeve_states"][0]["sleeve_id"] == "det-q1-underdog"
     portfolio_state = evaluate_calls[0]["payload"]["portfolio_state"]
     assert portfolio_state["open_orders"] == 0
     assert portfolio_state["open_positions"] == 0

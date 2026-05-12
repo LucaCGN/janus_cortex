@@ -483,6 +483,7 @@ def _run_event_tick(
                 },
             )
 
+    sleeve_runtime_status = _sleeve_runtime_status(live if live is not None else shadow)
     candidate_submission = operator_reaction.get("candidate_strategy_plan_submission") or {}
     candidate_submission_failed = bool(submit_candidate_strategy_plan) and candidate_submission.get("ok") is False
     direct_trade_persistence_failed = direct_trade_persistence.get("ok") is False
@@ -497,12 +498,31 @@ def _run_event_tick(
         "shadow_evaluation": shadow,
         "live_execution": live,
         "live_blocked_by": live_blocked_by,
+        "sleeve_states": sleeve_runtime_status["items"],
+        "strategy_sleeve_status": sleeve_runtime_status,
         "operator_reaction": operator_reaction,
         "llm_runtime_trace": llm_runtime_trace.model_dump(mode="json"),
         "llm_runtime_persistence": llm_runtime_persistence,
         "llm_runtime_status": market_state["llm_runtime_status"],
         "orderbook_results": _summarize_orderbooks(orderbook_results),
         "watch_persistence": watch_persistence,
+    }
+
+
+def _sleeve_runtime_status(evaluation: dict[str, Any] | None) -> dict[str, Any]:
+    raw_states = evaluation.get("sleeve_states") if isinstance(evaluation, dict) else None
+    states = [dict(item) for item in raw_states or [] if isinstance(item, dict)]
+    status_counts: dict[str, int] = {}
+    for state in states:
+        status = str(state.get("status") or "unknown")
+        status_counts[status] = status_counts.get(status, 0) + 1
+    return {
+        "status": "recorded" if states else "not_recorded",
+        "sleeve_count": len(states),
+        "status_counts": status_counts,
+        "blocked_sleeve_count": status_counts.get("blocked", 0),
+        "intent_sleeve_count": status_counts.get("intent_created", 0),
+        "items": states,
     }
 
 

@@ -70,6 +70,8 @@ Active strategies may also carry first-class trader-sleeve metadata:
 
 StrategyPlan evaluation reports sleeve states for every active strategy. Each order intent and blocker preserves sleeve identity so Live Monitor/Postgame can show that one sleeve was blocked, for example by garbage-time no-new-entry or unresolved exposure, while another reviewed sleeve remained eligible.
 
+Operational status surfaces must preserve that evidence. `/v1/ops/live-monitor` reports configured sleeves from the current plan in the StrategyPlan gate, and `codex_tool/run_live_strategy_tick.py` returns evaluated `sleeve_states` plus a `strategy_sleeve_status` summary from the shadow/live evaluation result.
+
 Supported strategy families include deterministic lanes, grid trading, resistance-band rebound, winner definition, underdog optionality, high-frequency scalping, momentum capture, hedges, bracket exits, and subjective event-specific triggers.
 
 ## Operator Sizing Authority

@@ -485,6 +485,7 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
         if not plan:
             missing_event_ids.append(event_id)
             continue
+        sleeves = _strategy_plan_sleeves(plan)
         plans.append(
             {
                 "event_id": event_id,
@@ -492,6 +493,8 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
                 "schema_version": plan.get("schema_version"),
                 "plan_owner": plan.get("plan_owner"),
                 "active_strategy_count": len(plan.get("active_strategies") or []),
+                "sleeve_count": len(sleeves),
+                "sleeves": sleeves,
             }
         )
     status_text = "not_required" if not unique_event_ids else ("ready" if not missing_event_ids else "blocked")
@@ -504,6 +507,30 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
         "ready_for_strategy_evaluation": bool(unique_event_ids) and not missing_event_ids,
         "blocker_reason": "missing_current_strategy_plan" if missing_event_ids else None,
     }
+
+
+def _strategy_plan_sleeves(plan: dict[str, Any]) -> list[dict[str, Any]]:
+    sleeves: list[dict[str, Any]] = []
+    for strategy in plan.get("active_strategies") or []:
+        if not isinstance(strategy, dict):
+            continue
+        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+        strategy_id = str(strategy.get("strategy_id") or "").strip()
+        sleeve_id = str(strategy.get("sleeve_id") or entry_rules.get("sleeve_id") or strategy_id).strip()
+        sleeve = {
+            "sleeve_id": sleeve_id or strategy_id,
+            "strategy_id": strategy_id,
+            "strategy_family": strategy.get("family"),
+            "side": strategy.get("side"),
+        }
+        sleeve_group = str(strategy.get("sleeve_group") or entry_rules.get("sleeve_group") or "").strip()
+        sleeve_role = str(strategy.get("sleeve_role") or entry_rules.get("sleeve_role") or "").strip()
+        if sleeve_group:
+            sleeve["sleeve_group"] = sleeve_group
+        if sleeve_role:
+            sleeve["sleeve_role"] = sleeve_role
+        sleeves.append(sleeve)
+    return sleeves
 
 
 def _resolve_postgame_review_event_ids(event_ids: list[str], *, day: str | None) -> list[str]:
