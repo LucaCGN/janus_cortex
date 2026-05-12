@@ -32,7 +32,7 @@ Pregame StrategyPlanJSON is not the live LLM brain. Pregame plans provide initia
 
 The first runtime slices are fail-closed and order-safe. `codex_tool/run_live_strategy_tick.py` emits `LLMRuntimeTrigger`/`LLMRuntimeTrace` evidence, persists prompt/routing/response artifacts under `local\shared\artifacts\llm-runtime\YYYY-MM-DD\`, and can dispatch the routed OpenAI model only behind the explicit `--enable-llm-dispatch` flag. Missing credentials, unavailable clients, schema failures, and model call errors record `skipped_unavailable`; no StrategyPlanJSON is auto-replaced and no order endpoint authority is granted to the LLM.
 
-Reviewed LLM adoption is a separate, explicit API step. `POST /v1/events/{event_id}/llm-revision/adopt` accepts a recorded `LLMRevisionResponse` or trace artifact only with `reviewed_by` and `review_reason`, validates the embedded `StrategyPlanJSON`, records an adoption artifact with trigger/model/diff metadata, and writes the current plan only when the request explicitly asks to apply it. This endpoint never calls order endpoints; live execution still flows through StrategyPlan evaluation, direct CLOB checks, operator sizing, and order-manager validation.
+Reviewed LLM adoption is a separate, explicit API step. `POST /v1/events/{event_id}/llm-revision/adopt` accepts a recorded `LLMRevisionResponse` or trace artifact only with `reviewed_by` and `review_reason`, validates the embedded `StrategyPlanJSON`, records an adoption artifact with trigger/model/diff metadata, and writes the current plan only when the request explicitly asks to apply it. `codex_tool/adopt_llm_revision.py` is the safe operator/Codex wrapper for this endpoint; it records candidate adoption by default and requires `--apply-current` for promotion. This endpoint and tool never call order endpoints; live execution still flows through StrategyPlan evaluation, direct CLOB checks, operator sizing, and order-manager validation.
 
 Required plan fields:
 
@@ -191,6 +191,7 @@ Codex agents use scripts under `codex_tool/` to interact with the local API:
 - `record_market_trade.py`
 - `build_replay_from_watch_session.py`
 - `evaluate_strategy_plan.py`
+- `adopt_llm_revision.py`
 - `reconcile_trades.py`
 
 ## Codex Agent Schedule

@@ -378,3 +378,53 @@ def test_latest_llm_runtime_status_loads_persisted_event_trace_pytest(tmp_path) 
     assert status["items"][0]["event_id"] == "nba-det-cle-2026-05-11"
     assert status["items"][0]["response_status"] == "skipped_unavailable"
     assert status["items"][0]["trigger_types"] == ["quarter_end"]
+    assert status["items"][0]["adoption_status"] == "not_adoptable"
+    assert status["items"][0]["llm_revision_adoption"]["blocker"] == "response_skipped_or_unavailable"
+
+
+def test_latest_llm_runtime_status_marks_valid_response_adoptable_pytest(tmp_path) -> None:
+    day_root = tmp_path / "llm-runtime" / "2026-05-11"
+    day_root.mkdir(parents=True)
+    artifact_path = day_root / "trace.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "nba-det-cle-2026-05-11",
+                "trace_id": "trace-1",
+                "status": "response_recorded",
+                "response_status": "response_recorded",
+                "trigger_count": 1,
+                "trigger_types": ["quarter_end"],
+                "selected_model": "gpt-5.5",
+                "model_routing_decision": {"selected_model": "gpt-5.5", "selected_tier": "frontier"},
+                "response": {
+                    "request_id": "request-1",
+                    "status": "response_recorded",
+                    "selected_model": "gpt-5.5",
+                    "revised_strategy_plan": {"event_id": "nba-det-cle-2026-05-11"},
+                    "reconciliation_actions": [],
+                    "blocked_actions": [],
+                    "confidence": 0.74,
+                    "skipped_reason": None,
+                },
+                "persisted_at_utc": "2026-05-11T20:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = load_latest_llm_runtime_status(
+        session_date="2026-05-11",
+        event_ids=["nba-det-cle-2026-05-11"],
+        artifact_root=tmp_path / "llm-runtime",
+    )
+
+    adoption = status["items"][0]["llm_revision_adoption"]
+    assert status["items"][0]["adoption_status"] == "adoptable_review_required"
+    assert adoption["status"] == "adoptable_review_required"
+    assert adoption["review_required"] is True
+    assert adoption["blocker"] is None
+    assert adoption["trace_artifact_path"] == str(artifact_path.resolve())
+    assert adoption["adoption_endpoint"] == "/v1/events/nba-det-cle-2026-05-11/llm-revision/adopt"
+    assert adoption["required_review_fields"] == ["reviewed_by", "review_reason"]

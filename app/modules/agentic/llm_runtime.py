@@ -723,6 +723,9 @@ def load_latest_llm_runtime_status(
                 continue
             status_payload = _status_from_artifact_payload(payload)
             status_payload["path"] = str(path)
+            adoption = status_payload.get("llm_revision_adoption")
+            if isinstance(adoption, dict):
+                adoption["trace_artifact_path"] = str(path)
             latest_by_event[event_id] = status_payload
 
     items: list[dict[str, Any]] = []
@@ -738,6 +741,15 @@ def load_latest_llm_runtime_status(
                     "trigger_count": 0,
                     "response_status": None,
                     "selected_model": None,
+                    "adoption_status": "not_available",
+                    "llm_revision_adoption": {
+                        "status": "not_available",
+                        "review_required": False,
+                        "blocker": "trace_not_recorded",
+                        "adoption_endpoint": f"/v1/events/{event_id}/llm-revision/adopt",
+                        "trace_artifact_path": None,
+                        "order_endpoint_call_allowed": False,
+                    },
                 }
             )
         else:
@@ -987,6 +999,7 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     model_routing = payload.get("model_routing_decision") if isinstance(payload.get("model_routing_decision"), dict) else {}
     trigger_list = payload.get("trigger_list") if isinstance(payload.get("trigger_list"), list) else []
     event_id = str(payload.get("event_id") or trace.get("event_id") or "").strip()
+    adoption = _llm_revision_adoption_status(event_id=event_id, response=response)
     return {
         "event_id": event_id,
         "trace_id": payload.get("trace_id") or trace.get("trace_id"),
@@ -999,6 +1012,46 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "selected_tier": model_routing.get("selected_tier"),
         "persisted_at_utc": payload.get("persisted_at_utc"),
         "artifact_schema_version": payload.get("schema_version"),
+        "adoption_status": adoption["status"],
+        "llm_revision_adoption": adoption,
+    }
+
+
+def _llm_revision_adoption_status(*, event_id: str, response: dict[str, Any]) -> dict[str, Any]:
+    response_status = response.get("status")
+    skipped_reason = response.get("skipped_reason")
+    revised_plan = response.get("revised_strategy_plan")
+    request_id = response.get("request_id")
+    selected_model = response.get("selected_model")
+    confidence = response.get("confidence")
+
+    status_value = "not_adoptable"
+    blocker = "response_missing"
+    review_required = False
+    if response:
+        if response_status in {"detected_only", "skipped_unavailable"} or skipped_reason:
+            blocker = "response_skipped_or_unavailable"
+        elif not isinstance(revised_plan, dict):
+            blocker = "revised_strategy_plan_missing"
+        else:
+            status_value = "adoptable_review_required"
+            blocker = None
+            review_required = True
+
+    return {
+        "status": status_value,
+        "review_required": review_required,
+        "blocker": blocker,
+        "adoption_endpoint": f"/v1/events/{event_id}/llm-revision/adopt" if event_id else None,
+        "trace_artifact_path": None,
+        "request_id": request_id,
+        "response_status": response_status,
+        "skipped_reason": skipped_reason,
+        "selected_model": selected_model,
+        "confidence": confidence,
+        "order_endpoint_call_allowed": False,
+        "required_review_fields": ["reviewed_by", "review_reason"] if review_required else [],
+        "apply_current_requires_explicit_request": True,
     }
 
 

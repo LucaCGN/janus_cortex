@@ -356,6 +356,75 @@ def test_live_monitor_endpoint_exposes_latest_llm_runtime_status_pytest(tmp_path
     assert payload["llm_runtime_status"]["items"][0]["event_id"] == "event-123"
     assert payload["llm_runtime_status"]["items"][0]["response_status"] == "skipped_unavailable"
     assert payload["llm_runtime_status"]["items"][0]["skipped_reason"] == "dispatch_disabled"
+    assert payload["llm_runtime_status"]["items"][0]["adoption_status"] == "not_adoptable"
+    assert (
+        payload["llm_runtime_status"]["items"][0]["llm_revision_adoption"]["adoption_endpoint"]
+        == "/v1/events/event-123/llm-revision/adopt"
+    )
+
+
+def test_live_monitor_endpoint_marks_recorded_llm_revision_adoptable_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+    artifact_dir = local_root / "shared" / "artifacts" / "llm-runtime" / "2026-05-10"
+    artifact_dir.mkdir(parents=True)
+    artifact_path = artifact_dir / "trace.json"
+    artifact_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "event-123",
+                "trace_id": "trace-1",
+                "status": "response_recorded",
+                "response_status": "response_recorded",
+                "trigger_count": 1,
+                "trigger_types": ["manual_operator_position"],
+                "selected_model": "gpt-5.5",
+                "model_routing_decision": {"selected_model": "gpt-5.5", "selected_tier": "frontier"},
+                "response": {
+                    "request_id": "request-1",
+                    "status": "response_recorded",
+                    "selected_model": "gpt-5.5",
+                    "revised_strategy_plan": {"event_id": "event-123"},
+                    "reconciliation_actions": [],
+                    "blocked_actions": [],
+                    "confidence": 0.81,
+                    "skipped_reason": None,
+                },
+                "persisted_at_utc": "2026-05-10T20:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "ready_for_live_minimum_orders": True,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+        },
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-10", "event_ids": ["event-123"], "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    item = response.json()["llm_runtime_status"]["items"][0]
+    assert item["adoption_status"] == "adoptable_review_required"
+    assert item["llm_revision_adoption"]["trace_artifact_path"] == str(artifact_path.resolve())
+    assert item["llm_revision_adoption"]["order_endpoint_call_allowed"] is False
 
 
 def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tmp_path, monkeypatch) -> None:
