@@ -203,6 +203,37 @@ def test_recent_run_and_garbage_time_emit_runtime_triggers_pytest() -> None:
     assert "garbage_time" in decision.critical_reasons
 
 
+def test_score_gap_break_emits_runtime_trigger_from_plan_rules_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-okc-lal-2026-05-11",
+        current_plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "lal-close-game-micro-grid",
+                    "family": "micro_grid_reprice_v1",
+                    "side": "Lakers",
+                    "sleeve_id": "lal-q4-close",
+                    "entry_rules": {"max_abs_score_gap": 8},
+                }
+            ]
+        },
+        live_state={"period": 3, "clock": "4:12", "score_gap": 12},
+    )
+
+    routine_decision = route_llm_model(triggers)
+    exposure_decision = route_llm_model(triggers, portfolio_state={"open_positions": 1})
+
+    assert [trigger.trigger_type for trigger in triggers] == ["score_gap_break"]
+    assert triggers[0].severity == "routine"
+    assert triggers[0].evidence["computed"] is True
+    assert triggers[0].evidence["score_gap"] == 12.0
+    assert triggers[0].evidence["broken_strategy_count"] == 1
+    assert triggers[0].evidence["broken_strategies"][0]["strategy_id"] == "lal-close-game-micro-grid"
+    assert routine_decision.selected_model == MINI_MODEL
+    assert exposure_decision.selected_model == FRONTIER_MODEL
+    assert "open_exposure" in exposure_decision.critical_reasons
+
+
 def test_order_submitted_and_fill_emit_lifecycle_triggers_pytest() -> None:
     triggers = detect_llm_runtime_triggers(
         event_id="nba-det-cle-2026-05-11",

@@ -182,6 +182,19 @@ def detect_llm_runtime_triggers(
             )
         )
 
+    score_gap_break = _score_gap_break_evidence(plan, live)
+    if score_gap_break is not None and not any(trigger.trigger_type == "score_gap_break" for trigger in triggers):
+        triggers.append(
+            _make_trigger(
+                event_id=event_id,
+                trigger_type="score_gap_break",
+                source=source,
+                reason="Application runtime detected a score-gap break against active StrategyPlanJSON rules.",
+                severity="routine",
+                evidence=score_gap_break,
+            )
+        )
+
     for item in interventions:
         trigger_type = _operator_trigger_type(item)
         if trigger_type is None:
@@ -1244,6 +1257,19 @@ def _live_state_revision_events(*, live: dict[str, Any], orderbook: dict[str, An
             }
         )
 
+    score_gap_break = _first_runtime_signal(
+        (live, ("score_gap_break", "score_gap_band_break", "score_gap_outside_rule")),
+    )
+    if score_gap_break is not None:
+        rows.append(
+            {
+                "trigger_type": "score_gap_break",
+                "reason": "Application runtime detected an explicit score-gap break signal.",
+                "severity": "routine",
+                "evidence": score_gap_break,
+            }
+        )
+
     recent_run = _first_runtime_signal(
         (live, ("recent_run", "scoring_run", "momentum_run", "current_run")),
     )
@@ -1275,6 +1301,52 @@ def _live_state_revision_events(*, live: dict[str, Any], orderbook: dict[str, An
         )
 
     return rows
+
+
+def _score_gap_break_evidence(plan: dict[str, Any], live: dict[str, Any]) -> dict[str, Any] | None:
+    latest = live.get("latest_snapshot") if isinstance(live.get("latest_snapshot"), dict) else {}
+    score_gap = _score_gap(live, latest if isinstance(latest, dict) else {})
+    if score_gap is None:
+        return None
+
+    broken: list[dict[str, Any]] = []
+    for strategy in plan.get("active_strategies") or []:
+        if not isinstance(strategy, dict):
+            continue
+        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+        max_gap = _first_score_gap_limit(entry_rules)
+        if max_gap is None or abs(score_gap) <= max_gap:
+            continue
+        broken.append(
+            {
+                "strategy_id": strategy.get("strategy_id"),
+                "family": strategy.get("family"),
+                "side": strategy.get("side"),
+                "sleeve_id": strategy.get("sleeve_id"),
+                "max_abs_score_gap": max_gap,
+            }
+        )
+
+    if not broken:
+        return None
+    return _compact_evidence(
+        {
+            "computed": True,
+            "score_gap": score_gap,
+            "period": (latest or {}).get("period") or live.get("period"),
+            "clock": (latest or {}).get("game_clock") or (latest or {}).get("clock") or live.get("game_clock") or live.get("clock"),
+            "broken_strategy_count": len(broken),
+            "broken_strategies": broken,
+        }
+    )
+
+
+def _first_score_gap_limit(entry_rules: dict[str, Any]) -> float | None:
+    for key in ("max_abs_score_gap", "max_close_score_gap", "max_trailing_score_gap"):
+        value = _safe_float(entry_rules.get(key))
+        if value is not None:
+            return abs(value)
+    return None
 
 
 def _first_runtime_signal(*groups: tuple[dict[str, Any], tuple[str, ...]]) -> dict[str, Any] | None:

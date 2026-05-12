@@ -23,6 +23,7 @@ LLMRuntimeTriggerType = Literal[
     "price_flip",
     "leadership_switch",
     "recent_run",
+    "score_gap_break",
     "garbage_time",
     "ml_pbp_undervaluation",
     "ml_pbp_overvaluation",
