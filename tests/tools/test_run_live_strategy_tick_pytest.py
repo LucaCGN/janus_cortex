@@ -27,6 +27,12 @@ def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> 
             "market_id": "market-1",
             "active_strategies": [
                 {
+                    "strategy_id": "sas-manual-protect",
+                    "family": "operator_position_management",
+                    "side": "Spurs",
+                    "sleeve_id": "sas-manual-position",
+                    "sleeve_group": "manual-adoption",
+                    "sleeve_role": "protective-target",
                     "entry_rules": {
                         "token_id": "token-sas",
                         "outcome_id": "outcome-sas",
@@ -66,9 +72,13 @@ def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> 
     assert candidate.plan_owner == "system"
     assert candidate.context_summary["position_management_only"] is True
     assert candidate.active_strategies[0].family == "operator_position_management"
+    assert candidate.active_strategies[0].sleeve_id == "sas-manual-position"
+    assert candidate.active_strategies[0].sleeve_group == "manual-adoption"
+    assert candidate.active_strategies[0].sleeve_role == "protective-target"
     assert candidate.active_strategies[0].entry_rules["entry_disabled"] is True
     assert candidate.active_strategies[0].shadow_flags["shadow_only"] is True
     assert candidate.portfolio_reconciliation[0]["action"] == "adopt"
+    assert candidate.portfolio_reconciliation[0]["sleeve_id"] == "sas-manual-position"
     assert len(order_calls) == 1
     assert len(intervention_calls) == 1
     order_payload = order_calls[0]["payload"]
@@ -78,14 +88,22 @@ def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> 
     assert order_payload["limit_price"] == 0.65
     assert order_payload["size"] == 5.0
     assert order_payload["metadata_json"]["reaction_type"] == "operator_intervention_target"
+    assert order_payload["metadata_json"]["matched_sleeve_id"] == "sas-manual-position"
+    assert order_payload["metadata_json"]["sleeve"] == {
+        "sleeve_id": "sas-manual-position",
+        "sleeve_group": "manual-adoption",
+        "sleeve_role": "protective-target",
+    }
     assert order_payload["metadata_json"]["no_new_entry_until_revision"] is True
     assert order_payload["metadata_json"]["revision_request"]["position_management_only"] is True
+    assert order_payload["metadata_json"]["revision_request"]["sleeve_id"] == "sas-manual-position"
     intervention_payload = intervention_calls[0]["payload"]
     assert intervention_payload["external_order_ids"] == ["0xabc"]
     assert intervention_payload["target_status"] == "target_order_submitted"
     assert intervention_payload["stop_status"] == "not_configured_review_required"
     assert intervention_payload["hedge_status"] == "opposite_side_disabled_without_profit_lock"
     assert intervention_payload["metadata"]["reaction"]["no_new_entry"] is True
+    assert intervention_payload["metadata"]["reaction"]["sleeve_id"] == "sas-manual-position"
     assert intervention_payload["metadata"]["reaction"]["requires_strategy_plan_revision"] is True
 
 
@@ -168,6 +186,9 @@ def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_
                     "strategy_id": "lal-live-micro-grid",
                     "family": "price_stability_micro_grid",
                     "side": "Lakers",
+                    "sleeve_id": "lal-q4-micro-grid",
+                    "sleeve_group": "lakers",
+                    "sleeve_role": "adverse-review",
                     "entry_rules": {"token_id": "token-lal", "outcome_id": "outcome-lal"},
                     "stop_rules": {
                         "stop_price": 0.13,
@@ -224,6 +245,7 @@ def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_
     review = result["adverse_position_reviews"][0]
     assert review["action"] == "position_adverse_move"
     assert review["strategy_id"] == "lal-live-micro-grid"
+    assert review["sleeve_id"] == "lal-q4-micro-grid"
     assert review["current_exit_bid"] == 0.10
     assert {rule["rule"] for rule in review["triggered_rules"]} == {"stop_price", "max_adverse_cents"}
     assert review["revision_request"]["decision_options_to_compare"] == [
@@ -233,6 +255,7 @@ def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_
         "opposite_side_hedge_or_continuation",
         "add_down_same_side_micro_grid",
     ]
+    assert review["revision_request"]["sleeve_id"] == "lal-q4-micro-grid"
     assert result["candidate_strategy_plan_required"] is True
 
 
@@ -764,6 +787,9 @@ def test_position_target_price_uses_scaled_micro_grid_policy_pytest() -> None:
                 {
                     "strategy_id": "det-micro-grid",
                     "family": "underdog_micro_grid_reprice",
+                    "sleeve_id": "det-q1-micro-grid",
+                    "sleeve_group": "det",
+                    "sleeve_role": "scaled-target",
                     "entry_rules": {
                         "token_id": "token-det",
                         "outcome_id": "outcome-det",
@@ -786,6 +812,7 @@ def test_position_target_price_uses_scaled_micro_grid_policy_pytest() -> None:
     assert target["target_delta_cents"] == 2.0
     assert target["target_policy"] == "micro_grid_scaled"
     assert target["strategy_id"] == "det-micro-grid"
+    assert target["sleeve_id"] == "det-q1-micro-grid"
 
 
 def test_position_target_price_prefers_live_strategy_over_shadow_match_pytest() -> None:

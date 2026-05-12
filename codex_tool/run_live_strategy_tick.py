@@ -607,6 +607,7 @@ def _position_target_price_from_plan(
     )
     if strategy is not None:
         exit_rules = strategy.get("exit_rules") if isinstance(strategy.get("exit_rules"), dict) else {}
+        sleeve = _strategy_sleeve_metadata(strategy)
         scaled_target = _scaled_micro_grid_target_price(avg_price, exit_rules)
         if scaled_target is not None:
             return {
@@ -615,6 +616,10 @@ def _position_target_price_from_plan(
                 "target_delta_cents": round((scaled_target - avg_price) * 100.0, 4),
                 "strategy_id": strategy.get("strategy_id"),
                 "strategy_family": strategy.get("family"),
+                "sleeve": sleeve,
+                "sleeve_id": sleeve.get("sleeve_id"),
+                "sleeve_group": sleeve.get("sleeve_group"),
+                "sleeve_role": sleeve.get("sleeve_role"),
                 "exit_rules": exit_rules,
             }
         explicit_target = _float(exit_rules.get("target_price"))
@@ -626,15 +631,24 @@ def _position_target_price_from_plan(
                 "target_delta_cents": round((target_price - avg_price) * 100.0, 4),
                 "strategy_id": strategy.get("strategy_id"),
                 "strategy_family": strategy.get("family"),
+                "sleeve": sleeve,
+                "sleeve_id": sleeve.get("sleeve_id"),
+                "sleeve_group": sleeve.get("sleeve_group"),
+                "sleeve_role": sleeve.get("sleeve_role"),
                 "exit_rules": exit_rules,
             }
+    fallback_sleeve = _strategy_sleeve_metadata(strategy)
     fallback_target = round(min(0.95, max(0.01, avg_price + default_target_delta_cents / 100.0)), 4)
     return {
         "target_price": fallback_target,
         "target_policy": "fallback_fixed_delta",
         "target_delta_cents": default_target_delta_cents,
-        "strategy_id": None,
-        "strategy_family": None,
+        "strategy_id": strategy.get("strategy_id") if strategy else None,
+        "strategy_family": strategy.get("family") if strategy else None,
+        "sleeve": fallback_sleeve,
+        "sleeve_id": fallback_sleeve.get("sleeve_id"),
+        "sleeve_group": fallback_sleeve.get("sleeve_group"),
+        "sleeve_role": fallback_sleeve.get("sleeve_role"),
     }
 
 
@@ -642,6 +656,18 @@ def _strategy_matches_token(entry_rules: dict[str, Any], *, token_id: str, outco
     entry_token = str(entry_rules.get("token_id") or entry_rules.get("asset_id") or "").strip()
     entry_outcome = str(entry_rules.get("outcome_id") or "").strip()
     return bool((entry_token and entry_token == token_id) or (entry_outcome and entry_outcome == outcome_id))
+
+
+def _strategy_sleeve_metadata(strategy: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(strategy, dict):
+        return {}
+    entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+    metadata: dict[str, Any] = {}
+    for key in ("sleeve_id", "sleeve_group", "sleeve_role"):
+        value = strategy.get(key) or entry_rules.get(key)
+        if str(value or "").strip():
+            metadata[key] = value
+    return metadata
 
 
 def _scaled_micro_grid_target_price(entry_price: float, rules: dict[str, Any]) -> float | None:
@@ -757,6 +783,20 @@ def _auto_protect_direct_positions(
         uncovered_size = max(0.0, position_size - open_sell_size)
         outcome_ref = plan_outcomes.get(token_id)
         avg_price = _position_avg_price(position, position_size)
+        outcome_state = (outcome_states or {}).get(str(outcome_ref["outcome_id"])) if outcome_ref is not None else {}
+        if not isinstance(outcome_state, dict):
+            outcome_state = {}
+        matched_strategy = (
+            _position_strategy_from_plan(
+                plan=plan,
+                token_id=token_id,
+                outcome_id=str(outcome_ref["outcome_id"]),
+                outcome_state=outcome_state,
+            )
+            if outcome_ref is not None
+            else None
+        )
+        sleeve = _strategy_sleeve_metadata(matched_strategy)
         if outcome_ref is not None and avg_price is not None:
             adverse_review = _position_adverse_review(
                 event_id=event_id,
@@ -764,7 +804,7 @@ def _auto_protect_direct_positions(
                 position=position,
                 token_id=token_id,
                 outcome_id=str(outcome_ref["outcome_id"]),
-                outcome_state=(outcome_states or {}).get(str(outcome_ref["outcome_id"])) or {},
+                outcome_state=outcome_state,
                 position_size=position_size,
                 avg_price=avg_price,
                 open_sell_size=open_sell_size,
@@ -791,6 +831,8 @@ def _auto_protect_direct_positions(
                 "event_id": event_id,
                 "token_id": token_id,
                 "outcome_label": position.get("outcome"),
+                "matched_strategy_id": matched_strategy.get("strategy_id") if matched_strategy else None,
+                "matched_strategy_family": matched_strategy.get("family") if matched_strategy else None,
                 "position_management_only": True,
                 "disable_new_entries": True,
                 "required_context": [
@@ -808,6 +850,11 @@ def _auto_protect_direct_positions(
                 },
             },
         }
+        if sleeve:
+            position_reaction["sleeve"] = dict(sleeve)
+            position_reaction.update(sleeve)
+            position_reaction["revision_request"]["sleeve"] = dict(sleeve)
+            position_reaction["revision_request"].update(sleeve)
         reaction["position_reactions"].append(position_reaction)
         reaction["revision_requests"].append(position_reaction["revision_request"])
         if uncovered_size < min_size:
@@ -844,7 +891,7 @@ def _auto_protect_direct_positions(
             outcome_id=str(outcome_ref["outcome_id"]),
             avg_price=avg_price,
             default_target_delta_cents=target_delta_cents,
-            outcome_state=(outcome_states or {}).get(str(outcome_ref["outcome_id"])) or {},
+            outcome_state=outcome_state,
         )
         target_price = target_resolution["target_price"]
         order_payload = {
@@ -868,6 +915,10 @@ def _auto_protect_direct_positions(
                 "target_policy": target_resolution.get("target_policy"),
                 "matched_strategy_id": target_resolution.get("strategy_id"),
                 "matched_strategy_family": target_resolution.get("strategy_family"),
+                "matched_sleeve_id": target_resolution.get("sleeve_id"),
+                "matched_sleeve_group": target_resolution.get("sleeve_group"),
+                "matched_sleeve_role": target_resolution.get("sleeve_role"),
+                "sleeve": target_resolution.get("sleeve") or {},
                 "position_size": position_size,
                 "open_sell_size": open_sell_size,
                 "no_new_entry_until_revision": True,
@@ -960,6 +1011,7 @@ def _position_adverse_review(
     stop_rules = strategy.get("stop_rules") if isinstance(strategy.get("stop_rules"), dict) else {}
     if not stop_rules:
         return None
+    sleeve = _strategy_sleeve_metadata(strategy)
 
     current_bid = _float(outcome_state.get("best_bid"))
     current_ask = _float(outcome_state.get("best_ask"))
@@ -1014,6 +1066,10 @@ def _position_adverse_review(
         "outcome_label": position.get("outcome") or strategy.get("side"),
         "strategy_id": strategy.get("strategy_id"),
         "strategy_family": strategy.get("family"),
+        "sleeve": sleeve,
+        "sleeve_id": sleeve.get("sleeve_id"),
+        "sleeve_group": sleeve.get("sleeve_group"),
+        "sleeve_role": sleeve.get("sleeve_role"),
         "position_size": position_size,
         "open_sell_size": open_sell_size,
         "uncovered_size": uncovered_size,
@@ -1034,6 +1090,10 @@ def _position_adverse_review(
             "outcome_label": position.get("outcome") or strategy.get("side"),
             "strategy_id": strategy.get("strategy_id"),
             "strategy_family": strategy.get("family"),
+            "sleeve": sleeve,
+            "sleeve_id": sleeve.get("sleeve_id"),
+            "sleeve_group": sleeve.get("sleeve_group"),
+            "sleeve_role": sleeve.get("sleeve_role"),
             "required_context": [
                 "direct_clob_truth",
                 "latest_scoreboard",
@@ -1138,6 +1198,7 @@ def _operator_position_strategy_plan_candidate(
         avg_price = _float(current_position.get("avg_price"))
         open_sell_size = _float(reaction.get("open_sell_size")) or 0.0
         uncovered_size = _float(reaction.get("uncovered_size")) or 0.0
+        sleeve = {key: reaction.get(key) for key in ("sleeve_id", "sleeve_group", "sleeve_role") if reaction.get(key) is not None}
         active_strategies.append(
             {
                 "strategy_id": f"operator-position-management-{strategy_suffix}-{index}",
@@ -1191,6 +1252,8 @@ def _operator_position_strategy_plan_candidate(
                 },
             }
         )
+        if sleeve:
+            active_strategies[-1].update(sleeve)
         portfolio_reconciliation.append(
             {
                 "action": "adopt",
@@ -1205,6 +1268,8 @@ def _operator_position_strategy_plan_candidate(
                 "requires_strategy_plan_revision": True,
             }
         )
+        if sleeve:
+            portfolio_reconciliation[-1].update(sleeve)
 
     for index, reaction in enumerate(order_reactions, start=1):
         token_id = str(reaction.get("token_id") or "").strip()
