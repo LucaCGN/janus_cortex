@@ -752,6 +752,7 @@ def _auto_protect_direct_positions(
         _unknown_direct_order_reactions(
             event_id=event_id,
             open_orders=open_orders,
+            plan=plan,
             plan_outcomes=plan_outcomes,
             known_external_order_ids=known_external_order_ids,
         )
@@ -763,6 +764,7 @@ def _auto_protect_direct_positions(
         _unknown_direct_trade_reactions(
             event_id=event_id,
             trades=direct_trades,
+            plan=plan,
             plan_outcomes=plan_outcomes,
             known_external_order_ids=known_external_order_ids,
         )
@@ -1281,6 +1283,7 @@ def _operator_position_strategy_plan_candidate(
         order_side = str(reaction.get("order_side") or "").lower()
         strategy_suffix = _safe_slug(outcome_label or token_id)
         direct_order = reaction.get("direct_order") if isinstance(reaction.get("direct_order"), dict) else {}
+        sleeve = {key: reaction.get(key) for key in ("sleeve_id", "sleeve_group", "sleeve_role") if reaction.get(key) is not None}
         active_strategies.append(
             {
                 "strategy_id": f"operator-open-order-management-{strategy_suffix}-{index}",
@@ -1329,6 +1332,8 @@ def _operator_position_strategy_plan_candidate(
                 },
             }
         )
+        if sleeve:
+            active_strategies[-1].update(sleeve)
         portfolio_reconciliation.append(
             {
                 "action": "adopt_open_order",
@@ -1343,6 +1348,8 @@ def _operator_position_strategy_plan_candidate(
                 "requires_strategy_plan_revision": True,
             }
         )
+        if sleeve:
+            portfolio_reconciliation[-1].update(sleeve)
 
     for index, reaction in enumerate(trade_reactions, start=1):
         token_id = str(reaction.get("token_id") or "").strip()
@@ -1355,6 +1362,7 @@ def _operator_position_strategy_plan_candidate(
         strategy_suffix = _safe_slug(outcome_label or token_id)
         direct_trade = reaction.get("direct_trade") if isinstance(reaction.get("direct_trade"), dict) else {}
         direct_order_ids = [str(item) for item in reaction.get("direct_order_ids") or [] if str(item).strip()]
+        sleeve = {key: reaction.get(key) for key in ("sleeve_id", "sleeve_group", "sleeve_role") if reaction.get(key) is not None}
         active_strategies.append(
             {
                 "strategy_id": f"operator-trade-management-{strategy_suffix}-{index}",
@@ -1405,6 +1413,8 @@ def _operator_position_strategy_plan_candidate(
                 },
             }
         )
+        if sleeve:
+            active_strategies[-1].update(sleeve)
         portfolio_reconciliation.append(
             {
                 "action": "adopt_trade_fill",
@@ -1423,6 +1433,8 @@ def _operator_position_strategy_plan_candidate(
                 "final_pnl_review_required": True,
             }
         )
+        if sleeve:
+            portfolio_reconciliation[-1].update(sleeve)
 
     if not active_strategies:
         return None
@@ -1473,6 +1485,7 @@ def _unknown_direct_order_reactions(
     *,
     event_id: str,
     open_orders: list[dict[str, Any]],
+    plan: dict[str, Any],
     plan_outcomes: dict[str, dict[str, str]],
     known_external_order_ids: set[str] | None,
 ) -> list[dict[str, Any]]:
@@ -1496,14 +1509,19 @@ def _unknown_direct_order_reactions(
             continue
         order_side = str(order.get("side") or "").strip().lower()
         outcome_ref = plan_outcomes.get(token_id) or {}
+        outcome_id = str(outcome_ref.get("outcome_id") or "")
+        strategy = _position_strategy_from_plan(plan=plan, token_id=token_id, outcome_id=outcome_id)
+        sleeve = _strategy_sleeve_metadata(strategy)
         outcome_label = str(order.get("outcome") or order.get("outcome_label") or outcome_ref.get("outcome_id") or "").strip()
         revision_request = {
             "reason": "unknown_direct_clob_order_detected",
             "event_id": event_id,
             "direct_order_id": direct_order_id,
             "token_id": token_id,
-            "outcome_id": outcome_ref.get("outcome_id"),
+            "outcome_id": outcome_id or outcome_ref.get("outcome_id"),
             "outcome_label": outcome_label or None,
+            "matched_strategy_id": strategy.get("strategy_id") if strategy else None,
+            "matched_strategy_family": strategy.get("family") if strategy else None,
             "order_management_only": True,
             "disable_new_entries": True,
             "required_context": [
@@ -1521,13 +1539,18 @@ def _unknown_direct_order_reactions(
                 "filled_size": _float(order.get("filled_size") or order.get("filled")),
             },
         }
+        if sleeve:
+            revision_request["sleeve"] = dict(sleeve)
+            revision_request.update(sleeve)
         reactions.append(
             {
                 "action": "adopt_operator_open_order",
                 "direct_order_id": direct_order_id,
                 "token_id": token_id,
-                "outcome_id": outcome_ref.get("outcome_id"),
+                "outcome_id": outcome_id or outcome_ref.get("outcome_id"),
                 "outcome_label": outcome_label or None,
+                "matched_strategy_id": strategy.get("strategy_id") if strategy else None,
+                "matched_strategy_family": strategy.get("family") if strategy else None,
                 "order_side": order_side,
                 "order_status": order.get("status"),
                 "no_new_entry": True,
@@ -1536,6 +1559,9 @@ def _unknown_direct_order_reactions(
                 "direct_order": order,
             }
         )
+        if sleeve:
+            reactions[-1]["sleeve"] = dict(sleeve)
+            reactions[-1].update(sleeve)
     return reactions
 
 
@@ -1543,6 +1569,7 @@ def _unknown_direct_trade_reactions(
     *,
     event_id: str,
     trades: list[dict[str, Any]],
+    plan: dict[str, Any],
     plan_outcomes: dict[str, dict[str, str]],
     known_external_order_ids: set[str] | None,
 ) -> list[dict[str, Any]]:
@@ -1571,6 +1598,9 @@ def _unknown_direct_trade_reactions(
         fee = _float(trade.get("fee"))
         estimated_cashflow = _estimated_trade_cashflow(side=trade_side, price=price, size=size, fee=fee)
         outcome_ref = plan_outcomes.get(token_id) or {}
+        outcome_id = str(outcome_ref.get("outcome_id") or "")
+        strategy = _position_strategy_from_plan(plan=plan, token_id=token_id, outcome_id=outcome_id)
+        sleeve = _strategy_sleeve_metadata(strategy)
         outcome_label = str(trade.get("outcome") or trade.get("outcome_label") or outcome_ref.get("outcome_id") or "").strip()
         revision_request = {
             "reason": "unknown_direct_clob_trade_detected",
@@ -1578,8 +1608,10 @@ def _unknown_direct_trade_reactions(
             "direct_trade_id": direct_trade_id,
             "direct_order_ids": sorted(direct_order_ids),
             "token_id": token_id,
-            "outcome_id": outcome_ref.get("outcome_id"),
+            "outcome_id": outcome_id or outcome_ref.get("outcome_id"),
             "outcome_label": outcome_label or None,
+            "matched_strategy_id": strategy.get("strategy_id") if strategy else None,
+            "matched_strategy_family": strategy.get("family") if strategy else None,
             "trade_management_only": True,
             "disable_new_entries": True,
             "required_context": [
@@ -1599,14 +1631,19 @@ def _unknown_direct_trade_reactions(
                 "estimated_cashflow_usd": estimated_cashflow,
             },
         }
+        if sleeve:
+            revision_request["sleeve"] = dict(sleeve)
+            revision_request.update(sleeve)
         reactions.append(
             {
                 "action": "adopt_operator_trade",
                 "direct_trade_id": direct_trade_id,
                 "direct_order_ids": sorted(direct_order_ids),
                 "token_id": token_id,
-                "outcome_id": outcome_ref.get("outcome_id"),
+                "outcome_id": outcome_id or outcome_ref.get("outcome_id"),
                 "outcome_label": outcome_label or None,
+                "matched_strategy_id": strategy.get("strategy_id") if strategy else None,
+                "matched_strategy_family": strategy.get("family") if strategy else None,
                 "trade_side": trade_side,
                 "estimated_cashflow_usd": estimated_cashflow,
                 "no_new_entry": True,
@@ -1615,6 +1652,9 @@ def _unknown_direct_trade_reactions(
                 "direct_trade": trade,
             }
         )
+        if sleeve:
+            reactions[-1]["sleeve"] = dict(sleeve)
+            reactions[-1].update(sleeve)
     return reactions
 
 

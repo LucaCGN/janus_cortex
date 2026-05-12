@@ -122,7 +122,16 @@ def test_auto_protect_direct_position_skips_when_target_already_covers_pytest(mo
         event_id="nba-sas-min-2026-05-10",
         plan={
             "market_id": "market-1",
-            "active_strategies": [{"entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"}}],
+            "active_strategies": [
+                {
+                    "strategy_id": "sas-manual-order-watch",
+                    "family": "operator_order_management",
+                    "sleeve_id": "sas-order-sleeve",
+                    "sleeve_group": "manual-adoption",
+                    "sleeve_role": "open-order-review",
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                }
+            ],
         },
         direct_clob={
             "open_positions": {
@@ -404,7 +413,16 @@ def test_auto_protect_direct_order_reacts_to_unknown_open_order_pytest(monkeypat
         event_id="nba-sas-min-2026-05-10",
         plan={
             "market_id": "market-1",
-            "active_strategies": [{"entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"}}],
+            "active_strategies": [
+                {
+                    "strategy_id": "sas-manual-order-watch",
+                    "family": "operator_order_management",
+                    "sleeve_id": "sas-order-sleeve",
+                    "sleeve_group": "manual-adoption",
+                    "sleeve_role": "open-order-review",
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                }
+            ],
         },
         direct_clob={
             "open_positions": {"positions": []},
@@ -434,11 +452,15 @@ def test_auto_protect_direct_order_reacts_to_unknown_open_order_pytest(monkeypat
     assert calls == []
     assert result["order_reactions"][0]["action"] == "adopt_operator_open_order"
     assert result["order_reactions"][0]["direct_order_id"] == "0xmanual"
+    assert result["order_reactions"][0]["sleeve_id"] == "sas-order-sleeve"
     assert result["revision_requests"][0]["reason"] == "unknown_direct_clob_order_detected"
+    assert result["revision_requests"][0]["sleeve_id"] == "sas-order-sleeve"
     candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
     assert candidate.context_summary["unknown_direct_order_count"] == 1
     assert candidate.active_strategies[0].family == "operator_order_management"
+    assert candidate.active_strategies[0].sleeve_id == "sas-order-sleeve"
     assert candidate.portfolio_reconciliation[0]["action"] == "adopt_open_order"
+    assert candidate.portfolio_reconciliation[0]["sleeve_id"] == "sas-order-sleeve"
 
 
 def test_auto_protect_direct_trade_reacts_to_unknown_fill_pytest(monkeypatch) -> None:
@@ -456,7 +478,16 @@ def test_auto_protect_direct_trade_reacts_to_unknown_fill_pytest(monkeypatch) ->
         event_id="nba-sas-min-2026-05-10",
         plan={
             "market_id": "market-1",
-            "active_strategies": [{"entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"}}],
+            "active_strategies": [
+                {
+                    "strategy_id": "sas-manual-trade-watch",
+                    "family": "operator_trade_management",
+                    "sleeve_id": "sas-trade-sleeve",
+                    "sleeve_group": "manual-adoption",
+                    "sleeve_role": "trade-review",
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                }
+            ],
         },
         direct_clob={
             "open_positions": {"positions": []},
@@ -489,13 +520,17 @@ def test_auto_protect_direct_trade_reacts_to_unknown_fill_pytest(monkeypatch) ->
     assert result["trade_reactions"][0]["direct_trade_id"] == "clob-trade-1"
     assert result["trade_reactions"][0]["direct_order_ids"] == ["0xmanual-buy"]
     assert result["trade_reactions"][0]["estimated_cashflow_usd"] == -3.0
+    assert result["trade_reactions"][0]["sleeve_id"] == "sas-trade-sleeve"
     assert result["revision_requests"][0]["reason"] == "unknown_direct_clob_trade_detected"
+    assert result["revision_requests"][0]["sleeve_id"] == "sas-trade-sleeve"
     candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
     assert candidate.context_summary["unknown_direct_trade_count"] == 1
     assert candidate.context_summary["trade_management_only"] is True
     assert candidate.active_strategies[0].family == "operator_trade_management"
+    assert candidate.active_strategies[0].sleeve_id == "sas-trade-sleeve"
     assert candidate.active_strategies[0].exit_rules["final_pnl_review_required"] is True
     assert candidate.portfolio_reconciliation[0]["action"] == "adopt_trade_fill"
+    assert candidate.portfolio_reconciliation[0]["sleeve_id"] == "sas-trade-sleeve"
 
 
 def test_auto_protect_direct_trade_ignores_public_market_trade_rows_pytest(monkeypatch) -> None:

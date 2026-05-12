@@ -72,7 +72,7 @@ StrategyPlan evaluation reports sleeve states for every active strategy. Each or
 
 Operational status surfaces must preserve that evidence. `/v1/ops/live-monitor` reports configured sleeves from the current plan in the StrategyPlan gate, and `codex_tool/run_live_strategy_tick.py` returns evaluated `sleeve_states` plus a `strategy_sleeve_status` summary from the shadow/live evaluation result.
 
-Direct-CLOB position protection must preserve the same sleeve identity. When the live tick reactor adopts an uncovered direct position, emits adverse-position review evidence, recommends/submits a protective target, or writes a position-management candidate plan, the audit payload must include the matched strategy sleeve so Postgame can tie target/stop/hedge work back to the responsible trader sleeve.
+Direct-CLOB intervention protection must preserve the same sleeve identity. When the live tick reactor adopts an uncovered direct position, unknown direct order, or unknown direct trade, emits adverse-position review evidence, recommends/submits a protective target, or writes a position/order/trade-management candidate plan, the audit payload must include the matched strategy sleeve so Postgame can tie target/stop/hedge/reconciliation work back to the responsible trader sleeve.
 
 Supported strategy families include deterministic lanes, grid trading, resistance-band rebound, winner definition, underdog optionality, high-frequency scalping, momentum capture, hedges, bracket exits, and subjective event-specific triggers.
 
