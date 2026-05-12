@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
+
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 from app.modules.agentic.contracts import LLMRuntimeTrace
 from app.modules.agentic.llm_runtime import build_llm_runtime_trace, process_llm_runtime_trace
@@ -34,6 +40,8 @@ _DIRECT_TRADE_ORDER_ID_FIELDS = (
     "external_order_id",
 )
 _DIRECT_TRADE_TOKEN_FIELDS = ("asset_id", "asset", "token_id")
+_DIRECT_ORDER_TOKEN_FIELDS = ("asset_id", "asset", "token_id")
+_DIRECT_POSITION_TOKEN_FIELDS = ("asset", "asset_id", "token_id")
 
 
 def main() -> None:
@@ -298,16 +306,26 @@ def _run_event_tick(
         integrity = context.get("integrity") or {}
         direct_clob = integrity.get("direct_clob") if isinstance(integrity, dict) else None
     direct_clob_state = direct_clob if isinstance(direct_clob, dict) else {}
-    if direct_clob_state:
-        portfolio_state["open_orders"] = direct_clob_state.get("open_order_count", portfolio_state["open_orders"])
-        portfolio_state["open_positions"] = len(((direct_clob_state.get("open_positions") or {}).get("positions") or []))
+    event_direct_clob_state = _event_scoped_direct_clob(direct_clob_state, plan) if direct_clob_state else {}
+    if event_direct_clob_state:
+        portfolio_state["direct_clob_global_open_orders"] = event_direct_clob_state.get("global_open_order_count")
+        portfolio_state["direct_clob_global_open_positions"] = event_direct_clob_state.get("global_open_position_count")
+        portfolio_state["direct_clob_event_token_count"] = len(event_direct_clob_state.get("event_token_ids") or [])
+        portfolio_state["open_orders"] = event_direct_clob_state.get(
+            "event_open_order_count",
+            len(((event_direct_clob_state.get("open_orders") or {}).get("orders") or [])),
+        )
+        portfolio_state["open_positions"] = event_direct_clob_state.get(
+            "event_open_position_count",
+            len(((event_direct_clob_state.get("open_positions") or {}).get("positions") or [])),
+        )
 
     pending_intents = _pending_intent_summary(
         api_root=api_root,
         account_id=account_id,
         event_id=event_id,
         plan=plan,
-        direct_clob=direct_clob_state,
+        direct_clob=event_direct_clob_state,
     )
     known_order_ids = _known_portfolio_order_external_ids(
         api_root=api_root,
@@ -328,7 +346,7 @@ def _run_event_tick(
         api_root=api_root,
         event_id=event_id,
         plan=plan,
-        direct_clob=direct_clob_state,
+        direct_clob=event_direct_clob_state,
         source=source,
     )
     portfolio_state["direct_clob_trade_observation_count"] = direct_trade_persistence["trade_count"]
@@ -351,7 +369,7 @@ def _run_event_tick(
         account_id=account_id,
         event_id=event_id,
         plan=plan,
-        direct_clob=direct_clob_state,
+        direct_clob=event_direct_clob_state,
         execute=execute,
         live_money=live_money,
         integrity_ready=integrity_ready,
@@ -360,6 +378,7 @@ def _run_event_tick(
         target_delta_cents=manual_target_delta_cents,
         enabled=auto_protect_manual_positions,
         known_external_order_ids=set(known_order_ids["external_order_ids"]) if known_order_ids["ok"] else None,
+        outcome_states=outcome_states,
     )
     operator_reaction["known_order_lookup"] = known_order_ids
     operator_reaction["direct_trade_persistence"] = direct_trade_persistence
@@ -379,7 +398,7 @@ def _run_event_tick(
         current_plan=plan,
         event_context=context,
         live_state=live_state,
-        direct_clob_truth=direct_clob_state,
+        direct_clob_truth=event_direct_clob_state,
         orderbook_state={
             "outcome_states": outcome_states,
             "orderbooks": _summarize_orderbooks(orderbook_results),
@@ -551,6 +570,91 @@ def _operator_reaction_revision_events(operator_reaction: dict[str, Any]) -> lis
     return rows
 
 
+def _position_target_price_from_plan(
+    *,
+    plan: dict[str, Any],
+    token_id: str,
+    outcome_id: str,
+    avg_price: float,
+    default_target_delta_cents: float,
+    outcome_state: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    strategy = _position_strategy_from_plan(
+        plan=plan,
+        token_id=token_id,
+        outcome_id=outcome_id,
+        outcome_state=outcome_state,
+    )
+    if strategy is not None:
+        exit_rules = strategy.get("exit_rules") if isinstance(strategy.get("exit_rules"), dict) else {}
+        scaled_target = _scaled_micro_grid_target_price(avg_price, exit_rules)
+        if scaled_target is not None:
+            return {
+                "target_price": scaled_target,
+                "target_policy": "micro_grid_scaled",
+                "target_delta_cents": round((scaled_target - avg_price) * 100.0, 4),
+                "strategy_id": strategy.get("strategy_id"),
+                "strategy_family": strategy.get("family"),
+                "exit_rules": exit_rules,
+            }
+        explicit_target = _float(exit_rules.get("target_price"))
+        if explicit_target is not None:
+            target_price = round(min(0.95, max(0.01, explicit_target)), 4)
+            return {
+                "target_price": target_price,
+                "target_policy": "explicit_target_price",
+                "target_delta_cents": round((target_price - avg_price) * 100.0, 4),
+                "strategy_id": strategy.get("strategy_id"),
+                "strategy_family": strategy.get("family"),
+                "exit_rules": exit_rules,
+            }
+    fallback_target = round(min(0.95, max(0.01, avg_price + default_target_delta_cents / 100.0)), 4)
+    return {
+        "target_price": fallback_target,
+        "target_policy": "fallback_fixed_delta",
+        "target_delta_cents": default_target_delta_cents,
+        "strategy_id": None,
+        "strategy_family": None,
+    }
+
+
+def _strategy_matches_token(entry_rules: dict[str, Any], *, token_id: str, outcome_id: str) -> bool:
+    entry_token = str(entry_rules.get("token_id") or entry_rules.get("asset_id") or "").strip()
+    entry_outcome = str(entry_rules.get("outcome_id") or "").strip()
+    return bool((entry_token and entry_token == token_id) or (entry_outcome and entry_outcome == outcome_id))
+
+
+def _scaled_micro_grid_target_price(entry_price: float, rules: dict[str, Any]) -> float | None:
+    if entry_price <= 0.0:
+        return None
+    target_policy = str(rules.get("target_policy") or rules.get("target_mode") or "").strip().lower()
+    min_target_cents = _float(
+        rules.get("min_target_cents")
+        or rules.get("minimum_target_cents")
+        or rules.get("target_floor_cents")
+    )
+    target_return_fraction = _float(
+        rules.get("target_return_fraction")
+        or rules.get("target_gain_fraction")
+        or rules.get("target_return")
+    )
+    target_return_percent = _float(rules.get("target_return_percent") or rules.get("target_gain_percent"))
+    if target_return_fraction is None and target_return_percent is not None:
+        target_return_fraction = target_return_percent / 100.0
+    if (
+        target_policy not in {"micro_grid_scaled", "scaled_micro_grid", "price_scaled_micro_grid"}
+        and min_target_cents is None
+        and target_return_fraction is None
+    ):
+        return None
+    min_move = (min_target_cents or 0.0) / 100.0
+    fraction_move = entry_price * (target_return_fraction or 0.0)
+    target_move = max(min_move, fraction_move)
+    if target_move <= 0.0:
+        return None
+    return round(min(0.95, max(0.01, entry_price + target_move)), 4)
+
+
 def _auto_protect_direct_positions(
     *,
     api_root: str,
@@ -566,6 +670,7 @@ def _auto_protect_direct_positions(
     target_delta_cents: float,
     enabled: bool,
     known_external_order_ids: set[str] | None = None,
+    outcome_states: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     reaction: dict[str, Any] = {
         "enabled": enabled,
@@ -577,6 +682,7 @@ def _auto_protect_direct_positions(
         "order_reactions": [],
         "trade_reactions": [],
         "position_reactions": [],
+        "adverse_position_reviews": [],
         "revision_requests": [],
         "candidate_strategy_plan_required": False,
         "intervention_records": [],
@@ -593,7 +699,7 @@ def _auto_protect_direct_positions(
 
     positions = ((direct_clob.get("open_positions") or {}).get("positions") or [])
     open_orders = ((direct_clob.get("open_orders") or {}).get("orders") or [])
-    direct_trades = _direct_trade_rows(direct_clob)
+    direct_trades = _direct_trade_rows(direct_clob, include_market_observations=False)
     reaction["direct_trade_count"] = len(direct_trades)
     plan_outcomes = _plan_outcome_lookup(plan)
     reaction["order_reactions"].extend(
@@ -629,6 +735,28 @@ def _auto_protect_direct_positions(
         position_size = _float(position.get("size")) or 0.0
         open_sell_size = _open_sell_size_for_token(open_orders, token_id)
         uncovered_size = max(0.0, position_size - open_sell_size)
+        outcome_ref = plan_outcomes.get(token_id)
+        avg_price = _position_avg_price(position, position_size)
+        if outcome_ref is not None and avg_price is not None:
+            adverse_review = _position_adverse_review(
+                event_id=event_id,
+                plan=plan,
+                position=position,
+                token_id=token_id,
+                outcome_id=str(outcome_ref["outcome_id"]),
+                outcome_state=(outcome_states or {}).get(str(outcome_ref["outcome_id"])) or {},
+                position_size=position_size,
+                avg_price=avg_price,
+                open_sell_size=open_sell_size,
+                uncovered_size=uncovered_size,
+            )
+            if adverse_review is not None:
+                reaction["adverse_position_reviews"].append(adverse_review)
+                reaction["position_reactions"].append(adverse_review)
+                reaction["revision_requests"].append(adverse_review["revision_request"])
+        if uncovered_size <= 1e-9:
+            reaction["covered_positions"].append({"token_id": token_id, "position_size": position_size, "open_sell_size": open_sell_size})
+            continue
         position_reaction = {
             "action": "adopt_operator_position",
             "token_id": token_id,
@@ -662,9 +790,6 @@ def _auto_protect_direct_positions(
         }
         reaction["position_reactions"].append(position_reaction)
         reaction["revision_requests"].append(position_reaction["revision_request"])
-        if uncovered_size <= 1e-9:
-            reaction["covered_positions"].append({"token_id": token_id, "position_size": position_size, "open_sell_size": open_sell_size})
-            continue
         if uncovered_size < min_size:
             reaction["recommended_orders"].append(
                 {
@@ -675,7 +800,6 @@ def _auto_protect_direct_positions(
                 }
             )
             continue
-        outcome_ref = plan_outcomes.get(token_id)
         if outcome_ref is None:
             reaction["recommended_orders"].append(
                 {
@@ -685,10 +809,6 @@ def _auto_protect_direct_positions(
                 }
             )
             continue
-        avg_price = _float(position.get("avg_price"))
-        if avg_price is None:
-            current_value = _float(position.get("current_value"))
-            avg_price = current_value / position_size if current_value is not None and position_size > 0 else None
         if avg_price is None:
             reaction["recommended_orders"].append(
                 {
@@ -698,7 +818,15 @@ def _auto_protect_direct_positions(
                 }
             )
             continue
-        target_price = round(min(0.95, max(0.01, avg_price + target_delta_cents / 100.0)), 4)
+        target_resolution = _position_target_price_from_plan(
+            plan=plan,
+            token_id=token_id,
+            outcome_id=str(outcome_ref["outcome_id"]),
+            avg_price=avg_price,
+            default_target_delta_cents=target_delta_cents,
+            outcome_state=(outcome_states or {}).get(str(outcome_ref["outcome_id"])) or {},
+        )
+        target_price = target_resolution["target_price"]
         order_payload = {
             "account_id": account_id,
             "market_id": str(outcome_ref["market_id"]),
@@ -716,7 +844,10 @@ def _auto_protect_direct_positions(
                 "reaction_owner": "janus_internal_reactor_v0",
                 "outcome_label": position.get("outcome"),
                 "entry_avg_price": avg_price,
-                "target_delta_cents": target_delta_cents,
+                "target_delta_cents": target_resolution.get("target_delta_cents"),
+                "target_policy": target_resolution.get("target_policy"),
+                "matched_strategy_id": target_resolution.get("strategy_id"),
+                "matched_strategy_family": target_resolution.get("strategy_family"),
                 "position_size": position_size,
                 "open_sell_size": open_sell_size,
                 "no_new_entry_until_revision": True,
@@ -756,6 +887,7 @@ def _auto_protect_direct_positions(
                     "target_order": submitted,
                     "position": position,
                     "reaction": position_reaction,
+                    "target_resolution": target_resolution,
                     "recommended_order": {k: v for k, v in order_payload.items() if k != "metadata_json"},
                 },
                 "notes": "Live monitor auto-protection for operator/manual or otherwise uncovered position.",
@@ -774,6 +906,181 @@ def _auto_protect_direct_positions(
     if candidate_plan is not None:
         reaction["candidate_strategy_plan"] = candidate_plan
     return reaction
+
+
+def _position_avg_price(position: dict[str, Any], position_size: float) -> float | None:
+    avg_price = _float(position.get("avg_price"))
+    if avg_price is not None:
+        return avg_price
+    current_value = _float(position.get("current_value"))
+    return current_value / position_size if current_value is not None and position_size > 0 else None
+
+
+def _position_adverse_review(
+    *,
+    event_id: str,
+    plan: dict[str, Any],
+    position: dict[str, Any],
+    token_id: str,
+    outcome_id: str,
+    outcome_state: dict[str, Any],
+    position_size: float,
+    avg_price: float,
+    open_sell_size: float,
+    uncovered_size: float,
+) -> dict[str, Any] | None:
+    strategy = _position_strategy_from_plan(
+        plan=plan,
+        token_id=token_id,
+        outcome_id=outcome_id,
+        outcome_state=outcome_state,
+    )
+    if strategy is None:
+        return None
+    stop_rules = strategy.get("stop_rules") if isinstance(strategy.get("stop_rules"), dict) else {}
+    if not stop_rules:
+        return None
+
+    current_bid = _float(outcome_state.get("best_bid"))
+    current_ask = _float(outcome_state.get("best_ask"))
+    current_price = current_bid if current_bid is not None else _float(outcome_state.get("price"))
+    score_gap = _float(outcome_state.get("score_gap"))
+    captured_at_utc = outcome_state.get("captured_at_utc") or outcome_state.get("captured_at")
+    triggered_rules: list[dict[str, Any]] = []
+
+    stop_price = _float(stop_rules.get("stop_price") or stop_rules.get("stop_review_price") or stop_rules.get("review_below_price"))
+    if stop_price is not None and current_price is not None and current_price <= stop_price:
+        triggered_rules.append(
+            {
+                "rule": "stop_price",
+                "threshold": stop_price,
+                "current_exit_price": current_price,
+            }
+        )
+
+    max_adverse_cents = _float(stop_rules.get("max_adverse_cents") or stop_rules.get("review_after_adverse_cents"))
+    adverse_cents = round((avg_price - current_price) * 100.0, 4) if current_price is not None else None
+    if max_adverse_cents is not None and adverse_cents is not None and adverse_cents >= max_adverse_cents:
+        triggered_rules.append(
+            {
+                "rule": "max_adverse_cents",
+                "threshold_cents": max_adverse_cents,
+                "adverse_cents": adverse_cents,
+            }
+        )
+
+    score_gap_threshold = _float(
+        stop_rules.get("stop_review_if_score_gap_exceeds")
+        or stop_rules.get("review_if_score_gap_exceeds")
+        or stop_rules.get("max_adverse_score_gap")
+    )
+    if score_gap_threshold is not None and score_gap is not None and score_gap <= -abs(score_gap_threshold):
+        triggered_rules.append(
+            {
+                "rule": "adverse_score_gap",
+                "threshold_points": abs(score_gap_threshold),
+                "score_gap": score_gap,
+            }
+        )
+
+    if not triggered_rules:
+        return None
+
+    return {
+        "action": "position_adverse_move",
+        "event_id": event_id,
+        "token_id": token_id,
+        "outcome_id": outcome_id,
+        "outcome_label": position.get("outcome") or strategy.get("side"),
+        "strategy_id": strategy.get("strategy_id"),
+        "strategy_family": strategy.get("family"),
+        "position_size": position_size,
+        "open_sell_size": open_sell_size,
+        "uncovered_size": uncovered_size,
+        "avg_price": avg_price,
+        "current_exit_bid": current_bid,
+        "current_buy_ask": current_ask,
+        "current_price": current_price,
+        "captured_at_utc": captured_at_utc,
+        "score_gap": score_gap,
+        "triggered_rules": triggered_rules,
+        "no_new_entry": False,
+        "requires_strategy_plan_revision": True,
+        "revision_request": {
+            "reason": "position_adverse_move",
+            "event_id": event_id,
+            "token_id": token_id,
+            "outcome_id": outcome_id,
+            "outcome_label": position.get("outcome") or strategy.get("side"),
+            "strategy_id": strategy.get("strategy_id"),
+            "strategy_family": strategy.get("family"),
+            "required_context": [
+                "direct_clob_truth",
+                "latest_scoreboard",
+                "recent_play_by_play",
+                "current_orderbook",
+                "existing_targets",
+                "opposite_side_orderbook",
+            ],
+            "decision_options_to_compare": [
+                "hold_existing_target",
+                "cancel_replace_lower_target",
+                "marketable_stop_or_reduce",
+                "opposite_side_hedge_or_continuation",
+                "add_down_same_side_micro_grid",
+            ],
+            "current_position": {
+                "size": position_size,
+                "avg_price": avg_price,
+                "open_sell_size": open_sell_size,
+                "uncovered_size": uncovered_size,
+                "current_exit_bid": current_bid,
+                "current_buy_ask": current_ask,
+                "score_gap": score_gap,
+                "captured_at_utc": captured_at_utc,
+                "triggered_rules": triggered_rules,
+            },
+        },
+    }
+
+
+def _position_strategy_from_plan(
+    *,
+    plan: dict[str, Any],
+    token_id: str,
+    outcome_id: str,
+    outcome_state: dict[str, Any] | None = None,
+) -> dict[str, Any] | None:
+    matches: list[tuple[tuple[bool, int, int], dict[str, Any]]] = []
+    for index, strategy in enumerate(strategy for strategy in plan.get("active_strategies") or [] if isinstance(strategy, dict)):
+        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+        if _strategy_matches_token(entry_rules, token_id=token_id, outcome_id=outcome_id):
+            shadow_only = bool((strategy.get("shadow_flags") or {}).get("shadow_only"))
+            matches.append(((shadow_only, _strategy_period_rank(entry_rules, outcome_state), -index), strategy))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item[0])
+    return matches[0][1]
+
+
+def _strategy_period_rank(entry_rules: dict[str, Any], outcome_state: dict[str, Any] | None) -> int:
+    period = _int((outcome_state or {}).get("period"))
+    allowed_periods = entry_rules.get("allowed_periods")
+    min_period = _int(entry_rules.get("min_period"))
+    max_period = _int(entry_rules.get("max_period"))
+    has_period_gate = bool(allowed_periods) or min_period is not None or max_period is not None
+    if period is None or not has_period_gate:
+        return 1
+    if isinstance(allowed_periods, list):
+        normalized_allowed = {_int(value) for value in allowed_periods}
+        normalized_allowed.discard(None)
+        if normalized_allowed and period not in normalized_allowed:
+            return 2
+    if min_period is not None and period < min_period:
+        return 2
+    if max_period is not None and period > max_period:
+        return 2
+    return 0
 
 
 def _operator_position_strategy_plan_candidate(
@@ -1482,6 +1789,7 @@ def _pending_intent_summary(
         }
 
     direct_open_order_ids = _direct_open_order_external_ids(direct_clob)
+    direct_filled_order_ids = _direct_filled_order_external_ids(direct_clob)
     pending_orders: list[dict[str, Any]] = []
     for item in payload.get("items") or []:
         if not isinstance(item, dict):
@@ -1496,6 +1804,8 @@ def _pending_intent_summary(
         if status not in _LOCAL_PENDING_INTENT_STATUSES:
             continue
         external_order_id = str(item.get("external_order_id") or "").strip()
+        if external_order_id and external_order_id.lower() in direct_filled_order_ids:
+            continue
         if external_order_id and external_order_id.lower() in direct_open_order_ids:
             continue
         metadata = item.get("metadata_json") if isinstance(item.get("metadata_json"), dict) else {}
@@ -1577,10 +1887,18 @@ def _direct_open_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:
     return ids
 
 
-def _direct_trade_rows(direct_clob: dict[str, Any]) -> list[dict[str, Any]]:
+def _direct_filled_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for trade in _direct_trade_rows(direct_clob):
+        ids.update(_direct_trade_order_ids(trade))
+    return ids
+
+
+def _direct_trade_rows(direct_clob: dict[str, Any], *, include_market_observations: bool = True) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for key in ("current_token_trades", "trades", "market_trades", "direct_trades"):
+    keys = ("current_token_trades", "trades", "market_trades", "direct_trades") if include_market_observations else ("trades", "direct_trades")
+    for key in keys:
         for trade in _direct_trade_section_rows(direct_clob.get(key)):
             if not isinstance(trade, dict):
                 continue
@@ -1666,6 +1984,8 @@ def _direct_trade_time_utc(trade: dict[str, Any]) -> datetime | None:
             return parsed
         if isinstance(value, (int, float)) or (isinstance(value, str) and value.strip().isdigit()):
             timestamp = float(value)
+            if timestamp <= 0:
+                continue
             if timestamp > 10_000_000_000:
                 timestamp /= 1000.0
             try:
@@ -1699,6 +2019,98 @@ def _direct_order_external_id(order: dict[str, Any]) -> str | None:
         if value:
             return value
     return None
+
+
+def _plan_token_ids(plan: dict[str, Any]) -> set[str]:
+    token_ids: set[str] = set()
+    for strategy in plan.get("active_strategies") or []:
+        if not isinstance(strategy, dict):
+            continue
+        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+        token_id = str(entry_rules.get("token_id") or "").strip()
+        if token_id:
+            token_ids.add(token_id)
+    return token_ids
+
+
+def _direct_order_token_id(order: dict[str, Any]) -> str | None:
+    for field in _DIRECT_ORDER_TOKEN_FIELDS:
+        value = str(order.get(field) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _direct_position_token_id(position: dict[str, Any]) -> str | None:
+    for field in _DIRECT_POSITION_TOKEN_FIELDS:
+        value = str(position.get(field) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _event_scoped_direct_clob(direct_clob: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+    """Return direct CLOB truth filtered to the current event's plan tokens.
+
+    Integrity checks are account-scoped, but a live event tick must not let an
+    unrelated open futures position suppress a current-game strategy.
+    """
+    token_ids = _plan_token_ids(plan)
+    if not token_ids:
+        return dict(direct_clob)
+
+    open_orders_section = direct_clob.get("open_orders") if isinstance(direct_clob.get("open_orders"), dict) else {}
+    raw_orders = [item for item in (open_orders_section.get("orders") or []) if isinstance(item, dict)]
+    scoped_orders = [order for order in raw_orders if _direct_order_token_id(order) in token_ids]
+
+    open_positions_section = (
+        direct_clob.get("open_positions") if isinstance(direct_clob.get("open_positions"), dict) else {}
+    )
+    raw_positions = [item for item in (open_positions_section.get("positions") or []) if isinstance(item, dict)]
+    scoped_positions = [position for position in raw_positions if _direct_position_token_id(position) in token_ids]
+
+    scoped_account_trades = [
+        trade
+        for trade in _direct_trade_rows(direct_clob, include_market_observations=False)
+        if _direct_trade_token_id(trade) in token_ids
+    ]
+    scoped_market_trades = [
+        trade
+        for trade in _direct_trade_rows(direct_clob, include_market_observations=True)
+        if _direct_trade_token_id(trade) in token_ids
+    ]
+
+    scoped = dict(direct_clob)
+    scoped["open_orders"] = dict(open_orders_section)
+    scoped["open_orders"]["orders"] = scoped_orders
+    scoped["open_orders"]["event_scoped"] = True
+    scoped["open_positions"] = dict(open_positions_section)
+    scoped["open_positions"]["positions"] = scoped_positions
+    scoped["open_positions"]["event_scoped"] = True
+    scoped["open_order_count"] = len(scoped_orders)
+    scoped["open_position_count"] = len(scoped_positions)
+    scoped["event_open_order_count"] = len(scoped_orders)
+    scoped["event_open_position_count"] = len(scoped_positions)
+    scoped["global_open_order_count"] = direct_clob.get("open_order_count", len(raw_orders))
+    scoped["global_open_position_count"] = len(raw_positions)
+    scoped["event_token_ids"] = sorted(token_ids)
+
+    current_token_trades = direct_clob.get("current_token_trades")
+    if isinstance(current_token_trades, dict):
+        scoped["current_token_trades"] = dict(current_token_trades)
+    else:
+        scoped["current_token_trades"] = {}
+    scoped["current_token_trades"]["trades"] = scoped_market_trades
+    scoped["current_token_trades"]["trade_count"] = len(scoped_market_trades)
+    scoped["current_token_trades"]["token_ids"] = sorted(token_ids)
+    scoped["current_token_trade_count"] = len(scoped_market_trades)
+    if "trades" in scoped:
+        scoped["trades"] = scoped_account_trades
+    if "market_trades" in scoped:
+        scoped["market_trades"] = scoped_market_trades
+    if "direct_trades" in scoped:
+        scoped["direct_trades"] = scoped_account_trades
+    return scoped
 
 
 def _plan_outcome_lookup(plan: dict[str, Any]) -> dict[str, dict[str, str]]:
@@ -1876,8 +2288,9 @@ def _player_status_shock_tags(
         tags.append("technical")
     if any(value in text for value in ("injury", "injured", "hurt", "limp", "left game", "will not return")):
         tags.append("injury")
-    if watched_player and any(value in text for value in ("substitution", "subbed", "sub out", "substitution out")) and "out" in text:
-        tags.append("sub_out_star")
+    # Routine rotation substitutions are not player-status shocks. They become
+    # revision-worthy only when paired with injury/ejection/foul-threshold
+    # evidence, otherwise Q1/Q2 starter rests would freeze live trading.
 
     foul_count = _first_int(row, payload, ("person_fouls", "personFouls", "personal_fouls", "fouls", "foul_count"))
     if "foul" in text and (

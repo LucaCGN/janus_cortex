@@ -16,6 +16,7 @@ LLMRuntimeTriggerType = Literal[
     "manual_operator_order",
     "manual_operator_trade",
     "manual_operator_position",
+    "position_adverse_move",
     "player_status_shock",
     "stale_feed_recovery",
     "unexplained_clob_move",

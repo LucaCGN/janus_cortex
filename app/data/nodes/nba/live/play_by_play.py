@@ -16,6 +16,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.request import Request, urlopen
 
 import pandas as pd
 from nba_api.live.nba.endpoints import playbyplay
@@ -24,6 +25,15 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 _PROVIDER_ERROR_LOG_COOLDOWN_SEC = 300.0
 _PROVIDER_ERROR_LOG_STATE: dict[str, float] = {}
+_NBA_CDN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.nba.com/",
+    "Origin": "https://www.nba.com",
+}
 
 
 def _to_int(value: Any, default: int = 0) -> int:
@@ -86,6 +96,15 @@ def _log_provider_fetch_error(*, game_id: str, exc: Exception) -> None:
     logger.debug("fetch_play_by_play_df: transient decode failure suppressed game_id=%s error=%r", game_id, exc)
 
 
+def _fetch_nba_cdn_play_by_play(game_id: str) -> dict[str, Any]:
+    url = f"https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_{game_id}.json"
+    request = Request(url, headers=_NBA_CDN_HEADERS)
+    with urlopen(request, timeout=15) as response:  # noqa: S310 - fixed NBA CDN URL.
+        payload = response.read().decode("utf-8")
+        parsed = json.loads(payload)
+        return parsed if isinstance(parsed, dict) else {}
+
+
 class PlayByPlayRequest(BaseModel):
     """Request params for live PbP."""
 
@@ -119,10 +138,14 @@ def fetch_play_by_play_df(request: PlayByPlayRequest) -> pd.DataFrame:
     )
 
     try:
-        payload = playbyplay.PlayByPlay(request.game_id).get_dict()
-    except Exception as exc:  # noqa: BLE001
-        _log_provider_fetch_error(game_id=request.game_id, exc=exc)
-        return pd.DataFrame()
+        payload = _fetch_nba_cdn_play_by_play(request.game_id)
+    except Exception as cdn_exc:  # noqa: BLE001
+        _log_provider_fetch_error(game_id=request.game_id, exc=cdn_exc)
+        try:
+            payload = playbyplay.PlayByPlay(request.game_id).get_dict()
+        except Exception as exc:  # noqa: BLE001
+            _log_provider_fetch_error(game_id=request.game_id, exc=exc)
+            return pd.DataFrame()
 
     actions = _extract_actions(payload)
     if not actions:

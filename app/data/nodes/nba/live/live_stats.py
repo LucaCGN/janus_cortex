@@ -32,6 +32,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Optional, Set, Tuple, List, Dict, Any
+from urllib.request import Request, urlopen
 
 import pandas as pd
 from dateutil import parser
@@ -42,6 +43,15 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 _PROVIDER_ERROR_LOG_COOLDOWN_SEC = 300.0
 _PROVIDER_ERROR_LOG_STATE: dict[tuple[str, str], float] = {}
+_NBA_CDN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.nba.com/",
+    "Origin": "https://www.nba.com",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +82,16 @@ def _log_provider_fetch_error(*, source: str, key: str, exc: Exception) -> None:
         )
         return
     logger.debug("%s transient decode failure suppressed for %s: %s", source, key, exc)
+
+
+def _fetch_nba_cdn_json(url: str) -> dict[str, Any]:
+    request = Request(url, headers=_NBA_CDN_HEADERS)
+    with urlopen(request, timeout=15) as response:  # noqa: S310 - fixed NBA CDN URL.
+        import json
+
+        payload = response.read().decode("utf-8")
+        parsed = json.loads(payload)
+        return parsed if isinstance(parsed, dict) else {}
 
 def parse_polymarket_nba_slug(slug: str) -> Tuple[str, str, str]:
     """
@@ -386,6 +406,29 @@ def fetch_live_scoreboard(game_id: str) -> Dict[str, Any]:
     """
     Fetches basic scoreboard info (Clock, Period, Scores) for a specific game.
     """
+    try:
+        payload = _fetch_nba_cdn_json(
+            f"https://cdn.nba.com/static/json/liveData/boxscore/boxscore_{game_id}.json"
+        )
+        data = payload.get("game") if isinstance(payload.get("game"), dict) else {}
+        if data:
+            return {
+                "game_id": game_id,
+                "game_status": data.get("gameStatus"),
+                "game_status_text": data.get("gameStatusText"),
+                "period": data.get("period"),
+                "game_clock": data.get("gameClock"),
+                "home_score": data.get("homeTeam", {}).get("score"),
+                "visitor_score": data.get("awayTeam", {}).get("score"),
+                "home_tri": data.get("homeTeam", {}).get("teamTricode"),
+                "visitor_tri": data.get("awayTeam", {}).get("teamTricode"),
+                "home_team_slug": data.get("homeTeam", {}).get("teamName"),
+                "away_team_slug": data.get("awayTeam", {}).get("teamName"),
+                "source": "nba_cdn_direct",
+            }
+    except Exception as e:  # noqa: BLE001
+        _log_provider_fetch_error(source="fetch_live_scoreboard_cdn", key=str(game_id), exc=e)
+
     try:
         box = boxscore.BoxScore(game_id)
         data = box.game.get_dict()

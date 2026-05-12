@@ -18,6 +18,10 @@ def test_fetch_live_scoreboard_transient_decode_error_is_rate_limited_pytest(
         def __init__(self, game_id: str) -> None:
             raise json.JSONDecodeError("Expecting value", "", 0)
 
+    def _broken_cdn(_: str) -> dict[str, object]:
+        raise json.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setattr(live_stats, "_fetch_nba_cdn_json", _broken_cdn)
     monkeypatch.setattr(live_stats.boxscore, "BoxScore", _BrokenBoxScore)
     live_stats._PROVIDER_ERROR_LOG_STATE.clear()
 
@@ -27,8 +31,8 @@ def test_fetch_live_scoreboard_transient_decode_error_is_rate_limited_pytest(
 
     warnings = [record for record in caplog.records if record.levelno == logging.WARNING]
     debugs = [record for record in caplog.records if record.levelno == logging.DEBUG]
-    assert len(warnings) == 1
-    assert "transient decode failure" in warnings[0].message
+    assert len(warnings) == 2
+    assert all("transient decode failure" in record.message for record in warnings)
     assert any("suppressed" in record.message for record in debugs)
 
 
@@ -40,6 +44,10 @@ def test_fetch_play_by_play_transient_decode_error_is_rate_limited_pytest(
         def __init__(self, game_id: str) -> None:
             raise json.JSONDecodeError("Expecting value", "", 0)
 
+    def _broken_cdn(_: str) -> dict[str, object]:
+        raise json.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setattr(play_by_play, "_fetch_nba_cdn_play_by_play", _broken_cdn)
     monkeypatch.setattr(play_by_play.playbyplay, "PlayByPlay", _BrokenPlayByPlay)
     play_by_play._PROVIDER_ERROR_LOG_STATE.clear()
 

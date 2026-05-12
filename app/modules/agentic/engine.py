@@ -9,8 +9,9 @@ from app.modules.agentic.contracts import OrderIntent, StrategyPlan, StrategyPla
 
 MIN_ORDER_SIZE = 5.0
 MIN_BUY_NOTIONAL_USD = 1.0
+MIN_BUY_NOTIONAL_BUFFER_USD = 0.01
 UNDERDOG_WATCH_ONLY_PRICE = 0.19
-UNDERDOG_MANUAL_ONLY_PRICE = 0.10
+UNDERDOG_SUB_10C_PRICE = 0.10
 
 
 def evaluate_strategy_plan(
@@ -54,7 +55,12 @@ def evaluate_strategy_plan(
         if rule_gate is not None:
             blockers.append({"strategy_id": strategy.strategy_id, **rule_gate})
             continue
+        strategy_state = _strategy_market_state(strategy.entry_rules, market_state, strategy_id=strategy.strategy_id)
         order_payload = _extract_order_payload(strategy.entry_rules)
+        order_payload = _resolve_dynamic_order_payload(order_payload, strategy_state=strategy_state)
+        if isinstance(order_payload.get("dynamic_price_blocker"), dict):
+            blockers.append({"strategy_id": strategy.strategy_id, **order_payload["dynamic_price_blocker"]})
+            continue
         sizing_policy = _operator_sizing_policy(portfolio_state)
         required_order_fields = ["outcome_id", "token_id", "price"]
         if sizing_policy is None:
@@ -141,6 +147,7 @@ def evaluate_strategy_plan(
         if ultra_low_blocker is not None:
             blockers.append({"strategy_id": strategy.strategy_id, **ultra_low_blocker})
             continue
+        resolved_exit_rules = _resolve_exit_rules(strategy.exit_rules, entry_price=price)
         intents.append(
             OrderIntent(
                 intent_id=f"{plan.event_id}|{strategy.strategy_id}|{len(intents) + 1}",
@@ -161,8 +168,9 @@ def evaluate_strategy_plan(
                     "plan_owner": plan.plan_owner,
                     "schema_version": plan.schema_version,
                     "context_summary": plan.context_summary,
-                    "entry_rules": strategy.entry_rules,
-                    "exit_rules": strategy.exit_rules,
+                    "entry_rules": order_payload,
+                    "original_entry_rules": strategy.entry_rules,
+                    "exit_rules": resolved_exit_rules,
                     "stop_rules": strategy.stop_rules,
                     "hedge_rules": strategy.hedge_rules,
                     "revision_triggers": strategy.revision_triggers,
@@ -193,6 +201,61 @@ def _extract_order_payload(entry_rules: dict[str, Any]) -> dict[str, Any]:
     return dict(entry_rules)
 
 
+def _resolve_dynamic_order_payload(order_payload: dict[str, Any], *, strategy_state: dict[str, Any]) -> dict[str, Any]:
+    resolved = dict(order_payload)
+    policy = str(
+        resolved.get("price_policy")
+        or resolved.get("limit_price_policy")
+        or resolved.get("price_mode")
+        or ""
+    ).strip().lower()
+    if not policy:
+        return resolved
+    side = str(resolved.get("side") or "buy").strip().lower()
+    dynamic_price = _dynamic_order_price(policy, side=side, strategy_state=strategy_state)
+    if dynamic_price is None:
+        return resolved
+    max_price = _safe_float(resolved.get("max_price") or resolved.get("max_entry_price"))
+    min_price = _safe_float(resolved.get("min_price") or resolved.get("min_entry_price"))
+    if max_price is not None and dynamic_price > max_price:
+        resolved["dynamic_price_blocker"] = {
+            "reason": "dynamic_price_above_max",
+            "price": dynamic_price,
+            "max_price": max_price,
+            "price_policy": policy,
+        }
+        return resolved
+    if min_price is not None and dynamic_price < min_price:
+        resolved["dynamic_price_blocker"] = {
+            "reason": "dynamic_price_below_min",
+            "price": dynamic_price,
+            "min_price": min_price,
+            "price_policy": policy,
+        }
+        return resolved
+    resolved["price"] = round(dynamic_price, 4)
+    resolved["resolved_price_policy"] = policy
+    resolved["static_price"] = order_payload.get("price")
+    return resolved
+
+
+def _dynamic_order_price(policy: str, *, side: str, strategy_state: dict[str, Any]) -> float | None:
+    best_bid = _safe_float(strategy_state.get("best_bid"))
+    best_ask = _safe_float(strategy_state.get("best_ask"))
+    current_price = _first_float(strategy_state, ("price", "team_price", "current_price"))
+    if policy in {"current_ask", "best_ask", "cross_current_ask", "take_ask"}:
+        return best_ask
+    if policy in {"current_bid", "best_bid", "maker_bid"}:
+        return best_bid
+    if policy in {"current_mid", "mid", "mid_price"}:
+        if best_bid is not None and best_ask is not None:
+            return (best_bid + best_ask) / 2.0
+        return current_price
+    if policy in {"current_price", "market_state_price", "in_band_current_price"}:
+        return current_price if current_price is not None else (best_ask if side == "buy" else best_bid)
+    return None
+
+
 def _resolve_order_size(
     order_payload: dict[str, Any],
     *,
@@ -218,11 +281,22 @@ def _resolve_order_size(
 
     min_size = _safe_float(policy.get("min_size") or policy.get("minimum_size")) or MIN_ORDER_SIZE
     min_buy_notional = _safe_float(policy.get("min_buy_notional_usd") or policy.get("minimum_buy_notional_usd")) or MIN_BUY_NOTIONAL_USD
+    min_buy_notional_buffer = _safe_float(
+        policy.get("min_buy_notional_buffer_usd")
+        or policy.get("notional_safety_buffer_usd")
+        or policy.get("notional_buffer_usd")
+    )
+    if min_buy_notional_buffer is None:
+        min_buy_notional_buffer = MIN_BUY_NOTIONAL_BUFFER_USD
+    min_buy_notional_buffer = max(0.0, min_buy_notional_buffer)
+    effective_min_buy_notional = min_buy_notional + min_buy_notional_buffer
     metadata = {
         "source": "operator_policy",
         "mode": policy.get("mode") or "operator_minimum_order",
         "min_size": min_size,
         "min_buy_notional_usd": min_buy_notional,
+        "min_buy_notional_buffer_usd": min_buy_notional_buffer,
+        "effective_min_buy_notional_usd": effective_min_buy_notional,
         "max_buy_notional_usd": _safe_float(policy.get("max_buy_notional_usd") or policy.get("max_notional_usd")),
         "llm_requested_size": _safe_float(order_payload.get("size")),
         "llm_strategy_budget_usd": strategy_budget_usd,
@@ -231,7 +305,7 @@ def _resolve_order_size(
         return _safe_float(order_payload.get("size")), metadata
     if price <= 0.0:
         return None, metadata
-    minimum_notional_size = min_buy_notional / price
+    minimum_notional_size = effective_min_buy_notional / price
     precision = int(_safe_float(policy.get("share_precision")) or 3)
     factor = 10**max(0, precision)
     size = max(min_size, math.ceil(minimum_notional_size * factor) / factor)
@@ -246,6 +320,49 @@ def _operator_sizing_policy(portfolio_state: dict[str, Any]) -> dict[str, Any] |
     if mode in {"strategy_plan", "plan_size", "llm"}:
         return None
     return dict(policy)
+
+
+def _resolve_exit_rules(exit_rules: dict[str, Any], *, entry_price: float) -> dict[str, Any]:
+    resolved = dict(exit_rules or {})
+    target_price = _safe_float(resolved.get("target_price"))
+    dynamic_target = _scaled_micro_grid_target_price(entry_price, resolved)
+    if target_price is None and dynamic_target is not None:
+        resolved["target_price"] = dynamic_target
+    if dynamic_target is not None:
+        resolved["resolved_target_price"] = dynamic_target
+        resolved["resolved_target_policy"] = "max_min_cents_or_return_fraction"
+    return resolved
+
+
+def _scaled_micro_grid_target_price(entry_price: float, rules: dict[str, Any]) -> float | None:
+    if entry_price <= 0.0:
+        return None
+    target_policy = str(rules.get("target_policy") or rules.get("target_mode") or "").strip().lower()
+    min_target_cents = _safe_float(
+        rules.get("min_target_cents")
+        or rules.get("minimum_target_cents")
+        or rules.get("target_floor_cents")
+    )
+    target_return_fraction = _safe_float(
+        rules.get("target_return_fraction")
+        or rules.get("target_gain_fraction")
+        or rules.get("target_return")
+    )
+    target_return_percent = _safe_float(rules.get("target_return_percent") or rules.get("target_gain_percent"))
+    if target_return_fraction is None and target_return_percent is not None:
+        target_return_fraction = target_return_percent / 100.0
+    if (
+        target_policy not in {"micro_grid_scaled", "scaled_micro_grid", "price_scaled_micro_grid"}
+        and min_target_cents is None
+        and target_return_fraction is None
+    ):
+        return None
+    min_move = (min_target_cents or 0.0) / 100.0
+    fraction_move = entry_price * (target_return_fraction or 0.0)
+    target_move = max(min_move, fraction_move)
+    if target_move <= 0.0:
+        return None
+    return round(min(0.95, max(0.01, entry_price + target_move)), 4)
 
 
 def _ultra_low_underdog_blocker(
@@ -269,19 +386,22 @@ def _ultra_low_underdog_blocker(
         "guardrail": "ultra_low_underdog",
         "price": round(guardrail_price, 6),
         "watch_only_threshold": UNDERDOG_WATCH_ONLY_PRICE,
-        "manual_only_threshold": UNDERDOG_MANUAL_ONLY_PRICE,
+        "sub_10c_threshold": UNDERDOG_SUB_10C_PRICE,
     }
-    if guardrail_price < UNDERDOG_MANUAL_ONLY_PRICE:
-        return {
-            **base,
-            "reason": "ultra_low_underdog_manual_only",
-            "message": "Underdog buys below 10c require manual-only adoption and cannot compile autonomous order intents.",
-        }
 
     entry_rules = dict(strategy.entry_rules or {})
     missing: list[str] = []
     if not _truthy_any(entry_rules, ("allow_ultra_low_underdog", "allow_underdog_below_19c")):
         missing.append("allow_ultra_low_underdog")
+    if guardrail_price < UNDERDOG_SUB_10C_PRICE and not _truthy_any(
+        entry_rules,
+        (
+            "allow_sub_10c_underdog_grid",
+            "allow_ultra_low_grid",
+            "allow_0_5c_to_5c_grid",
+        ),
+    ):
+        missing.append("allow_sub_10c_underdog_grid")
 
     max_scoreboard_age = _safe_float(
         entry_rules.get("max_scoreboard_age_seconds") or entry_rules.get("max_live_scoreboard_age_seconds")
@@ -340,7 +460,19 @@ def _truthy_any(values: dict[str, Any], keys: tuple[str, ...]) -> bool:
 
 def _has_target_policy(exit_rules: dict[str, Any], entry_rules: dict[str, Any]) -> bool:
     for values in (exit_rules, entry_rules):
-        for key in ("target_price", "target_cents", "target_gain", "min_exit_price"):
+        for key in (
+            "target_price",
+            "target_cents",
+            "target_gain",
+            "min_exit_price",
+            "min_target_cents",
+            "minimum_target_cents",
+            "target_floor_cents",
+            "target_return_fraction",
+            "target_gain_fraction",
+            "target_return_percent",
+            "target_gain_percent",
+        ):
             if _safe_float(values.get(key)) is not None:
                 return True
         for key in ("targets_cents", "target_prices"):
@@ -405,6 +537,14 @@ def _rules_blocker(
     if max_score_gap is not None and score_gap is not None and abs(score_gap) > max_score_gap:
         return {"reason": "score_gap_outside_rule", "score_gap": score_gap, "max_abs_score_gap": max_score_gap}
 
+    period_blocker = _period_blocker(entry_rules, strategy_state)
+    if period_blocker is not None:
+        return period_blocker
+
+    clock_blocker = _clock_blocker(entry_rules, strategy_state)
+    if clock_blocker is not None:
+        return clock_blocker
+
     player_status_blocker = _player_status_shock_blocker(entry_rules, strategy_state)
     if player_status_blocker is not None:
         return player_status_blocker
@@ -460,6 +600,77 @@ def _rules_blocker(
             "max_open_positions": max_open_positions,
         }
 
+    return None
+
+
+def _period_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) -> dict[str, Any] | None:
+    min_period = _safe_float(entry_rules.get("min_period"))
+    max_period = _safe_float(entry_rules.get("max_period"))
+    allowed_periods_raw = entry_rules.get("allowed_periods") or entry_rules.get("periods")
+    allowed_periods: set[int] = set()
+    if isinstance(allowed_periods_raw, (list, tuple, set)):
+        for value in allowed_periods_raw:
+            parsed = _safe_float(value)
+            if parsed is not None:
+                allowed_periods.add(int(parsed))
+    if min_period is None and max_period is None and not allowed_periods:
+        return None
+
+    period = _first_float(strategy_state, ("period", "game_period", "quarter"))
+    if period is None:
+        return {
+            "reason": "period_required",
+            "min_period": min_period,
+            "max_period": max_period,
+            "allowed_periods": sorted(allowed_periods) if allowed_periods else None,
+        }
+    period_int = int(period)
+    if allowed_periods and period_int not in allowed_periods:
+        return {"reason": "period_outside_rule", "period": period_int, "allowed_periods": sorted(allowed_periods)}
+    if min_period is not None and period < min_period:
+        return {"reason": "period_outside_rule", "period": period_int, "min_period": int(min_period)}
+    if max_period is not None and period > max_period:
+        return {"reason": "period_outside_rule", "period": period_int, "max_period": int(max_period)}
+    return None
+
+
+def _clock_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) -> dict[str, Any] | None:
+    min_remaining = _safe_float(
+        entry_rules.get("min_clock_remaining_seconds")
+        or entry_rules.get("min_game_clock_remaining_seconds")
+        or entry_rules.get("no_new_entry_after_clock_seconds")
+    )
+    max_remaining = _safe_float(entry_rules.get("max_clock_remaining_seconds") or entry_rules.get("max_game_clock_remaining_seconds"))
+    if min_remaining is None and max_remaining is None:
+        return None
+
+    clock = (
+        strategy_state.get("game_clock")
+        or strategy_state.get("clock")
+        or strategy_state.get("clock_remaining")
+        or strategy_state.get("time_remaining")
+    )
+    seconds_remaining = _clock_remaining_seconds(clock)
+    if seconds_remaining is None:
+        return {
+            "reason": "clock_required",
+            "min_clock_remaining_seconds": min_remaining,
+            "max_clock_remaining_seconds": max_remaining,
+        }
+    if min_remaining is not None and seconds_remaining < min_remaining:
+        return {
+            "reason": "clock_inside_no_entry_window",
+            "clock": clock,
+            "clock_remaining_seconds": seconds_remaining,
+            "min_clock_remaining_seconds": min_remaining,
+        }
+    if max_remaining is not None and seconds_remaining > max_remaining:
+        return {
+            "reason": "clock_outside_rule",
+            "clock": clock,
+            "clock_remaining_seconds": seconds_remaining,
+            "max_clock_remaining_seconds": max_remaining,
+        }
     return None
 
 
@@ -671,6 +882,42 @@ def _first_float(values: dict[str, Any], keys: tuple[str, ...]) -> float | None:
             parsed = _safe_float(values.get(key))
             if parsed is not None:
                 return parsed
+    return None
+
+
+def _clock_remaining_seconds(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return max(0.0, float(value))
+
+    text = str(value).strip().upper()
+    if not text:
+        return None
+    parsed = _safe_float(text)
+    if parsed is not None:
+        return max(0.0, parsed)
+
+    if text.startswith("PT"):
+        body = text[2:]
+        minutes = 0.0
+        seconds = 0.0
+        if "M" in body:
+            minute_part, body = body.split("M", 1)
+            minutes = _safe_float(minute_part) or 0.0
+        if "S" in body:
+            second_part = body.split("S", 1)[0]
+            seconds = _safe_float(second_part) or 0.0
+        return max(0.0, minutes * 60.0 + seconds)
+
+    if ":" in text:
+        parts = text.split(":")
+        if len(parts) == 2:
+            minutes = _safe_float(parts[0])
+            seconds = _safe_float(parts[1])
+            if minutes is not None and seconds is not None:
+                return max(0.0, minutes * 60.0 + seconds)
+
     return None
 
 

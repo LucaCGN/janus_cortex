@@ -141,10 +141,134 @@ def test_auto_protect_direct_position_skips_when_target_already_covers_pytest(mo
 
     assert result["submitted_orders"] == []
     assert result["covered_positions"] == [{"token_id": "token-sas", "position_size": 5.0, "open_sell_size": 5.0}]
-    candidate = StrategyPlan.model_validate(result["candidate_strategy_plan"])
-    assert candidate.active_strategies[0].exit_rules["target_required"] is False
-    assert candidate.portfolio_reconciliation[0]["open_sell_size"] == 5.0
+    assert result["position_reactions"] == []
+    assert result["revision_requests"] == []
+    assert result["candidate_strategy_plan_required"] is False
+    assert "candidate_strategy_plan" not in result
     assert calls == []
+
+
+def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="nba-okc-lal-2026-05-11",
+        plan={
+            "market_id": "market-1",
+            "active_strategies": [
+                {
+                    "strategy_id": "lal-live-micro-grid",
+                    "family": "price_stability_micro_grid",
+                    "side": "Lakers",
+                    "entry_rules": {"token_id": "token-lal", "outcome_id": "outcome-lal"},
+                    "stop_rules": {
+                        "stop_price": 0.13,
+                        "max_adverse_cents": 3,
+                        "stop_review_if_score_gap_exceeds": 10,
+                    },
+                }
+            ],
+        },
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {
+                        "asset": "token-lal",
+                        "avg_price": 0.19,
+                        "event_slug": "nba-okc-lal-2026-05-11",
+                        "outcome": "Lakers",
+                        "size": 5.3099,
+                    }
+                ]
+            },
+            "open_orders": {
+                "orders": [
+                    {
+                        "token_id": "token-lal",
+                        "side": "SELL",
+                        "status": "LIVE",
+                        "size": 5.3,
+                        "price": 0.21,
+                    }
+                ]
+            },
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+        outcome_states={
+            "outcome-lal": {
+                "best_bid": 0.10,
+                "best_ask": 0.11,
+                "score_gap": -8,
+                "captured_at_utc": "2026-05-12T03:40:00Z",
+            }
+        },
+    )
+
+    assert calls == []
+    assert result["recommended_orders"][0]["reason"] == "uncovered_size_below_minimum"
+    assert len(result["adverse_position_reviews"]) == 1
+    review = result["adverse_position_reviews"][0]
+    assert review["action"] == "position_adverse_move"
+    assert review["strategy_id"] == "lal-live-micro-grid"
+    assert review["current_exit_bid"] == 0.10
+    assert {rule["rule"] for rule in review["triggered_rules"]} == {"stop_price", "max_adverse_cents"}
+    assert review["revision_request"]["decision_options_to_compare"] == [
+        "hold_existing_target",
+        "cancel_replace_lower_target",
+        "marketable_stop_or_reduce",
+        "opposite_side_hedge_or_continuation",
+        "add_down_same_side_micro_grid",
+    ]
+    assert result["candidate_strategy_plan_required"] is True
+
+
+def test_position_strategy_from_plan_prefers_current_period_strategy_pytest() -> None:
+    plan = {
+        "active_strategies": [
+            {
+                "strategy_id": "lal-q1-q2-lebron-momentum-scalp-v1",
+                "entry_rules": {
+                    "token_id": "token-lal",
+                    "outcome_id": "outcome-lal",
+                    "min_period": 1,
+                    "max_period": 2,
+                },
+            },
+            {
+                "strategy_id": "lal-q3-q4-close-game-micro-grid-v1",
+                "entry_rules": {
+                    "token_id": "token-lal",
+                    "outcome_id": "outcome-lal",
+                    "min_period": 3,
+                    "max_period": 4,
+                },
+            },
+        ],
+    }
+
+    selected = live_tick._position_strategy_from_plan(
+        plan=plan,
+        token_id="token-lal",
+        outcome_id="outcome-lal",
+        outcome_state={"period": 4},
+    )
+
+    assert selected is not None
+    assert selected["strategy_id"] == "lal-q3-q4-close-game-micro-grid-v1"
 
 
 def test_event_tick_can_submit_reviewed_candidate_strategy_plan_pytest(monkeypatch) -> None:
@@ -314,7 +438,7 @@ def test_auto_protect_direct_trade_reacts_to_unknown_fill_pytest(monkeypatch) ->
         direct_clob={
             "open_positions": {"positions": []},
             "open_orders": {"orders": []},
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {
                         "id": "clob-trade-1",
@@ -349,6 +473,56 @@ def test_auto_protect_direct_trade_reacts_to_unknown_fill_pytest(monkeypatch) ->
     assert candidate.active_strategies[0].family == "operator_trade_management"
     assert candidate.active_strategies[0].exit_rules["final_pnl_review_required"] is True
     assert candidate.portfolio_reconciliation[0]["action"] == "adopt_trade_fill"
+
+
+def test_auto_protect_direct_trade_ignores_public_market_trade_rows_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="nba-okc-lal-2026-05-11",
+        plan={
+            "market_id": "market-1",
+            "active_strategies": [{"entry_rules": {"token_id": "token-lal", "outcome_id": "outcome-lal"}}],
+        },
+        direct_clob={
+            "open_positions": {"positions": []},
+            "open_orders": {"orders": []},
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "public-market-trade",
+                        "asset_id": "token-lal",
+                        "side": "BUY",
+                        "price": 0.21,
+                        "size": 3072.0,
+                        "taker_order_id": "0xpublic",
+                    }
+                ]
+            },
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+        known_external_order_ids=set(),
+    )
+
+    assert calls == []
+    assert result["direct_trade_count"] == 0
+    assert result["trade_reactions"] == []
+    assert result["revision_requests"] == []
+    assert result["candidate_strategy_plan_required"] is False
 
 
 def test_persist_direct_trade_watch_observations_records_plan_token_trades_pytest(monkeypatch) -> None:
@@ -407,6 +581,27 @@ def test_persist_direct_trade_watch_observations_records_plan_token_trades_pytes
     assert trade["price"] == 0.65
     assert trade["size"] == 5.0
     assert trade["raw"]["direct_order_ids"] == ["0xtarget"]
+
+
+def test_direct_trade_watch_observation_ignores_zero_timestamp_latency_pytest() -> None:
+    observation = live_tick._direct_trade_watch_observation(
+        event_id="nba-okc-lal-2026-05-11",
+        trade={
+            "id": "clob-trade-1",
+            "asset_id": "token-lal",
+            "side": "BUY",
+            "price": 0.19,
+            "size": 5.31,
+            "timestamp": 0,
+            "taker_order_id": "0xbuy",
+        },
+        outcome_lookup={"token-lal": {"market_id": "market-1", "outcome_id": "outcome-lal"}},
+        source="pytest",
+    )
+
+    assert observation is not None
+    assert observation["source_latency_ms"] is None
+    assert not str(observation["trade_time_utc"]).startswith("1970-")
 
 
 def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest(monkeypatch) -> None:
@@ -512,6 +707,302 @@ def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest
     assert portfolio_state["pending_intents"] == 1
 
 
+def test_pending_intent_summary_ignores_local_order_filled_in_direct_clob_pytest(monkeypatch) -> None:
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        assert path == "/v1/portfolio/orders"
+        return {
+            "ok": True,
+            "items": [
+                {
+                    "order_id": "local-order-1",
+                    "external_order_id": "0xsubmitted",
+                    "event_slug": "nba-okc-lal-2026-05-11",
+                    "market_id": "market-1",
+                    "outcome_id": "outcome-lal",
+                    "side": "buy",
+                    "status": "submitted",
+                    "size": 5.316,
+                    "limit_price": 0.19,
+                    "metadata_json": {"strategy_id": "lal-live-micro-grid"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    summary = live_tick._pending_intent_summary(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="nba-okc-lal-2026-05-11",
+        plan={"market_id": "market-1"},
+        direct_clob={
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "trade-1",
+                        "asset_id": "token-lal",
+                        "side": "BUY",
+                        "price": 0.19,
+                        "size": 5.31,
+                        "timestamp": 0,
+                        "taker_order_id": "0xsubmitted",
+                    }
+                ]
+            }
+        },
+    )
+
+    assert summary["pending_intent_count"] == 0
+    assert summary["pending_buy_intent_count"] == 0
+    assert summary["orders"] == []
+
+
+def test_position_target_price_uses_scaled_micro_grid_policy_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "det-micro-grid",
+                    "family": "underdog_micro_grid_reprice",
+                    "entry_rules": {
+                        "token_id": "token-det",
+                        "outcome_id": "outcome-det",
+                    },
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "min_target_cents": 1,
+                        "target_return_fraction": 0.10,
+                    },
+                }
+            ]
+        },
+        token_id="token-det",
+        outcome_id="outcome-det",
+        avg_price=0.20,
+        default_target_delta_cents=5.0,
+    )
+
+    assert target["target_price"] == 0.22
+    assert target["target_delta_cents"] == 2.0
+    assert target["target_policy"] == "micro_grid_scaled"
+    assert target["strategy_id"] == "det-micro-grid"
+
+
+def test_position_target_price_prefers_live_strategy_over_shadow_match_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "lal-shadow-liftoff",
+                    "family": "underdog_liftoff",
+                    "entry_rules": {"token_id": "token-lal", "outcome_id": "outcome-lal"},
+                    "exit_rules": {"target_price": 0.24},
+                    "shadow_flags": {"shadow_only": True},
+                },
+                {
+                    "strategy_id": "lal-live-micro-grid",
+                    "family": "price_stability_micro_grid",
+                    "entry_rules": {"token_id": "token-lal", "outcome_id": "outcome-lal"},
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "min_target_cents": 1,
+                        "target_return_fraction": 0.10,
+                    },
+                    "shadow_flags": {},
+                },
+            ]
+        },
+        token_id="token-lal",
+        outcome_id="outcome-lal",
+        avg_price=0.19,
+        default_target_delta_cents=5.0,
+    )
+
+    assert target["target_price"] == 0.209
+    assert target["target_policy"] == "micro_grid_scaled"
+    assert target["strategy_id"] == "lal-live-micro-grid"
+
+
+def test_position_target_price_prefers_current_period_strategy_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "okc-favorite-floor-rebound-v1",
+                    "family": "favorite_floor_rebound",
+                    "entry_rules": {"token_id": "token-okc", "outcome_id": "outcome-okc"},
+                    "exit_rules": {"target_price": 0.56},
+                },
+                {
+                    "strategy_id": "okc-q3-q4-close-game-continuation-grid-v1",
+                    "family": "favorite_continuation_micro_grid",
+                    "entry_rules": {
+                        "token_id": "token-okc",
+                        "outcome_id": "outcome-okc",
+                        "min_period": 3,
+                        "max_period": 4,
+                    },
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "min_target_cents": 1,
+                        "target_return_fraction": 0.03,
+                    },
+                },
+            ]
+        },
+        token_id="token-okc",
+        outcome_id="outcome-okc",
+        avg_price=0.76,
+        default_target_delta_cents=5.0,
+        outcome_state={"period": 4},
+    )
+
+    assert target["target_price"] == 0.7828
+    assert target["target_policy"] == "micro_grid_scaled"
+    assert target["strategy_id"] == "okc-q3-q4-close-game-continuation-grid-v1"
+
+
+def test_position_target_price_uses_one_cent_floor_for_low_prices_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "det-low-grid",
+                    "family": "underdog_micro_grid_reprice",
+                    "entry_rules": {"token_id": "token-det"},
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "min_target_cents": 1,
+                        "target_return_fraction": 0.10,
+                    },
+                }
+            ]
+        },
+        token_id="token-det",
+        outcome_id="outcome-det",
+        avg_price=0.05,
+        default_target_delta_cents=5.0,
+    )
+
+    assert target["target_price"] == 0.06
+    assert target["target_delta_cents"] == 1.0
+
+
+def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+    plan = {
+        "market_id": "market-det-cle",
+        "active_strategies": [
+            {
+                "strategy_id": "det-underdog-range-scalp-v1",
+                "side": "Pistons",
+                "entry_rules": {
+                    "outcome_id": "outcome-det",
+                    "token_id": "token-det",
+                    "side": "buy",
+                    "price": 0.31,
+                    "size": 5,
+                },
+            }
+        ],
+    }
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/events/nba-det-cle-2026-05-11/agent-context":
+            return {
+                "ok": True,
+                "current_strategy_plan": plan,
+                "direct_open_order_count": 1,
+                "direct_open_position_count": 1,
+            }
+        if path == "/v1/nba/games":
+            return {"ok": True, "items": []}
+        if path == "/v1/sync/polymarket/orderbook":
+            return {"ok": True}
+        if path == "/v1/outcomes/outcome-det/orderbook/latest":
+            return {
+                "ok": True,
+                "snapshot": {
+                    "best_bid": 0.32,
+                    "best_ask": 0.33,
+                    "spread": 0.01,
+                    "captured_at": "2026-05-12T01:40:00+00:00",
+                },
+            }
+        if path == "/v1/portfolio/orders":
+            return {"ok": True, "items": []}
+        if path == "/v1/watchlists/sessions":
+            return {"ok": True, "db_persistence": {"watch_session_id": "watch-session-uuid"}}
+        if path == "/v1/watchlists/orderbook-ticks":
+            return {"ok": True, "tick_count": len(payload["ticks"]), "db_persistence": {"ok": True}}
+        if path == "/v1/events/nba-det-cle-2026-05-11/strategy-plan/evaluate":
+            return {"ok": True, "intent_count": 1, "blocked_count": 0}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._run_event_tick(
+        api_root="http://test",
+        session_date="2026-05-11",
+        event_id="nba-det-cle-2026-05-11",
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+        max_intents=2,
+        orderbook_sample_count=1,
+        orderbook_sample_interval_sec=0.0,
+        integrity_ready=True,
+        integrity_snapshot={
+            "direct_clob": {
+                "open_order_count": 1,
+                "open_orders": {
+                    "orders": [
+                        {
+                            "id": "order-unrelated",
+                            "token_id": "token-nba-finals",
+                            "side": "SELL",
+                            "status": "LIVE",
+                            "size": 59.99,
+                            "price": 0.03,
+                        }
+                    ]
+                },
+                "open_positions": {
+                    "positions": [
+                        {
+                            "asset": "token-nba-finals",
+                            "event_slug": "2026-nba-champion",
+                            "outcome": "Yes",
+                            "size": 59.99,
+                            "avg_price": 0.018,
+                        }
+                    ]
+                },
+                "current_token_trades": {"trades": [], "trade_count": 0},
+            }
+        },
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        share_precision=3,
+        auto_protect_manual_positions=True,
+        manual_target_delta_cents=5.0,
+    )
+
+    evaluate_calls = [
+        call for call in calls if call["path"] == "/v1/events/nba-det-cle-2026-05-11/strategy-plan/evaluate"
+    ]
+    assert result["portfolio_state"]["open_orders"] == 0
+    assert result["portfolio_state"]["open_positions"] == 0
+    assert result["portfolio_state"]["direct_clob_global_open_orders"] == 1
+    assert result["portfolio_state"]["direct_clob_global_open_positions"] == 1
+    portfolio_state = evaluate_calls[0]["payload"]["portfolio_state"]
+    assert portfolio_state["open_orders"] == 0
+    assert portfolio_state["open_positions"] == 0
+    assert portfolio_state["direct_clob_global_open_orders"] == 1
+
+
 def test_player_status_shocks_from_live_state_tags_ejection_and_conflict_pytest() -> None:
     shocks = live_tick._player_status_shocks_from_live_state(
         {
@@ -566,7 +1057,7 @@ def test_player_status_shocks_from_live_state_tags_ejection_and_conflict_pytest(
     assert shocks[0]["requires_strategy_plan_revision"] is True
 
 
-def test_player_status_shocks_from_live_state_tags_watched_sub_out_pytest() -> None:
+def test_player_status_shocks_from_live_state_ignores_routine_watched_sub_out_pytest() -> None:
     shocks = live_tick._player_status_shocks_from_live_state(
         {
             "game_id": "0042500234",
@@ -584,9 +1075,7 @@ def test_player_status_shocks_from_live_state_tags_watched_sub_out_pytest() -> N
         game={"game_id": "0042500234"},
     )
 
-    assert len(shocks) == 1
-    assert shocks[0]["tags"] == ["sub_out_star"]
-    assert shocks[0]["requires_strategy_plan_revision"] is True
+    assert shocks == []
 
 
 def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(monkeypatch, tmp_path) -> None:

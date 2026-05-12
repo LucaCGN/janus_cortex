@@ -29,6 +29,59 @@ def test_quarter_end_emits_runtime_trigger_pytest() -> None:
     assert triggers[0].current_plan_stale_reason == "app_owned_live_revision_trigger_detected"
 
 
+def test_quarter_end_reviewed_by_current_plan_does_not_require_revision_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-det-cle-2026-05-11",
+        current_plan={"generated_at_utc": "2026-05-12T02:06:40Z"},
+        live_state={
+            "recent_play_by_play": [
+                {
+                    "event_index": 398,
+                    "period": 3,
+                    "clock": "PT00M00.00S",
+                    "description": "Period End",
+                    "payload_json": {"edited": "2026-05-12T02:00:51Z", "subType": "end"},
+                }
+            ]
+        },
+        source="pytest",
+    )
+
+    assert [trigger.trigger_type for trigger in triggers] == ["quarter_end"]
+    assert triggers[0].requires_revision is False
+    assert triggers[0].current_plan_stale_reason is None
+    assert triggers[0].evidence["reviewed_by_current_plan"] is True
+
+
+def test_quarter_end_review_marker_suppresses_same_period_later_snapshot_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-okc-lal-2026-05-11",
+        current_plan={
+            "generated_at_utc": "2026-05-12T00:10:00Z",
+            "context_summary": {
+                "q1_quarter_end_reviewed_utc": "2026-05-12T00:20:00Z",
+                "q1_quarter_end_reviewed": "Operator reviewed Q1 and kept the micro-grid active.",
+            },
+        },
+        live_state={
+            "period": 1,
+            "clock": "0:00",
+            "latest_snapshot": {
+                "period": 1,
+                "game_clock": "PT00M00.00S",
+                "captured_at_utc": "2026-05-12T00:21:00Z",
+            },
+        },
+        source="pytest",
+    )
+
+    assert [trigger.trigger_type for trigger in triggers] == ["quarter_end"]
+    assert triggers[0].requires_revision is False
+    assert triggers[0].current_plan_stale_reason is None
+    assert triggers[0].reason == "Quarter boundary reviewed by current StrategyPlanJSON."
+    assert triggers[0].evidence["quarter_end_reviewed_by_plan"] is True
+
+
 def test_manual_operator_exposure_routes_to_frontier_pytest() -> None:
     triggers = detect_llm_runtime_triggers(
         event_id="nba-sas-min-2026-05-10",
@@ -49,6 +102,30 @@ def test_manual_operator_exposure_routes_to_frontier_pytest() -> None:
     assert decision.selected_model == FRONTIER_MODEL
     assert decision.selected_tier == "frontier"
     assert "manual_operator_position" in decision.critical_reasons
+    assert "open_exposure" in decision.critical_reasons
+
+
+def test_position_adverse_move_routes_to_frontier_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-okc-lal-2026-05-11",
+        operator_interventions=[
+            {
+                "action": "position_adverse_move",
+                "token_id": "token-lal",
+                "avg_price": 0.19,
+                "current_exit_bid": 0.10,
+                "triggered_rules": [{"rule": "max_adverse_cents", "adverse_cents": 9.0}],
+            }
+        ],
+        portfolio_state={"open_positions": 1},
+    )
+
+    decision = route_llm_model(triggers, portfolio_state={"open_positions": 1})
+
+    assert [trigger.trigger_type for trigger in triggers] == ["position_adverse_move"]
+    assert triggers[0].requires_revision is True
+    assert decision.selected_model == FRONTIER_MODEL
+    assert "position_adverse_move" in decision.critical_reasons
     assert "open_exposure" in decision.critical_reasons
 
 
@@ -205,19 +282,20 @@ def test_valid_mocked_llm_response_is_schema_validated_and_stored_pytest(tmp_pat
     class FakeResponses:
         def parse(self, **kwargs):
             request_id = json.loads(kwargs["input"][1]["content"])["request_id"]
+            text_format = kwargs["text_format"]
             return SimpleNamespace(
-                output_parsed={
-                    "schema_version": "llm_revision_response_v1",
-                    "request_id": request_id,
-                    "status": "response_recorded",
-                    "selected_model": kwargs["model"],
-                    "revised_strategy_plan": None,
-                    "reconciliation_actions": [{"action": "no_new_entry", "reason": "test"}],
-                    "blocked_actions": [],
-                    "confidence": 0.73,
-                    "skipped_reason": None,
-                    "trace_metadata": {"mock": True},
-                },
+                output_parsed=text_format(
+                    schema_version="llm_revision_response_v1",
+                    request_id=request_id,
+                    status="reconciled",
+                    selected_model=kwargs["model"],
+                    revised_strategy_plan_json=None,
+                    reconciliation_actions_json=json.dumps(["no_new_entry"]),
+                    blocked_actions_json="[]",
+                    confidence=0.73,
+                    skipped_reason=None,
+                    trace_metadata_json=json.dumps({"mock": True}),
+                ),
                 usage=SimpleNamespace(input_tokens=11, output_tokens=7),
             )
 
@@ -239,7 +317,9 @@ def test_valid_mocked_llm_response_is_schema_validated_and_stored_pytest(tmp_pat
     assert trace.status == "response_recorded"
     assert trace.revision_response is not None
     assert trace.revision_response.status == "response_recorded"
+    assert trace.revision_response.trace_metadata["raw_llm_status"] == "reconciled"
     assert trace.revision_response.confidence == 0.73
+    assert trace.revision_response.reconciliation_actions == [{"action": "no_new_entry"}]
     assert trace.revision_response.trace_metadata["openai_call_attempted"] is True
     assert trace.revision_response.trace_metadata["order_endpoint_call_allowed"] is False
     assert persistence["response_status"] == "response_recorded"

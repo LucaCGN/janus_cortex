@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.modules.agentic.contracts import (
     LLMModelRoutingDecision,
@@ -32,6 +32,7 @@ _CRITICAL_TRIGGER_TYPES = {
     "manual_operator_order",
     "manual_operator_trade",
     "manual_operator_position",
+    "position_adverse_move",
     "player_status_shock",
     "stale_feed_recovery",
     "unexplained_clob_move",
@@ -45,12 +46,36 @@ _ORDER_LIFECYCLE_TRIGGER_TYPES = {
 _NANO_TRIGGER_TYPES = {"compression_or_tagging"}
 
 
+class _OpenAIRevisionResponse(BaseModel):
+    """Strict OpenAI structured-output envelope.
+
+    The public LLMRevisionResponse contract intentionally carries flexible JSON
+    objects. OpenAI strict structured outputs reject arbitrary dict fields, so
+    the live call asks for JSON strings and Janus validates them locally before
+    creating the canonical response.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "llm_revision_response_v1"
+    request_id: str = Field(min_length=1)
+    status: str = "response_recorded"
+    selected_model: str = Field(min_length=1)
+    revised_strategy_plan_json: str | None = None
+    reconciliation_actions_json: str = "[]"
+    blocked_actions_json: str = "[]"
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    skipped_reason: str | None = None
+    trace_metadata_json: str = "{}"
+
+
 JANUS_LIVE_LLM_PROMPT_CONTRACT: dict[str, Any] = {
     "schema_version": "janus_live_llm_prompt_contract_v1",
     "system_persona": (
         "You are the internal Janus live-trading revision engine. You reason about NBA prediction-market "
-        "risk using only supplied Janus runtime evidence, prioritize capital preservation, and output "
-        "structured revision and reconciliation JSON."
+        "opportunity using only supplied Janus runtime evidence, compare testable return/consistency approaches "
+        "under operator-defined minimum-size live experiments, and output structured revision and reconciliation JSON. "
+        "Do not reject a strategy because of subjective risk tolerance; mechanical exchange/account safety gates still apply."
     ),
     "authority_boundaries": [
         "The LLM never calls order endpoints.",
@@ -73,6 +98,10 @@ JANUS_LIVE_LLM_PROMPT_CONTRACT: dict[str, Any] = {
     "required_json_output_schema": {
         "schema_version": "llm_revision_response_v1",
         "revised_strategy_plan": "StrategyPlanJSON or null",
+        "openai_transport_note": (
+            "For strict OpenAI structured outputs, StrategyPlanJSON and flexible arrays/maps are returned "
+            "as JSON strings and validated by Janus before becoming canonical LLMRevisionResponse fields."
+        ),
         "reconciliation_actions": [
             "adopt",
             "pause",
@@ -88,6 +117,11 @@ JANUS_LIVE_LLM_PROMPT_CONTRACT: dict[str, Any] = {
         "blockers": "array of safety/data blockers",
         "trace_metadata": "model, prompt version, evidence ids, and decision rationale",
     },
+    "experiment_policy": (
+        "When a live position moves adversely, compare holding the target, lowering/replacing the target, "
+        "stopping/reducing, hedging the opposite side, and adding down on the same side as testable approaches. "
+        "Score them by expected return, consistency, fillability, and evidence quality rather than by subjective risk tolerance."
+    ),
     "safety_rule": "No order endpoint calls are allowed from LLM output or prompt tools.",
 }
 
@@ -247,7 +281,7 @@ def detect_llm_runtime_triggers(
             )
         )
 
-    return _dedupe_triggers(triggers)
+    return _mark_triggers_reviewed_by_current_plan(_dedupe_triggers(triggers), plan)
 
 
 def route_llm_model(
@@ -540,6 +574,7 @@ def dispatch_llm_revision(
             },
         )
 
+    usage: dict[str, int] = {}
     try:
         parsed, usage = _call_openai_revision(client=resolved_client, request=request)
         response = _coerce_llm_revision_response(parsed)
@@ -553,6 +588,7 @@ def dispatch_llm_revision(
                 "openai_call_attempted": True,
                 "openai_client_available": True,
                 "order_endpoint_call_allowed": False,
+                "usage": usage,
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -806,9 +842,9 @@ def _call_openai_revision(*, client: Any, request: LLMRevisionRequest) -> tuple[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": json.dumps(prompt_payload, separators=(",", ":"), sort_keys=True, ensure_ascii=True)},
         ],
-        text_format=LLMRevisionResponse,
+        text_format=_OpenAIRevisionResponse,
         reasoning={"effort": "medium"},
-        max_output_tokens=1800,
+        max_output_tokens=4096,
         store=False,
     )
     parsed = getattr(response, "output_parsed", None)
@@ -823,6 +859,11 @@ def _build_live_revision_system_prompt(request: LLMRevisionRequest) -> str:
             str(request.prompt_contract.get("system_persona") or JANUS_LIVE_LLM_PROMPT_CONTRACT["system_persona"]),
             "Use only the supplied JSON payload.",
             "Return strict JSON matching LLMRevisionResponse.",
+            "For transport, put any revised StrategyPlanJSON in revised_strategy_plan_json as a compact JSON string, or null if unchanged.",
+            "Put reconciliation_actions, blocked_actions, and trace metadata into their *_json string fields as valid JSON.",
+            "Default to revised_strategy_plan_json=null for routine quarter reviews unless supplied evidence clearly invalidates the current plan.",
+            "Do not copy the current plan into revised_strategy_plan_json just to restate it.",
+            "Keep explanations compact; prefer trace_metadata_json with concise rationale and evidence ids.",
             "Do not call tools, order endpoints, exchange endpoints, or external APIs.",
             "Output StrategyPlanJSON/reconciliation actions only; Janus validators own all live-order authority.",
         ]
@@ -832,13 +873,91 @@ def _build_live_revision_system_prompt(request: LLMRevisionRequest) -> str:
 def _coerce_llm_revision_response(value: Any) -> LLMRevisionResponse:
     if isinstance(value, LLMRevisionResponse):
         return value
+    if isinstance(value, _OpenAIRevisionResponse):
+        return _coerce_openai_revision_response(value)
     if hasattr(value, "model_dump") and callable(value.model_dump):
         value = value.model_dump(mode="json")
+    if isinstance(value, dict) and (
+        "revised_strategy_plan_json" in value
+        or "reconciliation_actions_json" in value
+        or "blocked_actions_json" in value
+    ):
+        return _coerce_openai_revision_response(_OpenAIRevisionResponse.model_validate(value))
     if isinstance(value, str):
         return LLMRevisionResponse.model_validate_json(value)
     if isinstance(value, dict):
         return LLMRevisionResponse.model_validate(value)
     raise TypeError(f"unsupported LLM response type: {type(value).__name__}")
+
+
+def _coerce_openai_revision_response(value: _OpenAIRevisionResponse) -> LLMRevisionResponse:
+    revised_plan = _loads_optional_object(value.revised_strategy_plan_json, field_name="revised_strategy_plan_json")
+    reconciliation_actions = _loads_list(value.reconciliation_actions_json, field_name="reconciliation_actions_json")
+    blocked_actions = _loads_list(value.blocked_actions_json, field_name="blocked_actions_json")
+    trace_metadata = _loads_object(value.trace_metadata_json, field_name="trace_metadata_json")
+    status = _normalize_llm_response_status(value.status)
+    if status != value.status:
+        trace_metadata = {**trace_metadata, "raw_llm_status": value.status}
+    return LLMRevisionResponse(
+        schema_version=value.schema_version,
+        request_id=value.request_id,
+        status=status,  # type: ignore[arg-type]
+        selected_model=value.selected_model,
+        revised_strategy_plan=revised_plan,
+        reconciliation_actions=reconciliation_actions,
+        blocked_actions=blocked_actions,
+        confidence=value.confidence,
+        skipped_reason=value.skipped_reason,
+        trace_metadata=trace_metadata,
+    )
+
+
+def _loads_optional_object(value: str | None, *, field_name: str) -> dict[str, Any] | None:
+    if value is None or not str(value).strip():
+        return None
+    parsed = json.loads(value)
+    if parsed is None:
+        return None
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} must decode to an object or null")
+    return parsed
+
+
+def _loads_object(value: str | None, *, field_name: str) -> dict[str, Any]:
+    if value is None or not str(value).strip():
+        return {}
+    parsed = json.loads(value)
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_name} must decode to an object")
+    return parsed
+
+
+def _loads_list(value: str | None, *, field_name: str) -> list[dict[str, Any]]:
+    if value is None or not str(value).strip():
+        return []
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        raise ValueError(f"{field_name} must decode to a list")
+    values: list[dict[str, Any]] = []
+    for item in parsed:
+        if isinstance(item, dict):
+            values.append(item)
+        elif isinstance(item, str):
+            key = "action" if field_name == "reconciliation_actions_json" else "reason"
+            values.append({key: item})
+        else:
+            values.append({"value": item})
+    return values
+
+
+def _normalize_llm_response_status(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    allowed = {"detected_only", "skipped_unavailable", "called", "response_recorded"}
+    if normalized in allowed:
+        return normalized
+    if normalized in {"ok", "valid", "complete", "completed", "reconciled", "no_change", "no_changes", "unchanged"}:
+        return "response_recorded"
+    return "response_recorded"
 
 
 def _usage_from_response(response: Any) -> dict[str, int]:
@@ -938,6 +1057,8 @@ def _quarter_end_evidence(live_state: dict[str, Any]) -> dict[str, Any] | None:
 
 def _operator_trigger_type(item: dict[str, Any]) -> str | None:
     action = str(item.get("action") or item.get("reaction_type") or item.get("reason") or "").strip().lower()
+    if action in {"position_adverse_move", "position_stop_review", "position_management_review"}:
+        return "position_adverse_move"
     if action in {"adopt_operator_open_order", "unknown_direct_clob_order_detected", "manual_order", "operator_order"}:
         return "manual_operator_order"
     if action in {"adopt_operator_trade", "unknown_direct_clob_trade_detected", "manual_trade", "operator_trade"}:
@@ -1156,6 +1277,172 @@ def _first_stale_reason(triggers: list[LLMRuntimeTrigger]) -> str | None:
         if trigger.current_plan_stale_reason:
             return trigger.current_plan_stale_reason
     return None
+
+
+def _mark_triggers_reviewed_by_current_plan(
+    triggers: list[LLMRuntimeTrigger],
+    plan: dict[str, Any],
+) -> list[LLMRuntimeTrigger]:
+    plan_generated_at = _parse_utc_datetime(plan.get("generated_at_utc"))
+    quarter_end_reviews = _quarter_end_review_markers(plan)
+    if plan_generated_at is None and not quarter_end_reviews:
+        return triggers
+    reviewed: list[LLMRuntimeTrigger] = []
+    for trigger in triggers:
+        evidence_time = _evidence_time_utc(trigger.evidence)
+        quarter_end_reviewed_at = _reviewed_quarter_end_at(trigger, quarter_end_reviews)
+        if trigger.requires_revision and quarter_end_reviewed_at is not None:
+            reviewed.append(
+                trigger.model_copy(
+                    update={
+                        "requires_revision": False,
+                        "current_plan_stale_reason": None,
+                        "reason": "Quarter boundary reviewed by current StrategyPlanJSON.",
+                        "evidence": {
+                            **trigger.evidence,
+                            "reviewed_by_current_plan": True,
+                            "quarter_end_reviewed_by_plan": True,
+                            "plan_quarter_end_reviewed_at_utc": quarter_end_reviewed_at.isoformat().replace("+00:00", "Z"),
+                            "trigger_evidence_time_utc": (
+                                evidence_time.isoformat().replace("+00:00", "Z") if evidence_time is not None else None
+                            ),
+                        },
+                    }
+                )
+            )
+            continue
+        if (
+            trigger.requires_revision
+            and evidence_time is not None
+            and plan_generated_at is not None
+            and plan_generated_at >= evidence_time
+        ):
+            reviewed.append(
+                trigger.model_copy(
+                    update={
+                        "requires_revision": False,
+                        "current_plan_stale_reason": None,
+                        "reason": f"{trigger.reason} Current StrategyPlanJSON was generated after this trigger evidence.",
+                        "evidence": {
+                            **trigger.evidence,
+                            "reviewed_by_current_plan": True,
+                            "plan_generated_at_utc": plan_generated_at.isoformat().replace("+00:00", "Z"),
+                            "trigger_evidence_time_utc": evidence_time.isoformat().replace("+00:00", "Z"),
+                        },
+                    }
+                )
+            )
+            continue
+        reviewed.append(trigger)
+    return reviewed
+
+
+def _quarter_end_review_markers(plan: dict[str, Any]) -> dict[int | None, datetime]:
+    markers: dict[int | None, datetime] = {}
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_text = str(key).strip().lower()
+                parsed = _parse_utc_datetime(item)
+                if parsed is not None and (
+                    key_text == "quarter_end_reviewed_utc" or key_text.endswith("_quarter_end_reviewed_utc")
+                ):
+                    markers[_period_from_quarter_end_review_key(key_text)] = parsed
+                if isinstance(item, (dict, list)):
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                if isinstance(item, (dict, list)):
+                    visit(item)
+
+    visit(plan)
+    return markers
+
+
+def _reviewed_quarter_end_at(
+    trigger: LLMRuntimeTrigger,
+    quarter_end_reviews: dict[int | None, datetime],
+) -> datetime | None:
+    if trigger.trigger_type != "quarter_end" or not quarter_end_reviews:
+        return None
+    period = _trigger_period(trigger.evidence)
+    if period is not None and period in quarter_end_reviews:
+        return quarter_end_reviews[period]
+    return quarter_end_reviews.get(None) if period is None else None
+
+
+def _trigger_period(evidence: dict[str, Any]) -> int | None:
+    candidates = [
+        evidence.get("period"),
+        evidence.get("game_period"),
+        evidence.get("quarter"),
+    ]
+    payload = evidence.get("payload_json") if isinstance(evidence.get("payload_json"), dict) else {}
+    candidates.extend([payload.get("period"), payload.get("game_period"), payload.get("quarter")])
+    latest = evidence.get("latest_snapshot") if isinstance(evidence.get("latest_snapshot"), dict) else {}
+    candidates.extend([latest.get("period"), latest.get("game_period"), latest.get("quarter")])
+    for candidate in candidates:
+        parsed = _safe_int(candidate)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _period_from_quarter_end_review_key(key: str) -> int | None:
+    prefix = key.removesuffix("_quarter_end_reviewed_utc")
+    if prefix in {"", "quarter_end_reviewed_utc"}:
+        return None
+    normalized = prefix.replace("-", "_").replace(" ", "_")
+    pieces = [piece for piece in normalized.split("_") if piece]
+    for piece in pieces:
+        if piece.startswith("q") and piece[1:].isdigit():
+            return _safe_int(piece[1:])
+        if piece.isdigit():
+            return _safe_int(piece)
+    return None
+
+
+def _evidence_time_utc(evidence: dict[str, Any]) -> datetime | None:
+    candidates: list[Any] = []
+    for key in (
+        "captured_at",
+        "captured_at_utc",
+        "created_at",
+        "created_at_utc",
+        "detected_at",
+        "detected_at_utc",
+        "edited",
+        "timestamp",
+        "timestamp_utc",
+        "updated_at",
+        "updated_at_utc",
+    ):
+        candidates.append(evidence.get(key))
+    payload = evidence.get("payload_json") if isinstance(evidence.get("payload_json"), dict) else {}
+    for key in ("edited", "captured_at", "created_at", "timestamp", "updated_at"):
+        candidates.append(payload.get(key))
+    latest = evidence.get("latest_snapshot") if isinstance(evidence.get("latest_snapshot"), dict) else {}
+    for key in ("captured_at", "captured_at_utc", "created_at", "timestamp", "updated_at"):
+        candidates.append(latest.get(key))
+    parsed = [_parse_utc_datetime(value) for value in candidates]
+    present = [value for value in parsed if value is not None]
+    return max(present) if present else None
+
+
+def _parse_utc_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def _compact_evidence(value: Any, *, limit: int = 40) -> dict[str, Any]:

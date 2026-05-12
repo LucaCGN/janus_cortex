@@ -247,7 +247,15 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     )
 
     try:
-        submit_response = client.post("/v1/events/event-123/strategy-plan", json=plan_payload)
+        submit_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-11",
+                "event_ids": ["event-123"],
+                "source": "pytest",
+                "strategy_plans": [plan_payload],
+            },
+        )
         response = client.post(
             "/v1/ops/live-monitor",
             json={"session_date": "2026-05-11", "event_ids": ["event-123"], "account_id": "account-123", "source": "pytest"},
@@ -255,7 +263,7 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     finally:
         client.app.dependency_overrides.clear()
 
-    assert submit_response.status_code == 201
+    assert submit_response.status_code == 202
     assert response.status_code == 202
     payload = response.json()
     assert payload["integrity"]["direct_trade_token_ids"] == ["token-1", "token-2"]
@@ -847,8 +855,9 @@ def test_strategy_plan_evaluate_operator_sizing_overrides_llm_size_pytest(tmp_pa
     payload = response.json()
     assert payload["intent_count"] == 1
     intent = payload["intents"][0]
-    assert intent["size"] == 5.556
+    assert intent["size"] == 5.612
     assert intent["metadata"]["sizing_policy"]["source"] == "operator_policy"
+    assert intent["metadata"]["sizing_policy"]["effective_min_buy_notional_usd"] == 1.01
     assert intent["metadata"]["sizing_policy"]["llm_requested_size"] is None
     assert intent["metadata"]["sizing_policy"]["llm_strategy_budget_usd"] == 0.25
 

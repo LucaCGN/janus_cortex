@@ -233,7 +233,7 @@ def test_strategy_plan_evaluator_blocks_ultra_low_underdog_without_fresh_context
     ]
 
 
-def test_strategy_plan_evaluator_blocks_sub_10c_underdog_as_manual_only_pytest() -> None:
+def test_strategy_plan_evaluator_blocks_sub_10c_underdog_without_grid_opt_in_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-lal-okc",
         market_id="market-1",
@@ -266,7 +266,237 @@ def test_strategy_plan_evaluator_blocks_sub_10c_underdog_as_manual_only_pytest()
     )
 
     assert result.intent_count == 0
-    assert result.blockers[0]["reason"] == "ultra_low_underdog_manual_only"
+    assert result.blockers[0]["reason"] == "ultra_low_underdog_guardrail"
+    assert result.blockers[0]["missing_requirements"] == ["allow_sub_10c_underdog_grid"]
+
+
+def test_strategy_plan_evaluator_resolves_scaled_micro_grid_target_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-det-cle",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="det-micro-grid",
+                family="underdog_micro_grid_reprice",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-det",
+                    "token_id": "token-det",
+                    "side": "buy",
+                    "price": 0.20,
+                    "size": 5,
+                    "price_band": [0.19, 0.21],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 6,
+                },
+                exit_rules={
+                    "target_required": True,
+                    "target_policy": "micro_grid_scaled",
+                    "min_target_cents": 1,
+                    "target_return_fraction": 0.10,
+                },
+                stop_rules={"max_adverse_cents": 2},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.20, "score_gap": -2, "scoreboard_age_seconds": 1},
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].metadata["exit_rules"]["target_price"] == 0.22
+    assert result.intents[0].metadata["exit_rules"]["resolved_target_policy"] == "max_min_cents_or_return_fraction"
+
+
+def test_strategy_plan_evaluator_uses_current_ask_price_policy_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-lal-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-live-micro-grid",
+                family="price_stability_micro_grid",
+                side="Lakers",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "size": 5,
+                    "price_policy": "current_ask",
+                    "max_price": 0.24,
+                    "price_band": [0.10, 0.24],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 6,
+                },
+                exit_rules={
+                    "target_required": True,
+                    "target_policy": "micro_grid_scaled",
+                    "min_target_cents": 1,
+                    "target_return_fraction": 0.10,
+                },
+                stop_rules={"max_adverse_cents": 2},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.21,
+            "best_bid": 0.20,
+            "best_ask": 0.21,
+            "score_gap": 1,
+            "scoreboard_age_seconds": 1,
+        },
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].price == 0.21
+    assert result.intents[0].metadata["entry_rules"]["resolved_price_policy"] == "current_ask"
+    assert result.intents[0].metadata["exit_rules"]["target_price"] == 0.231
+
+
+def test_strategy_plan_evaluator_blocks_dynamic_price_above_max_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-lal-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-live-micro-grid",
+                family="price_stability_micro_grid",
+                side="Lakers",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "size": 5,
+                    "price_policy": "current_ask",
+                    "max_price": 0.24,
+                    "price_band": [0.10, 0.30],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 6,
+                },
+                exit_rules={"target_price": 0.27},
+                stop_rules={"max_adverse_cents": 2},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.25,
+            "best_bid": 0.24,
+            "best_ask": 0.25,
+            "score_gap": 1,
+            "scoreboard_age_seconds": 1,
+        },
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "dynamic_price_above_max"
+
+
+def test_operator_minimum_buy_size_uses_notional_buffer_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-lal-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-live-micro-grid",
+                family="price_stability_micro_grid",
+                side="Lakers",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "price_policy": "current_ask",
+                    "max_price": 0.35,
+                    "price_band": [0.10, 0.35],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 8,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "target_return_fraction": 0.10},
+                stop_rules={"max_adverse_cents": 3},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.18,
+            "best_bid": 0.17,
+            "best_ask": 0.18,
+            "score_gap": -3,
+            "scoreboard_age_seconds": 1,
+        },
+        portfolio_state={
+            "operator_sizing_policy": {
+                "mode": "operator_minimum_order",
+                "min_size": 5,
+                "min_buy_notional_usd": 1,
+                "share_precision": 3,
+            }
+        },
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].size == 5.612
+    assert result.intents[0].metadata["required_notional_usd"] == 1.01016
+    assert result.intents[0].metadata["sizing_policy"]["effective_min_buy_notional_usd"] == 1.01
+
+
+def test_strategy_plan_evaluator_allows_sub_10c_explicit_micro_grid_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-det-cle",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="det-sub-10c-grid",
+                family="underdog_micro_grid_reprice",
+                side="underdog",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-det",
+                    "token_id": "token-det",
+                    "side": "buy",
+                    "price": 0.05,
+                    "size": 20,
+                    "price_band": [0.005, 0.10],
+                    "allow_ultra_low_underdog": True,
+                    "allow_sub_10c_underdog_grid": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 16,
+                },
+                exit_rules={
+                    "target_required": True,
+                    "target_policy": "micro_grid_scaled",
+                    "min_target_cents": 1,
+                    "target_return_fraction": 0.10,
+                },
+                stop_rules={"max_adverse_cents": 2},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.05, "score_gap": -12, "scoreboard_age_seconds": 1},
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].metadata["exit_rules"]["target_price"] == 0.06
 
 
 def test_strategy_plan_evaluator_allows_explicit_low_underdog_with_protection_pytest() -> None:
@@ -444,3 +674,77 @@ def test_strategy_plan_evaluator_allows_explicit_post_shock_revision_pytest() ->
 
     assert result.intent_count == 1
     assert result.blocked_count == 0
+
+
+def test_strategy_plan_evaluator_blocks_outside_period_window_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="nba-okc-lal-2026-05-11",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="lal-q1-q2-momentum-scalp-v1",
+                family="underdog_momentum_scalp",
+                side="Lakers",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-lal",
+                    "token_id": "token-lal",
+                    "side": "buy",
+                    "price": 0.2,
+                    "size": 5,
+                    "price_band": [0.17, 0.25],
+                    "max_period": 2,
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.2, "period": 3},
+        portfolio_state={"open_positions": 0, "open_orders": 0},
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "period_outside_rule"
+    assert result.blockers[0]["period"] == 3
+    assert result.blockers[0]["max_period"] == 2
+
+
+def test_strategy_plan_evaluator_blocks_inside_no_entry_clock_window_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="nba-okc-lal-2026-05-11",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="okc-q4-continuation-v1",
+                family="favorite_continuation_micro_grid",
+                side="Thunder",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "side": "buy",
+                    "price": 0.72,
+                    "size": 5,
+                    "price_band": [0.7, 0.82],
+                    "min_period": 3,
+                    "max_period": 4,
+                    "min_clock_remaining_seconds": 120,
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.72, "period": 4, "game_clock": "PT00M32.80S"},
+        portfolio_state={"open_positions": 0, "open_orders": 0},
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "clock_inside_no_entry_window"
+    assert result.blockers[0]["clock_remaining_seconds"] == 32.8
+    assert result.blockers[0]["min_clock_remaining_seconds"] == 120

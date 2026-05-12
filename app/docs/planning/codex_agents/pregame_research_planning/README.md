@@ -110,6 +110,7 @@ Strategy families to consider:
 - `underdog_liftoff`
 - `halftime_gap_fill`
 - `winner_definition`
+- `price_stability_micro_grid`
 - grid/resistance-band templates
 - manual-intervention adoption templates
 
@@ -132,6 +133,7 @@ For every recommended active strategy, specify:
 - orderbook spread/depth constraint
 - scoreboard/orderbook freshness constraint
 - target, stop, hedge, and flatten rules
+- for micro-grid strategies, use the scaled target convention `entry + max(1c, 10% of entry price)` unless the event-specific orderbook depth/latency research justifies a different rule
 - revision triggers for the internal LLM
 - conditions that force shadow-only or no-trade
 
