@@ -20,6 +20,8 @@ class WnbaDataSufficiencyThresholds:
     min_market_links_for_replay: int = 20
     min_clob_ticks_for_replay: int = 5000
     min_clob_trades_for_microstructure: int = 250
+    min_price_history_points_for_sample_backtest: int = 500
+    min_games_with_price_history_for_sample_backtest: int = 1
     min_ml_feature_rows_for_experiment: int = 5000
     min_distinct_games_for_ml_experiment: int = 40
 

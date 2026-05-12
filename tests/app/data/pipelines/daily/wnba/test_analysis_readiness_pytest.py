@@ -180,3 +180,50 @@ def test_wnba_data_sufficiency_can_mark_shadow_backtest_ready_with_clob_history_
     assert audit["status"] == "ready_for_shadow_backtest"
     assert audit["ml_readiness"]["status"] == "ready_for_experiment"
     assert all(row["status"] == "ready_for_shadow_backtest" for row in audit["lane_readiness"])
+
+
+def test_wnba_data_sufficiency_marks_price_history_backtest_ready_without_live_ticks_pytest() -> None:
+    counts = WnbaDataCounts(
+        season="2026",
+        schedule_games=80,
+        games_with_boxscore=80,
+        games_with_play_by_play=80,
+        market_link_count=40,
+        clob_tick_count=0,
+        clob_trade_count=0,
+        polymarket_price_history_points=6000,
+        games_with_polymarket_price_history=20,
+        labeled_ml_feature_rows=6000,
+        distinct_ml_games=50,
+    )
+
+    audit = evaluate_wnba_data_sufficiency(
+        counts,
+        thresholds=WnbaDataSufficiencyThresholds(min_schedule_games_for_lane_design=40),
+    )
+
+    assert audit["status"] == "price_history_backtest_ready"
+    assert audit["ml_readiness"]["status"] == "ready_for_experiment"
+    assert any(row["status"] == "price_history_backtest_ready" for row in audit["lane_readiness"])
+    assert "first-level historical price-path backtests" in audit["verdict"]
+
+
+def test_wnba_data_sufficiency_marks_sample_price_history_backtest_ready_pytest() -> None:
+    counts = WnbaDataCounts(
+        season="2026",
+        schedule_games=80,
+        games_with_boxscore=80,
+        games_with_play_by_play=80,
+        market_link_count=1,
+        polymarket_price_history_points=1200,
+        games_with_polymarket_price_history=1,
+    )
+
+    audit = evaluate_wnba_data_sufficiency(
+        counts,
+        thresholds=WnbaDataSufficiencyThresholds(min_schedule_games_for_lane_design=40),
+    )
+
+    assert audit["status"] == "sample_price_history_backtest_ready"
+    assert any(row["status"] == "sample_price_history_backtest_ready" for row in audit["lane_readiness"])
+    assert "at least one linked finished Polymarket moneyline event" in audit["verdict"]

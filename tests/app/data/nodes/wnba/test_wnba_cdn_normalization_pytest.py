@@ -16,6 +16,10 @@ from app.data.nodes.wnba.live.play_by_play import (
     normalize_play_by_play_payload,
 )
 from app.data.nodes.wnba.polymarket.moneyline import match_wnba_moneyline_markets_to_schedule
+from app.data.nodes.wnba.polymarket.history import (
+    normalize_token_price_history,
+    normalize_wnba_moneyline_events,
+)
 from app.data.nodes.wnba.schedule.season_schedule import normalize_schedule_payload
 
 
@@ -109,6 +113,52 @@ def test_wnba_polymarket_moneyline_matching_builds_passive_watch_plan_pytest() -
     assert target["home_outcome_token_id"] == "token-nyl"
     assert target["away_outcome_token_id"] == "token-ind"
     assert target["watch_plan_json"]["orders_allowed"] is False
+
+
+def test_wnba_polymarket_closed_event_history_normalizes_token_prices_pytest() -> None:
+    event_payload = [
+        {
+            "id": "436143",
+            "slug": "wnba-phx-gsv-2026-05-10",
+            "title": "Phoenix Mercury vs. Golden State Valkyries",
+            "eventDate": "2026-05-10",
+            "startTime": "2026-05-11T00:30:00Z",
+            "closed": True,
+            "ended": True,
+            "score": "79-95",
+            "markets": [
+                {
+                    "id": "2128840",
+                    "conditionId": "0xcondition",
+                    "slug": "wnba-phx-gsv-2026-05-10",
+                    "sportsMarketType": "moneyline",
+                    "gameStartTime": "2026-05-11 00:30:00+00",
+                    "closedTime": "2026-05-11 06:10:23+00",
+                    "outcomes": "[\"Phoenix Mercury\", \"Golden State Valkyries\"]",
+                    "outcomePrices": "[\"0\", \"1\"]",
+                    "clobTokenIds": "[\"token-phx\", \"token-gsv\"]",
+                }
+            ],
+        }
+    ]
+
+    outcome_rows = normalize_wnba_moneyline_events(event_payload)
+    price_rows = normalize_token_price_history(
+        {"history": [{"t": 1778460007, "p": 0.57}, {"t": 1778460604, "p": 0.55}]},
+        token_id="token-phx",
+        game_id="1012600001",
+        team_side="away",
+        outcome="Phoenix Mercury",
+        event_slug="wnba-phx-gsv-2026-05-10",
+        market_id="2128840",
+    )
+
+    assert len(outcome_rows) == 2
+    assert set(outcome_rows["token_id"]) == {"token-phx", "token-gsv"}
+    assert outcome_rows.iloc[0]["sports_market_type"] == "moneyline"
+    assert len(price_rows) == 2
+    assert price_rows.iloc[0]["team_price"] == 0.57
+    assert str(price_rows.iloc[0]["captured_at"].tzinfo) == "UTC"
 
 
 def test_balldontlie_last_season_backfill_reports_exact_missing_config_blockers_pytest() -> None:

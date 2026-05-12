@@ -26,6 +26,8 @@ class WnbaDataCounts:
     market_link_count: int = 0
     clob_tick_count: int = 0
     clob_trade_count: int = 0
+    polymarket_price_history_points: int = 0
+    games_with_polymarket_price_history: int = 0
     state_panel_rows: int = 0
     ml_feature_rows: int = 0
     labeled_ml_feature_rows: int = 0
@@ -46,19 +48,28 @@ def _lane_status(
     requires_trade_microstructure: bool = False,
 ) -> dict[str, Any]:
     blockers: list[str] = []
-    if counts.games_with_play_by_play < thresholds.min_games_with_pbp_for_lane_design:
+    has_price_history_sample = (
+        counts.polymarket_price_history_points >= thresholds.min_price_history_points_for_sample_backtest
+        and counts.games_with_polymarket_price_history >= thresholds.min_games_with_price_history_for_sample_backtest
+    )
+    has_price_history_replay = counts.polymarket_price_history_points >= thresholds.min_clob_ticks_for_replay
+    if counts.games_with_play_by_play < thresholds.min_games_with_pbp_for_lane_design and not has_price_history_sample:
         blockers.append("insufficient_wnba_pbp_games")
-    if counts.games_with_boxscore < thresholds.min_games_with_boxscore_for_lane_design:
+    if counts.games_with_boxscore < thresholds.min_games_with_boxscore_for_lane_design and not has_price_history_sample:
         blockers.append("insufficient_wnba_boxscore_games")
-    if counts.market_link_count < thresholds.min_market_links_for_replay:
+    if counts.market_link_count < thresholds.min_market_links_for_replay and not has_price_history_sample:
         blockers.append("insufficient_wnba_polymarket_market_links")
-    if requires_clob and counts.clob_tick_count < thresholds.min_clob_ticks_for_replay:
+    if requires_clob and counts.clob_tick_count < thresholds.min_clob_ticks_for_replay and not has_price_history_sample:
         blockers.append("insufficient_wnba_clob_tick_history")
     if requires_trade_microstructure and counts.clob_trade_count < thresholds.min_clob_trades_for_microstructure:
         blockers.append("insufficient_wnba_clob_trade_history")
 
-    if not blockers:
+    if not blockers and counts.clob_tick_count >= thresholds.min_clob_ticks_for_replay:
         status = "ready_for_shadow_backtest"
+    elif not blockers and has_price_history_replay:
+        status = "price_history_backtest_ready"
+    elif not blockers and has_price_history_sample:
+        status = "sample_price_history_backtest_ready"
     elif "insufficient_wnba_clob_tick_history" in blockers and counts.games_with_play_by_play > 0:
         status = "proxy_state_panel_only"
     else:
@@ -98,7 +109,7 @@ def evaluate_wnba_data_sufficiency(
         ml_blockers.append("insufficient_labeled_wnba_ml_rows")
     if counts.distinct_ml_games < thresholds.min_distinct_games_for_ml_experiment:
         ml_blockers.append("insufficient_distinct_wnba_ml_games")
-    if counts.clob_tick_count < thresholds.min_clob_ticks_for_replay:
+    if counts.clob_tick_count < thresholds.min_clob_ticks_for_replay and counts.polymarket_price_history_points < thresholds.min_clob_ticks_for_replay:
         ml_blockers.append("missing_wnba_clob_before_after_price_windows")
     ml_readiness = {
         "status": "ready_for_experiment" if not ml_blockers else "blocked",
@@ -118,6 +129,10 @@ def evaluate_wnba_data_sufficiency(
 
     if any(row["status"] == "ready_for_shadow_backtest" for row in lane_readiness):
         status = "ready_for_shadow_backtest"
+    elif any(row["status"] == "price_history_backtest_ready" for row in lane_readiness):
+        status = "price_history_backtest_ready"
+    elif any(row["status"] == "sample_price_history_backtest_ready" for row in lane_readiness):
+        status = "sample_price_history_backtest_ready"
     elif any(row["status"] == "proxy_state_panel_only" for row in lane_readiness):
         status = "proxy_state_panel_only"
     else:
@@ -141,6 +156,16 @@ def evaluate_wnba_data_sufficiency(
 def _verdict_text(*, status: str, counts: WnbaDataCounts, ml_blockers: list[str]) -> str:
     if status == "ready_for_shadow_backtest":
         return "WNBA has enough linked PBP/boxscore/CLOB history for shadow lane backtests."
+    if status == "price_history_backtest_ready":
+        return (
+            "WNBA has enough linked PBP/boxscore and Polymarket token price-history rows for first-level "
+            "historical price-path backtests, but not full orderbook-depth replay."
+        )
+    if status == "sample_price_history_backtest_ready":
+        return (
+            "WNBA has at least one linked finished Polymarket moneyline event with token price history, "
+            "which supports a sample historical price-path backtest but not calibrated season-level conclusions."
+        )
     if status == "proxy_state_panel_only":
         return (
             "WNBA PBP/boxscore can build replay state panels, but calibrated lane and ML backtests "
