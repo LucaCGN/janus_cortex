@@ -32,6 +32,8 @@ Pregame StrategyPlanJSON is not the live LLM brain. Pregame plans provide initia
 
 The first runtime slices are fail-closed and order-safe. `codex_tool/run_live_strategy_tick.py` emits `LLMRuntimeTrigger`/`LLMRuntimeTrace` evidence, persists prompt/routing/response artifacts under `local\shared\artifacts\llm-runtime\YYYY-MM-DD\`, and can dispatch the routed OpenAI model only behind the explicit `--enable-llm-dispatch` flag. Missing credentials, unavailable clients, schema failures, and model call errors record `skipped_unavailable`; no StrategyPlanJSON is auto-replaced and no order endpoint authority is granted to the LLM.
 
+Reviewed LLM adoption is a separate, explicit API step. `POST /v1/events/{event_id}/llm-revision/adopt` accepts a recorded `LLMRevisionResponse` or trace artifact only with `reviewed_by` and `review_reason`, validates the embedded `StrategyPlanJSON`, records an adoption artifact with trigger/model/diff metadata, and writes the current plan only when the request explicitly asks to apply it. This endpoint never calls order endpoints; live execution still flows through StrategyPlan evaluation, direct CLOB checks, operator sizing, and order-manager validation.
+
 Required plan fields:
 
 - `schema_version`
@@ -155,6 +157,7 @@ Implementation status:
 - `GET /v1/events/{event_id}/agent-context`
 - `POST /v1/events/{event_id}/strategy-plan`
 - `GET /v1/events/{event_id}/strategy-plan/current`
+- `POST /v1/events/{event_id}/llm-revision/adopt`
 - `POST /v1/events/{event_id}/strategy-plan/evaluate`
 - `POST /v1/events/{event_id}/strategy-plan/execute`
 - `POST /v1/watchlists/events`

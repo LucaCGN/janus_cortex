@@ -173,6 +173,25 @@ class PregamePlanRequest(OpsCycleRequest):
     strategy_plans: list[StrategyPlan] = Field(default_factory=list)
 
 
+class LLMRevisionAdoptionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_date: str | None = None
+    source: str = "codex"
+    reviewed_by: str = Field(min_length=1)
+    review_reason: str = Field(min_length=1)
+    response: LLMRevisionResponse | None = None
+    trace_artifact_path: str | None = None
+    apply_current: bool = True
+    notes: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_source(self) -> "LLMRevisionAdoptionRequest":
+        if self.response is None and not self.trace_artifact_path:
+            raise ValueError("response or trace_artifact_path is required")
+        return self
+
+
 class WatchlistEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -339,6 +358,7 @@ __all__ = [
     "LLMModelTier",
     "LLMRevisionRequest",
     "LLMRevisionResponse",
+    "LLMRevisionAdoptionRequest",
     "LLMRuntimeStatus",
     "LLMRuntimeTrace",
     "LLMRuntimeTrigger",

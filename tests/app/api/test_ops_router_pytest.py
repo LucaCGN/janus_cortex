@@ -358,6 +358,100 @@ def test_live_monitor_endpoint_exposes_latest_llm_runtime_status_pytest(tmp_path
     assert payload["llm_runtime_status"]["items"][0]["skipped_reason"] == "dispatch_disabled"
 
 
+def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    persist_calls = []
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: persist_calls.append(plan) or {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "create_live_order",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("LLM adoption must not call order endpoints")),
+    )
+    client = TestClient(create_app())
+    current_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    revised_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    revised_plan["active_strategies"][0]["strategy_id"] = "grid-revised"
+    revised_plan["active_strategies"][0]["entry_rules"]["price"] = 0.22
+
+    pregame_response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-12",
+            "event_ids": ["event-123"],
+            "source": "pytest",
+            "strategy_plans": [current_plan],
+        },
+    )
+    adoption_response = client.post(
+        "/v1/events/event-123/llm-revision/adopt",
+        json={
+            "session_date": "2026-05-12",
+            "source": "pytest",
+            "reviewed_by": "pytest-reviewer",
+            "review_reason": "mocked valid LLM revision",
+            "apply_current": True,
+            "response": {
+                "request_id": "llm-request-1",
+                "status": "response_recorded",
+                "selected_model": "gpt-5.5",
+                "revised_strategy_plan": revised_plan,
+                "reconciliation_actions": [{"action": "revise_plan"}],
+                "blocked_actions": [],
+                "confidence": 0.82,
+                "skipped_reason": None,
+                "trace_metadata": {"usage": {"input_tokens": 10, "output_tokens": 20}},
+            },
+        },
+    )
+    read_response = client.get("/v1/events/event-123/strategy-plan/current?session_date=2026-05-12")
+
+    assert pregame_response.status_code == 202
+    assert adoption_response.status_code == 202
+    payload = adoption_response.json()
+    assert payload["status"] == "adopted_current"
+    assert payload["order_endpoint_call_allowed"] is False
+    assert payload["plan_diff"]["added_strategy_ids"] == ["grid-revised"]
+    assert payload["plan_diff"]["removed_strategy_ids"] == ["grid-1"]
+    assert payload["strategy_plan_record"]["status"] == "stored"
+    assert Path(payload["adoption_artifact"]["path"]).exists()
+    assert read_response.status_code == 200
+    current = read_response.json()
+    assert current["active_strategies"][0]["strategy_id"] == "grid-revised"
+    adoption = current["explainability"]["llm_revision_adoption"]
+    assert adoption["reviewed_by"] == "pytest-reviewer"
+    assert adoption["order_endpoint_call_allowed"] is False
+    assert len(persist_calls) == 2
+
+
+def test_llm_revision_adoption_skipped_response_fails_closed_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/events/event-123/llm-revision/adopt",
+        json={
+            "session_date": "2026-05-12",
+            "source": "pytest",
+            "reviewed_by": "pytest-reviewer",
+            "review_reason": "should fail",
+            "response": {
+                "request_id": "llm-request-1",
+                "status": "skipped_unavailable",
+                "selected_model": "gpt-5.5",
+                "revised_strategy_plan": None,
+                "reconciliation_actions": [],
+                "blocked_actions": [],
+                "skipped_reason": "dispatch_disabled",
+            },
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["details"]["reason"] == "llm_revision_not_adoptable"
+
+
 def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -15,6 +17,8 @@ from app.api.routers.portfolio import (
     build_portfolio_pnl_attribution_report,
 )
 from app.modules.agentic.contracts import (
+    LLMRevisionAdoptionRequest,
+    LLMRevisionResponse,
     MarketOrderbookTickRequest,
     MarketTradeObservationRequest,
     MarketWatchSessionRequest,
@@ -207,6 +211,76 @@ def get_current_event_strategy_plan(event_id: str, session_date: str | None = No
     if not current_plan:
         raise HTTPException(status_code=404, detail="no current strategy plan for event_id")
     return current_plan
+
+
+@router.post("/events/{event_id}/llm-revision/adopt", status_code=status.HTTP_202_ACCEPTED)
+def adopt_event_llm_revision(event_id: str, payload: LLMRevisionAdoptionRequest) -> dict[str, Any]:
+    response, trace_metadata = _resolve_llm_revision_response(event_id, payload)
+    revised_plan_payload = response.revised_strategy_plan
+    if response.status in {"detected_only", "skipped_unavailable"} or response.skipped_reason:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "reason": "llm_revision_not_adoptable",
+                "response_status": response.status,
+                "skipped_reason": response.skipped_reason,
+            },
+        )
+    if not isinstance(revised_plan_payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"reason": "revised_strategy_plan_required"},
+        )
+
+    current_plan = load_current_strategy_plan(event_id, day=payload.session_date)
+    try:
+        revised_plan = StrategyPlan.model_validate(
+            _with_llm_adoption_metadata(
+                revised_plan_payload,
+                event_id=event_id,
+                payload=payload,
+                response=response,
+                trace_metadata=trace_metadata,
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "revised_strategy_plan_invalid", "error": str(exc)},
+        ) from exc
+    if revised_plan.event_id != event_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "event_id_mismatch", "path_event_id": event_id, "plan_event_id": revised_plan.event_id},
+        )
+
+    plan_diff = _strategy_plan_diff(current_plan, revised_plan.model_dump(mode="json"))
+    adoption_record = _write_llm_revision_adoption_artifact(
+        event_id=event_id,
+        payload=payload,
+        response=response,
+        trace_metadata=trace_metadata,
+        plan_diff=plan_diff,
+        revised_plan=revised_plan,
+    )
+    strategy_plan_record = None
+    if payload.apply_current:
+        strategy_plan_record = write_strategy_plan(revised_plan, day=payload.session_date)
+
+    return {
+        "status": "adopted_current" if payload.apply_current else "candidate_recorded",
+        "event_id": event_id,
+        "session_date": payload.session_date,
+        "reviewed_by": payload.reviewed_by,
+        "review_reason": payload.review_reason,
+        "request_id": response.request_id,
+        "selected_model": response.selected_model,
+        "apply_current": payload.apply_current,
+        "order_endpoint_call_allowed": False,
+        "plan_diff": plan_diff,
+        "adoption_artifact": adoption_record,
+        "strategy_plan_record": strategy_plan_record,
+    }
 
 
 @router.post("/events/{event_id}/strategy-plan/evaluate")
@@ -594,6 +668,169 @@ def _direct_trade_token_ids_for_events(event_ids: list[str], *, day: str | None)
                 token_ids.append(token_id)
                 seen.add(token_id)
     return token_ids
+
+
+def _resolve_llm_revision_response(
+    event_id: str,
+    payload: LLMRevisionAdoptionRequest,
+) -> tuple[LLMRevisionResponse, dict[str, Any]]:
+    if payload.response is not None:
+        return payload.response, {"source": "request_body"}
+    path = Path(str(payload.trace_artifact_path or "")).expanduser().resolve()
+    try:
+        artifact = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"reason": "trace_artifact_not_readable", "path": str(path), "error": str(exc)},
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "trace_artifact_invalid_json", "path": str(path), "error": str(exc)},
+        ) from exc
+    if not isinstance(artifact, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "trace_artifact_invalid", "path": str(path)},
+        )
+
+    artifact_event_id = str(artifact.get("event_id") or "").strip()
+    if artifact_event_id and artifact_event_id != event_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "trace_event_id_mismatch", "path_event_id": event_id, "trace_event_id": artifact_event_id},
+        )
+    response_payload = artifact.get("response")
+    if not isinstance(response_payload, dict):
+        trace_payload = artifact.get("trace") if isinstance(artifact.get("trace"), dict) else {}
+        response_payload = trace_payload.get("revision_response") if isinstance(trace_payload, dict) else None
+    if not isinstance(response_payload, dict):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"reason": "trace_response_missing", "path": str(path)},
+        )
+    try:
+        response = LLMRevisionResponse.model_validate(response_payload)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"reason": "trace_response_invalid", "path": str(path), "error": str(exc)},
+        ) from exc
+    return response, {
+        "source": "trace_artifact",
+        "path": str(path),
+        "trace_id": artifact.get("trace_id"),
+        "trigger_types": artifact.get("trigger_types") or [],
+        "selected_model": artifact.get("selected_model"),
+        "persisted_at_utc": artifact.get("persisted_at_utc"),
+    }
+
+
+def _with_llm_adoption_metadata(
+    plan_payload: dict[str, Any],
+    *,
+    event_id: str,
+    payload: LLMRevisionAdoptionRequest,
+    response: LLMRevisionResponse,
+    trace_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    plan = dict(plan_payload)
+    explainability = dict(plan.get("explainability") or {})
+    explainability["llm_revision_adoption"] = {
+        "schema_version": "llm_revision_adoption_v1",
+        "event_id": event_id,
+        "adopted_at_utc": datetime.now(timezone.utc).isoformat(),
+        "source": payload.source,
+        "reviewed_by": payload.reviewed_by,
+        "review_reason": payload.review_reason,
+        "request_id": response.request_id,
+        "selected_model": response.selected_model,
+        "confidence": response.confidence,
+        "response_status": response.status,
+        "trace_metadata": trace_metadata,
+        "order_endpoint_call_allowed": False,
+        "strategy_plan_auto_replace_attempted": False,
+        "notes": payload.notes,
+    }
+    plan["explainability"] = explainability
+    return plan
+
+
+def _strategy_plan_diff(current_plan: dict[str, Any] | None, revised_plan: dict[str, Any]) -> dict[str, Any]:
+    current = current_plan if isinstance(current_plan, dict) else {}
+    before_strategies = _strategy_map(current)
+    after_strategies = _strategy_map(revised_plan)
+    before_ids = set(before_strategies)
+    after_ids = set(after_strategies)
+    changed_ids = sorted(
+        strategy_id
+        for strategy_id in before_ids.intersection(after_ids)
+        if _canonical_json(before_strategies[strategy_id]) != _canonical_json(after_strategies[strategy_id])
+    )
+    return {
+        "current_plan_exists": bool(current_plan),
+        "market_id_changed": bool(current.get("market_id") and current.get("market_id") != revised_plan.get("market_id")),
+        "before_strategy_count": len(before_strategies),
+        "after_strategy_count": len(after_strategies),
+        "added_strategy_ids": sorted(after_ids - before_ids),
+        "removed_strategy_ids": sorted(before_ids - after_ids),
+        "changed_strategy_ids": changed_ids,
+        "portfolio_reconciliation_count_before": len(current.get("portfolio_reconciliation") or []),
+        "portfolio_reconciliation_count_after": len(revised_plan.get("portfolio_reconciliation") or []),
+    }
+
+
+def _write_llm_revision_adoption_artifact(
+    *,
+    event_id: str,
+    payload: LLMRevisionAdoptionRequest,
+    response: LLMRevisionResponse,
+    trace_metadata: dict[str, Any],
+    plan_diff: dict[str, Any],
+    revised_plan: StrategyPlan,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    event_dir = strategy_plan_root(payload.session_date) / _safe_name(event_id) / "llm_revision_adoptions"
+    path = event_dir / f"adoption_{now.strftime('%Y%m%dT%H%M%SZ')}_{_safe_name(response.request_id)}.json"
+    record = {
+        "schema_version": "llm_revision_adoption_artifact_v1",
+        "recorded_at_utc": now.isoformat(),
+        "event_id": event_id,
+        "session_date": payload.session_date,
+        "source": payload.source,
+        "reviewed_by": payload.reviewed_by,
+        "review_reason": payload.review_reason,
+        "request_id": response.request_id,
+        "selected_model": response.selected_model,
+        "response_status": response.status,
+        "trace_metadata": trace_metadata,
+        "plan_diff": plan_diff,
+        "apply_current": payload.apply_current,
+        "order_endpoint_call_allowed": False,
+        "revised_strategy_plan": revised_plan.model_dump(mode="json"),
+    }
+    write_json(path, record)
+    return {"status": "stored", "path": str(path), "recorded_at_utc": now.isoformat()}
+
+
+def _strategy_map(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    strategies: dict[str, dict[str, Any]] = {}
+    for item in plan.get("active_strategies") or []:
+        if not isinstance(item, dict):
+            continue
+        strategy_id = str(item.get("strategy_id") or "").strip()
+        if strategy_id:
+            strategies[strategy_id] = item
+    return strategies
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=to_jsonable)
+
+
+def _safe_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value))[:160] or "unknown"
 
 
 def _normalized_unique_values(values: list[str]) -> list[str]:
