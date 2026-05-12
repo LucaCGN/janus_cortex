@@ -323,10 +323,10 @@ def list_events(
         conditions.append("e.canonical_slug LIKE %s")
         params.append(f"{canonical_slug_prefix}%")
     if start_time_from:
-        conditions.append("e.start_time >= %s")
+        conditions.append("COALESCE(nba_link.linked_start_time, e.start_time) >= %s")
         params.append(start_time_from)
     if start_time_to:
-        conditions.append("e.start_time <= %s")
+        conditions.append("COALESCE(nba_link.linked_start_time, e.start_time) <= %s")
         params.append(start_time_to)
 
     where_sql = ""
@@ -346,7 +346,10 @@ def list_events(
                 e.title,
                 e.canonical_slug,
                 e.status,
-                e.start_time,
+                COALESCE(nba_link.linked_start_time, e.start_time) AS start_time,
+                e.start_time AS catalog_start_time,
+                nba_link.linked_start_time AS linked_nba_game_start_time,
+                nba_link.game_id AS linked_nba_game_id,
                 e.end_time,
                 e.resolution_time,
                 e.metadata_json,
@@ -355,8 +358,19 @@ def list_events(
             FROM catalog.events e
             LEFT JOIN catalog.event_types et ON et.event_type_id = e.event_type_id
             LEFT JOIN catalog.information_profiles ip ON ip.information_profile_id = e.information_profile_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    g.game_id,
+                    g.game_start_time AS linked_start_time
+                FROM nba.nba_game_event_links l
+                JOIN nba.nba_games g ON g.game_id = l.game_id
+                WHERE l.event_id = e.event_id
+                    AND g.game_start_time IS NOT NULL
+                ORDER BY l.confidence DESC NULLS LAST, l.linked_at DESC
+                LIMIT 1
+            ) nba_link ON TRUE
             {where_sql}
-            ORDER BY e.start_time DESC NULLS LAST, e.created_at DESC
+            ORDER BY COALESCE(nba_link.linked_start_time, e.start_time) DESC NULLS LAST, e.created_at DESC
             LIMIT %s OFFSET %s;
             """,
             tuple(params),
