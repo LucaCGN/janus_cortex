@@ -662,6 +662,27 @@ def test_direct_trade_watch_observation_ignores_zero_timestamp_latency_pytest() 
     assert not str(observation["trade_time_utc"]).startswith("1970-")
 
 
+def test_direct_trade_watch_observation_omits_historical_latency_over_db_limit_pytest() -> None:
+    observation = live_tick._direct_trade_watch_observation(
+        event_id="nba-okc-lal-2026-05-11",
+        trade={
+            "id": "clob-trade-old",
+            "asset_id": "token-lal",
+            "side": "BUY",
+            "price": 0.19,
+            "size": 5.31,
+            "timestamp": 1,
+            "taker_order_id": "0xbuy",
+        },
+        outcome_lookup={"token-lal": {"market_id": "market-1", "outcome_id": "outcome-lal"}},
+        source="pytest",
+    )
+
+    assert observation is not None
+    assert observation["source_latency_ms"] is None
+    assert str(observation["trade_time_utc"]).startswith("1970-")
+
+
 def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     plan = {

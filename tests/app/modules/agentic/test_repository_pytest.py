@@ -209,6 +209,66 @@ def test_try_persist_market_trades_upserts_deterministic_rows_pytest(monkeypatch
     assert fake_connection.committed is True
 
 
+def test_try_persist_market_trades_omits_numeric_values_outside_db_bounds_pytest(monkeypatch) -> None:
+    class FakeCursor:
+        def __init__(self) -> None:
+            self.rows = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def executemany(self, _query, rows) -> None:
+            self.rows = rows
+
+    class FakeConnection:
+        def __init__(self) -> None:
+            self.cursor_obj = FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def cursor(self, *_, **__):
+            return self.cursor_obj
+
+        def commit(self) -> None:
+            return None
+
+    fake_connection = FakeConnection()
+
+    @contextmanager
+    def fake_managed_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(repository, "managed_connection", fake_managed_connection)
+
+    trade = MarketTradeObservation(
+        event_key="nba-lal-okc-2026-05-09",
+        market_id="market-1",
+        external_trade_id="historical-trade-1",
+        trade_time_utc=datetime(1970, 1, 1, 0, 0, 1, tzinfo=timezone.utc),
+        side="buy",
+        price=0.12,
+        size=1_000_000_000_000_000.0,
+        source_latency_ms=1_800_000_000.0,
+        raw={"source": "direct_clob_history", "size": "1000000000000000"},
+    )
+    result = repository.try_persist_market_trades(MarketTradeObservationRequest(source="pytest", trades=[trade]))
+
+    assert result == {"ok": True, "row_count": 1}
+    row = fake_connection.cursor_obj.rows[0]
+    assert row[9] == 0.12
+    assert row[10] is None
+    assert row[11] is None
+    assert row[12].adapted["source"] == "pytest"
+    assert row[12].adapted["size"] == "1000000000000000"
+
+
 def test_build_replay_source_summary_counts_ticks_trades_and_decisions_pytest() -> None:
     base = datetime(2026, 5, 10, 0, 0, tzinfo=timezone.utc)
     summary = repository._build_replay_source_summary(  # noqa: SLF001

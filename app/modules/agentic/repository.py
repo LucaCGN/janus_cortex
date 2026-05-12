@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import uuid
 from collections import Counter
 from datetime import datetime, timezone
@@ -369,6 +370,9 @@ def try_persist_orderbook_ticks(payload: MarketOrderbookTickRequest) -> dict[str
 
 
 _MARKET_TRADE_NAMESPACE = uuid.UUID("56bbac1f-6d4a-4a79-b11b-549ac4d4d40a")
+_MARKET_TRADE_PRICE_MAX = 1.0
+_MARKET_TRADE_SIZE_MAX = 999_999_999_999.999
+_MARKET_TRADE_SOURCE_LATENCY_MS_MAX = 999_999_999.999
 
 
 def _market_trade_observation_id(trade: MarketTradeObservation) -> str:
@@ -388,6 +392,20 @@ def _market_trade_observation_id(trade: MarketTradeObservation) -> str:
     return str(uuid.uuid5(_MARKET_TRADE_NAMESPACE, identity))
 
 
+def _db_numeric_or_none(value: Any, *, max_abs: float) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric):
+        return None
+    if abs(numeric) > max_abs:
+        return None
+    return numeric
+
+
 def try_persist_market_trades(payload: MarketTradeObservationRequest) -> dict[str, Any]:
     rows = [
         (
@@ -400,9 +418,9 @@ def try_persist_market_trades(payload: MarketTradeObservationRequest) -> dict[st
             trade.trade_time_utc,
             trade.observed_at_utc,
             trade.side,
-            trade.price,
-            trade.size,
-            trade.source_latency_ms,
+            _db_numeric_or_none(trade.price, max_abs=_MARKET_TRADE_PRICE_MAX),
+            _db_numeric_or_none(trade.size, max_abs=_MARKET_TRADE_SIZE_MAX),
+            _db_numeric_or_none(trade.source_latency_ms, max_abs=_MARKET_TRADE_SOURCE_LATENCY_MS_MAX),
             Json(to_jsonable({**trade.raw, "source": payload.source})),
         )
         for trade in payload.trades

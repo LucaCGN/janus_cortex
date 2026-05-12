@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -42,6 +43,7 @@ _DIRECT_TRADE_ORDER_ID_FIELDS = (
 _DIRECT_TRADE_TOKEN_FIELDS = ("asset_id", "asset", "token_id")
 _DIRECT_ORDER_TOKEN_FIELDS = ("asset_id", "asset", "token_id")
 _DIRECT_POSITION_TOKEN_FIELDS = ("asset", "asset_id", "token_id")
+_MARKET_TRADE_SOURCE_LATENCY_MS_MAX = 999_999_999.999
 
 
 def main() -> None:
@@ -1720,6 +1722,7 @@ def _direct_trade_watch_observation(
     observed_at = datetime.now(timezone.utc)
     trade_time = _direct_trade_time_utc(trade)
     order_ids = sorted(_direct_trade_order_ids(trade))
+    source_latency_ms = _direct_trade_source_latency_ms(observed_at=observed_at, trade_time=trade_time)
     return {
         "event_key": event_id,
         "market_id": outcome_ref.get("market_id"),
@@ -1731,7 +1734,7 @@ def _direct_trade_watch_observation(
         "side": str(trade.get("side") or "").strip().lower() or None,
         "price": _float(trade.get("price")),
         "size": _float(trade.get("size")),
-        "source_latency_ms": max(0.0, (observed_at - trade_time).total_seconds() * 1000.0) if trade_time is not None else None,
+        "source_latency_ms": source_latency_ms,
         "raw": {
             "source": source,
             "capture_owner": "run_live_strategy_tick",
@@ -1740,6 +1743,17 @@ def _direct_trade_watch_observation(
             "direct_trade": trade,
         },
     }
+
+
+def _direct_trade_source_latency_ms(*, observed_at: datetime, trade_time: datetime | None) -> float | None:
+    if trade_time is None:
+        return None
+    latency_ms = max(0.0, (observed_at - trade_time).total_seconds() * 1000.0)
+    if not math.isfinite(latency_ms):
+        return None
+    if latency_ms > _MARKET_TRADE_SOURCE_LATENCY_MS_MAX:
+        return None
+    return latency_ms
 
 
 def _safe_slug(value: str) -> str:
