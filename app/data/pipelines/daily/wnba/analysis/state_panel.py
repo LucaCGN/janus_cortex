@@ -115,6 +115,37 @@ def _score_diff_bucket(score_diff: int | None) -> str:
     return "lead_12_plus"
 
 
+def _context_bucket(*, period: int | None, score_diff: int | None, seconds_to_game_end: int | None) -> str:
+    if period is None:
+        return "unknown"
+    if period == 1:
+        return "q1_open"
+    if period == 2:
+        return "first_half"
+    if period == 3:
+        return "post_halftime"
+    if period == 4 and seconds_to_game_end is not None and seconds_to_game_end <= 360:
+        if score_diff is not None and abs(score_diff) <= 5:
+            return "q4_clutch_close"
+        return "q4_late"
+    if period == 4:
+        return "q4_setup"
+    return "overtime"
+
+
+def _opening_band(price: float | None) -> str:
+    if price is None:
+        return "unknown"
+    try:
+        if pd.isna(price):
+            return "unknown"
+    except (TypeError, ValueError):
+        return "unknown"
+    cents = int(round(price * 100))
+    floor = max(0, min(90, (cents // 10) * 10))
+    return f"{floor:02d}-{floor + 10:02d}"
+
+
 def _market_points_for_row(
     market_df: pd.DataFrame | None,
     *,
@@ -178,6 +209,8 @@ def build_wnba_state_panel(
     away_team_id = _safe_int(game.get("away_team_id"))
     home_tri = str(game.get("home_team_tricode") or "HOME")
     away_tri = str(game.get("away_team_tricode") or "AWAY")
+    home_slug = game.get("home_team_slug") or home_tri
+    away_slug = game.get("away_team_slug") or away_tri
 
     work = pbp_df.copy().reset_index(drop=True)
     if "event_index" in work.columns:
@@ -212,6 +245,11 @@ def build_wnba_state_panel(
             recent_against = recent_away if is_home else recent_home
             market = _market_points_for_row(market_df, game_id=game_id, team_side=team_side, event_at=event_at)
             score_diff = score_for - score_against
+            context_bucket = _context_bucket(
+                period=period,
+                score_diff=score_diff,
+                seconds_to_game_end=seconds_to_game_end,
+            )
             rows.append(
                 {
                     "game_id": game_id,
@@ -229,12 +267,18 @@ def build_wnba_state_panel(
                     "seconds_to_game_end": seconds_to_game_end,
                     "team_id": home_team_id if is_home else away_team_id,
                     "team_tricode": home_tri if is_home else away_tri,
+                    "team_slug": home_slug if is_home else away_slug,
                     "opponent_team_id": away_team_id if is_home else home_team_id,
                     "opponent_tricode": away_tri if is_home else home_tri,
+                    "opponent_team_slug": away_slug if is_home else home_slug,
                     "score_for": score_for,
                     "score_against": score_against,
                     "score_diff": score_diff,
                     "score_diff_bucket": _score_diff_bucket(score_diff),
+                    "context_bucket": context_bucket,
+                    "team_led_flag": score_diff > 0,
+                    "team_trailed_flag": score_diff < 0,
+                    "tied_flag": score_diff == 0,
                     "scoring_side": scoring_side,
                     "points_scored": points_for,
                     "delta_for": points_for,
@@ -242,6 +286,9 @@ def build_wnba_state_panel(
                     "recent_team_points_5_events": recent_for,
                     "recent_opponent_points_5_events": recent_against,
                     "recent_net_points_5_events": recent_for - recent_against,
+                    "team_points_last_5_events": recent_for,
+                    "opponent_points_last_5_events": recent_against,
+                    "net_points_last_5_events": recent_for - recent_against,
                     "player_id": _safe_int(row.get("person_id")),
                     "player_name": row.get("player_name"),
                     "action_type": row.get("action_type"),
@@ -253,6 +300,7 @@ def build_wnba_state_panel(
                     "best_bid": market.get("best_bid"),
                     "best_ask": market.get("best_ask"),
                     "spread": market.get("spread"),
+                    "mid_price": market.get("team_price"),
                     "price_mode": market.get("price_mode"),
                     "market_age_seconds": market.get("market_age_seconds"),
                     "token_id": market.get("token_id"),
@@ -262,4 +310,23 @@ def build_wnba_state_panel(
                     "raw_state_json": row,
                 }
             )
-    return pd.DataFrame(rows)
+    state_df = pd.DataFrame(rows)
+    if state_df.empty:
+        return state_df
+    state_df["team_price"] = pd.to_numeric(state_df["team_price"], errors="coerce")
+    state_df["opening_price"] = state_df.groupby(["game_id", "team_side"], sort=False)["team_price"].transform(
+        lambda values: values.dropna().iloc[0] if not values.dropna().empty else pd.NA
+    )
+    state_df["price_delta_from_open"] = state_df["team_price"] - pd.to_numeric(state_df["opening_price"], errors="coerce")
+    state_df["abs_price_delta_from_open"] = state_df["price_delta_from_open"].abs()
+    state_df["opening_band"] = state_df["opening_price"].apply(_opening_band)
+    state_df["market_favorite_flag"] = state_df["team_price"].apply(lambda value: bool(value >= 0.50) if pd.notna(value) else None)
+    state_df["scoreboard_control_mismatch_flag"] = state_df.apply(
+        lambda row: (
+            bool((row["team_price"] >= 0.50 and row["score_diff"] < 0) or (row["team_price"] < 0.50 and row["score_diff"] > 0))
+            if pd.notna(row["team_price"]) and row.get("score_diff") is not None
+            else None
+        ),
+        axis=1,
+    )
+    return state_df

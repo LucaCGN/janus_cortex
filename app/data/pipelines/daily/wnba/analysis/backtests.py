@@ -7,7 +7,12 @@ from typing import Any
 
 import pandas as pd
 
-from app.data.pipelines.daily.wnba.analysis.contracts import WNBA_ANALYSIS_VERSION, WnbaLaneSpec
+from app.data.pipelines.daily.wnba.analysis.contracts import (
+    WNBA_ANALYSIS_VERSION,
+    WnbaLaneSpec,
+    default_shadow_lane_specs,
+)
+from app.data.pipelines.daily.wnba.analysis.deterministic_lanes import evaluate_wnba_lane_signal
 
 
 _NAMESPACE = uuid.UUID("6d2be286-d8f7-4abe-a968-b98822c6a688")
@@ -46,27 +51,7 @@ def _safe_int(value: Any, default: int | None = None) -> int | None:
 
 
 def _entry_allowed(row: pd.Series, lane: WnbaLaneSpec) -> bool:
-    price = _safe_float(row.get("team_price"))
-    if price is None:
-        return False
-    if lane.entry_price_min is not None and price < lane.entry_price_min:
-        return False
-    if lane.entry_price_max is not None and price > lane.entry_price_max:
-        return False
-    score_diff = _safe_int(row.get("score_diff"))
-    if lane.min_score_diff is not None and (score_diff is None or score_diff < lane.min_score_diff):
-        return False
-    if lane.max_score_diff is not None and (score_diff is None or score_diff > lane.max_score_diff):
-        return False
-    period = _safe_int(row.get("period"))
-    if lane.min_period is not None and (period is None or period < lane.min_period):
-        return False
-    if lane.max_period is not None and (period is None or period > lane.max_period):
-        return False
-    spread = _safe_float(row.get("spread"))
-    if lane.max_spread is not None and spread is not None and spread > lane.max_spread:
-        return False
-    return True
+    return evaluate_wnba_lane_signal(row, lane)["signal_status"] == "entry_candidate"
 
 
 def run_shadow_price_path_backtest(
@@ -84,6 +69,7 @@ def run_shadow_price_path_backtest(
             "backtest_run_id": run_id,
             "status": "blocked",
             "lane_id": lane.lane_id,
+            "family": lane.family,
             "analysis_version": analysis_version,
             "sample_states": 0,
             "trade_count": 0,
@@ -96,6 +82,7 @@ def run_shadow_price_path_backtest(
             "backtest_run_id": run_id,
             "status": "blocked",
             "lane_id": lane.lane_id,
+            "family": lane.family,
             "analysis_version": analysis_version,
             "sample_states": int(len(state_panel_df)),
             "trade_count": 0,
@@ -164,6 +151,7 @@ def run_shadow_price_path_backtest(
             "backtest_run_id": run_id,
             "status": "no_trades",
             "lane_id": lane.lane_id,
+            "family": lane.family,
             "analysis_version": analysis_version,
             "season": season,
             "season_phase": season_phase,
@@ -181,6 +169,7 @@ def run_shadow_price_path_backtest(
         "backtest_run_id": run_id,
         "status": "shadow_complete",
         "lane_id": lane.lane_id,
+        "family": lane.family,
         "analysis_version": analysis_version,
         "season": season,
         "season_phase": season_phase,
@@ -194,4 +183,61 @@ def run_shadow_price_path_backtest(
             "avg_return": float(sum(returns) / len(returns)),
             "win_rate": float(sum(1 for flag in wins if flag) / len(wins)),
         },
+    }
+
+
+def run_shadow_backtests_for_lanes(
+    state_panel_df: pd.DataFrame,
+    *,
+    lanes: tuple[WnbaLaneSpec, ...] | None = None,
+    season: str | None = None,
+    season_phase: str | None = None,
+    analysis_version: str = WNBA_ANALYSIS_VERSION,
+) -> dict[str, Any]:
+    """Run every WNBA shadow lane over a state panel and summarize structural/calibration blockers."""
+    lane_specs = lanes or default_shadow_lane_specs()
+    results = {
+        lane.family: run_shadow_price_path_backtest(
+            state_panel_df,
+            lane=lane,
+            season=season,
+            season_phase=season_phase,
+            analysis_version=analysis_version,
+        )
+        for lane in lane_specs
+    }
+    blocked_families = [
+        family
+        for family, result in results.items()
+        if result.get("status") == "blocked"
+    ]
+    complete_families = [
+        family
+        for family, result in results.items()
+        if result.get("status") == "shadow_complete"
+    ]
+    no_trade_families = [
+        family
+        for family, result in results.items()
+        if result.get("status") == "no_trades"
+    ]
+    shared_blockers = sorted(
+        {
+            blocker
+            for result in results.values()
+            for blocker in (result.get("blockers") or [])
+        }
+    )
+    status = "shadow_complete" if complete_families else "blocked" if blocked_families else "no_trades"
+    return {
+        "status": status,
+        "analysis_version": analysis_version,
+        "season": season,
+        "season_phase": season_phase,
+        "lane_count": int(len(lane_specs)),
+        "complete_families": complete_families,
+        "blocked_families": blocked_families,
+        "no_trade_families": no_trade_families,
+        "blockers": shared_blockers,
+        "families": results,
     }

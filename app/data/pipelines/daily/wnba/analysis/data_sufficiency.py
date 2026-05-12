@@ -5,7 +5,10 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from app.data.pipelines.daily.wnba.analysis.contracts import WnbaDataSufficiencyThresholds
+from app.data.pipelines.daily.wnba.analysis.contracts import (
+    WnbaDataSufficiencyThresholds,
+    default_shadow_lane_specs,
+)
 
 
 _NAMESPACE = uuid.UUID("542d0953-9233-45d7-bac5-c3ddafcd3d21")
@@ -80,42 +83,14 @@ def evaluate_wnba_data_sufficiency(
     audited_at = audited_at or datetime.now(timezone.utc)
     lane_readiness = [
         _lane_status(
-            lane_id="wnba_underdog_range_scalp_shadow_v0",
-            family="underdog_range_scalp",
+            lane_id=lane.lane_id,
+            family=lane.family,
             counts=counts,
             thresholds=thresholds,
-        ),
-        _lane_status(
-            lane_id="wnba_favorite_floor_rebound_shadow_v0",
-            family="favorite_floor_rebound",
-            counts=counts,
-            thresholds=thresholds,
-        ),
-        _lane_status(
-            lane_id="wnba_lead_fragility_shadow_v0",
-            family="lead_fragility",
-            counts=counts,
-            thresholds=thresholds,
-        ),
-        _lane_status(
-            lane_id="wnba_q4_clutch_shadow_v0",
-            family="q4_clutch",
-            counts=counts,
-            thresholds=thresholds,
-        ),
-        _lane_status(
-            lane_id="wnba_micro_grid_reprice_shadow_v0",
-            family="micro_grid_reprice",
-            counts=counts,
-            thresholds=thresholds,
-            requires_trade_microstructure=True,
-        ),
-        _lane_status(
-            lane_id="wnba_winner_definition_shadow_v0",
-            family="winner_definition",
-            counts=counts,
-            thresholds=thresholds,
-        ),
+            requires_clob=lane.requires_clob,
+            requires_trade_microstructure=lane.requires_trade_microstructure,
+        )
+        for lane in default_shadow_lane_specs()
     ]
 
     ml_blockers: list[str] = []
