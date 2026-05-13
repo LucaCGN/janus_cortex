@@ -205,6 +205,9 @@ def test_live_monitor_endpoint_includes_direct_integrity_snapshot_pytest(tmp_pat
     assert payload["integrity"]["account_id"] == "account-123"
     assert payload["integrity"]["direct_trade_token_ids"] == []
     assert payload["integrity"]["ready_for_live_minimum_orders"] is True
+    assert payload["live_monitor_readiness"]["status"] == "not_required"
+    assert payload["live_monitor_readiness"]["gate"] == "YELLOW"
+    assert payload["live_monitor_readiness"]["ready_for_live_execution"] is False
 
 
 def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tmp_path, monkeypatch) -> None:
@@ -276,6 +279,10 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     assert payload["live_strategy_worker_status"]["status"] == "blocked"
     assert payload["live_strategy_worker_status"]["blocker_reason"] == "live_strategy_worker_not_running"
     assert payload["live_strategy_worker_status"]["expected_event_ids"] == ["event-123"]
+    assert payload["live_monitor_readiness"]["status"] == "blocked"
+    assert payload["live_monitor_readiness"]["gate"] == "RED"
+    assert payload["live_monitor_readiness"]["blocker_reasons"] == ["live_strategy_worker_not_running"]
+    assert payload["live_monitor_readiness"]["ready_for_live_execution"] is False
     current_plan = payload["strategy_plan_gate"]["current_plans"][0]
     assert current_plan["sleeve_count"] == 2
     assert [
@@ -322,6 +329,9 @@ def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_pat
     assert payload["live_strategy_worker_status"]["status"] == "not_required"
     assert payload["live_strategy_worker_status"]["worker_required"] is False
     assert payload["live_strategy_worker_status"]["health_only_not_executor"] is True
+    assert payload["live_monitor_readiness"]["status"] == "blocked"
+    assert payload["live_monitor_readiness"]["gate"] == "RED"
+    assert payload["live_monitor_readiness"]["blocker_reasons"] == ["missing_current_strategy_plan"]
 
 
 def test_live_strategy_worker_control_endpoints_delegate_to_service_worker_pytest(tmp_path, monkeypatch) -> None:

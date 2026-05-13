@@ -149,6 +149,11 @@ def run_ops_live_monitor(
         event_ids=payload.event_ids,
         strategy_plan_gate=strategy_plan_gate,
     )
+    live_monitor_readiness = _build_live_monitor_readiness(
+        integrity=integrity,
+        strategy_plan_gate=strategy_plan_gate,
+        live_strategy_worker_status=live_strategy_worker_status,
+    )
     recorded = record_ops_stage(
         "live-monitor",
         {
@@ -158,6 +163,7 @@ def run_ops_live_monitor(
             "strategy_plan_gate": strategy_plan_gate,
             "llm_runtime_status": llm_runtime_status,
             "live_strategy_worker_status": live_strategy_worker_status,
+            "live_monitor_readiness": live_monitor_readiness,
         },
         day=payload.session_date,
     )
@@ -168,6 +174,7 @@ def run_ops_live_monitor(
         "strategy_plan_gate": strategy_plan_gate,
         "llm_runtime_status": llm_runtime_status,
         "live_strategy_worker_status": live_strategy_worker_status,
+        "live_monitor_readiness": live_monitor_readiness,
     }
 
 
@@ -537,6 +544,70 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
         "current_plans": plans,
         "ready_for_strategy_evaluation": bool(unique_event_ids) and not missing_event_ids,
         "blocker_reason": "missing_current_strategy_plan" if missing_event_ids else None,
+    }
+
+
+def _build_live_monitor_readiness(
+    *,
+    integrity: dict[str, Any],
+    strategy_plan_gate: dict[str, Any],
+    live_strategy_worker_status: dict[str, Any],
+) -> dict[str, Any]:
+    blockers: list[dict[str, Any]] = []
+    strategy_status = str(strategy_plan_gate.get("status") or "")
+    worker_required = bool(live_strategy_worker_status.get("worker_required"))
+    worker_ready = bool(live_strategy_worker_status.get("ready_for_live_execution"))
+    strategy_ready = bool(strategy_plan_gate.get("ready_for_strategy_evaluation"))
+
+    if strategy_status == "blocked":
+        blockers.append(
+            {
+                "reason": strategy_plan_gate.get("blocker_reason") or "strategy_plan_gate_blocked",
+                "missing_event_ids": strategy_plan_gate.get("missing_event_ids") or [],
+            }
+        )
+    if not bool(integrity.get("ready_for_live_minimum_orders")):
+        blockers.append(
+            {
+                "reason": "integrity_not_ready_for_live_minimum_orders",
+                "integrity_blockers": integrity.get("blockers") or [],
+            }
+        )
+    if worker_required and not worker_ready:
+        blockers.append(
+            {
+                "reason": live_strategy_worker_status.get("blocker_reason") or "live_strategy_worker_not_ready",
+                "expected_event_ids": live_strategy_worker_status.get("expected_event_ids") or [],
+                "heartbeat_age_seconds": live_strategy_worker_status.get("heartbeat_age_seconds"),
+                "heartbeat_max_age_seconds": live_strategy_worker_status.get("heartbeat_max_age_seconds"),
+            }
+        )
+
+    live_scope_required = strategy_ready or worker_required
+    if blockers:
+        status_text = "blocked"
+        gate = "RED"
+        ready_for_live_execution = False
+    elif not live_scope_required:
+        status_text = "not_required"
+        gate = "YELLOW"
+        ready_for_live_execution = False
+    else:
+        status_text = "ready"
+        gate = "GREEN"
+        ready_for_live_execution = True
+
+    return {
+        "schema_version": "live_monitor_readiness_v1",
+        "status": status_text,
+        "gate": gate,
+        "ready_for_live_execution": ready_for_live_execution,
+        "health_only_not_executor": True,
+        "blockers": blockers,
+        "blocker_reasons": [str(blocker.get("reason")) for blocker in blockers if blocker.get("reason")],
+        "strategy_plan_gate_status": strategy_status,
+        "worker_required": worker_required,
+        "worker_status": live_strategy_worker_status.get("status"),
     }
 
 
