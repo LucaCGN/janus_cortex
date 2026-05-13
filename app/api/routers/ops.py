@@ -149,10 +149,17 @@ def run_ops_live_monitor(
         event_ids=payload.event_ids,
         strategy_plan_gate=strategy_plan_gate,
     )
+    live_execution_evidence = _build_live_execution_evidence(
+        connection,
+        event_ids=live_strategy_worker_status.get("expected_event_ids") or [],
+        worker_required=bool(live_strategy_worker_status.get("worker_required")),
+        worker_ready=bool(live_strategy_worker_status.get("ready_for_live_execution")),
+    )
     live_monitor_readiness = _build_live_monitor_readiness(
         integrity=integrity,
         strategy_plan_gate=strategy_plan_gate,
         live_strategy_worker_status=live_strategy_worker_status,
+        live_execution_evidence=live_execution_evidence,
     )
     recorded = record_ops_stage(
         "live-monitor",
@@ -163,6 +170,7 @@ def run_ops_live_monitor(
             "strategy_plan_gate": strategy_plan_gate,
             "llm_runtime_status": llm_runtime_status,
             "live_strategy_worker_status": live_strategy_worker_status,
+            "live_execution_evidence": live_execution_evidence,
             "live_monitor_readiness": live_monitor_readiness,
         },
         day=payload.session_date,
@@ -174,6 +182,7 @@ def run_ops_live_monitor(
         "strategy_plan_gate": strategy_plan_gate,
         "llm_runtime_status": llm_runtime_status,
         "live_strategy_worker_status": live_strategy_worker_status,
+        "live_execution_evidence": live_execution_evidence,
         "live_monitor_readiness": live_monitor_readiness,
     }
 
@@ -559,6 +568,7 @@ def _build_live_monitor_readiness(
     integrity: dict[str, Any],
     strategy_plan_gate: dict[str, Any],
     live_strategy_worker_status: dict[str, Any],
+    live_execution_evidence: dict[str, Any],
 ) -> dict[str, Any]:
     blockers: list[dict[str, Any]] = []
     strategy_status = str(strategy_plan_gate.get("status") or "")
@@ -589,6 +599,15 @@ def _build_live_monitor_readiness(
                 "heartbeat_max_age_seconds": live_strategy_worker_status.get("heartbeat_max_age_seconds"),
             }
         )
+    if live_execution_evidence.get("gate") == "RED":
+        for reason in live_execution_evidence.get("blocker_reasons") or ["live_execution_evidence_blocked"]:
+            blockers.append(
+                {
+                    "reason": reason,
+                    "live_execution_evidence_status": live_execution_evidence.get("status"),
+                    "event_ids": live_execution_evidence.get("event_ids") or [],
+                }
+            )
 
     live_scope_required = strategy_ready or worker_required
     if blockers:
@@ -615,6 +634,202 @@ def _build_live_monitor_readiness(
         "strategy_plan_gate_status": strategy_status,
         "worker_required": worker_required,
         "worker_status": live_strategy_worker_status.get("status"),
+        "live_execution_evidence_status": live_execution_evidence.get("status"),
+    }
+
+
+def _build_live_execution_evidence(
+    connection: PsycopgConnection,
+    *,
+    event_ids: list[str],
+    worker_required: bool,
+    worker_ready: bool,
+    now_utc: datetime | None = None,
+    max_age_seconds: float = 120.0,
+) -> dict[str, Any]:
+    unique_event_ids = _normalized_unique_values(event_ids)
+    if not unique_event_ids:
+        return {
+            "schema_version": "live_execution_evidence_v1",
+            "status": "not_required",
+            "gate": "YELLOW",
+            "reason": "no_expected_event_ids",
+            "event_ids": [],
+            "items": [],
+            "blocker_reasons": [],
+        }
+    if not worker_required:
+        return {
+            "schema_version": "live_execution_evidence_v1",
+            "status": "not_required",
+            "gate": "YELLOW",
+            "reason": "live_strategy_worker_not_required",
+            "event_ids": unique_event_ids,
+            "items": [],
+            "blocker_reasons": [],
+        }
+    if not worker_ready:
+        return {
+            "schema_version": "live_execution_evidence_v1",
+            "status": "waiting_for_worker",
+            "gate": "YELLOW",
+            "reason": "live_strategy_worker_not_ready",
+            "event_ids": unique_event_ids,
+            "items": [],
+            "blocker_reasons": [],
+        }
+
+    items: list[dict[str, Any]] = []
+    now = now_utc or datetime.now(timezone.utc)
+    for event_id in unique_event_ids:
+        try:
+            counts = _fetch_live_execution_evidence_counts(connection, event_id=event_id)
+            item = _classify_live_execution_evidence_item(
+                event_id=event_id,
+                counts=counts,
+                now_utc=now,
+                max_age_seconds=max_age_seconds,
+            )
+        except Exception as exc:  # noqa: BLE001
+            item = {
+                "event_id": event_id,
+                "status": "blocked",
+                "blockers": [{"reason": "live_execution_evidence_query_failed", "error": _exception_detail(exc)}],
+                "counts": {},
+            }
+        items.append(item)
+
+    blocker_reasons = sorted(
+        {
+            str(blocker.get("reason"))
+            for item in items
+            for blocker in item.get("blockers") or []
+            if blocker.get("reason")
+        }
+    )
+    if blocker_reasons:
+        status_text = "blocked"
+        gate = "RED"
+    else:
+        status_text = "ready"
+        gate = "GREEN"
+    return {
+        "schema_version": "live_execution_evidence_v1",
+        "status": status_text,
+        "gate": gate,
+        "event_ids": unique_event_ids,
+        "event_count": len(items),
+        "items": items,
+        "blocker_reasons": blocker_reasons,
+        "max_age_seconds": max_age_seconds,
+    }
+
+
+def _fetch_live_execution_evidence_counts(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+) -> dict[str, Any]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM agentic.market_watch_sessions WHERE event_key = %s) AS watch_session_count,
+                (
+                    SELECT max(started_at)
+                    FROM agentic.market_watch_sessions
+                    WHERE event_key = %s
+                ) AS latest_watch_session_started_at,
+                (
+                    SELECT max(ended_at)
+                    FROM agentic.market_watch_sessions
+                    WHERE event_key = %s
+                ) AS latest_watch_session_ended_at,
+                (SELECT count(*) FROM agentic.market_orderbook_ticks WHERE event_key = %s) AS orderbook_tick_count,
+                (
+                    SELECT max(captured_at)
+                    FROM agentic.market_orderbook_ticks
+                    WHERE event_key = %s
+                ) AS latest_orderbook_tick_at,
+                (SELECT count(*) FROM agentic.strategy_decisions WHERE event_key = %s) AS strategy_decision_count,
+                (
+                    SELECT max(decided_at)
+                    FROM agentic.strategy_decisions
+                    WHERE event_key = %s
+                ) AS latest_strategy_decision_at;
+            """,
+            (
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+            ),
+        )
+        row = cursor.fetchone()
+        columns = [description[0] for description in cursor.description]
+    payload = dict(zip(columns, row or []))
+    return {key: to_jsonable(value) for key, value in payload.items()}
+
+
+def _classify_live_execution_evidence_item(
+    *,
+    event_id: str,
+    counts: dict[str, Any],
+    now_utc: datetime,
+    max_age_seconds: float,
+) -> dict[str, Any]:
+    blockers: list[dict[str, Any]] = []
+    watch_session_count = _safe_int(counts.get("watch_session_count"))
+    orderbook_tick_count = _safe_int(counts.get("orderbook_tick_count"))
+    strategy_decision_count = _safe_int(counts.get("strategy_decision_count"))
+    latest_orderbook_tick_at = counts.get("latest_orderbook_tick_at")
+    latest_strategy_decision_at = counts.get("latest_strategy_decision_at")
+    orderbook_tick_age_seconds = _timestamp_age_seconds(latest_orderbook_tick_at, now_utc=now_utc)
+    strategy_decision_age_seconds = _timestamp_age_seconds(latest_strategy_decision_at, now_utc=now_utc)
+
+    if watch_session_count < 1:
+        blockers.append({"reason": "watch_session_missing", "watch_session_count": watch_session_count})
+    if orderbook_tick_age_seconds is None:
+        blockers.append({"reason": "live_orderbook_tick_missing", "orderbook_tick_count": orderbook_tick_count})
+    elif orderbook_tick_age_seconds > max_age_seconds:
+        blockers.append(
+            {
+                "reason": "live_orderbook_tick_stale",
+                "age_seconds": orderbook_tick_age_seconds,
+                "max_age_seconds": max_age_seconds,
+                "latest_orderbook_tick_at": latest_orderbook_tick_at,
+            }
+        )
+    if strategy_decision_age_seconds is None:
+        blockers.append({"reason": "live_strategy_decision_missing", "strategy_decision_count": strategy_decision_count})
+    elif strategy_decision_age_seconds > max_age_seconds:
+        blockers.append(
+            {
+                "reason": "live_strategy_decision_stale",
+                "age_seconds": strategy_decision_age_seconds,
+                "max_age_seconds": max_age_seconds,
+                "latest_strategy_decision_at": latest_strategy_decision_at,
+            }
+        )
+
+    return {
+        "event_id": event_id,
+        "status": "blocked" if blockers else "ready",
+        "blockers": blockers,
+        "counts": {
+            "watch_session_count": watch_session_count,
+            "orderbook_tick_count": orderbook_tick_count,
+            "strategy_decision_count": strategy_decision_count,
+            "latest_watch_session_started_at": counts.get("latest_watch_session_started_at"),
+            "latest_watch_session_ended_at": counts.get("latest_watch_session_ended_at"),
+            "latest_orderbook_tick_at": latest_orderbook_tick_at,
+            "latest_strategy_decision_at": latest_strategy_decision_at,
+            "orderbook_tick_age_seconds": orderbook_tick_age_seconds,
+            "strategy_decision_age_seconds": strategy_decision_age_seconds,
+        },
     }
 
 
@@ -1208,6 +1423,28 @@ def _safe_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _timestamp_age_seconds(value: Any, *, now_utc: datetime) -> float | None:
+    parsed = _parse_datetime(value)
+    if parsed is None:
+        return None
+    return max(0.0, (now_utc - parsed).total_seconds())
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        parsed = value
+    else:
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
 
 
 def _normalized_unique_values(values: list[str]) -> list[str]:

@@ -294,6 +294,93 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     ]
 
 
+def test_live_monitor_readiness_blocks_ready_worker_without_execution_evidence_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "ready_for_live_minimum_orders": True,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "build_live_strategy_worker_readiness",
+        lambda *, session_date, event_ids, strategy_plan_gate: {
+            "schema_version": "live_strategy_worker_monitor_v1",
+            "status": "ready",
+            "blocker_reason": None,
+            "worker_required": True,
+            "ready_for_live_execution": True,
+            "health_only_not_executor": True,
+            "session_date": session_date,
+            "expected_event_ids": ["event-123"],
+            "worker_thread_alive": True,
+            "heartbeat_present": True,
+            "heartbeat_fresh": True,
+            "heartbeat_age_seconds": 5,
+            "heartbeat_max_age_seconds": 90,
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_live_execution_evidence_counts",
+        lambda connection, *, event_id: {
+            "watch_session_count": 1,
+            "latest_watch_session_started_at": "2026-05-13T00:00:00+00:00",
+            "latest_watch_session_ended_at": None,
+            "orderbook_tick_count": 0,
+            "latest_orderbook_tick_at": None,
+            "strategy_decision_count": 0,
+            "latest_strategy_decision_at": None,
+        },
+    )
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        submit_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-13",
+                "event_ids": ["event-123"],
+                "source": "pytest",
+                "strategy_plans": [_strategy_plan_payload(event_id="event-123")],
+            },
+        )
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-13", "event_ids": ["event-123"], "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert submit_response.status_code == 202
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["live_execution_evidence"]["status"] == "blocked"
+    assert payload["live_execution_evidence"]["gate"] == "RED"
+    assert payload["live_execution_evidence"]["blocker_reasons"] == [
+        "live_orderbook_tick_missing",
+        "live_strategy_decision_missing",
+    ]
+    assert payload["live_monitor_readiness"]["status"] == "blocked"
+    assert payload["live_monitor_readiness"]["gate"] == "RED"
+    assert payload["live_monitor_readiness"]["blocker_reasons"] == [
+        "live_orderbook_tick_missing",
+        "live_strategy_decision_missing",
+    ]
+
+
 def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
