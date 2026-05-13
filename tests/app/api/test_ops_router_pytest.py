@@ -294,6 +294,60 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     ]
 
 
+def test_live_monitor_discovers_current_plan_events_when_event_ids_omitted_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "connection_matches": connection is fake_connection,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+            "ready_for_live_minimum_orders": True,
+        },
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    plan_payload = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    plan_payload["generated_at_utc"] = "2026-05-13T09:00:00Z"
+    plan_payload["valid_until_utc"] = "2999-01-01T00:00:00Z"
+
+    try:
+        submit_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-13",
+                "event_ids": ["event-123"],
+                "source": "pytest",
+                "strategy_plans": [plan_payload],
+            },
+        )
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-13", "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert submit_response.status_code == 202
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["requested_event_ids"] == []
+    assert payload["resolved_event_ids"] == ["event-123"]
+    assert payload["integrity"]["direct_trade_token_ids"] == ["token-1"]
+    assert payload["strategy_plan_gate"]["status"] == "ready"
+    assert payload["strategy_plan_gate"]["current_plans"][0]["event_id"] == "event-123"
+    assert payload["live_strategy_worker_status"]["expected_event_ids"] == ["event-123"]
+    assert payload["live_monitor_readiness"]["gate"] == "RED"
+    assert payload["live_monitor_readiness"]["blocker_reasons"] == ["live_strategy_worker_not_running"]
+
+
 def test_live_monitor_readiness_blocks_ready_worker_without_execution_evidence_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

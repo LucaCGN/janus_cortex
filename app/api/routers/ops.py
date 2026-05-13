@@ -133,20 +133,21 @@ def run_ops_live_monitor(
     connection: PsycopgConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
     ops_status = build_ops_status()
-    direct_trade_token_ids = _direct_trade_token_ids_for_events(payload.event_ids, day=payload.session_date)
+    live_monitor_event_ids = _resolve_live_monitor_event_ids(payload.event_ids, day=payload.session_date)
+    direct_trade_token_ids = _direct_trade_token_ids_for_events(live_monitor_event_ids, day=payload.session_date)
     integrity = build_integrity_snapshot(
         connection,
         account_id=payload.account_id,
         direct_trade_token_ids=direct_trade_token_ids,
     )
-    strategy_plan_gate = _build_strategy_plan_gate(payload.event_ids, day=payload.session_date)
+    strategy_plan_gate = _build_strategy_plan_gate(live_monitor_event_ids, day=payload.session_date)
     llm_runtime_status = load_latest_llm_runtime_status(
         session_date=payload.session_date,
-        event_ids=payload.event_ids,
+        event_ids=live_monitor_event_ids,
     )
     live_strategy_worker_status = build_live_strategy_worker_readiness(
         session_date=payload.session_date,
-        event_ids=payload.event_ids,
+        event_ids=live_monitor_event_ids,
         strategy_plan_gate=strategy_plan_gate,
     )
     live_execution_evidence = _build_live_execution_evidence(
@@ -166,6 +167,8 @@ def run_ops_live_monitor(
         {
             **payload.model_dump(mode="json"),
             "ops_status": ops_status,
+            "requested_event_ids": payload.event_ids,
+            "resolved_event_ids": live_monitor_event_ids,
             "integrity": integrity,
             "strategy_plan_gate": strategy_plan_gate,
             "llm_runtime_status": llm_runtime_status,
@@ -178,6 +181,8 @@ def run_ops_live_monitor(
     return {
         **recorded,
         "ops_status": ops_status,
+        "requested_event_ids": payload.event_ids,
+        "resolved_event_ids": live_monitor_event_ids,
         "integrity": integrity,
         "strategy_plan_gate": strategy_plan_gate,
         "llm_runtime_status": llm_runtime_status,
@@ -561,6 +566,31 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
         "ready_for_strategy_evaluation": bool(unique_event_ids) and not missing_event_ids,
         "blocker_reason": "missing_current_strategy_plan" if missing_event_ids else None,
     }
+
+
+def _resolve_live_monitor_event_ids(event_ids: list[str], *, day: str | None) -> list[str]:
+    explicit_event_ids = _normalized_unique_values(event_ids)
+    if explicit_event_ids or not day:
+        return explicit_event_ids
+    root = strategy_plan_root(day)
+    if not root.exists():
+        return []
+    now = datetime.now(timezone.utc)
+    resolved: list[str] = []
+    for current_path in sorted(root.glob("*/current.json")):
+        try:
+            payload = json.loads(current_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        valid_until = _parse_datetime(payload.get("valid_until_utc"))
+        if valid_until is not None and valid_until <= now:
+            continue
+        event_id = str(payload.get("event_id") or current_path.parent.name).strip()
+        if event_id:
+            resolved.append(event_id)
+    return _normalized_unique_values(resolved)
 
 
 def _build_live_monitor_readiness(
