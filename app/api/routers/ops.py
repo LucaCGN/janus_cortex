@@ -207,6 +207,11 @@ def run_ops_postgame_review(
 ) -> dict[str, Any]:
     reviewed_event_ids = _resolve_postgame_review_event_ids(payload.event_ids, day=payload.session_date)
     strategy_plan_gate = _build_strategy_plan_gate(reviewed_event_ids, day=payload.session_date)
+    postgame_live_evidence = _build_postgame_live_evidence(
+        connection,
+        event_ids=reviewed_event_ids,
+        day=payload.session_date,
+    )
     portfolio_pnl_attribution = _build_postgame_portfolio_pnl_attribution(
         connection,
         payload,
@@ -218,6 +223,7 @@ def run_ops_postgame_review(
             **payload.model_dump(mode="json"),
             "reviewed_event_ids": reviewed_event_ids,
             "strategy_plan_gate": strategy_plan_gate,
+            "postgame_live_evidence": postgame_live_evidence,
             "portfolio_pnl_attribution": portfolio_pnl_attribution,
         },
         day=payload.session_date,
@@ -226,6 +232,7 @@ def run_ops_postgame_review(
         **recorded,
         "reviewed_event_ids": reviewed_event_ids,
         "strategy_plan_gate": strategy_plan_gate,
+        "postgame_live_evidence": postgame_live_evidence,
         "portfolio_pnl_attribution": portfolio_pnl_attribution,
     }
 
@@ -766,6 +773,240 @@ def _build_postgame_portfolio_pnl_attribution(
     )
 
 
+def _build_postgame_live_evidence(
+    connection: PsycopgConnection,
+    *,
+    event_ids: list[str],
+    day: str | None,
+) -> dict[str, Any]:
+    if not event_ids:
+        return {
+            "schema_version": "postgame_live_evidence_v1",
+            "status": "not_requested",
+            "gate": "YELLOW",
+            "reason": "no_reviewed_event_ids",
+            "event_count": 0,
+            "items": [],
+        }
+
+    items: list[dict[str, Any]] = []
+    for event_id in event_ids:
+        try:
+            counts = _fetch_postgame_live_evidence_counts(connection, event_id=event_id)
+            worker_summary = _read_live_worker_tick_summary(day=day, event_id=event_id)
+            item = _classify_postgame_live_evidence_item(
+                event_id=event_id,
+                counts=counts,
+                worker_summary=worker_summary,
+            )
+        except Exception as exc:  # noqa: BLE001
+            item = {
+                "event_id": event_id,
+                "status": "unknown",
+                "blockers": [{"reason": "postgame_live_evidence_query_failed", "error": _exception_detail(exc)}],
+                "warnings": [],
+            }
+        items.append(item)
+
+    if any(item.get("status") == "not_actually_live_tested" for item in items):
+        status_text = "not_actually_live_tested"
+        gate = "RED"
+    elif any(item.get("status") == "unknown" for item in items):
+        status_text = "unknown"
+        gate = "YELLOW"
+    else:
+        status_text = "live_evidence_present"
+        gate = "GREEN"
+    return {
+        "schema_version": "postgame_live_evidence_v1",
+        "status": status_text,
+        "gate": gate,
+        "event_count": len(items),
+        "items": items,
+        "blocker_reasons": sorted(
+            {
+                str(blocker.get("reason"))
+                for item in items
+                for blocker in item.get("blockers") or []
+                if blocker.get("reason")
+            }
+        ),
+    }
+
+
+def _fetch_postgame_live_evidence_counts(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+) -> dict[str, Any]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                (SELECT count(*) FROM agentic.market_watch_sessions WHERE event_key = %s) AS watch_session_count,
+                (SELECT count(*) FROM agentic.market_orderbook_ticks WHERE event_key = %s) AS orderbook_tick_count,
+                (SELECT count(*) FROM agentic.market_trades WHERE event_key = %s) AS market_trade_count,
+                (SELECT count(*) FROM agentic.strategy_decisions WHERE event_key = %s) AS strategy_decision_count,
+                (
+                    SELECT count(*)
+                    FROM agentic.strategy_decisions
+                    WHERE event_key = %s
+                      AND decision_type = 'order_intent'
+                ) AS order_intent_count,
+                (
+                    SELECT count(*)
+                    FROM agentic.strategy_decisions
+                    WHERE event_key = %s
+                      AND decision_type = 'executed_order'
+                ) AS executed_order_count,
+                (
+                    SELECT min(decided_at)
+                    FROM agentic.strategy_decisions
+                    WHERE event_key = %s
+                ) AS first_strategy_decision_at,
+                (
+                    SELECT max(decided_at)
+                    FROM agentic.strategy_decisions
+                    WHERE event_key = %s
+                ) AS last_strategy_decision_at,
+                (
+                    SELECT min(captured_at)
+                    FROM agentic.market_orderbook_ticks
+                    WHERE event_key = %s
+                ) AS first_orderbook_tick_at,
+                (
+                    SELECT max(captured_at)
+                    FROM agentic.market_orderbook_ticks
+                    WHERE event_key = %s
+                ) AS last_orderbook_tick_at,
+                (SELECT count(*) FROM agentic.replay_sessions WHERE event_key = %s) AS replay_session_count;
+            """,
+            (
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+                event_id,
+            ),
+        )
+        row = cursor.fetchone()
+        columns = [description[0] for description in cursor.description]
+    payload = dict(zip(columns, row or []))
+    return {key: to_jsonable(value) for key, value in payload.items()}
+
+
+def _classify_postgame_live_evidence_item(
+    *,
+    event_id: str,
+    counts: dict[str, Any],
+    worker_summary: dict[str, Any],
+    min_orderbook_ticks: int = 10,
+    min_strategy_decisions: int = 3,
+) -> dict[str, Any]:
+    blockers: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+    watch_session_count = _safe_int(counts.get("watch_session_count"))
+    orderbook_tick_count = _safe_int(counts.get("orderbook_tick_count"))
+    strategy_decision_count = _safe_int(counts.get("strategy_decision_count"))
+    market_trade_count = _safe_int(counts.get("market_trade_count"))
+    replay_session_count = _safe_int(counts.get("replay_session_count"))
+    worker_tick_count = _safe_int(worker_summary.get("tick_count"))
+
+    if watch_session_count < 1:
+        blockers.append({"reason": "watch_session_missing", "watch_session_count": watch_session_count})
+    if orderbook_tick_count < min_orderbook_ticks:
+        blockers.append(
+            {
+                "reason": "insufficient_orderbook_ticks",
+                "orderbook_tick_count": orderbook_tick_count,
+                "minimum_expected": min_orderbook_ticks,
+            }
+        )
+    if strategy_decision_count < min_strategy_decisions:
+        blockers.append(
+            {
+                "reason": "insufficient_strategy_decisions",
+                "strategy_decision_count": strategy_decision_count,
+                "minimum_expected": min_strategy_decisions,
+            }
+        )
+    if market_trade_count < 1:
+        warnings.append({"reason": "market_trade_stream_missing", "market_trade_count": market_trade_count})
+    if replay_session_count < 1:
+        warnings.append({"reason": "replay_session_missing", "replay_session_count": replay_session_count})
+    if worker_tick_count < 1:
+        warnings.append({"reason": "live_worker_tick_evidence_missing", "worker_tick_count": worker_tick_count})
+
+    return {
+        "event_id": event_id,
+        "status": "not_actually_live_tested" if blockers else "live_evidence_present",
+        "blockers": blockers,
+        "warnings": warnings,
+        "thresholds": {
+            "min_orderbook_ticks": min_orderbook_ticks,
+            "min_strategy_decisions": min_strategy_decisions,
+        },
+        "counts": {
+            "watch_session_count": watch_session_count,
+            "orderbook_tick_count": orderbook_tick_count,
+            "market_trade_count": market_trade_count,
+            "strategy_decision_count": strategy_decision_count,
+            "order_intent_count": _safe_int(counts.get("order_intent_count")),
+            "executed_order_count": _safe_int(counts.get("executed_order_count")),
+            "replay_session_count": replay_session_count,
+            "first_strategy_decision_at": counts.get("first_strategy_decision_at"),
+            "last_strategy_decision_at": counts.get("last_strategy_decision_at"),
+            "first_orderbook_tick_at": counts.get("first_orderbook_tick_at"),
+            "last_orderbook_tick_at": counts.get("last_orderbook_tick_at"),
+        },
+        "live_strategy_worker": worker_summary,
+    }
+
+
+def _read_live_worker_tick_summary(*, day: str | None, event_id: str) -> dict[str, Any]:
+    if not day:
+        return {"status": "not_checked", "reason": "session_date_missing", "tick_count": 0}
+    root = ops_artifact_root(day).parent.parent / "live-strategy-worker" / day
+    tick_count = 0
+    latest_tick_at = None
+    ticks_path = root / "ticks.jsonl"
+    if ticks_path.exists():
+        try:
+            for line in ticks_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    tick = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                tick_event_ids = _normalized_unique_values(tick.get("event_ids") or [])
+                if event_id in tick_event_ids:
+                    tick_count += 1
+                    latest_tick_at = tick.get("finished_at_utc") or tick.get("started_at_utc") or latest_tick_at
+        except OSError:
+            pass
+    heartbeat = None
+    heartbeat_path = root / "heartbeat.json"
+    if heartbeat_path.exists():
+        try:
+            heartbeat = json.loads(heartbeat_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            heartbeat = None
+    heartbeat_event_ids = _normalized_unique_values((heartbeat or {}).get("event_ids") or [])
+    return {
+        "status": "recorded" if tick_count or heartbeat_event_ids else "missing",
+        "tick_count": tick_count,
+        "latest_tick_at_utc": latest_tick_at,
+        "heartbeat_present": heartbeat is not None,
+        "heartbeat_event_match": event_id in heartbeat_event_ids,
+        "heartbeat_event_ids": heartbeat_event_ids,
+    }
+
+
 def _exception_detail(exc: Exception) -> Any:
     if isinstance(exc, HTTPException):
         return exc.detail
@@ -960,6 +1201,13 @@ def _canonical_json(value: Any) -> str:
 
 def _safe_name(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value))[:160] or "unknown"
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _normalized_unique_values(values: list[str]) -> list[str]:

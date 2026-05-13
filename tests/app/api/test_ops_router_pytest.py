@@ -672,6 +672,34 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
             "buckets": [{"actor_label": "janus_strategy", "known_cashflow_usd": Decimal("0.80")}],
         },
     )
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_postgame_live_evidence_counts",
+        lambda connection, *, event_id: {
+            "watch_session_count": 1,
+            "orderbook_tick_count": 12,
+            "market_trade_count": 1,
+            "strategy_decision_count": 4,
+            "order_intent_count": 1,
+            "executed_order_count": 0,
+            "replay_session_count": 1,
+            "first_strategy_decision_at": "2026-05-10T23:00:00+00:00",
+            "last_strategy_decision_at": "2026-05-10T23:30:00+00:00",
+            "first_orderbook_tick_at": "2026-05-10T23:00:00+00:00",
+            "last_orderbook_tick_at": "2026-05-10T23:30:00+00:00",
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_read_live_worker_tick_summary",
+        lambda *, day, event_id: {
+            "status": "recorded",
+            "tick_count": 2,
+            "heartbeat_present": True,
+            "heartbeat_event_match": True,
+            "heartbeat_event_ids": [event_id],
+        },
+    )
 
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = fake_db_connection
@@ -700,6 +728,9 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     payload = response.json()
     assert payload["reviewed_event_ids"] == ["nba-sas-min-2026-05-10"]
     assert payload["strategy_plan_gate"]["status"] == "ready"
+    assert payload["postgame_live_evidence"]["status"] == "live_evidence_present"
+    assert payload["postgame_live_evidence"]["gate"] == "GREEN"
+    assert payload["postgame_live_evidence"]["items"][0]["counts"]["orderbook_tick_count"] == 12
     assert fetch_calls[0]["account_id"] == "56964015-5935-5035-bdab-b056c9277146"
     assert fetch_calls[0]["event_slug"] == "nba-sas-min-2026-05-10"
     attribution = payload["portfolio_pnl_attribution"]
@@ -707,6 +738,110 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     assert attribution["direct_evidence"]["trade_count"] == 1
     assert attribution["items"][0]["pnl_attribution"]["known_cashflow_usd"] == 0.8
     assert "portfolio_pnl_attribution" in Path(payload["path"]).read_text(encoding="utf-8")
+
+
+def test_postgame_review_flags_not_actually_live_tested_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_postgame_live_evidence_counts",
+        lambda connection, *, event_id: {
+            "watch_session_count": 1,
+            "orderbook_tick_count": 4,
+            "market_trade_count": 0,
+            "strategy_decision_count": 2,
+            "order_intent_count": 0,
+            "executed_order_count": 0,
+            "replay_session_count": 0,
+            "first_strategy_decision_at": "2026-05-13T00:55:44+00:00",
+            "last_strategy_decision_at": "2026-05-13T02:58:09+00:00",
+            "first_orderbook_tick_at": "2026-05-13T00:55:43+00:00",
+            "last_orderbook_tick_at": "2026-05-13T02:58:09+00:00",
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_read_live_worker_tick_summary",
+        lambda *, day, event_id: {
+            "status": "missing",
+            "tick_count": 0,
+            "heartbeat_present": False,
+            "heartbeat_event_match": False,
+            "heartbeat_event_ids": [],
+        },
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/ops/postgame-review",
+            json={
+                "session_date": "2026-05-12",
+                "event_ids": ["nba-min-sas-2026-05-12"],
+                "source": "pytest",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    evidence = response.json()["postgame_live_evidence"]
+    assert evidence["status"] == "not_actually_live_tested"
+    assert evidence["gate"] == "RED"
+    assert evidence["blocker_reasons"] == ["insufficient_orderbook_ticks", "insufficient_strategy_decisions"]
+    item = evidence["items"][0]
+    assert item["status"] == "not_actually_live_tested"
+    assert item["warnings"] == [
+        {"reason": "market_trade_stream_missing", "market_trade_count": 0},
+        {"reason": "replay_session_missing", "replay_session_count": 0},
+        {"reason": "live_worker_tick_evidence_missing", "worker_tick_count": 0},
+    ]
+
+
+def test_read_live_worker_tick_summary_uses_live_strategy_worker_artifact_root_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    event_id = "nba-min-sas-2026-05-13"
+    root = local_root / "shared" / "artifacts" / "live-strategy-worker" / "2026-05-13"
+    root.mkdir(parents=True)
+    (root / "ticks.jsonl").write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "event_ids": [event_id],
+                        "started_at_utc": "2026-05-13T00:55:43Z",
+                        "finished_at_utc": "2026-05-13T00:55:44Z",
+                    }
+                ),
+                json.dumps(
+                    {
+                        "event_ids": ["nba-other-2026-05-13"],
+                        "started_at_utc": "2026-05-13T01:55:43Z",
+                        "finished_at_utc": "2026-05-13T01:55:44Z",
+                    }
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (root / "heartbeat.json").write_text(json.dumps({"event_ids": [event_id]}), encoding="utf-8")
+
+    summary = ops_router._read_live_worker_tick_summary(day="2026-05-13", event_id=event_id)
+
+    assert summary["status"] == "recorded"
+    assert summary["tick_count"] == 1
+    assert summary["latest_tick_at_utc"] == "2026-05-13T00:55:44Z"
+    assert summary["heartbeat_present"] is True
+    assert summary["heartbeat_event_match"] is True
+    assert summary["heartbeat_event_ids"] == [event_id]
 
 
 def test_watch_session_tick_and_trade_endpoints_record_batches_pytest(tmp_path, monkeypatch) -> None:
