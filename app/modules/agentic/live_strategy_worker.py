@@ -322,6 +322,93 @@ def get_live_strategy_worker() -> LiveStrategyWorker:
     return _WORKER
 
 
+def build_live_strategy_worker_readiness(
+    *,
+    session_date: str | None,
+    event_ids: list[str] | None,
+    strategy_plan_gate: dict[str, Any] | None = None,
+    now_utc: datetime | None = None,
+) -> dict[str, Any]:
+    day = session_date or _brt_session_date()
+    worker_status = get_live_strategy_worker().status()
+    config = worker_status.get("config") if isinstance(worker_status.get("config"), dict) else {}
+    expected_event_ids = _expected_worker_event_ids(day, event_ids or [], strategy_plan_gate)
+    explicit_event_ids = _normalized_unique_values(event_ids or [])
+    gate_ready = (strategy_plan_gate or {}).get("ready_for_strategy_evaluation")
+    gate_status = (strategy_plan_gate or {}).get("status")
+    worker_required = bool(
+        expected_event_ids
+        and (
+            gate_ready is True
+            or strategy_plan_gate is None
+            or (not explicit_event_ids and gate_status == "not_required")
+        )
+    )
+    heartbeat = _read_heartbeat(day)
+    interval_seconds = _safe_float(config.get("interval_seconds"), 30.0)
+    max_age_seconds = max(90.0, interval_seconds * 3.0)
+    now = now_utc or datetime.now(timezone.utc)
+    heartbeat_at = _heartbeat_timestamp(heartbeat)
+    heartbeat_age_seconds = (now - heartbeat_at).total_seconds() if heartbeat_at is not None else None
+    heartbeat_event_ids = _normalized_unique_values(heartbeat.get("event_ids") if heartbeat else [])
+    missing_heartbeat_event_ids = [event_id for event_id in expected_event_ids if event_id not in heartbeat_event_ids]
+    heartbeat_fresh = heartbeat_age_seconds is not None and heartbeat_age_seconds <= max_age_seconds
+    worker_thread_alive = bool(worker_status.get("worker_thread_alive"))
+
+    if not worker_required:
+        status_text = "not_required"
+        blocker_reason = None
+        ready_for_live_execution = True
+    elif not worker_thread_alive:
+        status_text = "blocked"
+        blocker_reason = "live_strategy_worker_not_running"
+        ready_for_live_execution = False
+    elif heartbeat is None:
+        status_text = "blocked"
+        blocker_reason = "live_strategy_worker_heartbeat_missing"
+        ready_for_live_execution = False
+    elif not heartbeat_fresh:
+        status_text = "blocked"
+        blocker_reason = "live_strategy_worker_heartbeat_stale"
+        ready_for_live_execution = False
+    elif missing_heartbeat_event_ids:
+        status_text = "blocked"
+        blocker_reason = "live_strategy_worker_event_mismatch"
+        ready_for_live_execution = False
+    else:
+        status_text = "ready"
+        blocker_reason = None
+        ready_for_live_execution = True
+
+    return {
+        "schema_version": "live_strategy_worker_monitor_v1",
+        "status": status_text,
+        "blocker_reason": blocker_reason,
+        "worker_required": worker_required,
+        "ready_for_live_execution": ready_for_live_execution,
+        "health_only_not_executor": True,
+        "session_date": day,
+        "expected_event_ids": expected_event_ids,
+        "worker_thread_alive": worker_thread_alive,
+        "tick_count": worker_status.get("tick_count"),
+        "consecutive_failures": worker_status.get("consecutive_failures"),
+        "last_error": worker_status.get("last_error"),
+        "heartbeat_present": heartbeat is not None,
+        "heartbeat_fresh": heartbeat_fresh,
+        "heartbeat_age_seconds": heartbeat_age_seconds,
+        "heartbeat_max_age_seconds": max_age_seconds,
+        "heartbeat_event_ids": heartbeat_event_ids,
+        "missing_heartbeat_event_ids": missing_heartbeat_event_ids,
+        "latest_heartbeat": heartbeat,
+        "worker_status": {
+            "status": worker_status.get("status"),
+            "started_at_utc": worker_status.get("started_at_utc"),
+            "last_result": worker_status.get("last_result"),
+            "config": config,
+        },
+    }
+
+
 def _build_command(
     *,
     config: LiveStrategyWorkerConfig,
@@ -419,6 +506,50 @@ def _read_latest_heartbeat() -> dict[str, Any] | None:
     return read_json(candidates[0])
 
 
+def _read_heartbeat(day: str) -> dict[str, Any] | None:
+    return read_json(resolve_shared_root() / "artifacts" / "live-strategy-worker" / day / "heartbeat.json")
+
+
+def _expected_worker_event_ids(
+    day: str,
+    event_ids: list[str],
+    strategy_plan_gate: dict[str, Any] | None,
+) -> list[str]:
+    explicit = _normalized_unique_values(event_ids)
+    if explicit:
+        return explicit
+    gate_plans = (strategy_plan_gate or {}).get("current_plans") or []
+    from_gate = _normalized_unique_values(
+        [item.get("event_id") for item in gate_plans if isinstance(item, dict)]
+    )
+    if from_gate:
+        return from_gate
+    return _discover_current_event_ids(day)
+
+
+def _heartbeat_timestamp(heartbeat: dict[str, Any] | None) -> datetime | None:
+    if not heartbeat:
+        return None
+    return _parse_dt(
+        heartbeat.get("last_tick_finished_at_utc")
+        or heartbeat.get("updated_at_utc")
+        or heartbeat.get("last_tick_started_at_utc")
+    )
+
+
+def _normalized_unique_values(values: Any) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            normalized.append(text)
+            seen.add(text)
+    return normalized
+
+
 def _parse_dt(value: Any) -> datetime | None:
     if not value:
         return None
@@ -460,6 +591,13 @@ def _env_float(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, ""))
     except ValueError:
+        return default
+
+
+def _safe_float(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
         return default
 
 
@@ -505,5 +643,6 @@ __all__ = [
     "LiveStrategyWorker",
     "LiveStrategyWorkerConfig",
     "WORKER_SOURCE",
+    "build_live_strategy_worker_readiness",
     "get_live_strategy_worker",
 ]

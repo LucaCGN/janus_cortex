@@ -32,7 +32,7 @@ from app.modules.agentic.contracts import (
     WatchlistRequest,
 )
 from app.modules.agentic.engine import evaluate_strategy_plan
-from app.modules.agentic.live_strategy_worker import get_live_strategy_worker
+from app.modules.agentic.live_strategy_worker import build_live_strategy_worker_readiness, get_live_strategy_worker
 from app.modules.agentic.llm_runtime import load_latest_llm_runtime_status
 from app.modules.agentic.ops_checks import build_integrity_snapshot
 from app.modules.agentic.repository import (
@@ -144,6 +144,11 @@ def run_ops_live_monitor(
         session_date=payload.session_date,
         event_ids=payload.event_ids,
     )
+    live_strategy_worker_status = build_live_strategy_worker_readiness(
+        session_date=payload.session_date,
+        event_ids=payload.event_ids,
+        strategy_plan_gate=strategy_plan_gate,
+    )
     recorded = record_ops_stage(
         "live-monitor",
         {
@@ -152,6 +157,7 @@ def run_ops_live_monitor(
             "integrity": integrity,
             "strategy_plan_gate": strategy_plan_gate,
             "llm_runtime_status": llm_runtime_status,
+            "live_strategy_worker_status": live_strategy_worker_status,
         },
         day=payload.session_date,
     )
@@ -161,6 +167,7 @@ def run_ops_live_monitor(
         "integrity": integrity,
         "strategy_plan_gate": strategy_plan_gate,
         "llm_runtime_status": llm_runtime_status,
+        "live_strategy_worker_status": live_strategy_worker_status,
     }
 
 

@@ -4,7 +4,11 @@ import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
-from app.modules.agentic.live_strategy_worker import LiveStrategyWorker, LiveStrategyWorkerConfig
+from app.modules.agentic.live_strategy_worker import (
+    LiveStrategyWorker,
+    LiveStrategyWorkerConfig,
+    build_live_strategy_worker_readiness,
+)
 
 
 def test_live_strategy_worker_discovers_valid_current_plans_and_runs_tick_pytest(tmp_path, monkeypatch) -> None:
@@ -76,6 +80,117 @@ def test_live_strategy_worker_blocks_without_account_id_before_subprocess_pytest
     assert result["status"] == "blocked"
     assert result["reason"] == "account_id_required"
     assert called is False
+
+
+def test_live_strategy_worker_readiness_requires_running_worker_for_discovered_current_plan_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    plan_root = local_root / "shared" / "artifacts" / "strategy-plans" / "2026-05-13"
+    future = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    _write_json(plan_root / "event-valid" / "current.json", {"event_id": "event-valid", "valid_until_utc": future})
+    monkeypatch.setattr(
+        "app.modules.agentic.live_strategy_worker._WORKER",
+        SimpleNamespace(
+            status=lambda: {
+                "status": "stopped",
+                "worker_thread_alive": False,
+                "config": {"interval_seconds": 30},
+            }
+        ),
+    )
+
+    result = build_live_strategy_worker_readiness(
+        session_date="2026-05-13",
+        event_ids=[],
+        strategy_plan_gate={"status": "not_required", "ready_for_strategy_evaluation": False, "current_plans": []},
+    )
+
+    assert result["status"] == "blocked"
+    assert result["blocker_reason"] == "live_strategy_worker_not_running"
+    assert result["worker_required"] is True
+    assert result["expected_event_ids"] == ["event-valid"]
+    assert result["ready_for_live_execution"] is False
+
+
+def test_live_strategy_worker_readiness_accepts_fresh_matching_heartbeat_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    now = datetime(2026, 5, 13, 12, 0, tzinfo=timezone.utc)
+    _write_json(
+        local_root / "shared" / "artifacts" / "live-strategy-worker" / "2026-05-13" / "heartbeat.json",
+        {
+            "schema_version": "live_strategy_worker_heartbeat_v1",
+            "status": "completed",
+            "ok": True,
+            "event_ids": ["event-valid"],
+            "last_tick_finished_at_utc": now.isoformat(),
+        },
+    )
+    monkeypatch.setattr(
+        "app.modules.agentic.live_strategy_worker._WORKER",
+        SimpleNamespace(
+            status=lambda: {
+                "status": "running",
+                "worker_thread_alive": True,
+                "tick_count": 3,
+                "consecutive_failures": 0,
+                "last_error": None,
+                "config": {"interval_seconds": 30},
+            }
+        ),
+    )
+
+    result = build_live_strategy_worker_readiness(
+        session_date="2026-05-13",
+        event_ids=["event-valid"],
+        strategy_plan_gate={"status": "ready", "ready_for_strategy_evaluation": True, "current_plans": []},
+        now_utc=now + timedelta(seconds=30),
+    )
+
+    assert result["status"] == "ready"
+    assert result["worker_required"] is True
+    assert result["heartbeat_present"] is True
+    assert result["heartbeat_fresh"] is True
+    assert result["missing_heartbeat_event_ids"] == []
+    assert result["ready_for_live_execution"] is True
+
+
+def test_live_strategy_worker_readiness_blocks_stale_heartbeat_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    now = datetime(2026, 5, 13, 12, 0, tzinfo=timezone.utc)
+    _write_json(
+        local_root / "shared" / "artifacts" / "live-strategy-worker" / "2026-05-13" / "heartbeat.json",
+        {
+            "schema_version": "live_strategy_worker_heartbeat_v1",
+            "status": "completed",
+            "ok": True,
+            "event_ids": ["event-valid"],
+            "last_tick_finished_at_utc": (now - timedelta(minutes=10)).isoformat(),
+        },
+    )
+    monkeypatch.setattr(
+        "app.modules.agentic.live_strategy_worker._WORKER",
+        SimpleNamespace(
+            status=lambda: {
+                "status": "running",
+                "worker_thread_alive": True,
+                "config": {"interval_seconds": 30},
+            }
+        ),
+    )
+
+    result = build_live_strategy_worker_readiness(
+        session_date="2026-05-13",
+        event_ids=["event-valid"],
+        strategy_plan_gate={"status": "ready", "ready_for_strategy_evaluation": True, "current_plans": []},
+        now_utc=now,
+    )
+
+    assert result["status"] == "blocked"
+    assert result["blocker_reason"] == "live_strategy_worker_heartbeat_stale"
+    assert result["heartbeat_fresh"] is False
+    assert result["ready_for_live_execution"] is False
 
 
 def _write_json(path, payload: dict) -> None:

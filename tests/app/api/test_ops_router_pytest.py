@@ -273,6 +273,9 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     assert response.status_code == 202
     payload = response.json()
     assert payload["integrity"]["direct_trade_token_ids"] == ["token-1", "token-2"]
+    assert payload["live_strategy_worker_status"]["status"] == "blocked"
+    assert payload["live_strategy_worker_status"]["blocker_reason"] == "live_strategy_worker_not_running"
+    assert payload["live_strategy_worker_status"]["expected_event_ids"] == ["event-123"]
     current_plan = payload["strategy_plan_gate"]["current_plans"][0]
     assert current_plan["sleeve_count"] == 2
     assert [
@@ -316,6 +319,9 @@ def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_pat
     assert payload["strategy_plan_gate"]["status"] == "blocked"
     assert payload["strategy_plan_gate"]["missing_event_ids"] == ["event-missing"]
     assert payload["strategy_plan_gate"]["ready_for_strategy_evaluation"] is False
+    assert payload["live_strategy_worker_status"]["status"] == "not_required"
+    assert payload["live_strategy_worker_status"]["worker_required"] is False
+    assert payload["live_strategy_worker_status"]["health_only_not_executor"] is True
 
 
 def test_live_strategy_worker_control_endpoints_delegate_to_service_worker_pytest(tmp_path, monkeypatch) -> None:
