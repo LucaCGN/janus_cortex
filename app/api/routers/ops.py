@@ -51,6 +51,7 @@ from app.modules.agentic.store import (
     build_event_agent_context,
     build_ops_status,
     load_current_strategy_plan,
+    load_current_strategy_plan_for_event,
     ops_artifact_root,
     record_ops_stage,
     strategy_plan_root,
@@ -570,8 +571,14 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
 
 def _resolve_live_monitor_event_ids(event_ids: list[str], *, day: str | None) -> list[str]:
     explicit_event_ids = _normalized_unique_values(event_ids)
-    if explicit_event_ids or not day:
-        return explicit_event_ids
+    if explicit_event_ids:
+        resolved: list[str] = []
+        for event_id in explicit_event_ids:
+            _, resolved_event_id, _ = load_current_strategy_plan_for_event(event_id, day=day)
+            resolved.append(resolved_event_id or event_id)
+        return _normalized_unique_values(resolved)
+    if not day:
+        return []
     root = strategy_plan_root(day)
     if not root.exists():
         return []
