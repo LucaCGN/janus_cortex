@@ -6,6 +6,8 @@ Janus is moving to a backend-first local production service. The internal LLM sy
 
 Codex automations, or an equivalent external agent framework, are part of the required operating loop for CI/CD, research, audits, and continuous improvement. They are not part of the critical runtime path for order execution: Janus must continue to ingest data, watch markets, evaluate active plans, reconcile the portfolio, and preserve replay data from the latest valid local state even when Codex is offline.
 
+Live StrategyPlanJSON evaluation is now service-owned. The API exposes a live strategy worker that repeatedly runs the same quote-aware shadow/live strategy tick path that Codex previously had to call manually. Codex can start, stop, inspect, or trigger one worker tick for operator control and debugging, but the worker heartbeat is the proof that Janus itself is watching active plans.
+
 The canonical local runtime root is:
 
 `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
@@ -30,7 +32,7 @@ Codex Pregame Research is context-only. It can propose game thesis, strategy fam
 
 Pregame StrategyPlanJSON is not the live LLM brain. Pregame plans provide initial context, candidate families, and event-specific passive revision watchpoints. The application runtime owns the live LLM revision loop: it detects quarter boundaries, Janus order submissions, fills, cancels, stale orders, target fills, target cancels, failed protective target placements, manual/operator orders/trades/positions, player-status shocks, stale-feed recovery, unexplained CLOB moves, price/favorite flips, scoreboard leadership switches, recent scoring runs, score-gap band breaks, garbage-time state, and ML/PBP valuation triggers, then builds auditable `LLMRevisionRequest` payloads. StrategyPlanJSON `revision_triggers` are additional event-specific hints only; they are not the dispatcher.
 
-The first runtime slices are fail-closed and order-safe. `codex_tool/run_live_strategy_tick.py` emits `LLMRuntimeTrigger`/`LLMRuntimeTrace` evidence, persists prompt/routing/response artifacts under `local\shared\artifacts\llm-runtime\YYYY-MM-DD\`, and can dispatch the routed OpenAI model only behind the explicit `--enable-llm-dispatch` flag. Missing credentials, unavailable clients, schema failures, and model call errors record `skipped_unavailable`; no StrategyPlanJSON is auto-replaced and no order endpoint authority is granted to the LLM.
+The first runtime slices are fail-closed and order-safe. `codex_tool/run_live_strategy_tick.py` emits `LLMRuntimeTrigger`/`LLMRuntimeTrace` evidence, persists prompt/routing/response artifacts under `local\shared\artifacts\llm-runtime\YYYY-MM-DD\`, and can dispatch the routed OpenAI model only behind the explicit `--enable-llm-dispatch` flag. `app\modules\agentic\live_strategy_worker.py` now owns repeated service-side invocation of that same validated tick path and writes heartbeat/tick proof under `local\shared\artifacts\live-strategy-worker\YYYY-MM-DD\`. Missing credentials, unavailable clients, schema failures, and model call errors record `skipped_unavailable`; no StrategyPlanJSON is auto-replaced and no order endpoint authority is granted to the LLM.
 
 Reviewed LLM adoption is a separate, explicit API step. `POST /v1/events/{event_id}/llm-revision/adopt` accepts a recorded `LLMRevisionResponse` or trace artifact only with `reviewed_by` and `review_reason`, validates the embedded `StrategyPlanJSON`, records an adoption artifact with trigger/model/diff metadata, and writes the current plan only when the request explicitly asks to apply it. `codex_tool/adopt_llm_revision.py` is the safe operator/Codex wrapper for this endpoint; it records candidate adoption by default and requires `--apply-current` for promotion. This endpoint and tool never call order endpoints; live execution still flows through StrategyPlan evaluation, direct CLOB checks, operator sizing, and order-manager validation.
 
@@ -106,6 +108,7 @@ Always-running services:
 - Polymarket watcher captures selected CLOB ticks every 1-3 seconds while events are watched.
 - Portfolio watcher reconciles direct CLOB collateral, orders, account-scoped de-duplicated fills, positions, manual interventions, and stale local mirrors. Integrity snapshots must mark mismatched local portfolio mirrors as non-authoritative/quarantined while direct CLOB truth remains the live execution source.
 - Replay watcher persists observed latency and tick cadence so future backtests replay what Janus actually saw live.
+- Live strategy worker repeatedly evaluates current valid StrategyPlanJSON files, refreshes live scoreboard/orderbook context, records shadow decisions, detects LLM runtime revision triggers, and submits live-money orders only when explicitly configured with `execute=true`, `live_money=true`, an account id, and all safety gates pass.
 
 Pregame:
 
@@ -121,6 +124,7 @@ Live:
 - Live monitor and postgame review calls that name reviewed events must report a StrategyPlanJSON gate; missing current plans are blockers, not implicit permission to trade from notes or chat context.
 - The trading engine compiles the active plan into triggers and order intents.
 - The order manager executes valid intents and immediately creates protective targets, stops, or hedges when required.
+- Codex Live Monitor is no longer the runtime scheduler. It monitors worker health, live blockers, LLM runtime traces, portfolio truth, and handoffs. It may call the worker control endpoints for inspection or one-off debugging, but a healthy live session requires the service-owned worker heartbeat.
 
 Postgame:
 
@@ -165,6 +169,10 @@ Implementation status:
 - `POST /v1/ops/integrity-check`
 - `POST /v1/ops/pregame-plan`
 - `POST /v1/ops/live-monitor`
+- `GET /v1/ops/live-strategy-worker/status`
+- `POST /v1/ops/live-strategy-worker/start`
+- `POST /v1/ops/live-strategy-worker/stop`
+- `POST /v1/ops/live-strategy-worker/tick`
 - `POST /v1/ops/postgame-review`
 - `GET /v1/events/{event_id}/agent-context`
 - `POST /v1/events/{event_id}/strategy-plan`
@@ -195,6 +203,10 @@ Codex agents use scripts under `codex_tool/` to interact with the local API:
 - `submit_pregame_research.py`
 - `submit_strategy_plan.py`
 - `run_live_monitor_tick.py`
+- `live_strategy_worker_status.py`
+- `start_live_strategy_worker.py`
+- `stop_live_strategy_worker.py`
+- `run_live_strategy_worker_tick.py`
 - `run_postgame_review.py`
 - `reconcile_orders.py`
 - `watch_market.py`

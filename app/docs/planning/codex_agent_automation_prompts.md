@@ -33,6 +33,7 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 - Chat memory is useful but not authoritative.
 - Direct CLOB collateral, open orders, and open positions are authoritative over stale local portfolio mirrors.
 - Minimum live buy order remains `5` shares and `$1.00` notional until multiple profitable days and clean reconciliation justify resizing.
+- Live game execution must be owned by the Janus live strategy worker. Codex may inspect, start, stop, or trigger a one-off worker tick through `codex_tool\live_strategy_worker_status.py`, `start_live_strategy_worker.py`, `stop_live_strategy_worker.py`, and `run_live_strategy_worker_tick.py`, but Codex prompts must not be the only recurring scheduler during a game.
 - Pregame Research is context-only and does not define order size, notional budget, or portfolio exposure.
 - Live order sizing is operator policy supplied to Janus/live tooling, not strategy-plan sizing metadata.
 - Model-tier routing lives in `app\docs\planning\llm_model_routing.md`: nano for extraction/summaries, mini for routine reasoning, and `gpt-5.5` for critical decisions.

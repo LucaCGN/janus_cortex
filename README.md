@@ -8,6 +8,8 @@ Janus must run independently from Codex. The backend service owns ingestion, wat
 
 Codex automations, or an equivalent external agent framework, are required for the CI/CD and research operating loop: postgame review, development passes, pregame integrity checks, external research, live health monitoring, prompt refinement, and documentation discipline. Codex agents may submit research, context, and structured strategy-plan trigger revisions, but the local Janus engine remains the source of execution truth. Order sizing and portfolio exposure are operator policy, not pregame research output.
 
+Live game execution is owned by the service-owned live strategy worker exposed through `/v1/ops/live-strategy-worker/*`. Codex tools can inspect, start, stop, or trigger one bounded worker tick, but Janus must provide the recurring heartbeat and strategy evaluation loop during active games.
+
 ## Current Status
 - Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
 - Local runtime root: `JANUS_LOCAL_ROOT`, defaulting to `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
@@ -16,6 +18,7 @@ Codex automations, or an equivalent external agent framework, are required for t
 - Codex agent prompt folders: `app\docs\planning\codex_agents\`
 - LLM model routing: `app\docs\planning\llm_model_routing.md`
 - Codex automation tools live under `codex_tool\`
+- Live strategy worker controls: `codex_tool\live_strategy_worker_status.py`, `codex_tool\start_live_strategy_worker.py`, `codex_tool\stop_live_strategy_worker.py`, `codex_tool\run_live_strategy_worker_tick.py`
 - Current priority: keep the agentic backend operating loop live for the NBA playoff slate while hardening direct CLOB reconciliation, StrategyPlanJSON execution, watch-session replay, and minimum-size live testing.
 - Current scope: backend ops endpoints, Codex tools, live pregame/postgame workflow, strategy-plan validation/execution, stop/hedge/order-policy testing, decision logging, and unified benchmark control across replay, ML, LLM, and live-validation lanes.
 - Current NBA analysis snapshot on `2026-04-23`:

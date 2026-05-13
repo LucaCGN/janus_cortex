@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 import logging
 from typing import Any
 
@@ -20,6 +22,7 @@ from app.api.routers import (
     sync_router,
     system_registry_router,
 )
+from app.modules.agentic.live_strategy_worker import get_live_strategy_worker
 
 
 logger = logging.getLogger(__name__)
@@ -35,11 +38,23 @@ class NoCacheStaticFiles(StaticFiles):
         return response
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    status = get_live_strategy_worker().start_if_env_enabled()
+    if status.get("start_status") == "started":
+        logger.info("Janus live strategy worker started from environment configuration")
+    try:
+        yield
+    finally:
+        get_live_strategy_worker().stop()
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Janus Cortex API",
         version=API_VERSION,
         summary="FastAPI service layer for Janus Cortex data platform",
+        lifespan=lifespan,
     )
 
     app.add_middleware(RequestContextMiddleware)

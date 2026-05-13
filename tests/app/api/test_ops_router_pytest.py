@@ -318,6 +318,73 @@ def test_live_monitor_endpoint_reports_missing_strategy_plan_gate_pytest(tmp_pat
     assert payload["strategy_plan_gate"]["ready_for_strategy_evaluation"] is False
 
 
+def test_live_strategy_worker_control_endpoints_delegate_to_service_worker_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    calls: list[tuple[str, dict | None]] = []
+
+    class FakeWorker:
+        def status(self):
+            calls.append(("status", None))
+            return {"status": "stopped", "worker_thread_alive": False}
+
+        def run_once(self, overrides):
+            calls.append(("run_once", overrides))
+            return {"ok": True, "status": "completed", "event_ids": overrides.get("event_ids")}
+
+        def start(self, overrides):
+            calls.append(("start", overrides))
+            return {"status": "running", "start_status": "started", "config": overrides}
+
+        def stop(self):
+            calls.append(("stop", None))
+            return {"status": "stopped", "stop_status": "stopped"}
+
+    fake_worker = FakeWorker()
+    monkeypatch.setattr(ops_router, "get_live_strategy_worker", lambda: fake_worker)
+    client = TestClient(create_app())
+
+    status_response = client.get("/v1/ops/live-strategy-worker/status")
+    tick_response = client.post(
+        "/v1/ops/live-strategy-worker/tick",
+        json={"session_date": "2026-05-13", "event_ids": ["event-1"], "account_id": "account-1"},
+    )
+    start_response = client.post(
+        "/v1/ops/live-strategy-worker/start",
+        json={
+            "session_date": "2026-05-13",
+            "event_ids": ["event-1"],
+            "account_id": "account-1",
+            "execute": True,
+            "live_money": True,
+        },
+    )
+    stop_response = client.post("/v1/ops/live-strategy-worker/stop")
+
+    assert status_response.status_code == 200
+    assert tick_response.status_code == 202
+    assert tick_response.json()["event_ids"] == ["event-1"]
+    assert start_response.status_code == 202
+    assert start_response.json()["start_status"] == "started"
+    assert stop_response.status_code == 202
+    assert calls == [
+        ("status", None),
+        ("run_once", {"session_date": "2026-05-13", "event_ids": ["event-1"], "account_id": "account-1", "source": "janus-live-strategy-worker"}),
+        (
+            "start",
+            {
+                "session_date": "2026-05-13",
+                "event_ids": ["event-1"],
+                "account_id": "account-1",
+                "source": "janus-live-strategy-worker",
+                "execute": True,
+                "live_money": True,
+            },
+        ),
+        ("stop", None),
+    ]
+
+
 def test_live_monitor_endpoint_exposes_latest_llm_runtime_status_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

@@ -19,6 +19,7 @@ from app.api.routers.portfolio import (
 from app.modules.agentic.contracts import (
     LLMRevisionAdoptionRequest,
     LLMRevisionResponse,
+    LiveStrategyWorkerRequest,
     MarketOrderbookTickRequest,
     MarketTradeObservationRequest,
     MarketWatchSessionRequest,
@@ -31,6 +32,7 @@ from app.modules.agentic.contracts import (
     WatchlistRequest,
 )
 from app.modules.agentic.engine import evaluate_strategy_plan
+from app.modules.agentic.live_strategy_worker import get_live_strategy_worker
 from app.modules.agentic.llm_runtime import load_latest_llm_runtime_status
 from app.modules.agentic.ops_checks import build_integrity_snapshot
 from app.modules.agentic.repository import (
@@ -160,6 +162,28 @@ def run_ops_live_monitor(
         "strategy_plan_gate": strategy_plan_gate,
         "llm_runtime_status": llm_runtime_status,
     }
+
+
+@router.get("/ops/live-strategy-worker/status")
+def get_ops_live_strategy_worker_status() -> dict[str, Any]:
+    return get_live_strategy_worker().status()
+
+
+@router.post("/ops/live-strategy-worker/tick", status_code=status.HTTP_202_ACCEPTED)
+def run_ops_live_strategy_worker_tick(payload: LiveStrategyWorkerRequest | None = None) -> dict[str, Any]:
+    overrides = payload.model_dump(mode="json", exclude_none=True) if payload is not None else {}
+    return get_live_strategy_worker().run_once(overrides)
+
+
+@router.post("/ops/live-strategy-worker/start", status_code=status.HTTP_202_ACCEPTED)
+def start_ops_live_strategy_worker(payload: LiveStrategyWorkerRequest | None = None) -> dict[str, Any]:
+    overrides = payload.model_dump(mode="json", exclude_none=True) if payload is not None else {}
+    return get_live_strategy_worker().start(overrides)
+
+
+@router.post("/ops/live-strategy-worker/stop", status_code=status.HTTP_202_ACCEPTED)
+def stop_ops_live_strategy_worker() -> dict[str, Any]:
+    return get_live_strategy_worker().stop()
 
 
 @router.post("/ops/postgame-review", status_code=status.HTTP_202_ACCEPTED)

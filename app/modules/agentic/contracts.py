@@ -178,6 +178,31 @@ class OpsCycleRequest(BaseModel):
     execute: bool = False
 
 
+class LiveStrategyWorkerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_date: str | None = None
+    event_ids: list[str] = Field(default_factory=list)
+    account_id: str | None = None
+    source: str = "janus-live-strategy-worker"
+    api_root: str | None = None
+    enabled: bool | None = None
+    execute: bool | None = None
+    live_money: bool | None = None
+    enable_llm_dispatch: bool | None = None
+    submit_candidate_strategy_plan: bool | None = None
+    interval_seconds: float | None = Field(default=None, gt=0.0, le=3600.0)
+    timeout_seconds: float | None = Field(default=None, gt=0.0, le=3600.0)
+    max_intents: int | None = Field(default=None, ge=0, le=100)
+    orderbook_sample_count: int | None = Field(default=None, ge=1, le=20)
+    orderbook_sample_interval_sec: float | None = Field(default=None, ge=0.0, le=10.0)
+    min_size: float | None = Field(default=None, gt=0.0)
+    min_buy_notional_usd: float | None = Field(default=None, ge=0.0)
+    share_precision: int | None = Field(default=None, ge=0, le=6)
+    auto_protect_manual_positions: bool | None = None
+    manual_target_delta_cents: float | None = Field(default=None, ge=0.0, le=100.0)
+
+
 class PregamePlanRequest(OpsCycleRequest):
     research_markdown: str | None = None
     research_path: str | None = None
@@ -378,6 +403,7 @@ __all__ = [
     "LLMRuntimeTrace",
     "LLMRuntimeTrigger",
     "LLMRuntimeTriggerType",
+    "LiveStrategyWorkerRequest",
     "MarketOrderbookTick",
     "MarketOrderbookTickRequest",
     "MarketTradeObservation",
