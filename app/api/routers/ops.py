@@ -80,7 +80,8 @@ def run_ops_integrity_check(
     connection: PsycopgConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
     ops_status = build_ops_status()
-    direct_trade_token_ids = _direct_trade_token_ids_for_events(payload.event_ids, day=payload.session_date)
+    integrity_event_ids = _resolve_current_plan_event_ids(payload.event_ids, day=payload.session_date)
+    direct_trade_token_ids = _direct_trade_token_ids_for_events(integrity_event_ids, day=payload.session_date)
     integrity = build_integrity_snapshot(
         connection,
         account_id=payload.account_id,
@@ -88,10 +89,22 @@ def run_ops_integrity_check(
     )
     recorded = record_ops_stage(
         "integrity-check",
-        {**payload.model_dump(mode="json"), "ops_status": ops_status, "integrity": integrity},
+        {
+            **payload.model_dump(mode="json"),
+            "ops_status": ops_status,
+            "requested_event_ids": payload.event_ids,
+            "resolved_event_ids": integrity_event_ids,
+            "integrity": integrity,
+        },
         day=payload.session_date,
     )
-    return {**recorded, "ops_status": ops_status, "integrity": integrity}
+    return {
+        **recorded,
+        "ops_status": ops_status,
+        "requested_event_ids": payload.event_ids,
+        "resolved_event_ids": integrity_event_ids,
+        "integrity": integrity,
+    }
 
 
 @router.post("/ops/pregame-plan", status_code=status.HTTP_202_ACCEPTED)
@@ -572,11 +585,7 @@ def _build_strategy_plan_gate(event_ids: list[str], *, day: str | None) -> dict[
 def _resolve_live_monitor_event_ids(event_ids: list[str], *, day: str | None) -> list[str]:
     explicit_event_ids = _normalized_unique_values(event_ids)
     if explicit_event_ids:
-        resolved: list[str] = []
-        for event_id in explicit_event_ids:
-            _, resolved_event_id, _ = load_current_strategy_plan_for_event(event_id, day=day)
-            resolved.append(resolved_event_id or event_id)
-        return _normalized_unique_values(resolved)
+        return _resolve_current_plan_event_ids(explicit_event_ids, day=day)
     if not day:
         return []
     root = strategy_plan_root(day)
@@ -597,6 +606,14 @@ def _resolve_live_monitor_event_ids(event_ids: list[str], *, day: str | None) ->
         event_id = str(payload.get("event_id") or current_path.parent.name).strip()
         if event_id:
             resolved.append(event_id)
+    return _normalized_unique_values(resolved)
+
+
+def _resolve_current_plan_event_ids(event_ids: list[str], *, day: str | None) -> list[str]:
+    resolved: list[str] = []
+    for event_id in _normalized_unique_values(event_ids):
+        _, resolved_event_id, _ = load_current_strategy_plan_for_event(event_id, day=day)
+        resolved.append(resolved_event_id or event_id)
     return _normalized_unique_values(resolved)
 
 

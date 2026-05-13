@@ -449,6 +449,72 @@ def test_live_monitor_resolves_explicit_catalog_uuid_to_slug_current_plan_pytest
     assert payload["live_strategy_worker_status"]["expected_event_ids"] == [event_slug]
 
 
+def test_integrity_check_resolves_explicit_catalog_uuid_to_slug_current_plan_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+    event_uuid = "6121380b-9b9e-511e-a225-505cfe5ca152"
+    event_slug = "nba-okc-lal-2026-05-11"
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        agentic_store,
+        "resolve_catalog_event_strategy_plan_aliases",
+        lambda event_id: [event_slug] if event_id == event_uuid else [],
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "connection_matches": connection is fake_connection,
+            "account_id": account_id,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+            "ready_for_live_minimum_orders": True,
+        },
+    )
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    plan_payload = _strategy_plan_payload(event_id=event_slug, market_id="market-123")
+
+    try:
+        submit_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-13",
+                "event_ids": [event_slug],
+                "source": "pytest",
+                "strategy_plans": [plan_payload],
+            },
+        )
+        response = client.post(
+            "/v1/ops/integrity-check",
+            json={
+                "session_date": "2026-05-13",
+                "event_ids": [event_uuid],
+                "account_id": "account-123",
+                "source": "pytest",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert submit_response.status_code == 202
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["requested_event_ids"] == [event_uuid]
+    assert payload["resolved_event_ids"] == [event_slug]
+    assert payload["integrity"]["account_id"] == "account-123"
+    assert payload["integrity"]["direct_trade_token_ids"] == ["token-1"]
+
+    artifact_payload = json.loads(Path(payload["path"]).read_text(encoding="utf-8"))
+    assert artifact_payload["requested_event_ids"] == [event_uuid]
+    assert artifact_payload["resolved_event_ids"] == [event_slug]
+    assert artifact_payload["integrity"]["direct_trade_token_ids"] == ["token-1"]
+
+
 def test_live_monitor_readiness_blocks_ready_worker_without_execution_evidence_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
