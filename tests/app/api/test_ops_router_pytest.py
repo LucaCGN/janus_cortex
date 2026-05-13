@@ -82,6 +82,49 @@ def test_strategy_plan_endpoint_stores_and_reads_current_plan_pytest(tmp_path, m
     assert read_response.json()["active_strategies"][0]["strategy_id"] == "grid-1"
 
 
+def test_agent_context_resolves_catalog_uuid_to_slug_current_plan_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    event_uuid = "6121380b-9b9e-511e-a225-505cfe5ca152"
+    event_slug = "nba-okc-lal-2026-05-11"
+    monkeypatch.setattr(
+        agentic_store,
+        "resolve_catalog_event_strategy_plan_aliases",
+        lambda event_id: [event_slug] if event_id == event_uuid else [],
+    )
+    client = TestClient(create_app())
+    plan_payload = _strategy_plan_payload(event_id=event_slug, market_id="market-123")
+
+    submit_response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-13",
+            "event_ids": [event_slug],
+            "source": "pytest",
+            "strategy_plans": [plan_payload],
+        },
+    )
+    context_response = client.get(
+        f"/v1/events/{event_uuid}/agent-context",
+        params={"session_date": "2026-05-13"},
+    )
+    current_response = client.get(
+        f"/v1/events/{event_uuid}/strategy-plan/current",
+        params={"session_date": "2026-05-13"},
+    )
+
+    assert submit_response.status_code == 202
+    assert context_response.status_code == 200
+    context_payload = context_response.json()
+    assert context_payload["event_id"] == event_uuid
+    assert context_payload["strategy_plan_lookup_event_ids"] == [event_uuid, event_slug]
+    assert context_payload["resolved_strategy_plan_event_id"] == event_slug
+    assert context_payload["current_strategy_plan"]["event_id"] == event_slug
+    assert current_response.status_code == 200
+    assert current_response.json()["event_id"] == event_slug
+
+
 def test_watchlist_and_ops_cycle_endpoints_record_runtime_artifacts_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

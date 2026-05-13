@@ -7,7 +7,11 @@ from typing import Any
 
 from app.api.db import to_jsonable
 from app.modules.agentic.contracts import StrategyPlan
-from app.modules.agentic.repository import get_agentic_database_status, try_persist_strategy_plan
+from app.modules.agentic.repository import (
+    get_agentic_database_status,
+    resolve_catalog_event_strategy_plan_aliases,
+    try_persist_strategy_plan,
+)
 from app.runtime.local_paths import resolve_shared_root
 
 
@@ -165,6 +169,24 @@ def load_current_strategy_plan(event_id: str, *, day: str | None = None) -> dict
     return read_json(current_path)
 
 
+def load_current_strategy_plan_for_event(
+    event_id: str,
+    *,
+    day: str | None = None,
+) -> tuple[dict[str, Any] | None, str | None, list[str]]:
+    lookup_event_ids = _unique_strings([event_id])
+    for lookup_event_id in lookup_event_ids:
+        current_plan = load_current_strategy_plan(lookup_event_id, day=day)
+        if current_plan is not None:
+            return current_plan, lookup_event_id, lookup_event_ids
+    lookup_event_ids = _unique_strings([event_id, *resolve_catalog_event_strategy_plan_aliases(event_id)])
+    for lookup_event_id in lookup_event_ids[1:]:
+        current_plan = load_current_strategy_plan(lookup_event_id, day=day)
+        if current_plan is not None:
+            return current_plan, lookup_event_id, lookup_event_ids
+    return None, None, lookup_event_ids
+
+
 def record_ops_stage(stage: str, payload: dict[str, Any], *, day: str | None = None) -> dict[str, Any]:
     now = utc_now()
     root = ops_artifact_root(day)
@@ -220,13 +242,18 @@ def build_ops_status() -> dict[str, Any]:
 
 
 def build_event_agent_context(event_id: str, *, day: str | None = None) -> dict[str, Any]:
-    current_plan = load_current_strategy_plan(event_id, day=day)
+    current_plan, resolved_strategy_plan_event_id, strategy_plan_lookup_event_ids = load_current_strategy_plan_for_event(
+        event_id,
+        day=day,
+    )
     report_dir = reports_root() / "daily-live-validation"
     pregame_path = report_dir / f"pregame_research_{session_date(day)}.md"
     live_plan_path = report_dir / f"live_test_plan_{session_date(day)}.md"
     return {
         "event_id": event_id,
         "timestamp_utc": utc_now().isoformat(),
+        "strategy_plan_lookup_event_ids": strategy_plan_lookup_event_ids,
+        "resolved_strategy_plan_event_id": resolved_strategy_plan_event_id,
         "current_strategy_plan": current_plan,
         "pregame_research": _read_text_preview(pregame_path),
         "live_test_plan": _read_text_preview(live_plan_path),
@@ -254,12 +281,25 @@ def _safe_name(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value))[:160] or "unknown"
 
 
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
 __all__ = [
     "append_jsonl",
     "append_pregame_research",
     "build_event_agent_context",
     "build_ops_status",
     "load_current_strategy_plan",
+    "load_current_strategy_plan_for_event",
     "record_ops_stage",
     "write_json",
     "write_strategy_plan",

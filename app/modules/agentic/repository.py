@@ -216,6 +216,38 @@ def get_agentic_database_status() -> dict[str, Any]:
         return {"ok": False, "schema": "agentic", "error": str(exc)}
 
 
+def resolve_catalog_event_strategy_plan_aliases(event_id: str) -> list[str]:
+    event_key = str(event_id or "").strip()
+    if not event_key:
+        return []
+    try:
+        with managed_connection() as connection:
+            with cursor_dict(connection) as cursor:
+                cursor.execute(
+                    """
+                    SELECT event_id::text AS event_id, canonical_slug
+                    FROM catalog.events
+                    WHERE event_id::text = %s
+                        OR canonical_slug = %s
+                    LIMIT 1;
+                    """,
+                    (event_key, event_key),
+                )
+                row = fetchone_dict(cursor)
+    except Exception:  # noqa: BLE001
+        return []
+    if not row:
+        return []
+    aliases: list[str] = []
+    canonical_slug = str(row.get("canonical_slug") or "").strip()
+    catalog_event_id = str(row.get("event_id") or "").strip()
+    if canonical_slug:
+        aliases.append(canonical_slug)
+    if catalog_event_id:
+        aliases.append(catalog_event_id)
+    return _unique_strings(aliases)
+
+
 def try_persist_watchlist_event(event: WatchlistEvent, *, source: str) -> dict[str, Any]:
     try:
         with managed_connection() as connection:
@@ -839,6 +871,18 @@ def _numeric_summary(rows: list[dict[str, Any]], key: str) -> dict[str, Any]:
     }
 
 
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique
+
+
 def _sorted_values(rows: list[dict[str, Any]], key: str) -> list[str]:
     values = {str(row.get(key) or "").strip() for row in rows}
     return sorted(value for value in values if value)
@@ -926,6 +970,7 @@ def _build_replay_source_summary(
 
 __all__ = [
     "get_agentic_database_status",
+    "resolve_catalog_event_strategy_plan_aliases",
     "try_persist_operator_intervention",
     "try_persist_replay_request",
     "try_persist_market_trades",
