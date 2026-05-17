@@ -273,6 +273,21 @@ def get_event_agent_context(event_id: str, session_date: str | None = None) -> d
     return build_event_agent_context(event_id, day=session_date)
 
 
+@router.get("/events/{event_id}/review-bundle")
+def get_event_review_bundle(
+    event_id: str,
+    session_date: str | None = None,
+    account_id: str | None = None,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    return _build_event_review_bundle(
+        connection,
+        event_id=event_id,
+        session_date=session_date,
+        account_id=account_id,
+    )
+
+
 @router.post("/events/{event_id}/strategy-plan", status_code=status.HTTP_201_CREATED)
 def submit_event_strategy_plan(event_id: str, payload: StrategyPlan) -> dict[str, Any]:
     if payload.event_id != event_id:
@@ -1106,6 +1121,435 @@ def _build_postgame_live_evidence(
     }
 
 
+def _build_event_review_bundle(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+    session_date: str | None,
+    account_id: str | None,
+) -> dict[str, Any]:
+    resolved_day = session_date
+    agent_context = build_event_agent_context(event_id, day=resolved_day)
+    strategy_plan_versions = _load_event_strategy_plan_versions(event_id, day=resolved_day)
+    runtime_evidence = _build_event_review_runtime_evidence(connection, event_id=event_id)
+    llm_runtime_status = load_latest_llm_runtime_status(
+        session_date=resolved_day,
+        event_ids=[event_id],
+    )
+    postgame_live_evidence = _build_postgame_live_evidence(
+        connection,
+        event_ids=[event_id],
+        day=resolved_day,
+    )
+    payload = OpsCycleRequest(
+        session_date=resolved_day,
+        event_ids=[event_id],
+        account_id=account_id,
+        source="event-review-bundle",
+    )
+    portfolio_pnl_attribution = _build_postgame_portfolio_pnl_attribution(
+        connection,
+        payload,
+        event_ids=[event_id],
+    )
+    decision_timeline = _build_event_review_decision_timeline(
+        event_id=event_id,
+        agent_context=agent_context,
+        strategy_plan_versions=strategy_plan_versions,
+        runtime_evidence=runtime_evidence,
+        llm_runtime_status=llm_runtime_status,
+    )
+    known_gaps = _event_review_known_gaps(
+        account_id=account_id,
+        runtime_evidence=runtime_evidence,
+        postgame_live_evidence=postgame_live_evidence,
+        portfolio_pnl_attribution=portfolio_pnl_attribution,
+    )
+    status_text = "ready" if not known_gaps else "review_required"
+    return to_jsonable(
+        {
+            "schema_version": "event_review_bundle_v1",
+            "status": status_text,
+            "event_id": event_id,
+            "session_date": resolved_day,
+            "generated_at_utc": datetime.now(timezone.utc),
+            "authority_order": [
+                "direct_clob_truth",
+                "janus_db_api",
+                "runtime_artifacts",
+                "runtime_handoffs",
+                "runtime_reports",
+                "tracked_docs",
+            ],
+            "agent_context": agent_context,
+            "strategy_plan_versions": strategy_plan_versions,
+            "runtime_evidence": runtime_evidence,
+            "llm_runtime_status": llm_runtime_status,
+            "postgame_live_evidence": postgame_live_evidence,
+            "portfolio_pnl_attribution": portfolio_pnl_attribution,
+            "decision_timeline": decision_timeline,
+            "known_gaps": known_gaps,
+        }
+    )
+
+
+def _load_event_strategy_plan_versions(event_id: str, *, day: str | None) -> dict[str, Any]:
+    root = strategy_plan_root(day) / _safe_name(event_id)
+    current_path = root / "current.json"
+    versions_root = root / "versions"
+    versions: list[dict[str, Any]] = []
+    if versions_root.exists():
+        for path in sorted(versions_root.glob("*.json")):
+            payload = _read_json_file(path)
+            if isinstance(payload, dict):
+                versions.append(_strategy_plan_version_summary(payload, path=path))
+    current = _read_json_file(current_path)
+    return {
+        "schema_version": "event_strategy_plan_versions_v1",
+        "event_id": event_id,
+        "current_path": str(current_path),
+        "current_exists": isinstance(current, dict),
+        "current": _strategy_plan_version_summary(current, path=current_path) if isinstance(current, dict) else None,
+        "version_count": len(versions),
+        "versions": versions,
+    }
+
+
+def _strategy_plan_version_summary(plan: dict[str, Any], *, path: Path) -> dict[str, Any]:
+    return {
+        "path": str(path),
+        "event_id": plan.get("event_id"),
+        "market_id": plan.get("market_id"),
+        "plan_owner": plan.get("plan_owner"),
+        "generated_at_utc": plan.get("generated_at_utc"),
+        "valid_until_utc": plan.get("valid_until_utc"),
+        "active_strategy_count": len(plan.get("active_strategies") or []),
+        "strategy_ids": [
+            str(item.get("strategy_id"))
+            for item in plan.get("active_strategies") or []
+            if isinstance(item, dict) and item.get("strategy_id")
+        ],
+        "revision_trigger_count": len(plan.get("trigger_conditions") or []),
+        "explainability_keys": sorted((plan.get("explainability") or {}).keys())
+        if isinstance(plan.get("explainability"), dict)
+        else [],
+    }
+
+
+def _build_event_review_runtime_evidence(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+) -> dict[str, Any]:
+    queries = {
+        "market_event": (
+            """
+            SELECT event_key, category, provider, title, status, start_time, end_time, liquidity, metadata_json
+            FROM agentic.market_events
+            WHERE event_key = %s
+            LIMIT 1;
+            """,
+            (event_id,),
+        ),
+        "market_outcomes": (
+            """
+            SELECT market_id, outcome_id, token_id, label, side, metadata_json
+            FROM agentic.market_outcomes
+            WHERE event_key = %s
+            ORDER BY label
+            LIMIT 40;
+            """,
+            (event_id,),
+        ),
+        "watch_sessions": (
+            """
+            SELECT watch_session_id::text AS watch_session_id, category, started_at, ended_at, cadence_ms,
+                   passive_only, reason, gap_summary_json, provider_errors_json, metadata_json
+            FROM agentic.market_watch_sessions
+            WHERE event_key = %s
+            ORDER BY started_at DESC
+            LIMIT 20;
+            """,
+            (event_id,),
+        ),
+        "orderbook_ticks": (
+            """
+            SELECT market_orderbook_tick_id::text AS market_orderbook_tick_id, market_id, outcome_id, token_id,
+                   captured_at, source_timestamp, best_bid, best_ask, spread, mid_price, bid_depth, ask_depth,
+                   source_latency_ms, ingest_latency_ms, levels_json, raw_json
+            FROM agentic.market_orderbook_ticks
+            WHERE event_key = %s
+            ORDER BY captured_at DESC
+            LIMIT 120;
+            """,
+            (event_id,),
+        ),
+        "market_trades": (
+            """
+            SELECT market_trade_id::text AS market_trade_id, market_id, outcome_id, token_id, external_trade_id,
+                   trade_time, observed_at, side, price, size, source_latency_ms, raw_json
+            FROM agentic.market_trades
+            WHERE event_key = %s
+            ORDER BY trade_time DESC
+            LIMIT 120;
+            """,
+            (event_id,),
+        ),
+        "strategy_decisions": (
+            """
+            SELECT strategy_decision_id::text AS strategy_decision_id,
+                   strategy_plan_version_id::text AS strategy_plan_version_id,
+                   decided_at, strategy_id, decision_type, order_intent_json, blockers_json, fill_json,
+                   exit_json, hedge_json, raw_json
+            FROM agentic.strategy_decisions
+            WHERE event_key = %s
+            ORDER BY decided_at ASC
+            LIMIT 240;
+            """,
+            (event_id,),
+        ),
+        "operator_interventions": (
+            """
+            SELECT operator_intervention_id::text AS operator_intervention_id, market_id, account_id,
+                   detected_at, action, external_order_ids_json, reconciliation_action, status, notes, raw_json
+            FROM agentic.operator_interventions
+            WHERE event_key = %s
+            ORDER BY detected_at ASC
+            LIMIT 120;
+            """,
+            (event_id,),
+        ),
+        "replay_sessions": (
+            """
+            SELECT replay_session_id::text AS replay_session_id, watch_session_id::text AS watch_session_id,
+                   output_name, created_at, source_tick_count, source_trade_count, latency_summary_json,
+                   replay_config_json, output_root
+            FROM agentic.replay_sessions
+            WHERE event_key = %s
+            ORDER BY created_at DESC
+            LIMIT 20;
+            """,
+            (event_id,),
+        ),
+    }
+    sections: dict[str, Any] = {}
+    errors: list[dict[str, Any]] = []
+    for name, (sql, params) in queries.items():
+        try:
+            rows = _fetch_event_review_rows(connection, sql, params)
+            sections[name] = rows[0] if name == "market_event" and rows else rows
+        except Exception as exc:  # noqa: BLE001
+            sections[name] = None if name == "market_event" else []
+            errors.append({"section": name, "error": _exception_detail(exc)})
+
+    orderbook_ticks = sections.get("orderbook_ticks") if isinstance(sections.get("orderbook_ticks"), list) else []
+    return {
+        "schema_version": "event_review_runtime_evidence_v1",
+        "event_id": event_id,
+        "status": "partial" if errors else "ready",
+        "errors": errors,
+        **sections,
+        "orderbook_window_summary": _orderbook_window_summary(orderbook_ticks),
+    }
+
+
+def _fetch_event_review_rows(
+    connection: PsycopgConnection,
+    sql: str,
+    params: tuple[Any, ...],
+) -> list[dict[str, Any]]:
+    with connection.cursor() as cursor:
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        columns = [description[0] for description in cursor.description]
+    return [to_jsonable(dict(zip(columns, row))) for row in rows]
+
+
+def _orderbook_window_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    timestamps = [_parse_datetime(row.get("captured_at")) for row in rows]
+    present_timestamps = [item for item in timestamps if item is not None]
+    spreads = [_safe_float(row.get("spread")) for row in rows]
+    mids = [_safe_float(row.get("mid_price")) for row in rows]
+    present_spreads = [item for item in spreads if item is not None]
+    present_mids = [item for item in mids if item is not None]
+    outcome_ids = sorted({str(row.get("outcome_id")) for row in rows if row.get("outcome_id")})
+    return {
+        "schema_version": "orderbook_window_summary_v1",
+        "tick_count": len(rows),
+        "outcome_ids": outcome_ids,
+        "first_captured_at": min(present_timestamps).isoformat() if present_timestamps else None,
+        "last_captured_at": max(present_timestamps).isoformat() if present_timestamps else None,
+        "min_spread": min(present_spreads) if present_spreads else None,
+        "max_spread": max(present_spreads) if present_spreads else None,
+        "min_mid_price": min(present_mids) if present_mids else None,
+        "max_mid_price": max(present_mids) if present_mids else None,
+    }
+
+
+def _build_event_review_decision_timeline(
+    *,
+    event_id: str,
+    agent_context: dict[str, Any],
+    strategy_plan_versions: dict[str, Any],
+    runtime_evidence: dict[str, Any],
+    llm_runtime_status: dict[str, Any],
+) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    current_plan = strategy_plan_versions.get("current") if isinstance(strategy_plan_versions.get("current"), dict) else None
+    if current_plan:
+        entries.append(
+            _timeline_entry(
+                timestamp=current_plan.get("generated_at_utc"),
+                source="strategy_plan",
+                kind="current_strategy_plan",
+                summary=f"Current StrategyPlanJSON with {current_plan.get('active_strategy_count')} active strategies.",
+                payload=current_plan,
+            )
+        )
+    for version in strategy_plan_versions.get("versions") or []:
+        if isinstance(version, dict):
+            entries.append(
+                _timeline_entry(
+                    timestamp=version.get("generated_at_utc"),
+                    source="strategy_plan",
+                    kind="strategy_plan_version",
+                    summary=f"StrategyPlanJSON version with {version.get('active_strategy_count')} active strategies.",
+                    payload=version,
+                )
+            )
+    for decision in runtime_evidence.get("strategy_decisions") or []:
+        if isinstance(decision, dict):
+            decision_type = str(decision.get("decision_type") or "strategy_decision")
+            entries.append(
+                _timeline_entry(
+                    timestamp=decision.get("decided_at"),
+                    source="janus_engine",
+                    kind=decision_type,
+                    summary=f"{decision_type} for strategy {decision.get('strategy_id') or 'unknown'}.",
+                    payload=decision,
+                )
+            )
+    for intervention in runtime_evidence.get("operator_interventions") or []:
+        if isinstance(intervention, dict):
+            entries.append(
+                _timeline_entry(
+                    timestamp=intervention.get("detected_at"),
+                    source="operator",
+                    kind="operator_intervention",
+                    summary=f"Operator action {intervention.get('action') or 'unknown'} status {intervention.get('status') or 'unknown'}.",
+                    payload=intervention,
+                )
+            )
+    for trade in runtime_evidence.get("market_trades") or []:
+        if isinstance(trade, dict):
+            entries.append(
+                _timeline_entry(
+                    timestamp=trade.get("trade_time"),
+                    source="market_trade_stream",
+                    kind="market_trade",
+                    summary=f"Observed {trade.get('side') or 'trade'} {trade.get('size')} @ {trade.get('price')}.",
+                    payload=trade,
+                )
+            )
+    for item in llm_runtime_status.get("items") or []:
+        if isinstance(item, dict) and item.get("status") != "not_recorded":
+            entries.append(
+                _timeline_entry(
+                    timestamp=item.get("persisted_at_utc"),
+                    source="llm_runtime",
+                    kind="llm_runtime_trace",
+                    summary=f"LLM runtime {item.get('response_status') or 'recorded'} using {item.get('selected_model') or 'unknown model'}.",
+                    payload=item,
+                )
+            )
+    orderbook_window = runtime_evidence.get("orderbook_window_summary") or {}
+    if orderbook_window.get("tick_count"):
+        entries.append(
+            _timeline_entry(
+                timestamp=orderbook_window.get("first_captured_at"),
+                source="clob_orderbook",
+                kind="orderbook_window_start",
+                summary=f"Orderbook capture window started with {orderbook_window.get('tick_count')} sampled ticks in bundle.",
+                payload=orderbook_window,
+            )
+        )
+        entries.append(
+            _timeline_entry(
+                timestamp=orderbook_window.get("last_captured_at"),
+                source="clob_orderbook",
+                kind="orderbook_window_end",
+                summary="Orderbook capture window ended for sampled bundle evidence.",
+                payload=orderbook_window,
+            )
+        )
+
+    entries = sorted(entries, key=lambda item: (_parse_datetime(item.get("timestamp_utc")) is None, item.get("timestamp_utc") or ""))
+    counts: dict[str, int] = {}
+    for entry in entries:
+        kind = str(entry.get("kind") or "unknown")
+        counts[kind] = counts.get(kind, 0) + 1
+    return {
+        "schema_version": "event_decision_timeline_v1",
+        "event_id": event_id,
+        "resolved_strategy_plan_event_id": agent_context.get("resolved_strategy_plan_event_id"),
+        "entry_count": len(entries),
+        "kind_counts": dict(sorted(counts.items())),
+        "entries": entries,
+    }
+
+
+def _timeline_entry(
+    *,
+    timestamp: Any,
+    source: str,
+    kind: str,
+    summary: str,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    parsed = _parse_datetime(timestamp)
+    return {
+        "timestamp_utc": parsed.isoformat() if parsed is not None else (str(timestamp) if timestamp else None),
+        "source": source,
+        "kind": kind,
+        "summary": summary,
+        "payload": payload,
+    }
+
+
+def _event_review_known_gaps(
+    *,
+    account_id: str | None,
+    runtime_evidence: dict[str, Any],
+    postgame_live_evidence: dict[str, Any],
+    portfolio_pnl_attribution: dict[str, Any],
+) -> list[dict[str, Any]]:
+    gaps: list[dict[str, Any]] = []
+    if not account_id:
+        gaps.append({"reason": "account_id_missing", "impact": "portfolio_pnl_attribution_skipped"})
+    if runtime_evidence.get("status") != "ready":
+        gaps.append({"reason": "runtime_evidence_partial", "errors": runtime_evidence.get("errors") or []})
+    live_items = postgame_live_evidence.get("items") if isinstance(postgame_live_evidence.get("items"), list) else []
+    for item in live_items:
+        for blocker in item.get("blockers") or []:
+            gaps.append({"reason": "postgame_live_evidence_blocker", **dict(blocker)})
+    if portfolio_pnl_attribution.get("status") not in {"ready", "not_requested"}:
+        gaps.append(
+            {
+                "reason": "portfolio_pnl_attribution_not_ready",
+                "status": portfolio_pnl_attribution.get("status"),
+                "source": portfolio_pnl_attribution.get("source"),
+            }
+        )
+    gaps.append(
+        {
+            "reason": "missed_opportunity_detector_not_yet_integrated",
+            "tracked_by": "#18-followup/#25",
+            "impact": "bundle exposes raw signals/windows but does not yet score missed trades.",
+        }
+    )
+    return gaps
+
+
 def _fetch_postgame_live_evidence_counts(
     connection: PsycopgConnection,
     *,
@@ -1539,6 +1983,13 @@ def _canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), default=to_jsonable)
 
 
+def _read_json_file(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def _safe_name(value: str) -> str:
     return "".join(ch if ch.isalnum() or ch in {"-", "_", "."} else "_" for ch in str(value))[:160] or "unknown"
 
@@ -1548,6 +1999,15 @@ def _safe_int(value: Any) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value in (None, ""):
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _timestamp_age_seconds(value: Any, *, now_utc: datetime) -> float | None:

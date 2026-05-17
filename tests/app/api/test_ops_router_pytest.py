@@ -835,6 +835,121 @@ def test_live_monitor_endpoint_marks_recorded_llm_revision_adoptable_pytest(tmp_
     assert item["llm_revision_adoption"]["order_endpoint_call_allowed"] is False
 
 
+def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+    artifact_dir = local_root / "shared" / "artifacts" / "llm-runtime" / "2026-05-10"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "trace.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "event-123",
+                "trace_id": "trace-1",
+                "status": "response_recorded",
+                "response_status": "response_recorded",
+                "trigger_count": 1,
+                "trigger_types": ["quarter_end"],
+                "selected_model": "gpt-5.4-mini",
+                "model_routing_decision": {"selected_model": "gpt-5.4-mini", "selected_tier": "mini"},
+                "response": {
+                    "status": "response_recorded",
+                    "selected_model": "gpt-5.4-mini",
+                    "trace_metadata": {"usage": {"input_tokens": 10, "output_tokens": 5}},
+                },
+                "persisted_at_utc": "2026-05-10T20:01:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    runtime_evidence = {
+        "schema_version": "event_review_runtime_evidence_v1",
+        "event_id": "event-123",
+        "status": "ready",
+        "errors": [],
+        "market_event": {"event_key": "event-123", "title": "Test event"},
+        "market_outcomes": [{"outcome_id": "outcome-1", "label": "Home"}],
+        "watch_sessions": [{"watch_session_id": "watch-1", "started_at": "2026-05-10T20:00:00+00:00"}],
+        "orderbook_ticks": [{"captured_at": "2026-05-10T20:00:30+00:00", "spread": 0.01, "mid_price": 0.51}],
+        "market_trades": [{"trade_time": "2026-05-10T20:02:00+00:00", "side": "BUY", "price": 0.51, "size": 5}],
+        "strategy_decisions": [
+            {
+                "strategy_decision_id": "decision-1",
+                "decided_at": "2026-05-10T20:00:45+00:00",
+                "strategy_id": "grid-1",
+                "decision_type": "order_intent",
+            }
+        ],
+        "operator_interventions": [],
+        "replay_sessions": [],
+        "orderbook_window_summary": {
+            "tick_count": 1,
+            "first_captured_at": "2026-05-10T20:00:30+00:00",
+            "last_captured_at": "2026-05-10T20:00:30+00:00",
+        },
+    }
+    monkeypatch.setattr(ops_router, "_build_event_review_runtime_evidence", lambda connection, *, event_id: runtime_evidence)
+    monkeypatch.setattr(
+        ops_router,
+        "_build_postgame_live_evidence",
+        lambda connection, *, event_ids, day: {
+            "schema_version": "postgame_live_evidence_v1",
+            "status": "live_evidence_present",
+            "gate": "GREEN",
+            "event_count": len(event_ids),
+            "items": [{"event_id": event_ids[0], "status": "live_evidence_present", "blockers": [], "warnings": []}],
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_build_postgame_portfolio_pnl_attribution",
+        lambda connection, payload, *, event_ids: {
+            "status": "ready",
+            "source": "pytest",
+            "event_count": len(event_ids),
+            "items": [{"event_id": event_ids[0], "pnl_attribution": {"pnl_attribution_ready": True}}],
+        },
+    )
+
+    def fake_db_connection():
+        yield fake_connection
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-10",
+            "event_ids": ["event-123"],
+            "source": "pytest",
+            "strategy_plans": [_strategy_plan_payload()],
+        },
+    )
+
+    try:
+        response = client.get(
+            "/v1/events/event-123/review-bundle",
+            params={"session_date": "2026-05-10", "account_id": "account-1"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["schema_version"] == "event_review_bundle_v1"
+    assert payload["event_id"] == "event-123"
+    assert payload["strategy_plan_versions"]["current_exists"] is True
+    assert payload["runtime_evidence"]["market_event"]["title"] == "Test event"
+    assert payload["llm_runtime_status"]["status"] == "recorded"
+    assert payload["portfolio_pnl_attribution"]["status"] == "ready"
+    timeline = payload["decision_timeline"]
+    assert timeline["entry_count"] >= 5
+    assert timeline["kind_counts"]["order_intent"] == 1
+    assert timeline["kind_counts"]["llm_runtime_trace"] == 1
+    assert any(item["reason"] == "missed_opportunity_detector_not_yet_integrated" for item in payload["known_gaps"])
+
+
 def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
