@@ -309,6 +309,40 @@ def _direct_trade_id(trade: Any) -> str | None:
     return None
 
 
+def _direct_trade_identity(trade: Any) -> str:
+    trade_id = _direct_trade_id(trade)
+    if trade_id:
+        return f"id:{trade_id.strip().lower()}"
+    order_ids = sorted(_direct_trade_order_ids(trade))
+    pieces = [
+        "synthetic",
+        ",".join(order_ids),
+        str(_direct_trade_value(trade, "side") or "").strip().lower(),
+        str(_direct_trade_value(trade, "price") or "").strip(),
+        str(_direct_trade_value(trade, "size") or "").strip(),
+        str(_direct_trade_value(trade, "fee") or "").strip(),
+        str(
+            _direct_trade_value(trade, "trade_time")
+            or _direct_trade_value(trade, "created_at")
+            or _direct_trade_value(trade, "timestamp")
+            or ""
+        ).strip(),
+    ]
+    return "|".join(pieces)
+
+
+def _dedupe_direct_trade_rows(direct_trade_rows: list[Any] | None) -> list[Any]:
+    seen: set[str] = set()
+    unique: list[Any] = []
+    for trade in direct_trade_rows or []:
+        identity = _direct_trade_identity(trade)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(trade)
+    return unique
+
+
 def _direct_item_to_dict(item: Any) -> dict[str, Any]:
     if isinstance(item, dict):
         return dict(item)
@@ -415,7 +449,7 @@ def _trade_cashflow_for_order_side(
 
 def _direct_trade_evidence_by_order_id(direct_trade_rows: list[Any] | None) -> dict[str, list[Any]]:
     evidence: dict[str, list[Any]] = {}
-    for trade in direct_trade_rows or []:
+    for trade in _dedupe_direct_trade_rows(direct_trade_rows):
         for order_id in _direct_trade_order_ids(trade):
             evidence.setdefault(order_id, []).append(trade)
     return evidence
@@ -549,7 +583,10 @@ def build_order_lifecycle_reconciliation_report(
     direct_ids = {str(item or "").strip().lower() for item in direct_open_order_external_ids or [] if str(item or "").strip()}
     if direct_open_order_count is None and direct_ids:
         direct_open_order_count = len(direct_ids)
-    direct_trade_evidence = _direct_trade_evidence_by_order_id(direct_trade_rows)
+    raw_direct_trade_rows = list(direct_trade_rows or [])
+    deduped_direct_trade_rows = _dedupe_direct_trade_rows(raw_direct_trade_rows)
+    direct_duplicate_trade_count = max(0, len(raw_direct_trade_rows) - len(deduped_direct_trade_rows))
+    direct_trade_evidence = _direct_trade_evidence_by_order_id(deduped_direct_trade_rows)
 
     lifecycle_counts: dict[str, int] = {}
     actor_summary: dict[str, dict[str, Any]] = {}
@@ -678,7 +715,9 @@ def build_order_lifecycle_reconciliation_report(
             "open_order_external_ids": sorted(direct_ids),
             "open_order_count": direct_open_order_count,
             "open_position_count": direct_open_position_count,
-            "trade_count": len(direct_trade_rows or []),
+            "trade_count": len(raw_direct_trade_rows),
+            "deduped_trade_count": len(deduped_direct_trade_rows),
+            "duplicate_trade_count": direct_duplicate_trade_count,
             "trade_matched_order_count": len(direct_trade_matched_order_ids),
             "trade_order_id_count": len(direct_trade_evidence),
             "direct_flat_snapshot": _direct_flat_snapshot_known(

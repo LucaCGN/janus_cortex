@@ -239,6 +239,42 @@ def test_order_lifecycle_report_uses_direct_trade_evidence_when_local_fill_missi
     assert report["actor_summary"]["janus_strategy"]["effective_cashflow_usd"] == Decimal("-1.55")
 
 
+def test_order_lifecycle_report_dedupes_duplicate_direct_trade_rows_pytest() -> None:
+    rows = [
+        _order_row(
+            "janus-buy",
+            external_order_id="0xbuy",
+            side="buy",
+            status="submitted",
+            size="5",
+            limit_price="0.31",
+            metadata_json={"run_id": "live-2026-05-10", "strategy_family": "min-underdog-band-grid-v2"},
+        )
+    ]
+
+    direct_trade = {
+        "id": "clob-trade-1",
+        "taker_order_id": "0xbuy",
+        "price": "0.31",
+        "size": "5",
+    }
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        rows,
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+        direct_trade_rows=[direct_trade, dict(direct_trade)],
+    )
+
+    assert report["direct_context"]["trade_count"] == 2
+    assert report["direct_context"]["deduped_trade_count"] == 1
+    assert report["direct_context"]["duplicate_trade_count"] == 1
+    assert report["items"][0]["direct_trade_count"] == 1
+    assert report["items"][0]["direct_fill_size"] == Decimal("5")
+    assert report["items"][0]["effective_cashflow_usd"] == Decimal("-1.55")
+    assert report["actor_summary"]["janus_strategy"]["effective_cashflow_usd"] == Decimal("-1.55")
+
+
 def test_order_status_backfill_plan_updates_only_full_fill_evidence_pytest() -> None:
     report = portfolio_router.build_order_lifecycle_reconciliation_report(
         [
