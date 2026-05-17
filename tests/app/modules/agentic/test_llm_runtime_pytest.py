@@ -819,6 +819,9 @@ def test_latest_llm_runtime_status_loads_persisted_event_trace_pytest(tmp_path) 
     assert status["items"][0]["response_status"] == "skipped_unavailable"
     assert status["items"][0]["trigger_types"] == ["quarter_end"]
     assert status["items"][0]["adoption_status"] == "not_adoptable"
+    assert status["codex_strategy_required_count"] == 1
+    assert status["items"][0]["codex_fallback_state"]["status"] == "codex_strategy_required"
+    assert status["items"][0]["codex_fallback_state"]["must_use_janus_validators"] is True
     assert status["items"][0]["llm_revision_adoption"]["blocker"] == "response_skipped_or_unavailable"
 
 
@@ -862,6 +865,8 @@ def test_latest_llm_runtime_status_marks_valid_response_adoptable_pytest(tmp_pat
 
     adoption = status["items"][0]["llm_revision_adoption"]
     assert status["items"][0]["adoption_status"] == "adoptable_review_required"
+    assert status["items"][0]["codex_fallback_state"]["status"] == "review_recorded_revision"
+    assert status["items"][0]["codex_fallback_state"]["review_required"] is True
     assert adoption["status"] == "adoptable_review_required"
     assert adoption["review_required"] is True
     assert adoption["blocker"] is None

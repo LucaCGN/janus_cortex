@@ -951,17 +951,27 @@ def load_latest_llm_runtime_status(
                         "trace_artifact_path": None,
                         "order_endpoint_call_allowed": False,
                     },
+                    "codex_fallback_state": _codex_fallback_state_for_status(
+                        response_status=None,
+                        skipped_reason=None,
+                        trigger_count=0,
+                        adoption_status="not_available",
+                    ),
                 }
             )
         else:
             items.append(item)
 
     recorded_count = sum(1 for item in items if item.get("status") != "not_recorded")
+    codex_required_count = sum(
+        1 for item in items if (item.get("codex_fallback_state") or {}).get("status") == "codex_strategy_required"
+    )
     return {
         "status": "recorded" if recorded_count == len(items) else ("partial" if recorded_count else "not_recorded"),
         "session_date": resolved_day,
         "event_count": len(items),
         "recorded_event_count": recorded_count,
+        "codex_strategy_required_count": codex_required_count,
         "items": items,
         "safety_controls": build_llm_runtime_safety_controls_status(),
         "artifact_root": str(root),
@@ -1686,6 +1696,12 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "artifact_schema_version": payload.get("schema_version"),
         "adoption_status": adoption["status"],
         "llm_revision_adoption": adoption,
+        "codex_fallback_state": _codex_fallback_state_for_status(
+            response_status=payload.get("response_status") or response.get("status"),
+            skipped_reason=response.get("skipped_reason"),
+            trigger_count=int(payload.get("trigger_count") or trace.get("trigger_count") or 0),
+            adoption_status=adoption["status"],
+        ),
     }
 
 
@@ -1724,6 +1740,56 @@ def _llm_revision_adoption_status(*, event_id: str, response: dict[str, Any]) ->
         "order_endpoint_call_allowed": False,
         "required_review_fields": ["reviewed_by", "review_reason"] if review_required else [],
         "apply_current_requires_explicit_request": True,
+    }
+
+
+def _codex_fallback_state_for_status(
+    *,
+    response_status: str | None,
+    skipped_reason: str | None,
+    trigger_count: int,
+    adoption_status: str,
+) -> dict[str, Any]:
+    reason = str(skipped_reason or "").strip()
+    unavailable_markers = (
+        "openai",
+        "api_key",
+        "client_unavailable",
+        "dispatch_disabled",
+        "llm_event_budget_exceeded",
+        "llm_trigger_call_cap_exceeded",
+        "repeated_trigger_hash_dedup",
+    )
+    if response_status == "response_recorded" and adoption_status == "adoptable_review_required":
+        status_value = "review_recorded_revision"
+        review_required = True
+    elif trigger_count > 0 and response_status == "skipped_unavailable" and (
+        not reason or any(marker in reason for marker in unavailable_markers)
+    ):
+        status_value = "codex_strategy_required"
+        review_required = True
+    elif trigger_count > 0 and response_status in {"detected_only", "skipped_unavailable"}:
+        status_value = "operator_review_optional"
+        review_required = False
+    else:
+        status_value = "not_required"
+        review_required = False
+    return {
+        "schema_version": "codex_llm_fallback_state_v1",
+        "status": status_value,
+        "review_required": review_required,
+        "response_status": response_status,
+        "skipped_reason": skipped_reason,
+        "trigger_count": trigger_count,
+        "allowed_fallback_actions": [
+            "submit_reviewed_strategy_plan_candidate",
+            "submit_reviewed_position_management_action",
+            "record_no_action_with_reason",
+        ]
+        if review_required
+        else [],
+        "must_use_janus_validators": True,
+        "raw_exchange_order_bypass_allowed": False,
     }
 
 
