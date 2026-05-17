@@ -8,6 +8,7 @@ from app.modules.agentic.llm_runtime import (
     FRONTIER_MODEL,
     MINI_MODEL,
     _build_live_revision_system_prompt,
+    build_current_event_inventory_proof,
     build_llm_prompt_contract,
     build_llm_revision_request,
     build_llm_runtime_trace,
@@ -387,10 +388,39 @@ def test_prompt_contract_and_revision_request_include_safety_sections_pytest() -
     assert request.prompt_contract["safety_rule"] == "No order endpoint calls are allowed from LLM output or prompt tools."
     assert "direct_clob_truth" in request.prompt_contract["required_input_sections"]
     assert "operator_sizing_policy" in request.prompt_contract["required_input_sections"]
+    assert "current_event_inventory_proof" in request.prompt_contract["required_input_sections"]
+    assert request.direct_clob_truth["current_event_inventory_proof"]["status"] == "included"
+    assert request.portfolio_state["current_event_inventory_proof"]["open_order_count"] == 0
     assert prompt_contract["required_json_output_schema"]["revised_strategy_plan"] == "StrategyPlanJSON or null"
     assert prompt_contract["authority_boundaries"][0] == "The LLM never calls order endpoints."
     assert "Marketable loss exits are reserved for virtual-dead states" in prompt_contract["experiment_policy"]
     assert "loss_exit_requires_virtual_dead=true" in _build_live_revision_system_prompt(request)
+
+
+def test_current_event_inventory_proof_summarizes_direct_scope_pytest() -> None:
+    proof = build_current_event_inventory_proof(
+        direct_clob_truth={
+            "event_token_ids": ["token-a", "token-b"],
+            "open_orders": {"orders": [{"id": "order-1"}], "event_scoped": True},
+            "open_positions": {"positions": [{"asset": "token-a"}], "event_scoped": True},
+        },
+        portfolio_state={
+            "pending_intents": 1,
+            "submitted_orders": [{"id": "submitted-1"}],
+            "direct_clob_trade_observation_count": 2,
+            "pending_intent_source": "portfolio_orders",
+        },
+    )
+
+    assert proof["status"] == "included"
+    assert proof["event_scoped"] is True
+    assert proof["event_token_count"] == 2
+    assert proof["open_order_count"] == 1
+    assert proof["open_position_count"] == 1
+    assert proof["pending_intent_count"] == 1
+    assert proof["submitted_order_count"] == 1
+    assert proof["unresolved_inventory_count"] == 4
+    assert proof["unresolved_inventory_present"] is True
 
 
 def test_quarter_end_runtime_trace_persists_to_artifact_pytest(tmp_path) -> None:

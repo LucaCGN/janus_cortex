@@ -119,6 +119,7 @@ JANUS_LIVE_LLM_PROMPT_CONTRACT: dict[str, Any] = {
         "ml_pbp_trigger_evidence",
         "direct_clob_truth",
         "portfolio_orders_positions_trades",
+        "current_event_inventory_proof",
         "current_scoreboard_and_play_by_play_summary",
         "current_strategy_plan_and_stale_reason",
         "operator_sizing_policy",
@@ -155,6 +156,56 @@ JANUS_LIVE_LLM_PROMPT_CONTRACT: dict[str, Any] = {
     ),
     "safety_rule": "No order endpoint calls are allowed from LLM output or prompt tools.",
 }
+
+
+def build_current_event_inventory_proof(
+    *,
+    direct_clob_truth: dict[str, Any] | None,
+    portfolio_state: dict[str, Any] | None,
+) -> dict[str, Any]:
+    direct = dict(direct_clob_truth or {})
+    portfolio = dict(portfolio_state or {})
+    open_order_count = _inventory_count(
+        direct,
+        "event_open_order_count",
+        "open_order_count",
+        "current_event_open_orders_count",
+        nested_keys=("open_orders", "orders"),
+    )
+    open_position_count = _inventory_count(
+        direct,
+        "event_open_position_count",
+        "open_position_count",
+        "current_event_open_positions_count",
+        nested_keys=("open_positions", "positions"),
+    )
+    pending_intent_count = _safe_int(portfolio.get("pending_intents")) or 0
+    submitted_order_count = _inventory_count(portfolio, nested_keys=("submitted_orders",))
+    event_token_ids = direct.get("event_token_ids")
+    event_token_count = len(event_token_ids) if isinstance(event_token_ids, list) else _safe_int(direct.get("direct_clob_event_token_count"))
+    event_scoped = bool(
+        direct.get("event_scoped")
+        or event_token_count
+        or ((direct.get("open_orders") or {}).get("event_scoped") if isinstance(direct.get("open_orders"), dict) else False)
+        or ((direct.get("open_positions") or {}).get("event_scoped") if isinstance(direct.get("open_positions"), dict) else False)
+    )
+    status = "included" if direct else "missing_direct_clob_truth"
+    unresolved_inventory = open_order_count + open_position_count + pending_intent_count + submitted_order_count
+    return {
+        "schema_version": "current_event_inventory_proof_v1",
+        "status": status,
+        "event_scoped": event_scoped,
+        "direct_clob_truth_present": bool(direct),
+        "event_token_count": event_token_count or 0,
+        "open_order_count": open_order_count,
+        "open_position_count": open_position_count,
+        "pending_intent_count": pending_intent_count,
+        "submitted_order_count": submitted_order_count,
+        "unresolved_inventory_count": unresolved_inventory,
+        "unresolved_inventory_present": unresolved_inventory > 0,
+        "direct_clob_trade_observation_count": _safe_int(portfolio.get("direct_clob_trade_observation_count")) or 0,
+        "pending_intents_source": portfolio.get("pending_intent_source"),
+    }
 
 
 def build_llm_runtime_safety_controls_status() -> dict[str, Any]:
@@ -451,6 +502,14 @@ def build_llm_revision_request(
 ) -> LLMRevisionRequest:
     plan = _plain_mapping(current_plan)
     prompt_contract = build_llm_prompt_contract()
+    direct_payload = dict(direct_clob_truth or {})
+    portfolio_payload = dict(portfolio_state or {})
+    inventory_proof = build_current_event_inventory_proof(
+        direct_clob_truth=direct_payload,
+        portfolio_state=portfolio_payload,
+    )
+    direct_payload.setdefault("current_event_inventory_proof", inventory_proof)
+    portfolio_payload.setdefault("current_event_inventory_proof", inventory_proof)
     return LLMRevisionRequest(
         request_id=_stable_id("llm-revision-request", event_id, [trigger.trigger_id for trigger in triggers]),
         event_id=event_id,
@@ -463,14 +522,14 @@ def build_llm_revision_request(
         event_context=dict(event_context or {}),
         deterministic_strategy_candidates=_strategy_candidates_from_plan(plan),
         ml_pbp_trigger_evidence=_ml_pbp_evidence_payload(ml_pbp_evidence),
-        direct_clob_truth=dict(direct_clob_truth or {}),
+        direct_clob_truth=direct_payload,
         orderbook_state=dict(orderbook_state or {}),
-        portfolio_state=dict(portfolio_state or {}),
+        portfolio_state=portfolio_payload,
         operator_interventions=[dict(item) for item in operator_interventions or [] if isinstance(item, dict)],
         strategy_decisions=[dict(item) for item in strategy_decisions or [] if isinstance(item, dict)],
         scoreboard_pbp_summary=_scoreboard_pbp_summary(dict(live_state or {})),
         current_plan_stale_reason=current_plan_stale_reason or _first_stale_reason(triggers),
-        operator_sizing_policy=_operator_sizing_policy(dict(portfolio_state or {})),
+        operator_sizing_policy=_operator_sizing_policy(portfolio_payload),
     )
 
 
@@ -2152,6 +2211,35 @@ def _dedupe_triggers(triggers: list[LLMRuntimeTrigger]) -> list[LLMRuntimeTrigge
     return result
 
 
+def _inventory_count(
+    source: dict[str, Any],
+    *count_keys: str,
+    nested_keys: tuple[str, ...] = (),
+) -> int:
+    for key in count_keys:
+        parsed = _safe_int(source.get(key))
+        if parsed is not None:
+            return max(parsed, 0)
+    if not nested_keys:
+        return 0
+    item: Any = source
+    for key in nested_keys:
+        if isinstance(item, dict):
+            item = item.get(key)
+        else:
+            item = None
+            break
+    if isinstance(item, list):
+        return len(item)
+    if isinstance(item, dict):
+        for key in ("count", "total"):
+            parsed = _safe_int(item.get(key))
+            if parsed is not None:
+                return max(parsed, 0)
+    parsed = _safe_int(item)
+    return max(parsed, 0) if parsed is not None else 0
+
+
 def _has_open_exposure(portfolio_state: dict[str, Any] | None) -> bool:
     portfolio = dict(portfolio_state or {})
     for key in ("open_positions", "open_orders", "pending_intents", "pending_buy_intents", "uncovered_positions"):
@@ -2526,6 +2614,7 @@ __all__ = [
     "JANUS_LIVE_LLM_PROMPT_CONTRACT",
     "MINI_MODEL",
     "NANO_MODEL",
+    "build_current_event_inventory_proof",
     "build_llm_prompt_contract",
     "build_llm_revision_request",
     "build_llm_runtime_trace",

@@ -11,7 +11,11 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from app.modules.agentic.contracts import LLMRuntimeTrace
-from app.modules.agentic.llm_runtime import build_llm_runtime_trace, process_llm_runtime_trace
+from app.modules.agentic.llm_runtime import (
+    build_current_event_inventory_proof,
+    build_llm_runtime_trace,
+    process_llm_runtime_trace,
+)
 
 try:
     from codex_tool._client import api_json, base_parser, exit_for_response
@@ -466,6 +470,13 @@ def _run_event_tick(
     llm_portfolio_state = dict(portfolio_state)
     if operator_reaction.get("submitted_orders"):
         llm_portfolio_state["submitted_orders"] = operator_reaction["submitted_orders"]
+    current_event_inventory_proof = build_current_event_inventory_proof(
+        direct_clob_truth=event_direct_clob_state,
+        portfolio_state=llm_portfolio_state,
+    )
+    portfolio_state["current_event_inventory_proof"] = current_event_inventory_proof
+    llm_portfolio_state["current_event_inventory_proof"] = current_event_inventory_proof
+    market_state["current_event_inventory_proof"] = current_event_inventory_proof
     llm_runtime_trace = build_llm_runtime_trace(
         event_id=event_id,
         market_id=str(plan.get("market_id") or "") or None,

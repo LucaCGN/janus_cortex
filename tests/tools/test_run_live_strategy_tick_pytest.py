@@ -921,11 +921,14 @@ def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest
     assert result["portfolio_state"]["pending_intents"] == 1
     assert result["portfolio_state"]["pending_buy_intents"] == 1
     assert result["portfolio_state"]["pending_intent_orders"][0]["strategy_id"] == "grid-sas-1"
+    assert result["portfolio_state"]["current_event_inventory_proof"]["pending_intent_count"] == 1
+    assert result["market_state"]["current_event_inventory_proof"]["unresolved_inventory_present"] is True
     assert len(evaluate_calls) == 1
     portfolio_state = evaluate_calls[0]["payload"]["portfolio_state"]
     assert portfolio_state["open_orders"] == 0
     assert portfolio_state["open_positions"] == 0
     assert portfolio_state["pending_intents"] == 1
+    assert portfolio_state["current_event_inventory_proof"]["pending_intent_count"] == 1
 
 
 def test_pending_intent_summary_ignores_local_order_filled_in_direct_clob_pytest(monkeypatch) -> None:
