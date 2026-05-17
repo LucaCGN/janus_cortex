@@ -256,11 +256,65 @@ def _run_event_tick(
         )
         live_state = api_json(api_root, "GET", f"/v1/nba/games/{game['game_id']}/live")
 
-    outcome_states: dict[str, dict[str, Any]] = {}
-    orderbook_results: dict[str, Any] = {}
+    outcome_specs: list[dict[str, Any]] = []
     for strategy in plan.get("active_strategies") or []:
         entry_rules = strategy.get("entry_rules") or {}
-        outcome_id = str(entry_rules.get("outcome_id") or "")
+        outcome_id = str(entry_rules.get("outcome_id") or "").strip()
+        if outcome_id:
+            outcome_specs.append(
+                {
+                    "outcome_id": outcome_id,
+                    "outcome_label": _outcome_label_from_strategy(strategy, entry_rules),
+                    "side": str(entry_rules.get("side") or "buy"),
+                    "strategy": strategy,
+                    "entry_rules": entry_rules,
+                    "source": "active_strategy",
+                }
+            )
+
+    market_outcome_refs: dict[str, dict[str, str]] = {}
+    market_outcome_lookup_error: str | None = None
+    market_id = str(plan.get("market_id") or "").strip()
+    if market_id:
+        try:
+            market_outcomes = api_json(api_root, "GET", f"/v1/markets/{market_id}/outcomes")
+            for row in market_outcomes.get("items") or []:
+                if not isinstance(row, dict):
+                    continue
+                outcome_id = str(row.get("outcome_id") or "").strip()
+                if not outcome_id:
+                    continue
+                ref = {
+                    "market_id": str(row.get("market_id") or market_id),
+                    "outcome_id": outcome_id,
+                    "token_id": str(row.get("token_id") or "").strip(),
+                    "outcome_label": str(row.get("outcome_label") or "").strip(),
+                }
+                market_outcome_refs[outcome_id] = ref
+                if ref["token_id"]:
+                    market_outcome_refs[ref["token_id"]] = ref
+                if any(spec["outcome_id"] == outcome_id for spec in outcome_specs):
+                    continue
+                outcome_specs.append(
+                    {
+                        "outcome_id": outcome_id,
+                        "outcome_label": ref["outcome_label"] or None,
+                        "side": "buy",
+                        "strategy": {},
+                        "entry_rules": {"side": "buy", "outcome_id": outcome_id, "token_id": ref["token_id"]},
+                        "source": "market_outcome_context",
+                    }
+                )
+        except Exception as exc:
+            market_outcome_lookup_error = str(exc)
+
+    outcome_states: dict[str, dict[str, Any]] = {}
+    orderbook_results: dict[str, Any] = {}
+    sampled_outcomes: list[dict[str, Any]] = []
+    for spec in outcome_specs:
+        strategy = spec.get("strategy") if isinstance(spec.get("strategy"), dict) else {}
+        entry_rules = spec.get("entry_rules") if isinstance(spec.get("entry_rules"), dict) else {}
+        outcome_id = str(spec.get("outcome_id") or "")
         if not outcome_id or outcome_id in outcome_states:
             continue
         api_json(
@@ -275,11 +329,26 @@ def _run_event_tick(
             },
         )
         latest = api_json(api_root, "GET", f"/v1/outcomes/{outcome_id}/orderbook/latest")
+        outcome_label = str(spec.get("outcome_label") or "").strip() or _outcome_label_from_strategy(strategy, entry_rules)
+        if not outcome_label:
+            try:
+                outcome_detail = api_json(api_root, "GET", f"/v1/outcomes/{outcome_id}")
+                outcome_label = str(outcome_detail.get("outcome_label") or "").strip() or None
+            except Exception:
+                outcome_label = None
+        sampled_outcomes.append(
+            {
+                "outcome_id": outcome_id,
+                "outcome_label": outcome_label,
+                "token_id": str(entry_rules.get("token_id") or market_outcome_refs.get(outcome_id, {}).get("token_id") or ""),
+                "source": spec.get("source"),
+            }
+        )
         orderbook_results[outcome_id] = latest
         outcome_states[outcome_id] = _state_from_orderbook(
             latest,
             side=str(entry_rules.get("side") or "buy"),
-            outcome_label=strategy.get("side"),
+            outcome_label=outcome_label,
             game=game,
             live_state=live_state,
         )
@@ -289,6 +358,7 @@ def _run_event_tick(
         event_id=event_id,
         plan=plan,
         orderbooks=orderbook_results,
+        outcome_lookup_override=market_outcome_refs,
         source=source,
         game=game,
         cadence_ms=max(0, int(orderbook_sample_interval_sec * 1000)),
@@ -361,11 +431,14 @@ def _run_event_tick(
     ]
     market_state = {
         "outcome_states": outcome_states,
+        "sampled_outcomes": sampled_outcomes,
         "game": game,
         "live_state": _compact_live_state(live_state),
         "player_status_shocks": player_status_shocks,
         "player_status_shock_count": len(revision_required_shocks),
     }
+    if market_outcome_lookup_error:
+        market_state["market_outcome_lookup_error"] = market_outcome_lookup_error
     operator_reaction = _auto_protect_direct_positions(
         api_root=api_root,
         account_id=account_id,
@@ -612,6 +685,7 @@ def _position_target_price_from_plan(
         sleeve = _strategy_sleeve_metadata(strategy)
         scaled_target = _scaled_micro_grid_target_price(avg_price, exit_rules)
         if scaled_target is not None:
+            scaled_target = _normalize_direct_sell_limit_price(scaled_target)
             return {
                 "target_price": scaled_target,
                 "target_policy": "micro_grid_scaled",
@@ -626,7 +700,7 @@ def _position_target_price_from_plan(
             }
         explicit_target = _float(exit_rules.get("target_price"))
         if explicit_target is not None:
-            target_price = round(min(0.95, max(0.01, explicit_target)), 4)
+            target_price = _normalize_direct_sell_limit_price(explicit_target)
             return {
                 "target_price": target_price,
                 "target_policy": "explicit_target_price",
@@ -640,7 +714,7 @@ def _position_target_price_from_plan(
                 "exit_rules": exit_rules,
             }
     fallback_sleeve = _strategy_sleeve_metadata(strategy)
-    fallback_target = round(min(0.95, max(0.01, avg_price + default_target_delta_cents / 100.0)), 4)
+    fallback_target = _normalize_direct_sell_limit_price(avg_price + default_target_delta_cents / 100.0)
     return {
         "target_price": fallback_target,
         "target_policy": "fallback_fixed_delta",
@@ -652,6 +726,15 @@ def _position_target_price_from_plan(
         "sleeve_group": fallback_sleeve.get("sleeve_group"),
         "sleeve_role": fallback_sleeve.get("sleeve_role"),
     }
+
+
+def _normalize_direct_sell_limit_price(price: float) -> float:
+    """Normalize protective target sells to CLOB tick sizes without lowering target."""
+
+    bounded = min(0.95, max(0.01, float(price)))
+    if bounded < 0.10:
+        return round(math.ceil((bounded - 1e-12) * 100.0) / 100.0, 2)
+    return round(bounded, 4)
 
 
 def _strategy_matches_token(entry_rules: dict[str, Any], *, token_id: str, outcome_id: str) -> bool:
@@ -1109,9 +1192,9 @@ def _position_adverse_review(
             "decision_options_to_compare": [
                 "hold_existing_target",
                 "cancel_replace_lower_target",
-                "marketable_stop_or_reduce",
                 "opposite_side_hedge_or_continuation",
                 "add_down_same_side_micro_grid",
+                "marketable_stop_or_reduce_only_if_virtual_dead_or_garbage_time",
             ],
             "current_position": {
                 "size": position_size,
@@ -1769,6 +1852,7 @@ def _persist_orderbook_watch_ticks(
     event_id: str,
     plan: dict[str, Any],
     orderbooks: dict[str, Any],
+    outcome_lookup_override: dict[str, dict[str, str]] | None = None,
     source: str,
     game: dict[str, Any],
     cadence_ms: int | None,
@@ -1799,6 +1883,8 @@ def _persist_orderbook_watch_ticks(
     db_persistence = session.get("db_persistence") if isinstance(session.get("db_persistence"), dict) else {}
     watch_session_id = db_persistence.get("watch_session_id")
     outcome_lookup = _plan_outcome_lookup(plan)
+    if outcome_lookup_override:
+        outcome_lookup.update(outcome_lookup_override)
     ticks = [
         tick
         for outcome_id, payload in orderbooks.items()
@@ -2285,6 +2371,14 @@ def _open_sell_size_for_token(open_orders: list[dict[str, Any]], token_id: str) 
     return total
 
 
+def _outcome_label_from_strategy(strategy: dict[str, Any], entry_rules: dict[str, Any]) -> str | None:
+    for key in ("outcome_label", "team_label", "team", "target_outcome"):
+        value = entry_rules.get(key) or strategy.get(key)
+        if isinstance(value, str) and value.strip().lower() not in {"buy", "sell", "yes", "no"}:
+            return value.strip()
+    return None
+
+
 def _state_from_orderbook(
     latest: dict[str, Any],
     *,
@@ -2336,15 +2430,121 @@ def _scoreboard_state(outcome_label: str | None, *, game: dict[str, Any], live_s
         elif label in away_names:
             score_gap = away_score - home_score
     snapshot_time = _parse_dt(latest.get("captured_at") or latest.get("updated_at") or latest.get("snapshot_time"))
+    captured_age_seconds = _age_seconds(snapshot_time)
+    stall_seconds = _scoreboard_stall_seconds(live_state, latest=latest)
+    pause_context = _scoreboard_pause_context(live_state, latest=latest)
+    scoreboard_age_seconds = captured_age_seconds
+    stall_suppressed_reason = None
+    if stall_seconds is not None and pause_context.get("active"):
+        stall_suppressed_reason = pause_context.get("reason") or "clock_stopped_dead_ball"
+    elif stall_seconds is not None:
+        scoreboard_age_seconds = max(scoreboard_age_seconds or 0.0, stall_seconds)
     return {
         "score_gap": score_gap,
-        "scoreboard_age_seconds": _age_seconds(snapshot_time),
+        "scoreboard_age_seconds": scoreboard_age_seconds,
+        "scoreboard_captured_age_seconds": captured_age_seconds,
+        "scoreboard_stall_seconds": stall_seconds,
+        "scoreboard_stall_suppressed_reason": stall_suppressed_reason,
+        "scoreboard_pause_context": pause_context,
         "game_status": latest.get("game_status") or latest_payload.get("game_status") or game.get("game_status"),
         "period": latest.get("period") or game.get("period"),
         "game_clock": latest.get("game_clock") or latest.get("clock") or latest_payload.get("game_clock") or game.get("game_clock"),
         "home_score": home_score,
         "away_score": away_score,
     }
+
+
+def _scoreboard_stall_seconds(live_state: dict[str, Any], *, latest: dict[str, Any]) -> float | None:
+    """Return how long the visible game clock has been frozen in the local feed.
+
+    NBA CDN snapshots can keep a fresh poll timestamp while the period/clock stays
+    frozen. Trading gates should treat that as stale scoreboard evidence.
+    """
+    rows = live_state.get("live_snapshots") or live_state.get("snapshots") or []
+    if not isinstance(rows, list) or len(rows) < 2:
+        return None
+    latest_key = _scoreboard_progress_key(latest)
+    if latest_key is None:
+        return None
+    latest_time = _parse_dt(latest.get("captured_at") or latest.get("updated_at") or latest.get("snapshot_time"))
+    if latest_time is None:
+        return None
+    oldest_matching_time = latest_time
+    matching_count = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if _scoreboard_progress_key(row) != latest_key:
+            break
+        row_time = _parse_dt(row.get("captured_at") or row.get("updated_at") or row.get("snapshot_time"))
+        if row_time is None:
+            continue
+        matching_count += 1
+        if row_time < oldest_matching_time:
+            oldest_matching_time = row_time
+    if matching_count < 2:
+        return None
+    return max(0.0, (latest_time - oldest_matching_time).total_seconds())
+
+
+def _scoreboard_pause_context(live_state: dict[str, Any], *, latest: dict[str, Any]) -> dict[str, Any]:
+    """Detect legitimate dead-ball pauses so clock stalls do not masquerade as stale feeds."""
+    latest_key = _scoreboard_progress_key(latest)
+    if latest_key is None:
+        return {"active": False}
+    rows = live_state.get("recent_play_by_play") or live_state.get("play_by_play") or []
+    if not isinstance(rows, list):
+        return {"active": False}
+    latest_snapshot_time = _parse_dt(latest.get("captured_at") or latest.get("updated_at") or latest.get("snapshot_time"))
+    pause_action_types = {"timeout", "period", "substitution", "foul", "freethrow", "jumpball", "review", "violation"}
+    for row in rows[:8]:
+        if not isinstance(row, dict):
+            continue
+        if _scoreboard_progress_key(row) != latest_key:
+            continue
+        payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+        action_type = str(payload.get("actionType") or row.get("action_type") or "").strip().lower()
+        description = str(row.get("description") or payload.get("description") or "").strip().lower()
+        subtype = str(payload.get("subType") or row.get("sub_type") or "").strip().lower()
+        is_pause = (
+            action_type in pause_action_types
+            or "timeout" in description
+            or "period end" in description
+            or "official review" in description
+        )
+        if not is_pause:
+            continue
+        event_time = _parse_dt(payload.get("timeActual") or payload.get("edited") or row.get("updated_at"))
+        event_age_seconds = None
+        if event_time is not None and latest_snapshot_time is not None:
+            event_age_seconds = max(0.0, (latest_snapshot_time - event_time).total_seconds())
+        # NBA timeouts/reviews/substitution dead balls can legitimately hold the visible clock for minutes.
+        if event_age_seconds is not None and event_age_seconds > 360:
+            return {
+                "active": False,
+                "reason": "pause_event_too_old",
+                "action_type": action_type,
+                "description": row.get("description") or payload.get("description"),
+                "event_age_seconds": event_age_seconds,
+            }
+        return {
+            "active": True,
+            "reason": f"dead_ball_{action_type or subtype or 'pause'}",
+            "action_type": action_type,
+            "subtype": subtype,
+            "description": row.get("description") or payload.get("description"),
+            "event_age_seconds": event_age_seconds,
+        }
+    return {"active": False}
+
+
+def _scoreboard_progress_key(snapshot: dict[str, Any]) -> tuple[Any, str] | None:
+    payload = snapshot.get("payload_json") if isinstance(snapshot.get("payload_json"), dict) else {}
+    period = snapshot.get("period") or payload.get("period")
+    clock = snapshot.get("game_clock") or snapshot.get("clock") or payload.get("game_clock") or payload.get("clock")
+    if period is None or not clock:
+        return None
+    return period, str(clock)
 
 
 def _player_status_shocks_from_live_state(

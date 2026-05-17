@@ -1,9 +1,151 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+import pytest
 
 from app.modules.agentic.contracts import StrategyPlan
 from codex_tool import run_live_strategy_tick as live_tick
+
+
+def test_scoreboard_state_treats_frozen_clock_as_stale_pytest() -> None:
+    state = live_tick._scoreboard_state(
+        "Cavaliers",
+        game={
+            "home_team_name": "Pistons",
+            "home_team_slug": "DET",
+            "away_team_name": "Cavaliers",
+            "away_team_slug": "CLE",
+            "game_status": 2,
+            "period": 1,
+            "game_clock": "PT02M55.00S",
+        },
+        live_state={
+            "latest_snapshot": {
+                "captured_at": "2026-05-14T00:35:32+00:00",
+                "period": 1,
+                "game_clock": "PT02M55.00S",
+                "home_score": 19,
+                "away_score": 22,
+            },
+            "live_snapshots": [
+                {
+                    "captured_at": "2026-05-14T00:35:32+00:00",
+                    "period": 1,
+                    "game_clock": "PT02M55.00S",
+                    "home_score": 19,
+                    "away_score": 22,
+                },
+                {
+                    "captured_at": "2026-05-14T00:34:52+00:00",
+                    "period": 1,
+                    "game_clock": "PT02M55.00S",
+                    "home_score": 19,
+                    "away_score": 21,
+                },
+                {
+                    "captured_at": "2026-05-14T00:34:26+00:00",
+                    "period": 1,
+                    "game_clock": "PT02M55.00S",
+                    "home_score": 19,
+                    "away_score": 21,
+                },
+                {
+                    "captured_at": "2026-05-14T00:33:30+00:00",
+                    "period": 1,
+                    "game_clock": "PT03M04.00S",
+                    "home_score": 17,
+                    "away_score": 21,
+                },
+            ],
+        },
+    )
+
+    assert state["score_gap"] == 3
+    assert state["scoreboard_stall_seconds"] == 66.0
+    assert state["scoreboard_age_seconds"] >= 66.0
+
+
+def test_scoreboard_state_does_not_mark_timeout_pause_as_stale_pytest() -> None:
+    now = datetime.now(timezone.utc)
+    captured_at = now.isoformat()
+    one_minute_ago = (now - timedelta(seconds=60)).isoformat()
+    two_minutes_ago = (now - timedelta(seconds=120)).isoformat()
+    timeout_at = (now - timedelta(seconds=248)).isoformat()
+
+    state = live_tick._scoreboard_state(
+        "Cavaliers",
+        game={
+            "home_team_name": "Pistons",
+            "home_team_slug": "DET",
+            "away_team_name": "Cavaliers",
+            "away_team_slug": "CLE",
+            "game_status": 2,
+            "period": 3,
+            "game_clock": "PT06M55.00S",
+        },
+        live_state={
+            "latest_snapshot": {
+                "captured_at": captured_at,
+                "period": 3,
+                "clock": "PT06M55.00S",
+                "home_score": 66,
+                "away_score": 64,
+            },
+            "live_snapshots": [
+                {
+                    "captured_at": captured_at,
+                    "period": 3,
+                    "clock": "PT06M55.00S",
+                    "home_score": 66,
+                    "away_score": 64,
+                },
+                {
+                    "captured_at": one_minute_ago,
+                    "period": 3,
+                    "clock": "PT06M55.00S",
+                    "home_score": 66,
+                    "away_score": 64,
+                },
+                {
+                    "captured_at": two_minutes_ago,
+                    "period": 3,
+                    "clock": "PT06M55.00S",
+                    "home_score": 66,
+                    "away_score": 64,
+                },
+            ],
+            "recent_play_by_play": [
+                {
+                    "period": 3,
+                    "clock": "PT06M55.00S",
+                    "description": "DET Timeout",
+                    "payload_json": {
+                        "actionType": "timeout",
+                        "description": "DET Timeout",
+                        "timeActual": timeout_at,
+                    },
+                }
+            ],
+        },
+    )
+
+    assert state["score_gap"] == -2
+    assert state["scoreboard_stall_seconds"] == 120.0
+    assert state["scoreboard_stall_suppressed_reason"] == "dead_ball_timeout"
+    assert state["scoreboard_age_seconds"] < 10
+
+
+def test_outcome_label_from_strategy_ignores_trade_side_pytest() -> None:
+    assert live_tick._outcome_label_from_strategy({"side": "buy"}, {"side": "buy"}) is None
+    assert (
+        live_tick._outcome_label_from_strategy(
+            {"side": "buy", "outcome_label": "Cavaliers"},
+            {"side": "buy"},
+        )
+        == "Cavaliers"
+    )
 
 
 def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> None:
@@ -260,9 +402,9 @@ def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_
     assert review["revision_request"]["decision_options_to_compare"] == [
         "hold_existing_target",
         "cancel_replace_lower_target",
-        "marketable_stop_or_reduce",
         "opposite_side_hedge_or_continuation",
         "add_down_same_side_micro_grid",
+        "marketable_stop_or_reduce_only_if_virtual_dead_or_garbage_time",
     ]
     assert review["revision_request"]["sleeve_id"] == "lal-q4-micro-grid"
     assert result["candidate_strategy_plan_required"] is True
@@ -969,6 +1111,31 @@ def test_position_target_price_uses_one_cent_floor_for_low_prices_pytest() -> No
 
     assert target["target_price"] == 0.06
     assert target["target_delta_cents"] == 1.0
+
+
+def test_position_target_price_rounds_low_price_targets_up_to_cent_tick_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "cle-low-position-management",
+                    "family": "position_management_only",
+                    "entry_rules": {"token_id": "token-cle"},
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "min_target_cents": 1,
+                    },
+                }
+            ]
+        },
+        token_id="token-cle",
+        outcome_id="outcome-cle",
+        avg_price=0.0529,
+        default_target_delta_cents=5.0,
+    )
+
+    assert target["target_price"] == 0.07
+    assert target["target_delta_cents"] == pytest.approx(1.71)
 
 
 def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatch) -> None:

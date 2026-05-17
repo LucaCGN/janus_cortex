@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 import urllib.error
 import urllib.parse
@@ -283,6 +284,7 @@ def main() -> int:
         status_path,
         {
             "status": "running",
+            "pid": os.getpid(),
             "orders_allowed": False,
             "started_at_utc": started_at,
             "session_date": session_date,
@@ -318,6 +320,7 @@ def main() -> int:
             status_path,
             {
                 "status": "running",
+                "pid": os.getpid(),
                 "orders_allowed": False,
                 "started_at_utc": started_at,
                 "updated_at_utc": _iso(),
