@@ -11,59 +11,34 @@ Codex automations, or an equivalent external agent framework, are required for t
 Live game execution is owned by the service-owned live strategy worker exposed through `/v1/ops/live-strategy-worker/*`. Codex tools can inspect, start, stop, or trigger one bounded worker tick, but Janus must provide the recurring heartbeat and strategy evaluation loop during active games.
 
 ## Current Status
-- Active analysis baseline: `v1_0_1` with the locked controller-vNext playoff contract
-- Local runtime root: `JANUS_LOCAL_ROOT`, defaulting to `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`
-- Agentic backend operating plan: `app\docs\planning\janus_agentic_backend_operating_plan.md`
-- Codex agent automation prompt index: `app\docs\planning\codex_agent_automation_prompts.md`
-- Codex agent prompt folders: `app\docs\planning\codex_agents\`
-- LLM model routing: `app\docs\planning\llm_model_routing.md`
-- Codex automation tools live under `codex_tool\`
-- Live strategy worker controls: `codex_tool\live_strategy_worker_status.py`, `codex_tool\start_live_strategy_worker.py`, `codex_tool\stop_live_strategy_worker.py`, `codex_tool\run_live_strategy_worker_tick.py`
-- Current priority: keep the agentic backend operating loop live for the NBA playoff slate while hardening direct CLOB reconciliation, StrategyPlanJSON execution, watch-session replay, and minimum-size live testing.
-- Current scope: backend ops endpoints, Codex tools, live pregame/postgame workflow, strategy-plan validation/execution, stop/hedge/order-policy testing, decision logging, and unified benchmark control across replay, ML, LLM, and live-validation lanes.
-- Current NBA analysis snapshot on `2026-04-23`:
-  - regular-season research-ready corpus: `1198 / 1224`
-  - postseason validation corpus: `22` games (`6` play-in + `16` playoffs), all research-ready
-  - locked primary controller: `controller_vnext_unified_v1 :: balanced`
-  - locked no-LLM fallback: `controller_vnext_deterministic_v1 :: tight`
-  - hostile replay contract:
-    - target exposure `80%`
-    - base floor `20%`
-    - max concurrent positions `5`
-    - random adverse slippage `0-5c`
-  - full regular-season lock check:
-    - primary controller median end bankroll: `$469,835.30`
-    - deterministic fallback median end bankroll: `$68,486.79`
-  - postseason reference:
-    - primary controller median end bankroll: `$13.81`
-    - deterministic fallback median end bankroll: `$14.33`
-  - live executor status:
-    - local live executor v1 mounted at `/live-control`
-    - run launcher available at `tools/start_live_run.py`
-    - controller core remains frozen; only execution profile versions iterate (`v1`, `v2`, ...)
-- Current benchmark integration snapshot on `2026-04-24`:
-  - replay-engine shared contract now published under `JANUS_LOCAL_ROOT\shared\benchmark_contract\replay_contract_current.md`
-  - unified comparison dashboard now mounted at `/analysis-studio`
-  - shared export command now available at `python tools/export_benchmark_dashboard.py`
-  - replay is now the realism baseline; standard backtest, replay result, and live observed remain separate result views
-  - current compare-ready lanes are `locked-baselines`, `replay-engine-hf`, `ml-trading`, and `llm-strategy`
-  - current live-ready stack is still only the locked controller pair: `controller_vnext_unified_v1 :: balanced` and `controller_vnext_deterministic_v1 :: tight`
-  - current live-probe tier is `quarter_open_reprice` plus `micro_momentum_continuation`, but today they still execute as shadow because live executor v1 cannot route standalone probes
-  - current replay shadow set includes `inversion` and `lead_fragility`, while replay bench-only families remain visible but not promotable
-  - ML v2 is compare-ready as context, ranking, calibration, and confidence metadata for strategy-plan selection; it does not yet have standalone execution authority
-  - LLM strategy authority now flows through structured `StrategyPlanJSON`: the LLM may choose and combine executable strategy families, while operator sizing policy controls live order size and the order manager enforces mechanical safety
+- Current product direction: build Janus into a fully autonomous and self-improving expectation-markets trading system, starting with NBA/WNBA basketball because that is the most mature domain.
+- Current integration branch: `main`. During the source-of-truth and CI/CD redesign phase, local progress is reconciled on `main`; new feature branches are not the active operating model unless explicitly reintroduced.
+- Local runtime root: `JANUS_LOCAL_ROOT`, defaulting to `C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex\local`.
+- Current source-of-truth workspace: `app\docs\planning\current\final_system\`.
+- Current Obsidian vault: `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain`.
+- Current GitHub backlog: canonical issues `#17` through `#29` in `LucaCGN/janus_cortex`.
+- Current live posture: live money and live LLM dispatch remain blocked until runtime cost/shutdown controls, ledger/reportability, and direct CLOB inventory gates are safe.
+- Current API posture: the local Janus API may be intentionally down after the LLM cost incident; restore it only after a direct CLOB risk snapshot when integrity, passive capture, or same-day readiness work requires it.
+- Current priority: finish the source-of-truth/Obsidian/GitHub/controller bootstrap, then execute issue `#17` for LLM runtime cost budgets, trigger dedup, model-call caps, cost telemetry, and final/flat shutdown.
 
 ## Scope Definitions
-- `v0.8.*`: NBA regular-season data completion for 2025/26.
-- `v0.9.*`: NBA playoff-specific module design, ingestion, serving, and season handoff.
-- `v1.*`: sports-first roadmap built on the NBA module, then shared-sports hardening so WNBA 2026 and NBA 2026/27 can run on the same base.
-- `v2.0.0`: feature-complete expansion into WNBA, crypto, geopolitical, and general-event modules.
+- `Phase 0`: stabilize Janus as a safe backend-first trading runtime. This includes direct CLOB authority, current-event inventory, LLM cost/shutdown safety, account ledger truth, event review bundles, manual/Codex intervention reconciliation, source-of-truth docs, Obsidian memory, and GitHub issue-backed CI/CD.
+- `Phase 1`: make basketball live trading reproducible without constant master-chat intervention. NBA and WNBA share basketball event/PBP/orderbook/replay/report contracts, with league-specific calibration.
+- `Phase 2`: promote deterministic, ML, and LLM lanes into coordinated scenario-bound strategy sleeves with profit-ratcheted risk management.
+- `Phase 3`: expand from basketball into broader expectation-market infrastructure, including crypto, geopolitics, economics, elections, culture, and long-term portfolio monitoring only after core CLOB, ledger, risk, replay, and review systems are stable.
 
-## v1 Target Stack
+## Target Stack
 - Postgres as the primary relational store
 - FastAPI as the data and orchestration API
-- Dockerized service runtime for DB, API, and supporting jobs
-- Research-memory or Chroma-style services only after sports-core data stability is proven; they do not block NBA regular-season or playoff completion
+- Direct Polymarket CLOB as execution and portfolio truth
+- Modular-monolith app services first, with multiple workers or services only when operationally necessary
+- `StrategyPlanJSON` as the executable strategy contract after validation
+- Service-owned live strategy worker for recurring evaluation
+- Deterministic and ML lanes for fast repeatable interpretation
+- Internal LLM for structured plan revisions and reconciliation actions after cost controls are in place
+- Codex as controller, developer, reviewer, live analyst, and fallback strategy crafter
+- GitHub issues for durable backlog and acceptance criteria
+- Obsidian as an LLM-maintained second brain, not live truth
 
 ## Architecture Direction
 The project uses a provider/category/module split:
@@ -75,27 +50,36 @@ The project uses a provider/category/module split:
 
 ## Roadmap Snapshot
 
-### Completed block
-- `v0.1.1` to `v0.1.6`: node and method validation baseline
-- `v0.2.1` to `v0.2.9`: canonical contracts, app-structure boundaries, pytest topology, and docs synchronization
-- `v0.3.1` to `v0.3.6`: database MVP, migrations, upsert primitives, and seed-pack integration
-- `v0.4.1` to `v0.4.6`: ingestion pipelines to schema (`sync_events`, `sync_markets`, `sync_portfolio`, `sync_postgres`, `sync_mappings`, `backfill_retry`)
-- `v0.5.1` to `v0.5.6`: FastAPI core layer and OpenAPI lock
-- `v0.6.1` to `v0.6.6`: market-data and portfolio service layer plus manual order validation
-- `v0.7.1` to `v0.7.6`: NBA serving layer, live context, selected-game validation, and query tuning
+### Immediate P0
+1. `#23`: finish and commit the repo/Obsidian/GitHub/queue source-of-truth bootstrap.
+2. `#17`: add LLM runtime cost budgets, trigger dedup, model-call caps, cost telemetry, and final/flat shutdown.
+3. `#18`: build the event review bundle endpoint and decision timeline.
+4. `#19`: repair account-scoped fill ledger and lifecycle attribution.
+5. `#20`: include current-event inventory in every review and revision.
+6. `#21`: add safe LLM/Codex strategy adoption and fallback flow.
+7. `#22`: build a direct CLOB manual order assistant.
 
-### In progress
-- `v0.8.1` to `v0.8.8`: regular-season feature persistence, bounded backfills, coverage auditing, serving routes, replayable refreshes, rollups, and QA are largely complete
-- `v1.4.6` to `v1.4.7`: postseason coverage, adverse execution replay, and controller-vNext hardening are merged into the active analysis state
+### Next P1
+1. `#24`: basketball regime and scenario classifier.
+2. `#25`: quarter and PBP price-impact feature lane.
+3. `#26`: strategy sleeve generation and dependency graph.
+4. `#27`: profit-ratcheted risk manager.
+5. `#28`: close-game virtual-dead policy.
+6. `#29`: WNBA minimal live-readiness track.
 
-### Planned lanes
-1. `v1.5.0` local live playoff validation loop for the locked controller pair
-2. `v1.5.1` decision logging and ML-ready candidate dataset contract
-3. `v1.5.2` focused read-only review UI for the locked controller and fallback
-4. `v1.5.x` season continuity work for the remaining playoffs/preseason path and WNBA bootstrap
-5. `v2.0.0` multi-module expansion across WNBA, crypto, geopolitical, and general events
+### Deferred Domains
+Crypto, geopolitics, economics, elections, culture, and global portfolio management remain future modules. They should reuse shared CLOB, ledger, replay, risk, and reporting foundations instead of forking the basketball-specific runtime.
 
 ## Key Planning Docs
+- `app/docs/planning/current/final_system/README.md`
+- `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
+- `app/docs/planning/current/final_system/automation/master_controller_contract.md`
+- `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+- `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+- `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+- `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+- `app/docs/planning/current/janus_final_system_premise_register.md`
+- `app/docs/planning/codex_agents/shared_file_communication_contract.md`
 - `app/docs/reference/README.md`
 - `app/docs/reference/current_analysis_system_state.md`
 - `app/docs/reference/controller_vnext_final_tuning.md`
@@ -139,6 +123,6 @@ Common commands:
 - Local checkpoint and reference material should live under `JANUS_LOCAL_ROOT` rather than the repository root.
 - Current execution planning belongs under `app/docs/planning/current`; closed execution waves belong under `app/docs/planning/archive`.
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
-- Sports-core data completeness and the generic watch/replay foundation come before broader crypto/geopolitics strategy branches.
-- Strategy development is active but must flow through tested families, structured StrategyPlanJSON, direct CLOB reconciliation, and replay/live-validation evidence.
+- Basketball-core safety, CLOB truth, ledger attribution, and event review tooling come before broader crypto/geopolitics strategy branches.
+- Strategy development is active but must flow through tested families, structured StrategyPlanJSON, direct CLOB reconciliation, risk sleeves, and replay/live-validation evidence.
 - The frontend is not the production operating surface. Backend API endpoints, `codex_tool\`, tracked docs, and runtime handoffs are the operating interface.

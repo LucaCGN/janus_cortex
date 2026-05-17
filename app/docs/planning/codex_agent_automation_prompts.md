@@ -6,6 +6,10 @@ This file is an index. Agent-specific prompt contracts live under:
 
 Janus is independent runtime infrastructure. Codex agents, or an equivalent external agent framework, provide CI/CD, research, audits, postgame review, live monitoring, and continuous development.
 
+Shared file/folder communication is defined in:
+
+`app\docs\planning\codex_agents\shared_file_communication_contract.md`
+
 ## Canonical Agent Docs
 
 | Agent | Folder | Automation Prompt |
@@ -23,6 +27,7 @@ Janus is independent runtime infrastructure. Codex agents, or an equivalent exte
 - API root: `http://127.0.0.1:8010`
 - live account id: `56964015-5935-5035-bdab-b056c9277146`
 - operating plan: `app\docs\planning\janus_agentic_backend_operating_plan.md`
+- file communication contract: `app\docs\planning\codex_agents\shared_file_communication_contract.md`
 - daily handoff: `local\shared\handoffs\daily-live-validation\status.md`
 - Codex tools: `codex_tool\`
 

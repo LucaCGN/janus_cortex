@@ -4,6 +4,12 @@ This directory contains the organized prompt contracts for the five Janus Codex 
 
 Janus is the independent runtime service. Codex agents are the external CI/CD, research, audit, and development loop. Agents must read API/DB/runtime state first and treat chat history as non-authoritative.
 
+The shared file/folder communication contract is:
+
+`app\docs\planning\codex_agents\shared_file_communication_contract.md`
+
+Use that document as the source of truth for how agents exchange state through `local\shared\handoffs`, `local\shared\reports`, `local\shared\artifacts`, tracked planning docs, and Codex tools.
+
 ## Agent Folders
 
 | Agent | Folder | Status |
@@ -17,6 +23,7 @@ Janus is the independent runtime service. Codex agents are the external CI/CD, r
 ## Shared Rules
 
 - Start with `python codex_tool\janus_status.py`.
+- Read `shared_file_communication_contract.md` before relying on any handoff/report/artifact path.
 - Direct CLOB collateral, orders, fills, and positions are authoritative over stale local mirrors.
 - Runtime files under `local\` are not committed. Summarize material runtime state in handoffs and reports.
 - Do not fabricate state when the API or DB is unavailable.
