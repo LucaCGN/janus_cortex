@@ -19,7 +19,7 @@ Live game execution is owned by the service-owned live strategy worker exposed t
 - Current GitHub backlog: canonical issues `#17` through `#29` in `LucaCGN/janus_cortex`.
 - Current live posture: live money and live LLM dispatch remain blocked until runtime cost/shutdown controls, ledger/reportability, and direct CLOB inventory gates are safe.
 - Current API posture: the local Janus API may be intentionally down after the LLM cost incident; restore it only after a direct CLOB risk snapshot when integrity, passive capture, or same-day readiness work requires it.
-- Current priority: finish the source-of-truth/Obsidian/GitHub/controller bootstrap, then execute issue `#17` for LLM runtime cost budgets, trigger dedup, model-call caps, cost telemetry, and final/flat shutdown.
+- Current priority: immediate issue bootstrap `#17-#29` now has tested foundations on `main`; next work should deepen integration, calibration, and live-readiness gates rather than recreate the seed backlog.
 
 ## Scope Definitions
 - `Phase 0`: stabilize Janus as a safe backend-first trading runtime. This includes direct CLOB authority, current-event inventory, LLM cost/shutdown safety, account ledger truth, event review bundles, manual/Codex intervention reconciliation, source-of-truth docs, Obsidian memory, and GitHub issue-backed CI/CD.
@@ -50,22 +50,13 @@ The project uses a provider/category/module split:
 
 ## Roadmap Snapshot
 
-### Immediate P0
-1. `#23`: finish and commit the repo/Obsidian/GitHub/queue source-of-truth bootstrap.
-2. `#17`: add LLM runtime cost budgets, trigger dedup, model-call caps, cost telemetry, and final/flat shutdown.
-3. `#18`: build the event review bundle endpoint and decision timeline.
-4. `#19`: repair account-scoped fill ledger and lifecycle attribution.
-5. `#20`: include current-event inventory in every review and revision.
-6. `#21`: add safe LLM/Codex strategy adoption and fallback flow.
-7. `#22`: build a direct CLOB manual order assistant.
+### Immediate Bootstrap Issues
+The first GitHub-backed implementation seed is complete on `main`:
+- `#17` and `#23` were closed by the source-of-truth and LLM runtime-safety commits.
+- `#18-#22` now have tested P0 foundations for event review bundles, ledger attribution, current-event inventory proof, LLM/Codex fallback adoption, and the direct CLOB manual order assistant.
+- `#24-#29` now have tested P1 foundations for basketball regime classification, PBP price-impact features, strategy sleeves, profit-ratcheted risk, virtual-dead policy, and WNBA minimal live-readiness gating.
 
-### Next P1
-1. `#24`: basketball regime and scenario classifier.
-2. `#25`: quarter and PBP price-impact feature lane.
-3. `#26`: strategy sleeve generation and dependency graph.
-4. `#27`: profit-ratcheted risk manager.
-5. `#28`: close-game virtual-dead policy.
-6. `#29`: WNBA minimal live-readiness track.
+Follow-up work should be issued as deeper implementation/calibration tickets, not as duplicates of this seed.
 
 ### Deferred Domains
 Crypto, geopolitics, economics, elections, culture, and global portfolio management remain future modules. They should reuse shared CLOB, ledger, replay, risk, and reporting foundations instead of forking the basketball-specific runtime.

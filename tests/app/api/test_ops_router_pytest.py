@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -947,7 +948,92 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
     assert timeline["entry_count"] >= 5
     assert timeline["kind_counts"]["order_intent"] == 1
     assert timeline["kind_counts"]["llm_runtime_trace"] == 1
-    assert any(item["reason"] == "missed_opportunity_detector_not_yet_integrated" for item in payload["known_gaps"])
+    assert payload["missed_opportunities"]["schema_version"] == "event_missed_opportunity_candidates_v1"
+    assert payload["token_cost_timeline"]["entry_count"] == 1
+    assert payload["timeline_slices"]["schema_version"] == "event_timeline_slices_v1"
+    assert payload["postgame_tooling_status"]["screenshot_dependency"] is False
+
+
+def test_manual_order_assistant_endpoint_records_preview_and_never_raw_exchange_pytest(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_manual_order_assistant_outcome_mapping",
+        lambda *args, **kwargs: {
+            "event_id": "event-123",
+            "market_id": "market-123",
+            "outcome_id": "outcome-123",
+            "token_id": "token-123",
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_manual_order_assistant_orderbook",
+        lambda *args, **kwargs: {
+            "event_id": "event-123",
+            "market_id": "market-123",
+            "outcome_id": "outcome-123",
+            "token_id": "token-123",
+            "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+            "best_bid": 0.001,
+            "best_ask": 0.002,
+            "spread_cents": 0.1,
+            "bid_depth": 100,
+            "ask_depth": 100,
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_manual_order_assistant_inventory",
+        lambda *args, **kwargs: {
+            "open_orders": [],
+            "pending_intents": [],
+            "unresolved_inventory_present": False,
+        },
+    )
+    monkeypatch.setattr(ops_router, "_write_manual_order_assistant_artifact", lambda **kwargs: {"status": "stored", "path": "artifact.json"})
+    monkeypatch.setattr(ops_router, "try_persist_operator_intervention", lambda payload: {"status": "stored"})
+    monkeypatch.setattr(
+        ops_router,
+        "create_live_order",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("preview must not place orders")),
+    )
+
+    class FakeConnection:
+        pass
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    try:
+        response = client.post(
+            "/v1/events/event-123/manual-order-assistant",
+            json={
+                "account_id": "account-1",
+                "market_id": "market-123",
+                "outcome_id": "outcome-123",
+                "token_id": "token-123",
+                "side": "buy",
+                "order_type": "limit",
+                "limit_price": 0.001,
+                "size": 100,
+                "max_price": 0.001,
+                "max_notional_usd": 0.1,
+                "actor": "codex",
+                "reason": "low-price tail preview from realized profit",
+                "execute": False,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "preview_ready"
+    assert payload["approved"] is True
+    assert payload["raw_exchange_order_allowed"] is False
+    assert payload["executed_order"] is None
 
 
 def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tmp_path, monkeypatch) -> None:
@@ -1169,6 +1255,49 @@ def test_llm_revision_adoption_stamps_passive_plan_trigger_marker_pytest(tmp_pat
     assert explainability["fresh_q3_state_after_halftime_reviewed_utc"]
     assert "llm-request-passive" in explainability["fresh_q3_state_after_halftime_reviewed"]
     assert len(persist_calls) == 2
+
+
+def test_llm_revision_adoption_records_conservative_actions_without_plan_replace_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    monkeypatch.setattr(
+        ops_router,
+        "create_live_order",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("conservative adoption must not place orders")),
+    )
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/events/event-123/llm-revision/adopt",
+        json={
+            "session_date": "2026-05-12",
+            "source": "pytest",
+            "reviewed_by": "pytest-reviewer",
+            "review_reason": "record pause and target only",
+            "apply_current": True,
+            "response": {
+                "request_id": "llm-request-actions",
+                "status": "response_recorded",
+                "selected_model": "gpt-5.4-mini",
+                "revised_strategy_plan": None,
+                "reconciliation_actions": [
+                    {"action": "pause", "reason": "feed stale"},
+                    {"action": "position_management_only", "reason": "manual position detected"},
+                ],
+                "blocked_actions": [],
+                "confidence": 0.7,
+                "skipped_reason": None,
+            },
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "conservative_actions_recorded"
+    assert payload["apply_current"] is False
+    assert payload["order_endpoint_call_allowed"] is False
+    assert payload["post_adoption_proof"]["raw_order_placed"] is False
+    assert Path(payload["adoption_artifact"]["path"]).exists()
 
 
 def test_llm_revision_adoption_skipped_response_fails_closed_pytest(tmp_path, monkeypatch) -> None:

@@ -23,6 +23,7 @@ from app.modules.agentic.contracts import (
     MarketOrderbookTickRequest,
     MarketTradeObservationRequest,
     MarketWatchSessionRequest,
+    ManualClobOrderAssistantRequest,
     OperatorInterventionRequest,
     OpsCycleRequest,
     PregamePlanRequest,
@@ -34,6 +35,7 @@ from app.modules.agentic.contracts import (
 from app.modules.agentic.engine import evaluate_strategy_plan
 from app.modules.agentic.live_strategy_worker import build_live_strategy_worker_readiness, get_live_strategy_worker
 from app.modules.agentic.llm_runtime import build_llm_runtime_safety_controls_status, load_latest_llm_runtime_status
+from app.modules.agentic.manual_order_assistant import build_manual_clob_order_assistant_review
 from app.modules.agentic.ops_checks import build_integrity_snapshot
 from app.modules.agentic.repository import (
     get_agentic_database_status,
@@ -304,6 +306,87 @@ def get_current_event_strategy_plan(event_id: str, session_date: str | None = No
     return current_plan
 
 
+@router.post("/events/{event_id}/manual-order-assistant", status_code=status.HTTP_202_ACCEPTED)
+def review_event_manual_order_assistant(
+    event_id: str,
+    payload: ManualClobOrderAssistantRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    matched_outcome = _fetch_manual_order_assistant_outcome_mapping(
+        connection,
+        event_id=event_id,
+        market_id=payload.market_id,
+        outcome_id=payload.outcome_id,
+        token_id=payload.token_id,
+    )
+    orderbook = _fetch_manual_order_assistant_orderbook(
+        connection,
+        event_id=event_id,
+        market_id=payload.market_id,
+        outcome_id=payload.outcome_id,
+        token_id=payload.token_id,
+    )
+    inventory = _fetch_manual_order_assistant_inventory(
+        connection,
+        event_id=event_id,
+        market_id=payload.market_id,
+        outcome_id=payload.outcome_id,
+        token_id=payload.token_id,
+        account_id=payload.account_id,
+    )
+    review = build_manual_clob_order_assistant_review(
+        payload,
+        event_id=event_id,
+        matched_outcome=matched_outcome,
+        orderbook=orderbook,
+        inventory=inventory,
+    )
+    artifact = _write_manual_order_assistant_artifact(event_id=event_id, payload=payload, review=review)
+    db_persistence = try_persist_operator_intervention(
+        OperatorInterventionRequest(
+            account_id=payload.account_id,
+            event_id=event_id,
+            market_id=payload.market_id,
+            action="scan" if not payload.execute else "protect",
+            manual_reason=payload.reason,
+            metadata={
+                "source": "manual_clob_order_assistant",
+                "actor": payload.actor,
+                "assistant_status": review.get("status"),
+                "artifact_path": artifact.get("path"),
+                "order_payload": review.get("order_payload"),
+                "blockers": review.get("blockers") or [],
+            },
+        )
+    )
+
+    executed_order = None
+    if payload.execute and review.get("approved"):
+        account = resolve_trading_account(connection, account_id=payload.account_id)
+        order_payload = review["order_payload"]
+        executed_order = create_live_order(
+            connection,
+            account=account,
+            market_id=payload.market_id,
+            outcome_id=payload.outcome_id,
+            token_id=payload.token_id,
+            side=payload.side,
+            size=payload.size,
+            price=float(order_payload.get("limit_price") or 0.0),
+            order_type=payload.order_type,
+            metadata_json=review["metadata"],
+            dry_run=False,
+            time_in_force=payload.time_in_force,
+        )
+    return {
+        **review,
+        "artifact": artifact,
+        "db_persistence": db_persistence,
+        "executed_order": executed_order,
+        "raw_exchange_order_allowed": False,
+    }
+
+
 @router.post("/events/{event_id}/llm-revision/adopt", status_code=status.HTTP_202_ACCEPTED)
 def adopt_event_llm_revision(event_id: str, payload: LLMRevisionAdoptionRequest) -> dict[str, Any]:
     response, trace_metadata = _resolve_llm_revision_response(event_id, payload)
@@ -318,9 +401,35 @@ def adopt_event_llm_revision(event_id: str, payload: LLMRevisionAdoptionRequest)
             },
         )
     if not isinstance(revised_plan_payload, dict):
+        if _llm_revision_actions_are_conservative(response.reconciliation_actions):
+            adoption_record = _write_llm_conservative_action_adoption_artifact(
+                event_id=event_id,
+                payload=payload,
+                response=response,
+                trace_metadata=trace_metadata,
+            )
+            return {
+                "status": "conservative_actions_recorded",
+                "event_id": event_id,
+                "session_date": payload.session_date,
+                "reviewed_by": payload.reviewed_by,
+                "review_reason": payload.review_reason,
+                "request_id": response.request_id,
+                "selected_model": response.selected_model,
+                "apply_current": False,
+                "order_endpoint_call_allowed": False,
+                "conservative_action_count": len(response.reconciliation_actions),
+                "adoption_artifact": adoption_record,
+                "post_adoption_proof": {
+                    "schema_version": "llm_conservative_action_post_adoption_proof_v1",
+                    "plan_version_changed": False,
+                    "raw_order_placed": False,
+                    "recorded_for_worker_or_operator_review": True,
+                },
+            }
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail={"reason": "revised_strategy_plan_required"},
+            detail={"reason": "revised_strategy_plan_or_conservative_actions_required"},
         )
 
     current_plan = load_current_strategy_plan(event_id, day=payload.session_date)
@@ -535,6 +644,187 @@ def reconcile_operator_interventions(payload: OperatorInterventionRequest) -> di
         "db_persistence": try_persist_operator_intervention(payload),
         "database": get_agentic_database_status(),
     }
+
+
+def _fetch_manual_order_assistant_outcome_mapping(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+    market_id: str,
+    outcome_id: str,
+    token_id: str,
+) -> dict[str, Any] | None:
+    queries = [
+        (
+            """
+            SELECT event_key AS event_id, market_id, outcome_id, token_id, label, side, metadata_json
+            FROM agentic.market_outcomes
+            WHERE event_key = %s
+              AND market_id = %s
+              AND (outcome_id = %s OR token_id = %s)
+            LIMIT 1;
+            """,
+            (event_id, market_id, outcome_id, token_id),
+        ),
+        (
+            """
+            SELECT e.event_id::text AS event_id, m.market_id::text AS market_id, o.outcome_id::text AS outcome_id,
+                   o.token_id, o.outcome_label AS label, NULL AS side, o.metadata_json
+            FROM catalog.outcomes o
+            JOIN catalog.markets m ON m.market_id = o.market_id
+            JOIN catalog.events e ON e.event_id = m.event_id
+            WHERE m.market_id = %s
+              AND (o.outcome_id = %s OR o.token_id = %s)
+            LIMIT 1;
+            """,
+            (market_id, outcome_id, token_id),
+        ),
+    ]
+    for sql, params in queries:
+        try:
+            rows = _fetch_event_review_rows(connection, sql, params)
+        except Exception:  # noqa: BLE001
+            continue
+        if rows:
+            return rows[0]
+    return None
+
+
+def _fetch_manual_order_assistant_orderbook(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+    market_id: str,
+    outcome_id: str,
+    token_id: str,
+) -> dict[str, Any]:
+    try:
+        rows = _fetch_event_review_rows(
+            connection,
+            """
+            SELECT event_key AS event_id, market_id, outcome_id, token_id,
+                   captured_at AS captured_at_utc, source_timestamp AS source_timestamp_utc,
+                   best_bid, best_ask, spread, mid_price, bid_depth, ask_depth,
+                   source_latency_ms, ingest_latency_ms, levels_json, raw_json
+            FROM agentic.market_orderbook_ticks
+            WHERE event_key = %s
+              AND market_id = %s
+              AND (outcome_id = %s OR token_id = %s)
+            ORDER BY captured_at DESC
+            LIMIT 1;
+            """,
+            (event_id, market_id, outcome_id, token_id),
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "query_failed", "error": _exception_detail(exc), "market_id": market_id, "token_id": token_id}
+    if not rows:
+        return {"status": "missing", "event_id": event_id, "market_id": market_id, "outcome_id": outcome_id, "token_id": token_id}
+    row = rows[0]
+    spread = _safe_float(row.get("spread"))
+    if spread is not None:
+        row["spread_cents"] = round(spread * 100.0, 6) if spread <= 1.0 else round(spread, 6)
+    row["status"] = "recorded"
+    return row
+
+
+def _fetch_manual_order_assistant_inventory(
+    connection: PsycopgConnection,
+    *,
+    event_id: str,
+    market_id: str,
+    outcome_id: str,
+    token_id: str,
+    account_id: str | None,
+) -> dict[str, Any]:
+    account_filter = "AND o.account_id = %s" if account_id else ""
+    account_params: tuple[Any, ...] = (account_id,) if account_id else ()
+    try:
+        open_orders = _fetch_event_review_rows(
+            connection,
+            f"""
+            SELECT o.order_id::text AS order_id, o.account_id::text AS account_id, o.market_id::text AS market_id,
+                   o.outcome_id::text AS outcome_id, oc.token_id, o.side, o.order_type, o.limit_price, o.size,
+                   o.status, o.external_order_id, o.metadata_json, o.updated_at
+            FROM portfolio.orders o
+            LEFT JOIN catalog.outcomes oc ON oc.outcome_id = o.outcome_id
+            WHERE o.market_id = %s
+              AND (o.outcome_id = %s OR oc.token_id = %s)
+              AND lower(o.status) IN ('open','submitted','working','pending','partially_filled','partial','pending_submit')
+              {account_filter}
+            ORDER BY o.updated_at DESC
+            LIMIT 50;
+            """,
+            (market_id, outcome_id, token_id, *account_params),
+        )
+    except Exception:  # noqa: BLE001
+        open_orders = []
+    try:
+        pending_intents = _fetch_event_review_rows(
+            connection,
+            """
+            SELECT strategy_decision_id::text AS strategy_decision_id, decided_at, strategy_id,
+                   decision_type, order_intent_json, raw_json
+            FROM agentic.strategy_decisions
+            WHERE event_key = %s
+              AND decision_type IN ('order_intent', 'pending_intent')
+            ORDER BY decided_at DESC
+            LIMIT 50;
+            """,
+            (event_id,),
+        )
+    except Exception:  # noqa: BLE001
+        pending_intents = []
+    normalized_pending = [_normalize_pending_intent(row) for row in pending_intents]
+    unresolved = bool(open_orders or normalized_pending)
+    return {
+        "schema_version": "manual_order_assistant_inventory_v1",
+        "event_id": event_id,
+        "account_id": account_id,
+        "open_order_count": len(open_orders),
+        "pending_intent_count": len(normalized_pending),
+        "unresolved_inventory_present": unresolved,
+        "open_orders": open_orders,
+        "pending_intents": normalized_pending,
+        "stale_mirror_rows": [],
+    }
+
+
+def _normalize_pending_intent(row: dict[str, Any]) -> dict[str, Any]:
+    intent = row.get("order_intent_json") if isinstance(row.get("order_intent_json"), dict) else {}
+    return {
+        "strategy_decision_id": row.get("strategy_decision_id"),
+        "decided_at": row.get("decided_at"),
+        "strategy_id": row.get("strategy_id") or intent.get("strategy_id"),
+        "outcome_id": intent.get("outcome_id"),
+        "token_id": intent.get("token_id"),
+        "side": intent.get("side"),
+        "status": "pending",
+        "raw": row,
+    }
+
+
+def _write_manual_order_assistant_artifact(
+    *,
+    event_id: str,
+    payload: ManualClobOrderAssistantRequest,
+    review: dict[str, Any],
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    path = (
+        ops_artifact_root(payload.session_date)
+        / "manual-order-assistant"
+        / _safe_name(event_id)
+        / f"review_{now.strftime('%Y%m%dT%H%M%SZ')}_{_safe_name(payload.idempotency_key or payload.actor)}.json"
+    )
+    record = {
+        "schema_version": "manual_clob_order_assistant_artifact_v1",
+        "recorded_at_utc": now.isoformat(),
+        "event_id": event_id,
+        "request": payload.model_dump(mode="json"),
+        "review": review,
+    }
+    write_json(path, record)
+    return {"status": "stored", "path": str(path), "recorded_at_utc": now.isoformat()}
 
 
 def _resolve_strategy_plan(event_id: str, payload: StrategyPlanEvaluationRequest) -> StrategyPlan:
@@ -1159,6 +1449,15 @@ def _build_event_review_bundle(
         runtime_evidence=runtime_evidence,
         llm_runtime_status=llm_runtime_status,
     )
+    actor_attribution = _build_event_review_actor_attribution(portfolio_pnl_attribution)
+    token_cost_timeline = _build_event_review_token_cost_timeline(llm_runtime_status)
+    market_microstructure = _build_event_review_microstructure_summary(runtime_evidence)
+    missed_opportunities = _build_event_review_missed_opportunity_candidates(
+        runtime_evidence=runtime_evidence,
+        decision_timeline=decision_timeline,
+        market_microstructure=market_microstructure,
+    )
+    timeline_slices = _build_event_review_timeline_slices(decision_timeline)
     known_gaps = _event_review_known_gaps(
         account_id=account_id,
         runtime_evidence=runtime_evidence,
@@ -1187,7 +1486,18 @@ def _build_event_review_bundle(
             "llm_runtime_status": llm_runtime_status,
             "postgame_live_evidence": postgame_live_evidence,
             "portfolio_pnl_attribution": portfolio_pnl_attribution,
+            "actor_attribution": actor_attribution,
+            "token_cost_timeline": token_cost_timeline,
+            "market_microstructure": market_microstructure,
+            "missed_opportunities": missed_opportunities,
             "decision_timeline": decision_timeline,
+            "timeline_slices": timeline_slices,
+            "postgame_tooling_status": {
+                "schema_version": "postgame_tooling_status_v1",
+                "screenshot_dependency": False,
+                "grep_dependency": False,
+                "bundle_endpoint": "/v1/events/{event_id}/review-bundle",
+            },
             "known_gaps": known_gaps,
         }
     )
@@ -1498,6 +1808,169 @@ def _build_event_review_decision_timeline(
     }
 
 
+def _build_event_review_actor_attribution(portfolio_pnl_attribution: dict[str, Any]) -> dict[str, Any]:
+    actor_summary: dict[str, Any] = {}
+    items = portfolio_pnl_attribution.get("items") if isinstance(portfolio_pnl_attribution.get("items"), list) else []
+    for item in items:
+        pnl = item.get("pnl_attribution") if isinstance(item, dict) else None
+        if not isinstance(pnl, dict):
+            continue
+        reconciliation = pnl.get("reconciliation") if isinstance(pnl.get("reconciliation"), dict) else {}
+        for actor, summary in (reconciliation.get("actor_summary") or {}).items():
+            if isinstance(summary, dict):
+                actor_summary[str(actor)] = summary
+    return {
+        "schema_version": "event_actor_attribution_v1",
+        "status": "recorded" if actor_summary else "not_recorded",
+        "actor_count": len(actor_summary),
+        "actors": actor_summary,
+        "separates_autonomous_codex_manual": True,
+    }
+
+
+def _build_event_review_token_cost_timeline(llm_runtime_status: dict[str, Any]) -> dict[str, Any]:
+    entries: list[dict[str, Any]] = []
+    total_estimated_cost = 0.0
+    total_tokens = 0
+    for item in llm_runtime_status.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        usage = item.get("usage") if isinstance(item.get("usage"), dict) else {}
+        input_tokens = _safe_int(usage.get("input_tokens"))
+        output_tokens = _safe_int(usage.get("output_tokens"))
+        total_tokens += input_tokens + output_tokens
+        estimated_cost = _safe_float(item.get("estimated_cost_usd") or usage.get("estimated_cost_usd")) or 0.0
+        total_estimated_cost += estimated_cost
+        entries.append(
+            {
+                "timestamp_utc": item.get("persisted_at_utc"),
+                "trace_id": item.get("trace_id"),
+                "selected_model": item.get("selected_model"),
+                "selected_tier": item.get("selected_tier"),
+                "trigger_types": item.get("trigger_types") or [],
+                "response_status": item.get("response_status"),
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "estimated_cost_usd": round(estimated_cost, 6),
+                "adoption_status": item.get("adoption_status"),
+            }
+        )
+    return {
+        "schema_version": "event_token_cost_timeline_v1",
+        "status": "recorded" if entries else "not_recorded",
+        "entry_count": len(entries),
+        "total_tokens": total_tokens,
+        "total_estimated_cost_usd": round(total_estimated_cost, 6),
+        "entries": entries,
+    }
+
+
+def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any]) -> dict[str, Any]:
+    ticks = runtime_evidence.get("orderbook_ticks") if isinstance(runtime_evidence.get("orderbook_ticks"), list) else []
+    mids = [_safe_float(row.get("mid_price")) for row in ticks if isinstance(row, dict)]
+    mids = [item for item in mids if item is not None]
+    prices_by_outcome: dict[str, list[float]] = {}
+    for row in ticks:
+        if not isinstance(row, dict):
+            continue
+        outcome_id = str(row.get("outcome_id") or row.get("token_id") or "unknown")
+        value = _safe_float(row.get("mid_price"))
+        if value is None:
+            continue
+        prices_by_outcome.setdefault(outcome_id, []).append(value)
+    inversion_count = 0
+    if len(prices_by_outcome) >= 2:
+        ordered = sorted(prices_by_outcome.items())
+        series = list(zip(*(values for _, values in ordered if values)))
+        for point in series:
+            if len(point) >= 2 and min(point) < 0.5 < max(point):
+                inversion_count += 1
+    spike_count = 0
+    for values in prices_by_outcome.values():
+        for left, right in zip(values, values[1:]):
+            if abs(right - left) >= 0.03:
+                spike_count += 1
+    return {
+        "schema_version": "event_market_microstructure_summary_v1",
+        "tick_count": len(ticks),
+        "outcome_count": len(prices_by_outcome),
+        "min_mid_price": min(mids) if mids else None,
+        "max_mid_price": max(mids) if mids else None,
+        "mid_price_range": round(max(mids) - min(mids), 6) if mids else None,
+        "price_inversion_point_count": inversion_count,
+        "spike_count": spike_count,
+        "orderbook_window_summary": runtime_evidence.get("orderbook_window_summary") or {},
+    }
+
+
+def _build_event_review_missed_opportunity_candidates(
+    *,
+    runtime_evidence: dict[str, Any],
+    decision_timeline: dict[str, Any],
+    market_microstructure: dict[str, Any],
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    order_intent_count = _safe_int((decision_timeline.get("kind_counts") or {}).get("order_intent"))
+    price_range = _safe_float(market_microstructure.get("mid_price_range")) or 0.0
+    spike_count = _safe_int(market_microstructure.get("spike_count"))
+    if price_range >= 0.05 and order_intent_count == 0:
+        candidates.append(
+            {
+                "reason": "price_window_without_order_intent",
+                "price_range": round(price_range, 6),
+                "order_intent_count": order_intent_count,
+                "status": "needs_replay_fillability_check",
+            }
+        )
+    if spike_count >= 2:
+        candidates.append(
+            {
+                "reason": "multiple_microstructure_spikes",
+                "spike_count": spike_count,
+                "status": "candidate_micro_grid_review",
+            }
+        )
+    return {
+        "schema_version": "event_missed_opportunity_candidates_v1",
+        "status": "recorded",
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "requires_queue_depth_replay_before_profit_claim": True,
+    }
+
+
+def _build_event_review_timeline_slices(decision_timeline: dict[str, Any]) -> dict[str, Any]:
+    slices: dict[str, list[dict[str, Any]]] = {}
+    for entry in decision_timeline.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+        payload = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        period = _timeline_payload_period(payload)
+        key = f"period_{period}" if period is not None else "unclassified_period"
+        slices.setdefault(key, []).append(entry)
+    return {
+        "schema_version": "event_timeline_slices_v1",
+        "slice_count": len(slices),
+        "slices": {key: {"entry_count": len(value), "entries": value} for key, value in sorted(slices.items())},
+    }
+
+
+def _timeline_payload_period(payload: dict[str, Any]) -> int | None:
+    candidates = [payload.get("period")]
+    raw = payload.get("raw_json") if isinstance(payload.get("raw_json"), dict) else {}
+    candidates.append(raw.get("period"))
+    evidence = payload.get("evidence") if isinstance(payload.get("evidence"), dict) else {}
+    candidates.append(evidence.get("period"))
+    for value in candidates:
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            continue
+        if parsed > 0:
+            return parsed
+    return None
+
+
 def _timeline_entry(
     *,
     timestamp: Any,
@@ -1540,13 +2013,6 @@ def _event_review_known_gaps(
                 "source": portfolio_pnl_attribution.get("source"),
             }
         )
-    gaps.append(
-        {
-            "reason": "missed_opportunity_detector_not_yet_integrated",
-            "tracked_by": "#18-followup/#25",
-            "impact": "bundle exposes raw signals/windows but does not yet score missed trades.",
-        }
-    )
     return gaps
 
 
@@ -1963,6 +2429,77 @@ def _write_llm_revision_adoption_artifact(
         "apply_current": payload.apply_current,
         "order_endpoint_call_allowed": False,
         "revised_strategy_plan": revised_plan.model_dump(mode="json"),
+    }
+    write_json(path, record)
+    return {"status": "stored", "path": str(path), "recorded_at_utc": now.isoformat()}
+
+
+def _llm_revision_actions_are_conservative(actions: list[dict[str, Any]]) -> bool:
+    if not actions:
+        return False
+    conservative_actions = {
+        "pause",
+        "no_new_entry",
+        "cancel_stale_order",
+        "adopt_known_position",
+        "adopt_manual_position",
+        "set_target",
+        "target",
+        "position_management_only",
+        "hold",
+        "lower_target",
+    }
+    unsafe_actions = {
+        "new_exposure",
+        "increase_size",
+        "tail_risk_allocation",
+        "ambiguous_hedge",
+        "market_order",
+        "raw_order",
+    }
+    for action in actions:
+        if not isinstance(action, dict):
+            return False
+        action_type = str(action.get("action") or action.get("type") or "").strip().lower()
+        if not action_type or action_type in unsafe_actions:
+            return False
+        if action_type not in conservative_actions:
+            return False
+        if action.get("size") or action.get("notional_usd") or action.get("max_notional_usd"):
+            return False
+    return True
+
+
+def _write_llm_conservative_action_adoption_artifact(
+    *,
+    event_id: str,
+    payload: LLMRevisionAdoptionRequest,
+    response: LLMRevisionResponse,
+    trace_metadata: dict[str, Any],
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    event_dir = strategy_plan_root(payload.session_date) / _safe_name(event_id) / "llm_revision_adoptions"
+    path = event_dir / f"conservative_actions_{now.strftime('%Y%m%dT%H%M%SZ')}_{_safe_name(response.request_id)}.json"
+    record = {
+        "schema_version": "llm_conservative_action_adoption_artifact_v1",
+        "recorded_at_utc": now.isoformat(),
+        "event_id": event_id,
+        "session_date": payload.session_date,
+        "source": payload.source,
+        "reviewed_by": payload.reviewed_by,
+        "review_reason": payload.review_reason,
+        "request_id": response.request_id,
+        "selected_model": response.selected_model,
+        "response_status": response.status,
+        "trace_metadata": trace_metadata,
+        "apply_current": False,
+        "order_endpoint_call_allowed": False,
+        "actions": response.reconciliation_actions,
+        "post_adoption_proof": {
+            "plan_version_changed": False,
+            "raw_order_placed": False,
+            "recorded_for_worker_or_operator_review": True,
+        },
     }
     write_json(path, record)
     return {"status": "stored", "path": str(path), "recorded_at_utc": now.isoformat()}

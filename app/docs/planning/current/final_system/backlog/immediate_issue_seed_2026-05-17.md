@@ -1,13 +1,15 @@
 ﻿# Immediate Issue Seed - 2026-05-17
 
-Status: issue-ready backlog seed
+Status: implemented bootstrap seed
 Repo target: `LucaCGN/janus_cortex`
 
 ## Purpose
 
 Convert the immediate P0/P1 backlog into durable GitHub issues for the first controller/agent loop.
 
-These are not the full final-system specs. They are the initial issue set needed to stabilize current Janus, bootstrap the source-of-truth framework, and prepare WNBA/NBA live testing.
+These are not the full final-system specs. They were the initial issue set used to stabilize current Janus, bootstrap the source-of-truth framework, and prepare WNBA/NBA live testing.
+
+Implementation note 2026-05-17: issues `#17-#29` now have tested foundations on `main`. Future work should open narrower follow-up issues for deeper calibration, live-readiness promotion, and production hardening instead of reopening this seed.
 
 ## Issue Labels Proposed
 
@@ -236,6 +238,24 @@ Created on 2026-05-17 in `LucaCGN/janus_cortex`.
 | `JANUS-P1-004` | https://github.com/LucaCGN/janus_cortex/issues/27 |
 | `JANUS-P1-005` | https://github.com/LucaCGN/janus_cortex/issues/28 |
 | `JANUS-P1-006` | https://github.com/LucaCGN/janus_cortex/issues/29 |
+
+## Bootstrap Implementation Status
+
+| Issue | Status | Implementation Surface |
+|---|---|---|
+| `#17` | Closed | `app/modules/agentic/llm_runtime.py` safety controls, budget/dedup/final shutdown tests. |
+| `#18` | Completion pending commit close | `/v1/events/{event_id}/review-bundle`, decision timeline, token/cost timeline, actor attribution, microstructure and missed-opportunity candidates. |
+| `#19` | Completion pending commit close | Portfolio lifecycle reconciliation, direct CLOB trade dedupe, actor attribution, unresolved lifecycle reporting. |
+| `#20` | Completion pending commit close | Current-event inventory proof in LLM/live tick context and manual assistant inventory snapshots. |
+| `#21` | Completion pending commit close | LLM runtime Codex-required state, StrategyPlanJSON adoption, conservative action adoption artifact/proof. |
+| `#22` | Completion pending commit close | `/v1/events/{event_id}/manual-order-assistant`, preview/execute gate, max price/notional/book/inventory validation. |
+| `#23` | Closed | Repo docs, Obsidian bootstrap, issue seed, controller/queue docs. |
+| `#24` | Completion pending commit close | `app/modules/agentic/basketball_logic.py::classify_basketball_regime`. |
+| `#25` | Completion pending commit close | PBP tagger and before/after price-impact window helpers. |
+| `#26` | Completion pending commit close | Strategy sleeve candidate generation and dependency graph helpers. |
+| `#27` | Completion pending commit close | Profit-ratcheted risk-state helper with base/profit/sleeve/tail budgets. |
+| `#28` | Completion pending commit close | Virtual-dead classifier and loss-exit comparison requirements. |
+| `#29` | Completion pending commit close | WNBA minimal live-readiness gate with shared basketball contract and calibration blockers. |
 
 ## Duplicate Issue Cleanup
 

@@ -311,6 +311,45 @@ class MarketTradeObservationRequest(BaseModel):
     source: str = "codex"
 
 
+class ManualClobOrderAssistantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    session_date: str | None = None
+    account_id: str | None = None
+    market_id: str = Field(min_length=1)
+    outcome_id: str = Field(min_length=1)
+    token_id: str = Field(min_length=1)
+    side: Literal["buy", "sell"]
+    order_type: Literal["limit", "market"] = "limit"
+    limit_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    size: float = Field(gt=0.0)
+    time_in_force: str = "gtc"
+    max_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    max_notional_usd: float = Field(gt=0.0)
+    max_spread_cents: float = Field(default=5.0, ge=0.0)
+    max_book_age_seconds: float = Field(default=20.0, ge=0.0)
+    min_depth: float | None = Field(default=None, ge=0.0)
+    actor: Literal["operator", "codex", "janus"] = "codex"
+    reason: str = Field(min_length=1)
+    execute: bool = False
+    allow_market_urgent_profit_capture: bool = False
+    urgent_profit_capture_reason: str | None = None
+    idempotency_key: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_manual_order_assistant_request(self) -> "ManualClobOrderAssistantRequest":
+        if self.order_type == "limit" and self.limit_price is None:
+            raise ValueError("limit_price is required for limit orders")
+        if self.order_type == "market" and not self.allow_market_urgent_profit_capture:
+            return self
+        if self.order_type == "market" and not str(self.urgent_profit_capture_reason or "").strip():
+            raise ValueError("urgent_profit_capture_reason is required when market order exception is requested")
+        if self.max_price is not None and self.limit_price is not None and self.side == "buy" and self.limit_price > self.max_price:
+            raise ValueError("limit_price cannot exceed max_price for buy orders")
+        return self
+
+
 class ReplayFromWatchSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -408,6 +447,7 @@ __all__ = [
     "MarketOrderbookTickRequest",
     "MarketTradeObservation",
     "MarketTradeObservationRequest",
+    "ManualClobOrderAssistantRequest",
     "MarketWatchSessionRequest",
     "OperatorInterventionRequest",
     "OrderIntent",
