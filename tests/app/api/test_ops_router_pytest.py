@@ -759,6 +759,8 @@ def test_live_monitor_endpoint_exposes_latest_llm_runtime_status_pytest(tmp_path
     assert response.status_code == 202
     payload = response.json()
     assert payload["llm_runtime_status"]["status"] == "recorded"
+    assert payload["llm_runtime_status"]["safety_controls"]["status"] == "ready"
+    assert "trigger_hash_dedup" in payload["llm_runtime_status"]["safety_controls"]["implemented_controls"]
     assert payload["llm_runtime_status"]["items"][0]["event_id"] == "event-123"
     assert payload["llm_runtime_status"]["items"][0]["response_status"] == "skipped_unavailable"
     assert payload["llm_runtime_status"]["items"][0]["skipped_reason"] == "dispatch_disabled"
@@ -896,6 +898,161 @@ def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tm
     adoption = current["explainability"]["llm_revision_adoption"]
     assert adoption["reviewed_by"] == "pytest-reviewer"
     assert adoption["order_endpoint_call_allowed"] is False
+    assert len(persist_calls) == 2
+
+
+def test_llm_revision_adoption_stamps_quarter_end_review_marker_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    persist_calls = []
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: persist_calls.append(plan) or {"ok": True})
+    client = TestClient(create_app())
+    current_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    revised_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    revised_plan["active_strategies"][0]["strategy_id"] = "halftime-watch"
+    trace_path = local_root / "shared" / "artifacts" / "llm-runtime" / "2026-05-12" / "trace.json"
+    trace_path.parent.mkdir(parents=True)
+    trace_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "event-123",
+                "trace_id": "trace-quarter-end",
+                "trigger_types": ["quarter_end"],
+                "trigger_list": [
+                    {
+                        "trigger_type": "quarter_end",
+                        "evidence": {"period": 2, "clock": "PT00M00.00S"},
+                    }
+                ],
+                "selected_model": "gpt-5.4-mini",
+                "persisted_at_utc": "2026-05-12T01:00:00Z",
+                "response": {
+                    "request_id": "llm-request-quarter-end",
+                    "status": "response_recorded",
+                    "selected_model": "gpt-5.4-mini",
+                    "revised_strategy_plan": revised_plan,
+                    "reconciliation_actions": [{"action": "revise_plan"}],
+                    "blocked_actions": [],
+                    "confidence": 0.9,
+                    "skipped_reason": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pregame_response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-12",
+            "event_ids": ["event-123"],
+            "source": "pytest",
+            "strategy_plans": [current_plan],
+        },
+    )
+    adoption_response = client.post(
+        "/v1/events/event-123/llm-revision/adopt",
+        json={
+            "session_date": "2026-05-12",
+            "source": "pytest",
+            "reviewed_by": "pytest-reviewer",
+            "review_reason": "quarter end review",
+            "apply_current": True,
+            "trace_artifact_path": str(trace_path),
+        },
+    )
+    read_response = client.get("/v1/events/event-123/strategy-plan/current?session_date=2026-05-12")
+
+    assert pregame_response.status_code == 202
+    assert adoption_response.status_code == 202
+    assert read_response.status_code == 200
+    current = read_response.json()
+    explainability = current["explainability"]
+    assert current["active_strategies"][0]["strategy_id"] == "halftime-watch"
+    assert explainability["q2_quarter_end_reviewed_utc"]
+    assert "llm-request-quarter-end" in explainability["q2_quarter_end_reviewed"]
+    assert explainability["llm_revision_adoption"]["trace_metadata"]["trigger_types"] == ["quarter_end"]
+    assert len(persist_calls) == 2
+
+
+def test_llm_revision_adoption_stamps_passive_plan_trigger_marker_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    persist_calls = []
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: persist_calls.append(plan) or {"ok": True})
+    client = TestClient(create_app())
+    current_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    current_plan["active_strategies"][0]["revision_triggers"] = [{"type": "fresh_q3_state_after_halftime"}]
+    revised_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    revised_plan["active_strategies"][0]["strategy_id"] = "q3-review"
+    trace_path = local_root / "shared" / "artifacts" / "llm-runtime" / "2026-05-12" / "trace-passive.json"
+    trace_path.parent.mkdir(parents=True)
+    trace_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "event-123",
+                "trace_id": "trace-passive",
+                "trigger_types": ["strategy_plan_revision_trigger"],
+                "trigger_list": [
+                    {
+                        "trigger_type": "strategy_plan_revision_trigger",
+                        "evidence": {
+                            "trigger": {
+                                "type": "fresh_q3_state_after_halftime",
+                                "strategy_id": "halftime-watch",
+                            },
+                            "period": 3,
+                            "clock": "PT09M05.00S",
+                        },
+                    }
+                ],
+                "selected_model": "gpt-5.4-mini",
+                "persisted_at_utc": "2026-05-12T01:00:00Z",
+                "response": {
+                    "request_id": "llm-request-passive",
+                    "status": "response_recorded",
+                    "selected_model": "gpt-5.4-mini",
+                    "revised_strategy_plan": revised_plan,
+                    "reconciliation_actions": [{"action": "revise_plan"}],
+                    "blocked_actions": [],
+                    "confidence": 0.88,
+                    "skipped_reason": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pregame_response = client.post(
+        "/v1/ops/pregame-plan",
+        json={
+            "session_date": "2026-05-12",
+            "event_ids": ["event-123"],
+            "source": "pytest",
+            "strategy_plans": [current_plan],
+        },
+    )
+    adoption_response = client.post(
+        "/v1/events/event-123/llm-revision/adopt",
+        json={
+            "session_date": "2026-05-12",
+            "source": "pytest",
+            "reviewed_by": "pytest-reviewer",
+            "review_reason": "fresh q3 state review",
+            "apply_current": True,
+            "trace_artifact_path": str(trace_path),
+        },
+    )
+    read_response = client.get("/v1/events/event-123/strategy-plan/current?session_date=2026-05-12")
+
+    assert pregame_response.status_code == 202
+    assert adoption_response.status_code == 202
+    assert read_response.status_code == 200
+    explainability = read_response.json()["explainability"]
+    assert explainability["fresh_q3_state_after_halftime_reviewed_utc"]
+    assert "llm-request-passive" in explainability["fresh_q3_state_after_halftime_reviewed"]
     assert len(persist_calls) == 2
 
 

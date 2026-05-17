@@ -26,6 +26,10 @@ FRONTIER_MODEL = "gpt-5.5"
 ROUTING_RULES_VERSION = "llm_model_routing_2026-05-11"
 ARTIFACT_SCHEMA_VERSION = "llm_runtime_trace_artifact_v1"
 DEFAULT_OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
+SAFETY_CONTROLS_VERSION = "llm_runtime_safety_controls_2026-05-17"
+DEFAULT_EVENT_TOKEN_BUDGET = 20_000
+DEFAULT_EVENT_COST_BUDGET_USD = 0.50
+DEFAULT_EVENT_WARNING_FRACTION = 0.80
 
 _TRIGGER_NAMESPACE = uuid.UUID("4f61cce7-2098-44d7-a59e-2b3c92a48f0f")
 _CRITICAL_TRIGGER_TYPES = {
@@ -51,6 +55,23 @@ _ORDER_LIFECYCLE_TRIGGER_TYPES = {
     "target_placement_failed",
 }
 _NANO_TRIGGER_TYPES = {"compression_or_tagging"}
+_DEFAULT_TRIGGER_CALL_CAPS = {
+    "quarter_end": 4,
+    "routine_live_review": 1,
+    "manual_operator_position": 3,
+    "position_adverse_move": 3,
+    "player_status_shock": 5,
+    "stale_feed_recovery": 2,
+    "unexplained_clob_move": 3,
+    "price_flip": 3,
+    "leadership_switch": 3,
+    "garbage_time": 1,
+}
+_ESTIMATED_MODEL_COST_PER_MILLION_TOKENS = {
+    NANO_MODEL: {"input": 0.05, "output": 0.40},
+    MINI_MODEL: {"input": 0.25, "output": 2.00},
+    FRONTIER_MODEL: {"input": 2.00, "output": 16.00},
+}
 
 
 class _OpenAIRevisionResponse(BaseModel):
@@ -125,12 +146,37 @@ JANUS_LIVE_LLM_PROMPT_CONTRACT: dict[str, Any] = {
         "trace_metadata": "model, prompt version, evidence ids, and decision rationale",
     },
     "experiment_policy": (
-        "When a live position moves adversely, compare holding the target, lowering/replacing the target, "
-        "stopping/reducing, hedging the opposite side, and adding down on the same side as testable approaches. "
-        "Score them by expected return, consistency, fillability, and evidence quality rather than by subjective risk tolerance."
+        "When a live position moves adversely in a still-competitive game, do not default to realizing the loss. "
+        "Compare holding the target, lowering/replacing the target, hedging the opposite side, and adding down on the "
+        "same side as testable approaches before any loss exit. Marketable loss exits are reserved for virtual-dead "
+        "states: garbage time, bench-emptying, a severe late score gap, a decisive player-status shock, or stale/unsafe "
+        "portfolio truth. Score every option by expected return, consistency, fillability, and evidence quality rather "
+        "than by subjective risk tolerance."
     ),
     "safety_rule": "No order endpoint calls are allowed from LLM output or prompt tools.",
 }
+
+
+def build_llm_runtime_safety_controls_status() -> dict[str, Any]:
+    policy = _llm_budget_policy()
+    return {
+        "schema_version": "llm_runtime_safety_controls_status_v1",
+        "controls_version": SAFETY_CONTROLS_VERSION,
+        "status": "ready",
+        "ready_for_controlled_dispatch": True,
+        "live_money_dispatch_authorized_by_default": False,
+        "dispatch_default": "disabled_until_explicitly_enabled",
+        "implemented_controls": [
+            "trigger_hash_dedup",
+            "per_event_token_budget",
+            "per_event_cost_budget",
+            "budget_warning_model_downgrade",
+            "trigger_type_call_caps",
+            "final_flat_shutdown",
+            "cost_telemetry",
+        ],
+        "budget_policy": policy,
+    }
 
 
 def detect_llm_runtime_triggers(
@@ -523,6 +569,8 @@ def process_llm_runtime_trace(
     dispatched = dispatch_llm_revision(
         trace,
         dispatch_enabled=dispatch_enabled,
+        artifact_root=artifact_root,
+        session_date=session_date,
         client=client,
         client_factory=client_factory,
         api_key_env=api_key_env,
@@ -539,6 +587,8 @@ def dispatch_llm_revision(
     trace: LLMRuntimeTrace,
     *,
     dispatch_enabled: bool = False,
+    artifact_root: str | Path | None = None,
+    session_date: str | None = None,
     client: Any | None = None,
     client_factory: Any | None = None,
     api_key_env: str = DEFAULT_OPENAI_API_KEY_ENV,
@@ -555,6 +605,30 @@ def dispatch_llm_revision(
             deep=True,
         )
 
+    if not any(trigger.requires_revision for trigger in trace.triggers):
+        response = LLMRevisionResponse(
+            request_id=request.request_id,
+            selected_model=request.model_routing.selected_model,
+            status="detected_only",
+            skipped_reason="no_revision_required",
+            trace_metadata={
+                "dispatch_enabled": dispatch_enabled,
+                "openai_call_attempted": False,
+                "order_endpoint_call_allowed": False,
+                "strategy_plan_auto_replace_attempted": False,
+                "llm_never_calls_order_endpoints": True,
+            },
+        )
+        return trace.model_copy(
+            update={
+                "revision_response": response,
+                "status": "detected_only",
+                "audit_only": True,
+                "notes": "LLM runtime triggers were already reviewed by the current StrategyPlanJSON; no OpenAI call was made.",
+            },
+            deep=True,
+        )
+
     if not dispatch_enabled:
         return _trace_with_skipped_response(
             trace,
@@ -564,8 +638,30 @@ def dispatch_llm_revision(
                 "dispatch_enabled": False,
                 "openai_call_attempted": False,
                 "order_endpoint_call_allowed": False,
+                "llm_runtime_safety_controls": build_llm_runtime_safety_controls_status(),
             },
         )
+
+    guard = _build_llm_pre_dispatch_guard(
+        trace,
+        artifact_root=artifact_root,
+        session_date=session_date,
+    )
+    if not guard["allowed"]:
+        return _trace_with_skipped_response(
+            trace,
+            request=request,
+            reason=str(guard["reason"]),
+            metadata={
+                "dispatch_enabled": True,
+                "openai_call_attempted": False,
+                "openai_client_available": None,
+                "order_endpoint_call_allowed": False,
+                **guard["metadata"],
+            },
+        )
+    trace = _maybe_downgrade_trace_for_budget(trace, guard=guard)
+    request = trace.revision_request or request
 
     resolved_client = client
     if resolved_client is None:
@@ -580,6 +676,7 @@ def dispatch_llm_revision(
                     "openai_call_attempted": False,
                     "openai_client_available": False,
                     "order_endpoint_call_allowed": False,
+                    **guard["metadata"],
                 },
             )
         try:
@@ -594,6 +691,7 @@ def dispatch_llm_revision(
                     "openai_call_attempted": False,
                     "openai_client_available": False,
                     "order_endpoint_call_allowed": False,
+                    **guard["metadata"],
                 },
             )
 
@@ -607,6 +705,7 @@ def dispatch_llm_revision(
                 "openai_call_attempted": False,
                 "openai_client_available": False,
                 "order_endpoint_call_allowed": False,
+                **guard["metadata"],
             },
         )
 
@@ -625,6 +724,7 @@ def dispatch_llm_revision(
                 "openai_client_available": True,
                 "order_endpoint_call_allowed": False,
                 "usage": usage,
+                **_response_telemetry_metadata(request=request, usage=usage, guard=guard),
             },
         )
     except Exception as exc:  # noqa: BLE001
@@ -637,6 +737,7 @@ def dispatch_llm_revision(
                 "openai_call_attempted": True,
                 "openai_client_available": True,
                 "order_endpoint_call_allowed": False,
+                **_response_telemetry_metadata(request=request, usage=usage, guard=guard),
             },
         )
 
@@ -654,6 +755,7 @@ def dispatch_llm_revision(
                 "order_endpoint_call_allowed": False,
                 "strategy_plan_auto_replace_attempted": False,
                 "usage": usage,
+                **_response_telemetry_metadata(request=request, usage=usage, guard=guard),
             },
         },
         deep=True,
@@ -687,6 +789,8 @@ def persist_llm_runtime_trace(
     now = datetime.now(timezone.utc)
     response = trace.revision_response.model_dump(mode="json") if trace.revision_response else None
     request = trace.revision_request.model_dump(mode="json") if trace.revision_request else None
+    response_metadata = response.get("trace_metadata") if isinstance(response, dict) else {}
+    telemetry = response_metadata.get("llm_runtime_telemetry") if isinstance(response_metadata, dict) else None
     payload = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "artifact_kind": "llm_runtime_trace",
@@ -704,6 +808,7 @@ def persist_llm_runtime_trace(
         "trigger_list": [trigger.model_dump(mode="json") for trigger in trace.triggers],
         "prompt_payload": request,
         "response": response,
+        "llm_runtime_telemetry": telemetry,
         "trace": trace.model_dump(mode="json"),
     }
     _write_json(path, payload)
@@ -742,6 +847,7 @@ def load_latest_llm_runtime_status(
             "session_date": resolved_day,
             "event_count": 0,
             "items": [],
+            "safety_controls": build_llm_runtime_safety_controls_status(),
             "artifact_root": str(Path(artifact_root).expanduser().resolve() if artifact_root else default_llm_runtime_artifact_root()),
         }
 
@@ -798,8 +904,460 @@ def load_latest_llm_runtime_status(
         "event_count": len(items),
         "recorded_event_count": recorded_count,
         "items": items,
+        "safety_controls": build_llm_runtime_safety_controls_status(),
         "artifact_root": str(root),
     }
+
+
+def _llm_budget_policy() -> dict[str, Any]:
+    token_budget = _env_int("JANUS_LLM_EVENT_TOKEN_BUDGET", DEFAULT_EVENT_TOKEN_BUDGET)
+    cost_budget = _env_float("JANUS_LLM_EVENT_COST_BUDGET_USD", DEFAULT_EVENT_COST_BUDGET_USD)
+    warning_fraction = _env_float("JANUS_LLM_EVENT_WARNING_FRACTION", DEFAULT_EVENT_WARNING_FRACTION)
+    warning_fraction = min(max(warning_fraction, 0.0), 1.0)
+    return {
+        "schema_version": "llm_runtime_budget_policy_v1",
+        "event_token_budget": max(token_budget, 0),
+        "event_cost_budget_usd": max(cost_budget, 0.0),
+        "warning_fraction": warning_fraction,
+        "trigger_call_caps": _trigger_call_caps_from_env(),
+        "pricing_source": "janus_configured_estimates",
+        "estimated_cost_per_million_tokens": _ESTIMATED_MODEL_COST_PER_MILLION_TOKENS,
+    }
+
+
+def _trigger_call_caps_from_env() -> dict[str, int]:
+    caps = dict(_DEFAULT_TRIGGER_CALL_CAPS)
+    default_cap = _env_int("JANUS_LLM_TRIGGER_CALL_CAP_DEFAULT", 0)
+    if default_cap > 0:
+        for trigger_type in caps:
+            caps[trigger_type] = default_cap
+    for trigger_type in list(caps):
+        env_key = f"JANUS_LLM_TRIGGER_CAP_{trigger_type.upper()}"
+        configured = _env_int(env_key, caps[trigger_type])
+        caps[trigger_type] = max(configured, 0)
+    return caps
+
+
+def _build_llm_pre_dispatch_guard(
+    trace: LLMRuntimeTrace,
+    *,
+    artifact_root: str | Path | None,
+    session_date: str | None,
+) -> dict[str, Any]:
+    request = trace.revision_request
+    policy = _llm_budget_policy()
+    history = _load_event_llm_runtime_history(
+        trace.event_id,
+        artifact_root=artifact_root,
+        session_date=session_date or (request.session_date if request else None),
+    )
+    usage_summary = _llm_history_usage_summary(history)
+    trigger_summary = _llm_history_trigger_summary(history)
+    final_shutdown = _final_flat_shutdown_status(request)
+    repeated = _repeated_trigger_hashes(trace.triggers, history)
+    capped = _capped_trigger_types(trace.triggers, trigger_summary, policy)
+    budget = _budget_status(usage_summary, policy)
+    metadata = {
+        "llm_runtime_safety_controls": build_llm_runtime_safety_controls_status(),
+        "llm_runtime_budget_policy": policy,
+        "llm_runtime_usage_before": usage_summary,
+        "llm_runtime_trigger_history": trigger_summary,
+        "llm_trigger_dedup": {
+            "schema_version": "llm_trigger_dedup_v1",
+            "repeated_trigger_hashes": repeated,
+            "all_revision_triggers_repeated": bool(repeated)
+            and len(repeated) == len([item for item in trace.triggers if item.requires_revision]),
+        },
+        "llm_trigger_call_caps": capped,
+        "llm_budget_status": budget,
+        "llm_final_flat_shutdown": final_shutdown,
+    }
+    if final_shutdown["active"]:
+        return {"allowed": False, "reason": "event_final_flat_shutdown", "metadata": metadata}
+    if budget["hard_block"]:
+        return {"allowed": False, "reason": "llm_event_budget_exceeded", "metadata": metadata}
+    if capped["hard_block"]:
+        return {"allowed": False, "reason": "llm_trigger_call_cap_exceeded", "metadata": metadata}
+    if metadata["llm_trigger_dedup"]["all_revision_triggers_repeated"]:
+        return {"allowed": False, "reason": "repeated_trigger_hash_dedup", "metadata": metadata}
+    return {"allowed": True, "reason": None, "metadata": metadata}
+
+
+def _load_event_llm_runtime_history(
+    event_id: str,
+    *,
+    artifact_root: str | Path | None,
+    session_date: str | None,
+) -> list[dict[str, Any]]:
+    resolved_day = session_date or datetime.now(timezone.utc).date().isoformat()
+    root = Path(artifact_root) if artifact_root is not None else default_llm_runtime_artifact_root()
+    day_root = root.expanduser().resolve() / resolved_day
+    if not day_root.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for path in sorted(day_root.glob("*.json")):
+        payload = _read_json(path)
+        if not isinstance(payload, dict):
+            continue
+        payload_event_id = str(
+            payload.get("event_id")
+            or ((payload.get("trace") or {}).get("event_id") if isinstance(payload.get("trace"), dict) else "")
+        ).strip()
+        if payload_event_id != event_id:
+            continue
+        rows.append({**payload, "path": str(path)})
+    return rows
+
+
+def _llm_history_usage_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
+    summary = {
+        "schema_version": "llm_runtime_usage_summary_v1",
+        "call_count": 0,
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_tokens": 0,
+        "total_tokens": 0,
+        "estimated_cost_usd": 0.0,
+    }
+    for payload in history:
+        response = payload.get("response") if isinstance(payload.get("response"), dict) else {}
+        trace_metadata = response.get("trace_metadata") if isinstance(response.get("trace_metadata"), dict) else {}
+        if trace_metadata.get("openai_call_attempted") is not True:
+            continue
+        summary["call_count"] += 1
+        usage = trace_metadata.get("usage") if isinstance(trace_metadata.get("usage"), dict) else {}
+        selected_model = str(response.get("selected_model") or payload.get("selected_model") or "")
+        usage_total = _usage_total_tokens(usage)
+        summary["input_tokens"] += int(usage.get("input_tokens") or 0)
+        summary["cached_input_tokens"] += int(usage.get("cached_input_tokens") or 0)
+        summary["output_tokens"] += int(usage.get("output_tokens") or 0)
+        summary["reasoning_tokens"] += int(usage.get("reasoning_tokens") or 0)
+        summary["total_tokens"] += usage_total
+        telemetry = payload.get("llm_runtime_telemetry")
+        if not isinstance(telemetry, dict):
+            telemetry = trace_metadata.get("llm_runtime_telemetry")
+        estimated = _safe_float((telemetry or {}).get("last_call_estimated_cost_usd") if isinstance(telemetry, dict) else None)
+        summary["estimated_cost_usd"] += (
+            estimated if estimated is not None else _estimate_openai_cost_usd(selected_model, usage)
+        )
+    summary["estimated_cost_usd"] = round(float(summary["estimated_cost_usd"]), 6)
+    return summary
+
+
+def _llm_history_trigger_summary(history: list[dict[str, Any]]) -> dict[str, Any]:
+    trigger_type_call_counts: dict[str, int] = {}
+    called_trigger_hashes: set[str] = set()
+    for payload in history:
+        response = payload.get("response") if isinstance(payload.get("response"), dict) else {}
+        trace_metadata = response.get("trace_metadata") if isinstance(response.get("trace_metadata"), dict) else {}
+        if trace_metadata.get("openai_call_attempted") is not True:
+            continue
+        for trigger_type in payload.get("trigger_types") or []:
+            trigger_type_text = str(trigger_type or "").strip()
+            if trigger_type_text:
+                trigger_type_call_counts[trigger_type_text] = trigger_type_call_counts.get(trigger_type_text, 0) + 1
+        for item in payload.get("trigger_list") or []:
+            if not isinstance(item, dict):
+                continue
+            trigger_id = str(item.get("trigger_id") or "").strip()
+            if trigger_id:
+                called_trigger_hashes.add(trigger_id)
+    return {
+        "schema_version": "llm_runtime_trigger_history_v1",
+        "trigger_type_call_counts": trigger_type_call_counts,
+        "called_trigger_hashes": sorted(called_trigger_hashes),
+    }
+
+
+def _repeated_trigger_hashes(triggers: list[LLMRuntimeTrigger], history: list[dict[str, Any]]) -> list[str]:
+    called = set(_llm_history_trigger_summary(history)["called_trigger_hashes"])
+    repeated = [
+        trigger.trigger_id
+        for trigger in triggers
+        if trigger.requires_revision and trigger.trigger_id in called
+    ]
+    return sorted(dict.fromkeys(repeated))
+
+
+def _capped_trigger_types(
+    triggers: list[LLMRuntimeTrigger],
+    trigger_summary: dict[str, Any],
+    policy: dict[str, Any],
+) -> dict[str, Any]:
+    caps = policy.get("trigger_call_caps") if isinstance(policy.get("trigger_call_caps"), dict) else {}
+    counts = (
+        trigger_summary.get("trigger_type_call_counts")
+        if isinstance(trigger_summary.get("trigger_type_call_counts"), dict)
+        else {}
+    )
+    capped: list[dict[str, Any]] = []
+    for trigger in triggers:
+        if not trigger.requires_revision:
+            continue
+        trigger_type = str(trigger.trigger_type)
+        cap = _safe_int(caps.get(trigger_type))
+        if cap is None or cap <= 0:
+            continue
+        count = _safe_int(counts.get(trigger_type)) or 0
+        if count >= cap:
+            capped.append({"trigger_type": trigger_type, "call_count": count, "cap": cap})
+    return {
+        "schema_version": "llm_trigger_call_caps_v1",
+        "hard_block": bool(capped),
+        "capped_trigger_types": capped,
+    }
+
+
+def _budget_status(usage_summary: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
+    token_budget = _safe_int(policy.get("event_token_budget")) or 0
+    cost_budget = _safe_float(policy.get("event_cost_budget_usd")) or 0.0
+    warning_fraction = _safe_float(policy.get("warning_fraction")) or DEFAULT_EVENT_WARNING_FRACTION
+    tokens = _safe_int(usage_summary.get("total_tokens")) or 0
+    cost = _safe_float(usage_summary.get("estimated_cost_usd")) or 0.0
+    token_ratio = (tokens / token_budget) if token_budget else 0.0
+    cost_ratio = (cost / cost_budget) if cost_budget else 0.0
+    return {
+        "schema_version": "llm_event_budget_status_v1",
+        "hard_block": (token_budget > 0 and tokens >= token_budget) or (cost_budget > 0 and cost >= cost_budget),
+        "warning": token_ratio >= warning_fraction or cost_ratio >= warning_fraction,
+        "token_ratio": round(token_ratio, 6),
+        "cost_ratio": round(cost_ratio, 6),
+        "event_token_budget": token_budget,
+        "event_cost_budget_usd": cost_budget,
+        "usage_before": usage_summary,
+    }
+
+
+def _maybe_downgrade_trace_for_budget(trace: LLMRuntimeTrace, *, guard: dict[str, Any]) -> LLMRuntimeTrace:
+    metadata = guard.get("metadata") if isinstance(guard.get("metadata"), dict) else {}
+    budget = metadata.get("llm_budget_status") if isinstance(metadata.get("llm_budget_status"), dict) else {}
+    if not budget.get("warning") or trace.model_routing.selected_tier != "frontier":
+        return trace
+    routing = trace.model_routing.model_copy(
+        update={
+            "selected_model": MINI_MODEL,
+            "selected_tier": "mini",
+            "reason": f"{trace.model_routing.reason} Downgraded from frontier because event LLM budget is at warning threshold.",
+            "fallback_alias": trace.model_routing.selected_model,
+        },
+        deep=True,
+    )
+    request = trace.revision_request.model_copy(update={"model_routing": routing}, deep=True) if trace.revision_request else None
+    metadata["llm_budget_model_downgrade"] = {
+        "schema_version": "llm_budget_model_downgrade_v1",
+        "applied": True,
+        "from_model": trace.model_routing.selected_model,
+        "to_model": MINI_MODEL,
+        "reason": "event_budget_warning",
+    }
+    return trace.model_copy(update={"model_routing": routing, "revision_request": request}, deep=True)
+
+
+def _response_telemetry_metadata(
+    *,
+    request: LLMRevisionRequest,
+    usage: dict[str, int],
+    guard: dict[str, Any],
+) -> dict[str, Any]:
+    metadata = guard.get("metadata") if isinstance(guard.get("metadata"), dict) else {}
+    policy = metadata.get("llm_runtime_budget_policy") if isinstance(metadata.get("llm_runtime_budget_policy"), dict) else _llm_budget_policy()
+    before = metadata.get("llm_runtime_usage_before") if isinstance(metadata.get("llm_runtime_usage_before"), dict) else {}
+    last_call_cost = _estimate_openai_cost_usd(request.model_routing.selected_model, usage)
+    before_cost = _safe_float(before.get("estimated_cost_usd")) or 0.0
+    before_tokens = _safe_int(before.get("total_tokens")) or 0
+    after_tokens = before_tokens + _usage_total_tokens(usage)
+    after_cost = round(before_cost + last_call_cost, 6)
+    telemetry = {
+        "schema_version": "llm_runtime_telemetry_v1",
+        "controls_version": SAFETY_CONTROLS_VERSION,
+        "selected_model": request.model_routing.selected_model,
+        "selected_tier": request.model_routing.selected_tier,
+        "usage": usage,
+        "last_call_estimated_cost_usd": last_call_cost,
+        "event_usage_before": before,
+        "event_usage_after": {
+            "total_tokens": after_tokens,
+            "estimated_cost_usd": after_cost,
+        },
+        "budget_policy": policy,
+        "budget_status_before": metadata.get("llm_budget_status"),
+        "trigger_dedup": metadata.get("llm_trigger_dedup"),
+        "trigger_call_caps": metadata.get("llm_trigger_call_caps"),
+        "final_flat_shutdown": metadata.get("llm_final_flat_shutdown"),
+        "model_downgrade": metadata.get("llm_budget_model_downgrade", {"applied": False}),
+        "behavior_changed": False,
+    }
+    return {
+        **metadata,
+        "estimated_cost_usd": last_call_cost,
+        "llm_runtime_telemetry": telemetry,
+    }
+
+
+def _final_flat_shutdown_status(request: LLMRevisionRequest | None) -> dict[str, Any]:
+    if request is None:
+        return {
+            "schema_version": "llm_final_flat_shutdown_v1",
+            "active": False,
+            "event_final": False,
+            "event_scope_flat": False,
+            "reason": "missing_revision_request",
+        }
+    event_final = _request_event_is_final(request)
+    event_scope_flat = _request_event_scope_is_flat(request)
+    return {
+        "schema_version": "llm_final_flat_shutdown_v1",
+        "active": event_final and event_scope_flat,
+        "event_final": event_final,
+        "event_scope_flat": event_scope_flat,
+        "reason": "final_and_flat" if event_final and event_scope_flat else None,
+    }
+
+
+def _request_event_is_final(request: LLMRevisionRequest) -> bool:
+    candidates: list[Any] = []
+    for source in (
+        request.scoreboard_pbp_summary,
+        request.event_context,
+        request.orderbook_state,
+        request.portfolio_state,
+        request.direct_clob_truth,
+    ):
+        if not isinstance(source, dict):
+            continue
+        for key in ("status", "status_text", "game_status", "game_status_text", "state", "event_status"):
+            candidates.append(source.get(key))
+        latest = source.get("latest_snapshot") if isinstance(source.get("latest_snapshot"), dict) else {}
+        for key in ("status", "status_text", "game_status", "game_status_text", "state"):
+            candidates.append(latest.get(key))
+        if _truthy(source.get("final") or source.get("is_final") or source.get("event_final")):
+            return True
+    final_texts = {"final", "game final", "closed", "settled", "settlement", "complete", "completed", "ended", "postgame"}
+    return any(_normalize(candidate) in final_texts for candidate in candidates)
+
+
+def _request_event_scope_is_flat(request: LLMRevisionRequest) -> bool:
+    explicit_flags: list[Any] = []
+    for source in (request.direct_clob_truth, request.portfolio_state):
+        if not isinstance(source, dict):
+            continue
+        explicit_flags.extend(
+            [
+                source.get("event_scope_flat"),
+                source.get("current_event_scope_flat"),
+                source.get("current_event_flat"),
+                source.get("is_flat"),
+                source.get("flat"),
+            ]
+        )
+    if any(_truthy(value) for value in explicit_flags):
+        return True
+    if any(str(value).strip().lower() in {"false", "0", "no"} for value in explicit_flags if value is not None):
+        return False
+    has_exposure_signal = False
+    for source in (request.direct_clob_truth, request.portfolio_state):
+        if not isinstance(source, dict):
+            continue
+        if _structure_has_open_event_exposure(source):
+            return False
+        if _structure_reports_flat_scope(source):
+            has_exposure_signal = True
+    return has_exposure_signal
+
+
+def _structure_reports_flat_scope(value: dict[str, Any]) -> bool:
+    for key in (
+        "open_orders",
+        "orders",
+        "open_positions",
+        "positions",
+        "pending_intents",
+        "current_event_open_orders",
+        "current_event_open_positions",
+        "current_event_positions",
+        "current_event_orders",
+    ):
+        if key not in value:
+            continue
+        item = value.get(key)
+        if isinstance(item, list) and not item:
+            return True
+        if isinstance(item, dict):
+            nested = item.get("orders") or item.get("positions") or item.get("items")
+            if isinstance(nested, list) and not nested:
+                return True
+            count = _safe_int(item.get("count") or item.get("total"))
+            if count == 0:
+                return True
+        count = _safe_int(item)
+        if count == 0:
+            return True
+    return False
+
+
+def _structure_has_open_event_exposure(value: dict[str, Any]) -> bool:
+    for key in (
+        "open_orders_count",
+        "open_positions_count",
+        "pending_intents_count",
+        "current_event_open_orders_count",
+        "current_event_open_positions_count",
+    ):
+        count = _safe_int(value.get(key))
+        if count is not None and count > 0:
+            return True
+    for key in (
+        "open_orders",
+        "orders",
+        "open_positions",
+        "positions",
+        "pending_intents",
+        "current_event_open_orders",
+        "current_event_open_positions",
+        "current_event_positions",
+        "current_event_orders",
+    ):
+        item = value.get(key)
+        if isinstance(item, list) and item:
+            return True
+        if isinstance(item, dict):
+            nested = item.get("orders") or item.get("positions") or item.get("items")
+            if isinstance(nested, list) and nested:
+                return True
+            count = _safe_int(item.get("count") or item.get("total"))
+            if count is not None and count > 0:
+                return True
+    return False
+
+
+def _estimate_openai_cost_usd(model: str, usage: dict[str, Any]) -> float:
+    pricing = _ESTIMATED_MODEL_COST_PER_MILLION_TOKENS.get(model) or _ESTIMATED_MODEL_COST_PER_MILLION_TOKENS[MINI_MODEL]
+    input_tokens = _safe_int(usage.get("input_tokens")) or 0
+    output_tokens = _safe_int(usage.get("output_tokens")) or 0
+    input_cost = (input_tokens / 1_000_000.0) * float(pricing["input"])
+    output_cost = (output_tokens / 1_000_000.0) * float(pricing["output"])
+    return round(input_cost + output_cost, 6)
+
+
+def _usage_total_tokens(usage: dict[str, Any]) -> int:
+    return int(_safe_int(usage.get("input_tokens")) or 0) + int(_safe_int(usage.get("output_tokens")) or 0)
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or not str(value).strip():
+        return default
+    parsed = _safe_int(value)
+    return default if parsed is None else parsed
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None or not str(value).strip():
+        return default
+    parsed = _safe_float(value)
+    return default if parsed is None else parsed
 
 
 def _make_trigger(
@@ -892,7 +1450,9 @@ def _call_openai_revision(*, client: Any, request: LLMRevisionRequest) -> tuple[
         ],
         text_format=_OpenAIRevisionResponse,
         reasoning={"effort": "medium"},
-        max_output_tokens=4096,
+        # Live revisions may include compact StrategyPlanJSON diffs and can exceed
+        # 4k output tokens when the model compares stop/hold/hedge alternatives.
+        max_output_tokens=8192,
         store=False,
     )
     parsed = getattr(response, "output_parsed", None)
@@ -907,10 +1467,14 @@ def _build_live_revision_system_prompt(request: LLMRevisionRequest) -> str:
             str(request.prompt_contract.get("system_persona") or JANUS_LIVE_LLM_PROMPT_CONTRACT["system_persona"]),
             "Use only the supplied JSON payload.",
             "Return strict JSON matching LLMRevisionResponse.",
+            "If you return revised_strategy_plan_json, plan_owner must be one of: janus_internal_llm, codex_agent, operator, system. Use janus_internal_llm for internal live revisions.",
             "For transport, put any revised StrategyPlanJSON in revised_strategy_plan_json as a compact JSON string, or null if unchanged.",
-            "Put reconciliation_actions, blocked_actions, and trace metadata into their *_json string fields as valid JSON.",
+            "For any executable live buy/sell strategy, include compiler-ready fields: entry_rules.price_policy, price_band or max_price/min_price, max_orderbook_age_seconds, max_scoreboard_age_seconds, max_spread_cents, max_abs_score_gap when score-dependent, and exit_rules.min_target_cents or target_return_fraction. For adverse moves, use stop_rules.review_after_adverse_cents plus explicit hold/hedge/add-down comparison; only include loss-exit instructions when stop_rules.loss_exit_requires_virtual_dead=true and virtual-dead evidence is present. Do not rely only on prose keys such as target_delta_cents.",
+            "Put reconciliation_actions_json and blocked_actions_json into their *_json string fields as JSON arrays, even when there is only one action; use [] when empty.",
+            "Put trace metadata into trace_metadata_json as a JSON object.",
             "Default to revised_strategy_plan_json=null for routine quarter reviews unless supplied evidence clearly invalidates the current plan.",
             "Do not copy the current plan into revised_strategy_plan_json just to restate it.",
+            "Keep the full response compact enough for live use: concise strings, short arrays, and no repeated source payloads.",
             "Keep explanations compact; prefer trace_metadata_json with concise rationale and evidence ids.",
             "Do not call tools, order endpoints, exchange endpoints, or external APIs.",
             "Output StrategyPlanJSON/reconciliation actions only; Janus validators own all live-order authority.",
@@ -984,6 +1548,14 @@ def _loads_list(value: str | None, *, field_name: str) -> list[dict[str, Any]]:
     if value is None or not str(value).strip():
         return []
     parsed = json.loads(value)
+    if isinstance(parsed, dict):
+        for key in ("items", "actions", "blocked_actions", "reconciliation_actions"):
+            nested = parsed.get(key)
+            if isinstance(nested, list):
+                parsed = nested
+                break
+        else:
+            parsed = [parsed]
     if not isinstance(parsed, list):
         raise ValueError(f"{field_name} must decode to a list")
     values: list[dict[str, Any]] = []
@@ -1036,6 +1608,10 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     trigger_list = payload.get("trigger_list") if isinstance(payload.get("trigger_list"), list) else []
     event_id = str(payload.get("event_id") or trace.get("event_id") or "").strip()
     adoption = _llm_revision_adoption_status(event_id=event_id, response=response)
+    trace_metadata = response.get("trace_metadata") if isinstance(response.get("trace_metadata"), dict) else {}
+    telemetry = payload.get("llm_runtime_telemetry") if isinstance(payload.get("llm_runtime_telemetry"), dict) else None
+    if telemetry is None and isinstance(trace_metadata.get("llm_runtime_telemetry"), dict):
+        telemetry = trace_metadata["llm_runtime_telemetry"]
     return {
         "event_id": event_id,
         "trace_id": payload.get("trace_id") or trace.get("trace_id"),
@@ -1046,6 +1622,7 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "trigger_types": payload.get("trigger_types") or [item.get("trigger_type") for item in trigger_list if isinstance(item, dict)],
         "selected_model": payload.get("selected_model") or model_routing.get("selected_model"),
         "selected_tier": model_routing.get("selected_tier"),
+        "llm_runtime_telemetry": telemetry,
         "persisted_at_utc": payload.get("persisted_at_utc"),
         "artifact_schema_version": payload.get("schema_version"),
         "adoption_status": adoption["status"],
@@ -1510,7 +2087,58 @@ def _passive_plan_trigger_rows(
     for trigger in candidates:
         if _truthy(trigger.get("triggered") or trigger.get("runtime_triggered") or trigger.get("active")):
             rows.append({"trigger": trigger, "runtime_flags": runtime_flags})
+            continue
+        semantic_evidence = _semantic_passive_plan_trigger_evidence(trigger, plan=plan, live=live)
+        if semantic_evidence is not None:
+            rows.append({"trigger": trigger, "runtime_flags": runtime_flags, **semantic_evidence})
     return rows
+
+
+def _semantic_passive_plan_trigger_evidence(
+    trigger: dict[str, Any],
+    *,
+    plan: dict[str, Any],
+    live: dict[str, Any],
+) -> dict[str, Any] | None:
+    trigger_type = str(trigger.get("type") or trigger.get("trigger_type") or "").strip().lower()
+    if trigger_type != "fresh_q3_state_after_halftime":
+        return None
+    if _plan_has_review_marker(plan, "fresh_q3_state_after_halftime_reviewed_utc", "q3_fresh_state_reviewed_utc"):
+        return None
+
+    latest = live.get("latest_snapshot") if isinstance(live.get("latest_snapshot"), dict) else live
+    period = _safe_int((latest or {}).get("period") or live.get("period"))
+    clock = (
+        (latest or {}).get("game_clock")
+        or (latest or {}).get("clock")
+        or live.get("game_clock")
+        or live.get("clock")
+    )
+    seconds_remaining = _clock_seconds_remaining(clock)
+    min_seconds = _safe_float(trigger.get("min_clock_remaining_seconds"))
+    max_seconds = _safe_float(trigger.get("max_clock_remaining_seconds"))
+    min_seconds = 360.0 if min_seconds is None else min_seconds
+    max_seconds = 720.0 if max_seconds is None else max_seconds
+    if period != 3 or seconds_remaining is None or seconds_remaining < min_seconds or seconds_remaining > max_seconds:
+        return None
+    return {
+        "semantic_trigger_type": trigger_type,
+        "period": period,
+        "clock": clock,
+        "seconds_remaining": seconds_remaining,
+        "condition": "period=3 and early-Q3 fresh state after halftime",
+    }
+
+
+def _plan_has_review_marker(plan: dict[str, Any], *keys: str) -> bool:
+    for section_name in ("explainability", "context_summary"):
+        section = plan.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        for key in keys:
+            if section.get(key):
+                return True
+    return False
 
 
 def _dedupe_triggers(triggers: list[LLMRuntimeTrigger]) -> list[LLMRuntimeTrigger]:

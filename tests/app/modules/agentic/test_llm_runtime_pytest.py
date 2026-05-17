@@ -7,6 +7,7 @@ from app.modules.agentic.contracts import LLMRevisionRequest, LLMRuntimeTrigger
 from app.modules.agentic.llm_runtime import (
     FRONTIER_MODEL,
     MINI_MODEL,
+    _build_live_revision_system_prompt,
     build_llm_prompt_contract,
     build_llm_revision_request,
     build_llm_runtime_trace,
@@ -80,6 +81,40 @@ def test_quarter_end_review_marker_suppresses_same_period_later_snapshot_pytest(
     assert triggers[0].current_plan_stale_reason is None
     assert triggers[0].reason == "Quarter boundary reviewed by current StrategyPlanJSON."
     assert triggers[0].evidence["quarter_end_reviewed_by_plan"] is True
+
+
+def test_fresh_q3_plan_revision_trigger_fires_once_pytest() -> None:
+    plan = {
+        "active_strategies": [
+            {
+                "strategy_id": "halftime-watch",
+                "revision_triggers": [{"type": "fresh_q3_state_after_halftime"}],
+            }
+        ]
+    }
+    live_state = {"latest_snapshot": {"period": 3, "clock": "PT07M30.00S", "home_score": 64, "away_score": 59}}
+
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-cle-det-2026-05-13",
+        current_plan=plan,
+        live_state=live_state,
+        source="pytest",
+    )
+    reviewed_triggers = detect_llm_runtime_triggers(
+        event_id="nba-cle-det-2026-05-13",
+        current_plan={
+            **plan,
+            "explainability": {"fresh_q3_state_after_halftime_reviewed_utc": "2026-05-14T01:45:00Z"},
+        },
+        live_state=live_state,
+        source="pytest",
+    )
+
+    assert [trigger.trigger_type for trigger in triggers] == ["strategy_plan_revision_trigger"]
+    assert triggers[0].requires_revision is True
+    assert triggers[0].evidence["semantic_trigger_type"] == "fresh_q3_state_after_halftime"
+    assert triggers[0].evidence["seconds_remaining"] == 450
+    assert reviewed_triggers == []
 
 
 def test_manual_operator_exposure_routes_to_frontier_pytest() -> None:
@@ -354,6 +389,8 @@ def test_prompt_contract_and_revision_request_include_safety_sections_pytest() -
     assert "operator_sizing_policy" in request.prompt_contract["required_input_sections"]
     assert prompt_contract["required_json_output_schema"]["revised_strategy_plan"] == "StrategyPlanJSON or null"
     assert prompt_contract["authority_boundaries"][0] == "The LLM never calls order endpoints."
+    assert "Marketable loss exits are reserved for virtual-dead states" in prompt_contract["experiment_policy"]
+    assert "loss_exit_requires_virtual_dead=true" in _build_live_revision_system_prompt(request)
 
 
 def test_quarter_end_runtime_trace_persists_to_artifact_pytest(tmp_path) -> None:
@@ -408,6 +445,47 @@ def test_missing_openai_key_records_skipped_unavailable_pytest(tmp_path, monkeyp
     assert trace.revision_response.trace_metadata["openai_call_attempted"] is False
 
 
+def test_reviewed_runtime_trigger_does_not_call_openai_pytest(tmp_path) -> None:
+    class FailingResponses:
+        def parse(self, **kwargs):  # pragma: no cover - called only on regression
+            raise AssertionError("reviewed triggers must not call OpenAI")
+
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        current_plan={
+            "generated_at_utc": "2026-05-12T00:10:00Z",
+            "explainability": {"q2_quarter_end_reviewed_utc": "2026-05-12T01:00:00Z"},
+        },
+        live_state={
+            "recent_play_by_play": [
+                {
+                    "event_index": 248,
+                    "period": 2,
+                    "clock": "PT00M00.00S",
+                    "description": "Period End",
+                    "payload_json": {"edited": "2026-05-12T00:55:00Z", "subType": "end"},
+                }
+            ]
+        },
+    )
+
+    trace, persistence = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FailingResponses()),
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert persistence["status"] == "persisted"
+    assert trace.status == "detected_only"
+    assert trace.revision_response is not None
+    assert trace.revision_response.skipped_reason == "no_revision_required"
+    assert trace.revision_response.trace_metadata["openai_call_attempted"] is False
+
+
 def test_valid_mocked_llm_response_is_schema_validated_and_stored_pytest(tmp_path) -> None:
     class FakeResponses:
         def parse(self, **kwargs):
@@ -455,6 +533,208 @@ def test_valid_mocked_llm_response_is_schema_validated_and_stored_pytest(tmp_pat
     assert persistence["response_status"] == "response_recorded"
     payload = json.loads((tmp_path / "llm-runtime" / "2026-05-11").glob("*.json").__next__().read_text())
     assert payload["response"]["trace_metadata"]["usage"]["input_tokens"] == 11
+    telemetry = payload["llm_runtime_telemetry"]
+    assert telemetry["controls_version"].startswith("llm_runtime_safety_controls_")
+    assert telemetry["selected_model"] == MINI_MODEL
+    assert telemetry["usage"]["output_tokens"] == 7
+    assert telemetry["last_call_estimated_cost_usd"] > 0
+    assert telemetry["event_usage_after"]["total_tokens"] == 18
+
+
+def test_repeated_trigger_hash_dedup_skips_second_openai_call_pytest(tmp_path) -> None:
+    class FakeResponses:
+        def parse(self, **kwargs):
+            request_id = json.loads(kwargs["input"][1]["content"])["request_id"]
+            text_format = kwargs["text_format"]
+            return SimpleNamespace(
+                output_parsed=text_format(
+                    request_id=request_id,
+                    status="response_recorded",
+                    selected_model=kwargs["model"],
+                    revised_strategy_plan_json=None,
+                    reconciliation_actions_json="[]",
+                    blocked_actions_json="[]",
+                    confidence=0.5,
+                    skipped_reason=None,
+                    trace_metadata_json="{}",
+                ),
+                usage=SimpleNamespace(input_tokens=10, output_tokens=5),
+            )
+
+    class FailingResponses:
+        def parse(self, **kwargs):  # pragma: no cover - called only on regression
+            raise AssertionError("duplicate trigger must not call OpenAI")
+
+    artifact_root = tmp_path / "llm-runtime"
+    first_trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+    )
+    process_llm_runtime_trace(
+        first_trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FakeResponses()),
+        artifact_root=artifact_root,
+        session_date="2026-05-11",
+    )
+
+    second_trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 1, "clock": "0:00"},
+    )
+    second_trace, _ = process_llm_runtime_trace(
+        second_trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FailingResponses()),
+        artifact_root=artifact_root,
+        session_date="2026-05-11",
+    )
+
+    assert second_trace.status == "skipped_unavailable"
+    assert second_trace.revision_response is not None
+    assert second_trace.revision_response.skipped_reason == "repeated_trigger_hash_dedup"
+    assert second_trace.revision_response.trace_metadata["openai_call_attempted"] is False
+
+
+def test_event_budget_exceeded_skips_openai_call_pytest(tmp_path, monkeypatch) -> None:
+    class FailingResponses:
+        def parse(self, **kwargs):  # pragma: no cover - called only on regression
+            raise AssertionError("budget-exceeded event must not call OpenAI")
+
+    monkeypatch.setenv("JANUS_LLM_EVENT_TOKEN_BUDGET", "1")
+    day_root = tmp_path / "llm-runtime" / "2026-05-11"
+    day_root.mkdir(parents=True)
+    (day_root / "prior.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "nba-det-cle-2026-05-11",
+                "trace_id": "prior",
+                "status": "response_recorded",
+                "response_status": "response_recorded",
+                "trigger_count": 1,
+                "trigger_types": ["quarter_end"],
+                "trigger_list": [{"trigger_id": "other-trigger", "trigger_type": "quarter_end"}],
+                "selected_model": MINI_MODEL,
+                "response": {
+                    "status": "response_recorded",
+                    "selected_model": MINI_MODEL,
+                    "trace_metadata": {
+                        "openai_call_attempted": True,
+                        "usage": {"input_tokens": 1, "output_tokens": 1},
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 2, "clock": "0:00"},
+    )
+    trace, _ = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FailingResponses()),
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert trace.status == "skipped_unavailable"
+    assert trace.revision_response is not None
+    assert trace.revision_response.skipped_reason == "llm_event_budget_exceeded"
+    assert trace.revision_response.trace_metadata["llm_budget_status"]["hard_block"] is True
+
+
+def test_final_flat_shutdown_skips_openai_call_pytest(tmp_path) -> None:
+    class FailingResponses:
+        def parse(self, **kwargs):  # pragma: no cover - called only on regression
+            raise AssertionError("final flat event must not call OpenAI")
+
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 4, "clock": "0:00"},
+        direct_clob_truth={"open_orders": {"orders": []}, "open_positions": {"positions": []}},
+        portfolio_state={"open_orders": 0, "open_positions": 0},
+    )
+    request = trace.revision_request
+    assert request is not None
+    request = request.model_copy(
+        update={
+            "scoreboard_pbp_summary": {**request.scoreboard_pbp_summary, "status": "final"},
+            "direct_clob_truth": {"event_scope_flat": True, "open_orders": {"orders": []}, "open_positions": {"positions": []}},
+            "portfolio_state": {"event_scope_flat": True, "open_orders": 0, "open_positions": 0},
+        },
+        deep=True,
+    )
+    trace = trace.model_copy(update={"revision_request": request}, deep=True)
+
+    trace, _ = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FailingResponses()),
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert trace.status == "skipped_unavailable"
+    assert trace.revision_response is not None
+    assert trace.revision_response.skipped_reason == "event_final_flat_shutdown"
+    shutdown = trace.revision_response.trace_metadata["llm_final_flat_shutdown"]
+    assert shutdown["active"] is True
+    assert shutdown["event_final"] is True
+    assert shutdown["event_scope_flat"] is True
+
+
+def test_single_object_reconciliation_action_is_tolerated_pytest(tmp_path) -> None:
+    class FakeResponses:
+        def parse(self, **kwargs):
+            request_id = json.loads(kwargs["input"][1]["content"])["request_id"]
+            text_format = kwargs["text_format"]
+            return SimpleNamespace(
+                output_parsed=text_format(
+                    schema_version="llm_revision_response_v1",
+                    request_id=request_id,
+                    status="response_recorded",
+                    selected_model=kwargs["model"],
+                    revised_strategy_plan_json=None,
+                    reconciliation_actions_json=json.dumps({"action": "target", "limit_price": 0.39}),
+                    blocked_actions_json=json.dumps({"reason": "no_new_entry"}),
+                    confidence=0.7,
+                    skipped_reason=None,
+                    trace_metadata_json="{}",
+                ),
+                usage=SimpleNamespace(input_tokens=11, output_tokens=7),
+            )
+
+    trace = build_llm_runtime_trace(
+        event_id="nba-det-cle-2026-05-11",
+        market_id="market-1",
+        session_date="2026-05-11",
+        live_state={"period": 3, "clock": "0:00", "score_gap": -3},
+    )
+
+    trace, _ = process_llm_runtime_trace(
+        trace,
+        dispatch_enabled=True,
+        client=SimpleNamespace(responses=FakeResponses()),
+        artifact_root=tmp_path / "llm-runtime",
+        session_date="2026-05-11",
+    )
+
+    assert trace.status == "response_recorded"
+    assert trace.revision_response is not None
+    assert trace.revision_response.reconciliation_actions == [{"action": "target", "limit_price": 0.39}]
+    assert trace.revision_response.blocked_actions == [{"reason": "no_new_entry"}]
 
 
 def test_invalid_mocked_llm_response_fails_closed_pytest(tmp_path) -> None:

@@ -33,7 +33,7 @@ from app.modules.agentic.contracts import (
 )
 from app.modules.agentic.engine import evaluate_strategy_plan
 from app.modules.agentic.live_strategy_worker import build_live_strategy_worker_readiness, get_live_strategy_worker
-from app.modules.agentic.llm_runtime import load_latest_llm_runtime_status
+from app.modules.agentic.llm_runtime import build_llm_runtime_safety_controls_status, load_latest_llm_runtime_status
 from app.modules.agentic.ops_checks import build_integrity_snapshot
 from app.modules.agentic.repository import (
     get_agentic_database_status,
@@ -87,6 +87,7 @@ def run_ops_integrity_check(
         account_id=payload.account_id,
         direct_trade_token_ids=direct_trade_token_ids,
     )
+    llm_runtime_safety_controls = build_llm_runtime_safety_controls_status()
     recorded = record_ops_stage(
         "integrity-check",
         {
@@ -95,6 +96,7 @@ def run_ops_integrity_check(
             "requested_event_ids": payload.event_ids,
             "resolved_event_ids": integrity_event_ids,
             "integrity": integrity,
+            "llm_runtime_safety_controls": llm_runtime_safety_controls,
         },
         day=payload.session_date,
     )
@@ -104,6 +106,7 @@ def run_ops_integrity_check(
         "requested_event_ids": payload.event_ids,
         "resolved_event_ids": integrity_event_ids,
         "integrity": integrity,
+        "llm_runtime_safety_controls": llm_runtime_safety_controls,
     }
 
 
@@ -1361,9 +1364,45 @@ def _resolve_llm_revision_response(
         "path": str(path),
         "trace_id": artifact.get("trace_id"),
         "trigger_types": artifact.get("trigger_types") or [],
+        "trigger_list": artifact.get("trigger_list") or [],
         "selected_model": artifact.get("selected_model"),
         "persisted_at_utc": artifact.get("persisted_at_utc"),
     }
+
+
+def _quarter_end_periods_from_trace_metadata(trace_metadata: dict[str, Any]) -> list[int]:
+    periods: set[int] = set()
+    trigger_list = trace_metadata.get("trigger_list")
+    if not isinstance(trigger_list, list):
+        return []
+
+    for item in trigger_list:
+        if not isinstance(item, dict) or item.get("trigger_type") != "quarter_end":
+            continue
+        period = _trigger_period_from_trace_item(item)
+        if period is not None:
+            periods.add(period)
+    return sorted(periods)
+
+
+def _trigger_period_from_trace_item(item: dict[str, Any]) -> int | None:
+    evidence = item.get("evidence")
+    if not isinstance(evidence, dict):
+        return None
+
+    candidates: list[Any] = [evidence.get("period")]
+    latest_snapshot = evidence.get("latest_snapshot")
+    if isinstance(latest_snapshot, dict):
+        candidates.append(latest_snapshot.get("period"))
+
+    for value in candidates:
+        try:
+            period = int(value)
+        except (TypeError, ValueError):
+            continue
+        if period > 0:
+            return period
+    return None
 
 
 def _with_llm_adoption_metadata(
@@ -1376,10 +1415,11 @@ def _with_llm_adoption_metadata(
 ) -> dict[str, Any]:
     plan = dict(plan_payload)
     explainability = dict(plan.get("explainability") or {})
+    adopted_at_utc = datetime.now(timezone.utc).isoformat()
     explainability["llm_revision_adoption"] = {
         "schema_version": "llm_revision_adoption_v1",
         "event_id": event_id,
-        "adopted_at_utc": datetime.now(timezone.utc).isoformat(),
+        "adopted_at_utc": adopted_at_utc,
         "source": payload.source,
         "reviewed_by": payload.reviewed_by,
         "review_reason": payload.review_reason,
@@ -1392,8 +1432,39 @@ def _with_llm_adoption_metadata(
         "strategy_plan_auto_replace_attempted": False,
         "notes": payload.notes,
     }
+    for period in _quarter_end_periods_from_trace_metadata(trace_metadata):
+        marker_prefix = f"q{period}_quarter_end_reviewed"
+        explainability[f"{marker_prefix}_utc"] = adopted_at_utc
+        explainability.setdefault(
+            marker_prefix,
+            f"Reviewed through LLM revision adoption request {response.request_id}.",
+        )
+    for marker_key in _passive_plan_markers_from_trace_metadata(trace_metadata):
+        explainability[f"{marker_key}_reviewed_utc"] = adopted_at_utc
+        explainability.setdefault(
+            f"{marker_key}_reviewed",
+            f"Reviewed through LLM revision adoption request {response.request_id}.",
+        )
     plan["explainability"] = explainability
     return plan
+
+
+def _passive_plan_markers_from_trace_metadata(trace_metadata: dict[str, Any]) -> list[str]:
+    markers: set[str] = set()
+    trigger_list = trace_metadata.get("trigger_list")
+    if not isinstance(trigger_list, list):
+        return []
+    for item in trigger_list:
+        if not isinstance(item, dict) or item.get("trigger_type") != "strategy_plan_revision_trigger":
+            continue
+        evidence = item.get("evidence")
+        trigger = evidence.get("trigger") if isinstance(evidence, dict) else None
+        if not isinstance(trigger, dict):
+            continue
+        trigger_type = str(trigger.get("type") or trigger.get("trigger_type") or "").strip().lower()
+        if trigger_type == "fresh_q3_state_after_halftime":
+            markers.add("fresh_q3_state_after_halftime")
+    return sorted(markers)
 
 
 def _strategy_plan_diff(current_plan: dict[str, Any] | None, revised_plan: dict[str, Any]) -> dict[str, Any]:
