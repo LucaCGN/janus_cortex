@@ -19,6 +19,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--days", type=int, default=1)
     parser.add_argument("--api-root", default="http://127.0.0.1:8010")
     parser.add_argument("--season", default="2025-26")
+    parser.add_argument("--account-catalog-backfill-limit", type=int, default=100)
     return parser.parse_args()
 
 
@@ -27,7 +28,13 @@ def _date_range(start_date: str, days: int) -> list[str]:
     return [(start + timedelta(days=offset)).isoformat() for offset in range(max(days, 1))]
 
 
-def _run_for_date(*, session_date: str, api_root: str, season: str) -> dict[str, Any]:
+def _run_for_date(
+    *,
+    session_date: str,
+    api_root: str,
+    season: str,
+    account_catalog_backfill_limit: int,
+) -> dict[str, Any]:
     command = [
         sys.executable,
         str(REPO_ROOT / "tools" / "run_janus_operational_cycle.py"),
@@ -35,6 +42,8 @@ def _run_for_date(*, session_date: str, api_root: str, season: str) -> dict[str,
         api_root,
         "--season",
         season,
+        "--account-catalog-backfill-limit",
+        str(int(account_catalog_backfill_limit)),
         "--session-date",
         session_date,
         "--stage",
@@ -59,7 +68,12 @@ def _run_for_date(*, session_date: str, api_root: str, season: str) -> dict[str,
 def main() -> int:
     args = _parse_args()
     results = [
-        _run_for_date(session_date=session_date, api_root=args.api_root, season=args.season)
+        _run_for_date(
+            session_date=session_date,
+            api_root=args.api_root,
+            season=args.season,
+            account_catalog_backfill_limit=args.account_catalog_backfill_limit,
+        )
         for session_date in _date_range(args.start_date, args.days)
     ]
     payload = {

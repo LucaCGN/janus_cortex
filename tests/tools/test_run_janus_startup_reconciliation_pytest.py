@@ -39,6 +39,8 @@ def test_main_runs_data_refresh_for_each_session_date_pytest(monkeypatch, capsys
             "http://janus.local",
             "--season",
             "2025-26",
+            "--account-catalog-backfill-limit",
+            "100",
         ],
     )
 
@@ -48,5 +50,7 @@ def test_main_runs_data_refresh_for_each_session_date_pytest(monkeypatch, capsys
     assert payload["status"] == "success"
     assert payload["live_order_impact"] == "none"
     assert [item["session_date"] for item in payload["results"]] == ["2026-05-17", "2026-05-18"]
+    assert "--account-catalog-backfill-limit" in calls[0]
+    assert calls[0][calls[0].index("--account-catalog-backfill-limit") + 1] == "100"
     assert calls[0][-4:] == ["--session-date", "2026-05-17", "--stage", "data-refresh"]
     assert calls[1][-4:] == ["--session-date", "2026-05-18", "--stage", "data-refresh"]

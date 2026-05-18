@@ -20,6 +20,7 @@ DEFAULT_LOCAL_ROOT = resolve_local_root()
 DEFAULT_SHARED_ROOT = resolve_shared_root()
 DEFAULT_SEASON = "2025-26"
 DEFAULT_ACCOUNT_ID = "56964015-5935-5035-bdab-b056c9277146"
+DEFAULT_ACCOUNT_CATALOG_BACKFILL_LIMIT = 100
 DEFAULT_ENTRY_TARGET_NOTIONAL_USD = 1.0
 DEFAULT_MAX_ENTRY_ORDERS_PER_GAME = 10
 DEFAULT_MAX_ENTRY_NOTIONAL_PER_GAME_USD = 10.0
@@ -44,6 +45,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--game-id", action="append", dest="game_ids", default=[])
     parser.add_argument("--run-id", default=None)
     parser.add_argument("--account-id", default=DEFAULT_ACCOUNT_ID)
+    parser.add_argument("--account-catalog-backfill-limit", type=int, default=DEFAULT_ACCOUNT_CATALOG_BACKFILL_LIMIT)
     parser.add_argument("--start-live-run", action="store_true")
     parser.add_argument("--live-money", action="store_true", help="Set dry_run=false when starting the live run.")
     parser.add_argument("--entries-enabled", action="store_true", help="Enable entries when starting a live run.")
@@ -200,7 +202,14 @@ def _run_data_refresh(args: argparse.Namespace, artifact_dir: Path) -> dict[str,
             continue
         post(f"/v1/sync/nba/live/{game_id}", {"include_live_snapshots": True, "include_play_by_play": True})
     for scope in ("positions", "orders", "trades"):
-        post(f"/v1/sync/polymarket/{scope}", {"wallet_address": None, "limit": 500})
+        post(
+            f"/v1/sync/polymarket/{scope}",
+            {
+                "wallet_address": None,
+                "limit": 500,
+                "account_catalog_backfill_limit": int(args.account_catalog_backfill_limit),
+            },
+        )
     summary = {
         "stage": "data-refresh",
         "generated_at_utc": _now_utc().isoformat(),
