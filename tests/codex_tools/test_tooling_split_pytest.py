@@ -6,8 +6,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_tool import _client as legacy_client
+import codex_tool.build_replay_from_watch_session as legacy_replay_cli
+import codex_tool.export_event_context as legacy_context_cli
+import codex_tool.export_event_review_bundle as legacy_review_cli
 import codex_tool.janus_status as legacy_status_cli
+import codex_tool.watch_market as legacy_watch_cli
 from codex_tools.janus import client as janus_client
+from codex_tools.janus import events as janus_events
 from codex_tools.janus import ops as janus_ops
 from codex_tools.janus import status as janus_status
 from codex_tools.polymarket import (
@@ -128,6 +133,122 @@ def test_janus_status_namespace_wraps_status_endpoint(monkeypatch) -> None:
 def test_legacy_janus_status_cli_delegates_to_target_namespace() -> None:
     assert legacy_status_cli.STATUS_PATH == janus_status.STATUS_PATH
     assert legacy_status_cli.main_for_status is janus_status.main_for_status
+
+
+def test_janus_events_namespace_wraps_context_and_review_endpoints(monkeypatch) -> None:
+    calls: list[tuple[str, str, str, object, dict[str, object]]] = []
+
+    def _api_json(
+        api_root: str,
+        method: str,
+        path: str,
+        payload: object = None,
+        *,
+        query: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        calls.append((api_root, method, path, payload, query or {}))
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(janus_events, "api_json", _api_json)
+
+    context = janus_events.get_event_context(
+        "http://janus.local",
+        "event-1",
+        session_date="2026-05-18",
+    )
+    review = janus_events.get_event_review_bundle(
+        "http://janus.local",
+        "event-2",
+        session_date="2026-05-17",
+        account_id="account-1",
+    )
+
+    assert context == {"ok": True, "path": "/v1/events/event-1/agent-context"}
+    assert review == {"ok": True, "path": "/v1/events/event-2/review-bundle"}
+    assert calls == [
+        (
+            "http://janus.local",
+            "GET",
+            "/v1/events/event-1/agent-context",
+            None,
+            {"session_date": "2026-05-18"},
+        ),
+        (
+            "http://janus.local",
+            "GET",
+            "/v1/events/event-2/review-bundle",
+            None,
+            {"session_date": "2026-05-17", "account_id": "account-1"},
+        ),
+    ]
+
+
+def test_janus_events_namespace_preserves_replay_and_watch_payloads() -> None:
+    replay_args = janus_events.build_replay_from_watch_session_parser("replay").parse_args(
+        [
+            "--watch-session-id",
+            "watch-1",
+            "--event-key",
+            "event-key-1",
+            "--output-name",
+            "replay-name",
+            "--notes",
+            "unit test",
+        ]
+    )
+    watch_args = janus_events.build_watch_market_parser("watch").parse_args(
+        [
+            "--event-key",
+            "event-key-1",
+            "--title",
+            "Event Title",
+            "--category",
+            "geopolitics",
+            "--source-url",
+            "https://example.com/a",
+            "--source-url",
+            "https://example.com/b",
+            "--market-id",
+            "market-1",
+            "--notes",
+            "watch note",
+            "--active",
+            "--source",
+            "pytest",
+        ]
+    )
+
+    assert janus_events.build_replay_from_watch_session_payload(replay_args) == {
+        "watch_session_id": "watch-1",
+        "event_key": "event-key-1",
+        "output_name": "replay-name",
+        "notes": "unit test",
+    }
+    assert janus_events.build_watchlist_payload(watch_args) == {
+        "source": "pytest",
+        "events": [
+            {
+                "event_key": "event-key-1",
+                "category": "geopolitics",
+                "title": "Event Title",
+                "source_urls": ["https://example.com/a", "https://example.com/b"],
+                "market_id": "market-1",
+                "notes": "watch note",
+                "passive_only": False,
+            }
+        ],
+    }
+
+
+def test_legacy_event_review_clis_delegate_to_target_namespace() -> None:
+    assert legacy_context_cli.EVENT_AGENT_CONTEXT_PATH_TEMPLATE == janus_events.EVENT_AGENT_CONTEXT_PATH_TEMPLATE
+    assert legacy_context_cli.main_for_event_context is janus_events.main_for_event_context
+    assert legacy_review_cli.EVENT_REVIEW_BUNDLE_PATH_TEMPLATE == janus_events.EVENT_REVIEW_BUNDLE_PATH_TEMPLATE
+    assert legacy_review_cli.main_for_event_review_bundle is janus_events.main_for_event_review_bundle
+    assert legacy_replay_cli.REPLAY_FROM_WATCH_SESSION_PATH == janus_events.REPLAY_FROM_WATCH_SESSION_PATH
+    assert legacy_replay_cli.main_for_replay_from_watch_session is janus_events.main_for_replay_from_watch_session
+    assert legacy_watch_cli.WATCHLIST_EVENTS_PATH == janus_events.WATCHLIST_EVENTS_PATH
+    assert legacy_watch_cli.main_for_watch_market is janus_events.main_for_watch_market
 
 
 def test_polymarket_fallback_blocks_when_gates_are_missing() -> None:
