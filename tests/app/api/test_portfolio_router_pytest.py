@@ -1039,6 +1039,31 @@ def _manager_action_plan_fixture():
     )
 
 
+def _ready_manager_action_plan_fixture():
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id="token-demo",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+        evidence={"direct_open_order_count": 1},
+    )
+    return build_manager_action_plan(
+        gate_snapshot=snapshot,
+        proposed_action={"target_state": "target_missing", "desired_state": "review_target_order_preview"},
+        management_plan=["Route through the approved portfolio manager order-management preview first."],
+        generated_at_utc="2026-05-18T13:20:00Z",
+    )
+
+
 def test_portfolio_manager_action_ledger_endpoint_dry_run_records_no_order_side_effects_pytest() -> None:
     class FakeConnection:
         pass
@@ -1155,6 +1180,81 @@ def test_apply_portfolio_manager_action_ledger_persists_ledger_only_pytest() -> 
     assert applied["orders_prepared"] is False
     assert any("INSERT INTO portfolio.manager_action_ledger" in query for query, _ in connection.executed)
     assert not any("place_new_order" in query for query, _ in connection.executed)
+
+
+def test_portfolio_manager_order_management_blocks_missing_gates_pytest() -> None:
+    plan = _manager_action_plan_fixture()
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/portfolio/manager/order-management",
+        json={
+            "account_id": ACCOUNT_ID,
+            "action_plan": plan.model_dump(mode="json"),
+            "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+            "dry_run": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    preview = payload["order_management_preview"]
+    assert payload["dry_run"] is True
+    assert payload["status"] == "blocked_missing_execution_gates"
+    assert payload["no_order_side_effects"]["orders_prepared"] is False
+    assert preview["approved_order_management_call_available"] is True
+    assert preview["order_management_call_accepted"] is False
+    assert preview["missing_gates"] == ["approved_order_management_path"]
+    assert preview["order_preparation_attempted"] is False
+    assert preview["order_submission_attempted"] is False
+
+
+def test_portfolio_manager_order_management_ready_plan_stays_preview_only_pytest() -> None:
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/portfolio/manager/order-management",
+        json={
+            "account_id": ACCOUNT_ID,
+            "action_plan": plan.model_dump(mode="json"),
+            "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+            "dry_run": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    preview = payload["order_management_preview"]
+    assert payload["status"] == "dry_run_order_management_preview"
+    assert payload["live_order_impact"] == "read-only"
+    assert preview["order_management_call_accepted"] is True
+    assert preview["execution_authorized_by_gates"] is True
+    assert preview["order_preparation_authorized_by_gates"] is True
+    assert preview["manager_action_ledger"]["missing_gates"] == []
+    assert preview["requested_order"] == {"side": "sell", "limit_price": 0.39, "size": 5}
+    assert preview["side_effects"]["orders_placed"] is False
+    assert preview["side_effects"]["orders_prepared"] is False
+
+
+def test_portfolio_manager_order_management_rejects_non_dry_run_pytest() -> None:
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/v1/portfolio/manager/order-management",
+        json={
+            "account_id": ACCOUNT_ID,
+            "action_plan": plan.model_dump(mode="json"),
+            "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+            "dry_run": False,
+            "reviewed_by": "controller",
+            "reason": "attempt non-dry portfolio management",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "dry_run preview only" in response.json()["error"]["message"]
 
 
 def test_apply_direct_trade_backfill_actions_persists_trade_and_event_pytest() -> None:

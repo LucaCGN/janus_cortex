@@ -25,6 +25,7 @@ from app.api.models import (
     ManualOrderResponse,
     PortfolioDirectTradeBackfillRequest,
     PortfolioManagerActionLedgerRequest,
+    PortfolioManagerOrderManagementRequest,
     PortfolioOrderStatusBackfillRequest,
     PortfolioPositionHistoryQuery,
     PortfolioPositionsQuery,
@@ -608,6 +609,60 @@ def build_portfolio_manager_action_ledger_preview(
         "source_plan": to_jsonable(source_plan),
         "ledger_write_only": True,
         "order_management_call_required": True,
+        "no_execution_statement": plan.no_execution_statement,
+        "side_effects": {
+            "orders_placed": False,
+            "orders_cancelled": False,
+            "orders_replaced": False,
+            "orders_submitted": False,
+            "orders_prepared": False,
+            "live_worker_started": False,
+        },
+    }
+
+
+def build_portfolio_manager_order_management_preview(
+    *,
+    action_plan: dict[str, Any],
+    account_id: str | None = None,
+    requested_order: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    try:
+        plan = GlobalPortfolioManagerActionPlan.model_validate(action_plan)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=to_jsonable(exc.errors())) from exc
+
+    ledger_preview = build_portfolio_manager_action_ledger_preview(
+        action_plan=action_plan,
+        account_id=account_id,
+    )
+    requested_order_payload = dict(requested_order or {})
+    gate_ready = plan.status == "ready_for_approved_order_management_call" and plan.gate_snapshot.execution_authorized
+    status_value = "dry_run_order_management_preview" if gate_ready else "blocked_missing_execution_gates"
+    next_step = (
+        "Record the manager action ledger, then route the concrete order through a separately reviewed Janus order call."
+        if gate_ready
+        else "Resolve missing execution gates before any portfolio-manager order preparation."
+    )
+
+    return {
+        "schema_version": "portfolio_manager_order_management_preview_v1",
+        "account_id": str(account_id) if account_id is not None else None,
+        "issue": plan.issue,
+        "action": plan.action,
+        "status": status_value,
+        "approved_order_management_call_available": True,
+        "order_management_call_accepted": gate_ready,
+        "execution_authorized_by_gates": plan.execution_authorized,
+        "order_preparation_authorized_by_gates": plan.order_preparation_authorized,
+        "order_preparation_attempted": False,
+        "order_submission_attempted": False,
+        "live_order_impact": "read-only",
+        "missing_gates": list(plan.gate_snapshot.missing_gates),
+        "rejected_truth_sources": list(plan.gate_snapshot.rejected_truth_sources),
+        "requested_order": to_jsonable(requested_order_payload),
+        "manager_action_ledger": ledger_preview,
+        "next_step": next_step,
         "no_execution_statement": plan.no_execution_statement,
         "side_effects": {
             "orders_placed": False,
@@ -2575,6 +2630,30 @@ def record_portfolio_manager_action_ledger(
         "no_order_side_effects": preview["side_effects"],
         "manager_action_ledger": to_jsonable(preview),
         "applied": to_jsonable(applied),
+    }
+
+
+@router.post("/manager/order-management")
+def preview_portfolio_manager_order_management(
+    payload: PortfolioManagerOrderManagementRequest,
+) -> dict[str, Any]:
+    if not payload.dry_run:
+        raise HTTPException(
+            status_code=403,
+            detail="portfolio-manager order-management execution is disabled; use dry_run preview only",
+        )
+
+    preview = build_portfolio_manager_order_management_preview(
+        action_plan=payload.action_plan,
+        account_id=str(payload.account_id) if payload.account_id is not None else None,
+        requested_order=payload.requested_order,
+    )
+    return {
+        "dry_run": True,
+        "status": preview["status"],
+        "live_order_impact": "read-only",
+        "no_order_side_effects": preview["side_effects"],
+        "order_management_preview": to_jsonable(preview),
     }
 
 

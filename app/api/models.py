@@ -361,6 +361,17 @@ class PortfolioManagerActionLedgerRequest(BaseModel):
     reason: str | None = None
 
 
+class PortfolioManagerOrderManagementRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_plan: dict[str, Any]
+    account_id: UUID | None = None
+    requested_order: dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
 class ManualOrderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
