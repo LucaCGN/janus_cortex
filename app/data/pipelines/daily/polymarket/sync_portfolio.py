@@ -12,6 +12,13 @@ from psycopg2.extras import Json
 
 from app.data.databases.postgres import managed_connection
 from app.data.databases.repositories import JanusUpsertRepository
+from app.data.databases.seed_packs.polymarket_event_seed_pack import (
+    _fetch_gamma_event_by_slug,
+    _parse_dt as _parse_gamma_dt,
+    _parse_json_list as _parse_gamma_json_list,
+    _parse_price as _parse_gamma_price,
+    _uuid_for as _seed_pack_uuid_for,
+)
 from app.data.nodes.polymarket.blockchain.manage_portfolio import (
     PolymarketCredentials,
     _extract_base_address,
@@ -48,6 +55,7 @@ class PortfolioMirrorSummary:
     unresolved_trades: int
     unresolved_blockers: dict[str, dict[str, int]] = field(default_factory=dict)
     unresolved_samples: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    catalog_backfill: dict[str, Any] = field(default_factory=dict)
     error_text: str | None = None
 
 
@@ -57,6 +65,7 @@ class _ResolutionMaps:
     condition_to_market: dict[str, str]
     external_market_to_market: dict[str, str]
     market_to_first_outcome: dict[str, str]
+    market_label_to_outcome: dict[tuple[str, str], str] = field(default_factory=dict)
 
 
 def _uuid_for(*parts: str) -> str:
@@ -221,6 +230,10 @@ def _first_present(raw: dict[str, Any], keys: list[str]) -> str | None:
     return None
 
 
+def _normalize_label(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
 def _normalize_trade_identity_number(value: Any) -> str:
     if value is None:
         return ""
@@ -348,6 +361,7 @@ def _load_resolution_maps(connection: Any) -> _ResolutionMaps:
     condition_to_market: dict[str, str] = {}
     external_market_to_market: dict[str, str] = {}
     market_to_first_outcome: dict[str, str] = {}
+    market_label_to_outcome: dict[tuple[str, str], str] = {}
 
     with connection.cursor() as cursor:
         cursor.execute(
@@ -382,22 +396,36 @@ def _load_resolution_maps(connection: Any) -> _ResolutionMaps:
 
         cursor.execute(
             """
-            SELECT market_id, outcome_id
+            SELECT market_id, outcome_id, outcome_label
             FROM catalog.outcomes
             ORDER BY market_id, outcome_index;
             """
         )
-        for market_id, outcome_id in cursor.fetchall():
+        for market_id, outcome_id, outcome_label in cursor.fetchall():
             market_key = str(market_id)
             if market_key not in market_to_first_outcome:
                 market_to_first_outcome[market_key] = str(outcome_id)
+            label_key = _normalize_label(outcome_label)
+            if label_key:
+                market_label_to_outcome[(market_key, label_key)] = str(outcome_id)
 
     return _ResolutionMaps(
         token_to_pair=token_to_pair,
         condition_to_market=condition_to_market,
         external_market_to_market=external_market_to_market,
         market_to_first_outcome=market_to_first_outcome,
+        market_label_to_outcome=market_label_to_outcome,
     )
+
+
+def _resolve_outcome_for_market(raw: dict[str, Any], market_id: str, maps: _ResolutionMaps) -> str | None:
+    outcome_label = _first_present(raw, ["outcome", "outcomeLabel", "outcome_label", "name"])
+    if outcome_label:
+        matched = maps.market_label_to_outcome.get((market_id, _normalize_label(outcome_label)))
+        if matched:
+            return matched
+        return None
+    return maps.market_to_first_outcome.get(market_id)
 
 
 def _resolve_market_outcome(raw: dict[str, Any], maps: _ResolutionMaps) -> tuple[str | None, str | None]:
@@ -412,12 +440,12 @@ def _resolve_market_outcome(raw: dict[str, Any], maps: _ResolutionMaps) -> tuple
     condition_id = _first_present(raw, ["conditionId", "condition_id", "condition"])
     if condition_id and condition_id in maps.condition_to_market:
         market_id = maps.condition_to_market[condition_id]
-        return market_id, maps.market_to_first_outcome.get(market_id)
+        return market_id, _resolve_outcome_for_market(raw, market_id, maps)
 
     external_market_id = _first_present(raw, ["market", "marketId", "market_id"])
     if external_market_id and external_market_id in maps.external_market_to_market:
         market_id = maps.external_market_to_market[external_market_id]
-        return market_id, maps.market_to_first_outcome.get(market_id)
+        return market_id, _resolve_outcome_for_market(raw, market_id, maps)
 
     return None, None
 
@@ -434,12 +462,32 @@ def _resolution_blocker_category(
     )
     if token:
         pair = maps.token_to_pair.get(token)
-        if pair is None:
-            return "missing_token_catalog_mapping"
-        _market_id, outcome_id = pair
-        if require_outcome and outcome_id is None:
-            return "token_mapping_missing_outcome"
-        return "unknown_resolution_blocker"
+        if pair is not None:
+            _market_id, outcome_id = pair
+            if require_outcome and outcome_id is None:
+                return "token_mapping_missing_outcome"
+            return "unknown_resolution_blocker"
+        condition_id = _first_present(raw, ["conditionId", "condition_id", "condition"])
+        if condition_id and condition_id in maps.condition_to_market:
+            market_id = maps.condition_to_market[condition_id]
+            if not require_outcome:
+                return "unknown_resolution_blocker"
+            if maps.market_to_first_outcome.get(market_id) is None:
+                return "condition_market_missing_outcome"
+            if _resolve_outcome_for_market(raw, market_id, maps) is None:
+                return "condition_market_outcome_label_missing"
+            return "unknown_resolution_blocker"
+        external_market_id = _first_present(raw, ["market", "marketId", "market_id"])
+        if external_market_id and external_market_id in maps.external_market_to_market:
+            market_id = maps.external_market_to_market[external_market_id]
+            if not require_outcome:
+                return "unknown_resolution_blocker"
+            if maps.market_to_first_outcome.get(market_id) is None:
+                return "external_market_missing_outcome"
+            if _resolve_outcome_for_market(raw, market_id, maps) is None:
+                return "external_market_outcome_label_missing"
+            return "unknown_resolution_blocker"
+        return "missing_token_catalog_mapping"
 
     condition_id = _first_present(raw, ["conditionId", "condition_id", "condition"])
     if condition_id:
@@ -448,6 +496,8 @@ def _resolution_blocker_category(
             return "missing_condition_catalog_mapping"
         if require_outcome and maps.market_to_first_outcome.get(market_id) is None:
             return "condition_market_missing_outcome"
+        if require_outcome and _resolve_outcome_for_market(raw, market_id, maps) is None:
+            return "condition_market_outcome_label_missing"
         return "unknown_resolution_blocker"
 
     external_market_id = _first_present(raw, ["market", "marketId", "market_id"])
@@ -457,6 +507,8 @@ def _resolution_blocker_category(
             return "missing_external_market_catalog_mapping"
         if require_outcome and maps.market_to_first_outcome.get(market_id) is None:
             return "external_market_missing_outcome"
+        if require_outcome and _resolve_outcome_for_market(raw, market_id, maps) is None:
+            return "external_market_outcome_label_missing"
         return "unknown_resolution_blocker"
 
     return "missing_resolvable_identifier"
@@ -507,6 +559,315 @@ def _record_resolution_blocker(
     scope_samples = samples.setdefault(scope, [])
     if len(scope_samples) < sample_limit:
         scope_samples.append(_unresolved_sample(raw, category=category))
+
+
+def _portfolio_slug_candidates(raw: dict[str, Any]) -> list[str]:
+    candidates: list[str] = []
+    for key in ("eventSlug", "event_slug", "slug", "marketSlug", "market_slug"):
+        value = raw.get(key)
+        text = str(value or "").strip().strip("/")
+        if text and text not in candidates:
+            candidates.append(text)
+    return candidates
+
+
+def _event_type_for_account_slug(slug: str) -> tuple[str, str, str]:
+    normalized = slug.lower()
+    if "nba" in normalized:
+        return "sports_nba_account_event", "NBA Account Portfolio Event", "sports"
+    return "portfolio_account_event", "Account Portfolio Event", "prediction_market"
+
+
+def _source_url_for_account_slug(slug: str) -> str:
+    if "nba" in slug.lower():
+        return f"https://polymarket.com/sports/nba/{slug}"
+    return f"https://polymarket.com/event/{slug}"
+
+
+def _load_existing_event_ids_by_slug(connection: Any, slugs: list[str]) -> dict[str, str]:
+    if not slugs:
+        return {}
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT canonical_slug, event_id
+            FROM catalog.events
+            WHERE canonical_slug = ANY(%s);
+            """,
+            (slugs,),
+        )
+        return {str(row[0]): str(row[1]) for row in cursor.fetchall()}
+
+
+def _collect_catalog_backfill_slug_groups(
+    payload: dict[str, list[dict[str, Any]]],
+    maps: _ResolutionMaps,
+    *,
+    limit: int,
+) -> list[list[str]]:
+    if limit <= 0:
+        return []
+    selected: list[list[str]] = []
+    seen: set[tuple[str, ...]] = set()
+    for scope in ("open_positions", "closed_positions", "orders", "trades"):
+        for raw in payload.get(scope, []):
+            market_id, outcome_id = _resolve_market_outcome(raw, maps)
+            if market_id is not None and (scope in {"orders", "trades"} or outcome_id is not None):
+                continue
+            candidates = _portfolio_slug_candidates(raw)
+            if not candidates:
+                continue
+            group_key = tuple(candidates)
+            if group_key in seen:
+                continue
+            seen.add(group_key)
+            selected.append(candidates)
+            if len(selected) >= limit:
+                return selected
+    return selected
+
+
+def _collect_catalog_backfill_slugs(
+    payload: dict[str, list[dict[str, Any]]],
+    maps: _ResolutionMaps,
+    *,
+    limit: int,
+) -> list[str]:
+    return [group[0] for group in _collect_catalog_backfill_slug_groups(payload, maps, limit=limit)]
+
+
+def _ensure_account_backfill_baselines(repo: JanusUpsertRepository, slugs: list[str]) -> dict[str, str]:
+    provider_id = repo.upsert_provider(
+        provider_id=_seed_pack_uuid_for("provider", "gamma"),
+        code="gamma",
+        name="Polymarket Gamma",
+        category="prediction_market",
+        base_url="https://gamma-api.polymarket.com",
+        auth_type="none",
+    )
+    module_id = repo.upsert_module(
+        module_id=_uuid_for("module", "polymarket_account_catalog_backfill"),
+        code="polymarket_account_catalog_backfill",
+        name="Polymarket Account Catalog Backfill",
+        description="Catalog-only Gamma backfill for account portfolio rows",
+        owner="janus",
+    )
+    profile_id = repo.upsert_information_profile(
+        information_profile_id=_uuid_for("information_profile", "account_portfolio_catalog_backfill"),
+        code="account_portfolio_catalog_backfill",
+        name="Account Portfolio Catalog Backfill",
+        description="Minimal catalog coverage for direct account portfolio mapping",
+        min_sources=1,
+        required_fields_json=["title", "markets", "outcomes"],
+        refresh_interval_sec=None,
+    )
+    baselines = {"provider_id": provider_id, "module_id": module_id, "profile_id": profile_id}
+    event_types: dict[str, tuple[str, str]] = {}
+    for slug in slugs:
+        code, name, domain = _event_type_for_account_slug(slug)
+        event_types[code] = (name, domain)
+    for code, (name, domain) in sorted(event_types.items()):
+        baselines[f"event_type::{code}"] = repo.upsert_event_type(
+            event_type_id=_uuid_for("event_type", code),
+            code=code,
+            name=name,
+            domain=domain,
+            description="Catalog-only portfolio account backfill event type.",
+        )
+    return baselines
+
+
+def _seed_account_gamma_catalog_slug(
+    *,
+    repo: JanusUpsertRepository,
+    slug: str,
+    baselines: dict[str, str],
+    existing_event_id: str | None = None,
+) -> dict[str, Any]:
+    payload = _fetch_gamma_event_by_slug(slug)
+    gamma_event_id = str(payload.get("id") or slug)
+    event_uuid = _seed_pack_uuid_for("event", "gamma", gamma_event_id)
+    code, _name, _domain = _event_type_for_account_slug(slug)
+    provider_id = baselines["provider_id"]
+
+    event_start = _parse_gamma_dt(payload.get("startDate") or payload.get("startTime"))
+    event_end = _parse_gamma_dt(payload.get("endDate") or payload.get("endTime"))
+    event_status = "closed" if bool(payload.get("closed")) else "open"
+    event_title = str(payload.get("title") or slug)
+    source_url = _source_url_for_account_slug(slug)
+
+    event_id = existing_event_id
+    if event_id is None:
+        event_id = repo.upsert_event(
+            event_id=event_uuid,
+            event_type_id=baselines[f"event_type::{code}"],
+            information_profile_id=baselines["profile_id"],
+            title=event_title,
+            status=event_status,
+            canonical_slug=slug,
+            start_time=event_start,
+            end_time=event_end,
+            metadata_json={
+                "category": payload.get("category"),
+                "subcategory": payload.get("subcategory"),
+                "source": "portfolio_account_catalog_backfill",
+                "source_url": source_url,
+            },
+        )
+    repo.upsert_event_external_ref(
+        event_ref_id=_seed_pack_uuid_for("event_ref", "gamma", gamma_event_id),
+        event_id=event_id,
+        provider_id=provider_id,
+        external_id=gamma_event_id,
+        external_slug=slug,
+        external_url=source_url,
+        is_primary=True,
+        raw_summary_json={
+            "title": event_title,
+            "startDate": payload.get("startDate"),
+            "endDate": payload.get("endDate"),
+            "closed": payload.get("closed"),
+            "source": "portfolio_account_catalog_backfill",
+        },
+    )
+
+    markets_raw = payload.get("markets")
+    if not isinstance(markets_raw, list):
+        markets_raw = []
+    markets_seeded = 0
+    outcomes_seeded = 0
+    for market in markets_raw:
+        if not isinstance(market, dict):
+            continue
+        external_market_id = str(market.get("id") or "").strip()
+        if not external_market_id:
+            continue
+        market_uuid = _seed_pack_uuid_for("market", "gamma", external_market_id)
+        market_slug = market.get("slug")
+        market_question = str(market.get("question") or market_slug or external_market_id)
+        market_type = str(market.get("sportsMarketType") or market.get("marketType") or "").strip() or None
+        condition_id = str(market.get("conditionId")) if market.get("conditionId") is not None else None
+        repo.upsert_market(
+            market_id=market_uuid,
+            event_id=event_id,
+            question=market_question,
+            market_type=market_type,
+            condition_id=condition_id,
+            market_slug=str(market_slug) if market_slug is not None else None,
+            open_time=_parse_gamma_dt(market.get("startDate") or market.get("startTime")),
+            close_time=_parse_gamma_dt(market.get("endDate") or market.get("endTime")),
+            settled_time=None,
+            settlement_status="closed" if bool(market.get("closed")) else "open",
+            metadata_json={
+                "source": "portfolio_account_catalog_backfill",
+                "enableOrderBook": market.get("enableOrderBook"),
+                "volume": market.get("volume"),
+                "liquidity": market.get("liquidity"),
+            },
+        )
+        repo.upsert_market_external_ref(
+            market_ref_id=_seed_pack_uuid_for("market_ref", "gamma", external_market_id),
+            market_id=market_uuid,
+            provider_id=provider_id,
+            external_market_id=external_market_id,
+            external_condition_id=condition_id,
+            external_slug=str(market_slug) if market_slug is not None else None,
+            raw_summary_json={
+                "question": market_question,
+                "sportsMarketType": market.get("sportsMarketType"),
+                "closed": market.get("closed"),
+                "source": "portfolio_account_catalog_backfill",
+            },
+        )
+        markets_seeded += 1
+        outcomes = _parse_gamma_json_list(market.get("outcomes"))
+        tokens = _parse_gamma_json_list(market.get("clobTokenIds") or market.get("clobTokenIDs"))
+        prices = _parse_gamma_json_list(market.get("outcomePrices"))
+        for idx, raw_label in enumerate(outcomes):
+            label = str(raw_label).strip() or f"outcome_{idx}"
+            token_id = str(tokens[idx]).strip() if idx < len(tokens) else None
+            token_id = token_id or None
+            implied = _parse_gamma_price(prices[idx]) if idx < len(prices) else None
+            repo.upsert_outcome(
+                outcome_id=_seed_pack_uuid_for("outcome", "gamma", external_market_id, str(idx)),
+                market_id=market_uuid,
+                outcome_index=idx,
+                outcome_label=label,
+                token_id=token_id,
+                is_winner=None,
+                metadata_json={
+                    "source": "portfolio_account_catalog_backfill",
+                    "source_market_type": market_type,
+                    "implied_prob": implied,
+                },
+            )
+            outcomes_seeded += 1
+    return {
+        "slug": slug,
+        "gamma_event_id": gamma_event_id,
+        "event_id": event_id,
+        "event_existing": existing_event_id is not None,
+        "markets_seeded": markets_seeded,
+        "outcomes_seeded": outcomes_seeded,
+    }
+
+
+def _backfill_account_catalog(
+    connection: Any,
+    *,
+    payload: dict[str, list[dict[str, Any]]],
+    maps: _ResolutionMaps,
+    limit: int,
+) -> dict[str, Any]:
+    candidate_groups = _collect_catalog_backfill_slug_groups(payload, maps, limit=limit)
+    candidates: list[str] = []
+    for group in candidate_groups:
+        for slug in group:
+            if slug not in candidates:
+                candidates.append(slug)
+    existing = _load_existing_event_ids_by_slug(connection, candidates)
+    selected: list[str] = []
+    seen_selected: set[str] = set()
+    for group in candidate_groups:
+        for slug in group:
+            if slug in seen_selected:
+                continue
+            if slug in existing and len(group) > 1:
+                continue
+            selected.append(slug)
+            seen_selected.add(slug)
+            break
+        if len(selected) >= max(limit, 0):
+            break
+    result: dict[str, Any] = {
+        "status": "skipped" if not selected else "success",
+        "candidate_slugs": candidates,
+        "existing_slugs": sorted(existing),
+        "attempted_slugs": selected,
+        "seeded": [],
+        "errors": [],
+    }
+    if not selected:
+        return result
+    repo = JanusUpsertRepository(connection)
+    baselines = _ensure_account_backfill_baselines(repo, selected)
+    for slug in selected:
+        try:
+            result["seeded"].append(
+                _seed_account_gamma_catalog_slug(
+                    repo=repo,
+                    slug=slug,
+                    baselines=baselines,
+                    existing_event_id=existing.get(slug),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            result["errors"].append({"slug": slug, "error": repr(exc)})
+    if result["errors"] and result["seeded"]:
+        result["status"] = "partial_success"
+    elif result["errors"]:
+        result["status"] = "error"
+    return result
 
 
 def _fetch_data_api_payload(
@@ -609,6 +970,7 @@ def run_portfolio_mirror_sync(
     account_label: str | None = None,
     proxy_wallet_address: str | None = None,
     chain_id: int = 137,
+    account_catalog_backfill_limit: int = 25,
 ) -> PortfolioMirrorSummary:
     client = data_client or PolymarketDataClient()
     now = datetime.now(timezone.utc)
@@ -623,6 +985,7 @@ def run_portfolio_mirror_sync(
     unresolved_trades = 0
     unresolved_blockers: dict[str, dict[str, int]] = {}
     unresolved_samples: dict[str, list[dict[str, Any]]] = {}
+    catalog_backfill: dict[str, Any] = {}
 
     with managed_connection() as connection:
         repo = JanusUpsertRepository(connection)
@@ -745,6 +1108,14 @@ def run_portfolio_mirror_sync(
                 payload=payload.get("trades", []),
             )
             maps = _load_resolution_maps(connection)
+            catalog_backfill = _backfill_account_catalog(
+                connection,
+                payload=payload,
+                maps=maps,
+                limit=account_catalog_backfill_limit,
+            )
+            if catalog_backfill.get("seeded"):
+                maps = _load_resolution_maps(connection)
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -968,6 +1339,7 @@ def run_portfolio_mirror_sync(
                 unresolved_trades=unresolved_trades,
                 unresolved_blockers=unresolved_blockers,
                 unresolved_samples=unresolved_samples,
+                catalog_backfill=catalog_backfill,
             )
         except Exception as exc:  # noqa: BLE001
             connection.rollback()
@@ -995,6 +1367,7 @@ def run_portfolio_mirror_sync(
                 unresolved_trades=unresolved_trades,
                 unresolved_blockers=unresolved_blockers,
                 unresolved_samples=unresolved_samples,
+                catalog_backfill=catalog_backfill,
                 error_text=repr(exc),
             )
 
@@ -1044,6 +1417,8 @@ def main() -> int:
     )
     if summary.error_text:
         print(f"error={summary.error_text}")
+    if summary.catalog_backfill:
+        print(f"catalog_backfill={summary.catalog_backfill}")
     if summary.unresolved_blockers:
         print(f"unresolved_blockers={summary.unresolved_blockers}")
     if summary.unresolved_samples:

@@ -368,6 +368,7 @@ class PolymarketPortfolioSyncRequest(BaseModel):
     wallet_address: str | None = None
     limit: int = Field(default=250, ge=1, le=2000)
     payload_override: dict[str, list[dict[str, Any]]] | None = None
+    account_catalog_backfill_limit: int = Field(default=25, ge=0, le=100)
 
 
 class PolymarketClosedPositionConsolidationRequest(BaseModel):

@@ -671,6 +671,7 @@ def _run_polymarket_portfolio_sync(
         wallet_address=wallet_address,
         limit=payload.limit,
         payload_override=payload.payload_override,
+        account_catalog_backfill_limit=payload.account_catalog_backfill_limit,
     )
     return to_jsonable(summary.__dict__)
 

@@ -202,6 +202,81 @@ def test_resolution_blocker_categorizes_missing_token_mapping_pytest() -> None:
     assert samples["open_positions"][0]["eventSlug"] == "nba-cle-det-2026-05-17"
 
 
+def test_resolution_falls_back_to_condition_and_outcome_label_when_token_missing_pytest() -> None:
+    maps = sync_portfolio._ResolutionMaps(
+        token_to_pair={},
+        condition_to_market={"condition-1": DET_MARKET_ID},
+        external_market_to_market={},
+        market_to_first_outcome={DET_MARKET_ID: "wrong-first-outcome"},
+        market_label_to_outcome={(DET_MARKET_ID, "pistons"): DET_OUTCOME_ID},
+    )
+
+    market_id, outcome_id = sync_portfolio._resolve_market_outcome(
+        {
+            "asset": "missing-token",
+            "conditionId": "condition-1",
+            "outcome": " Pistons ",
+        },
+        maps,
+    )
+
+    assert market_id == DET_MARKET_ID
+    assert outcome_id == DET_OUTCOME_ID
+
+
+def test_resolution_does_not_guess_first_outcome_when_label_mismatches_pytest() -> None:
+    maps = sync_portfolio._ResolutionMaps(
+        token_to_pair={},
+        condition_to_market={"condition-1": DET_MARKET_ID},
+        external_market_to_market={},
+        market_to_first_outcome={DET_MARKET_ID: "first-outcome"},
+        market_label_to_outcome={(DET_MARKET_ID, "cavaliers"): "cavaliers-outcome"},
+    )
+
+    market_id, outcome_id = sync_portfolio._resolve_market_outcome(
+        {"conditionId": "condition-1", "outcome": "Pistons"},
+        maps,
+    )
+    category = sync_portfolio._resolution_blocker_category(
+        {"conditionId": "condition-1", "outcome": "Pistons"},
+        maps,
+        require_outcome=True,
+    )
+
+    assert market_id == DET_MARKET_ID
+    assert outcome_id is None
+    assert category == "condition_market_outcome_label_missing"
+
+
+def test_account_catalog_backfill_slug_collection_prefers_event_slug_pytest() -> None:
+    maps = sync_portfolio._ResolutionMaps(
+        token_to_pair={},
+        condition_to_market={},
+        external_market_to_market={},
+        market_to_first_outcome={},
+    )
+
+    slugs = sync_portfolio._collect_catalog_backfill_slugs(
+        {
+            "open_positions": [
+                {
+                    "asset": "missing-token",
+                    "eventSlug": "2026-nba-champion",
+                    "slug": "will-the-detroit-pistons-win-the-2026-nba-finals",
+                    "outcome": "Yes",
+                }
+            ],
+            "closed_positions": [],
+            "orders": [],
+            "trades": [],
+        },
+        maps,
+        limit=5,
+    )
+
+    assert slugs == ["2026-nba-champion"]
+
+
 def test_resolution_blocker_categorizes_resolved_market_missing_outcome_pytest() -> None:
     maps = sync_portfolio._ResolutionMaps(
         token_to_pair={},
