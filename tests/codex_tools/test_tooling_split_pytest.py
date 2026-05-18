@@ -14,6 +14,8 @@ import codex_tool.janus_status as legacy_status_cli
 import codex_tool.live_strategy_worker_status as legacy_worker_status_cli
 import codex_tool.record_market_trade as legacy_market_trade_cli
 import codex_tool.record_orderbook_tick as legacy_orderbook_tick_cli
+import codex_tool.reconcile_orders as legacy_reconcile_orders_cli
+import codex_tool.reconcile_trades as legacy_reconcile_trades_cli
 import codex_tool.start_watch_session as legacy_watch_session_cli
 import codex_tool.start_live_strategy_worker as legacy_worker_start_cli
 import codex_tool.stop_live_strategy_worker as legacy_worker_stop_cli
@@ -24,6 +26,7 @@ import codex_tool.watch_market as legacy_watch_cli
 from codex_tools.janus import client as janus_client
 from codex_tools.janus import events as janus_events
 from codex_tools.janus import ops as janus_ops
+from codex_tools.janus import reconciliation as janus_reconciliation
 from codex_tools.janus import status as janus_status
 from codex_tools.janus import strategy as janus_strategy
 from codex_tools.janus import watchlists as janus_watchlists
@@ -620,6 +623,159 @@ def test_legacy_watchlist_capture_clis_delegate_to_target_namespace() -> None:
     assert legacy_market_trade_cli.build_market_trade_payload is janus_watchlists.build_market_trade_payload
     assert legacy_market_trade_cli.record_market_trades is janus_watchlists.record_market_trades
     assert legacy_market_trade_cli.main_for_market_trade_record is janus_watchlists.main_for_market_trade_record
+
+
+def test_janus_reconciliation_namespace_wraps_order_and_trade_endpoints(monkeypatch) -> None:
+    calls: list[tuple[str, str, str, object, dict[str, object]]] = []
+
+    def _api_json(
+        api_root: str,
+        method: str,
+        path: str,
+        payload: object = None,
+        *,
+        query: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        calls.append((api_root, method, path, payload, query or {}))
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(janus_reconciliation, "api_json", _api_json)
+
+    order = janus_reconciliation.reconcile_operator_interventions(
+        "http://janus.local",
+        {"account_id": "account-1", "action": "scan"},
+    )
+    trades = janus_reconciliation.get_trade_reconciliation(
+        "http://janus.local",
+        {"account_id": "account-1", "limit": 100},
+    )
+
+    assert order == {"ok": True, "path": "/v1/operator/interventions/reconcile"}
+    assert trades == {"ok": True, "path": "/v1/portfolio/trades/reconciliation"}
+    assert calls == [
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/operator/interventions/reconcile",
+            {"account_id": "account-1", "action": "scan"},
+            {},
+        ),
+        (
+            "http://janus.local",
+            "GET",
+            "/v1/portfolio/trades/reconciliation",
+            None,
+            {"account_id": "account-1", "limit": 100},
+        ),
+    ]
+
+
+def test_janus_reconciliation_namespace_preserves_legacy_payload_shapes() -> None:
+    order_args = janus_reconciliation.build_order_reconciliation_parser("orders").parse_args(
+        [
+            "--account-id",
+            "account-1",
+            "--event-id",
+            "event-1",
+            "--market-id",
+            "market-1",
+            "--action",
+            "adopt",
+            "--external-order-id",
+            "order-1",
+            "--external-trade-id",
+            "trade-1",
+            "--strategy-family",
+            "manual-tail",
+            "--manual-reason",
+            "operator test",
+            "--target-status",
+            "covered",
+            "--stop-status",
+            "missing",
+            "--hedge-status",
+            "none",
+            "--protective-order-status",
+            "target_live",
+            "--expected-close-path",
+            "target",
+            "--final-pnl-usd",
+            "1.25",
+            "--metadata-json",
+            '{"source":"unit-test"}',
+            "--notes",
+            "reviewed",
+        ]
+    )
+    trade_args = janus_reconciliation.build_trade_reconciliation_parser("trades").parse_args(
+        [
+            "--account-id",
+            "account-1",
+            "--market-id",
+            "market-1",
+            "--outcome-id",
+            "outcome-1",
+            "--event-slug",
+            "event-slug-1",
+            "--start-time",
+            "2026-05-18T00:00:00Z",
+            "--end-time",
+            "2026-05-18T01:00:00Z",
+            "--limit",
+            "250",
+        ]
+    )
+
+    assert janus_reconciliation.build_order_reconciliation_payload(order_args) == {
+        "account_id": "account-1",
+        "event_id": "event-1",
+        "market_id": "market-1",
+        "action": "adopt",
+        "external_order_ids": ["order-1"],
+        "external_trade_ids": ["trade-1"],
+        "strategy_family": "manual-tail",
+        "manual_reason": "operator test",
+        "target_status": "covered",
+        "stop_status": "missing",
+        "hedge_status": "none",
+        "protective_order_status": "target_live",
+        "expected_close_path": "target",
+        "final_pnl_usd": 1.25,
+        "metadata": {"source": "unit-test"},
+        "notes": "reviewed",
+    }
+    assert janus_reconciliation.build_trade_reconciliation_query(trade_args) == {
+        "account_id": "account-1",
+        "market_id": "market-1",
+        "outcome_id": "outcome-1",
+        "event_slug": "event-slug-1",
+        "start_time": "2026-05-18T00:00:00Z",
+        "end_time": "2026-05-18T01:00:00Z",
+        "limit": 250,
+    }
+
+
+def test_legacy_reconciliation_clis_delegate_to_target_namespace() -> None:
+    assert legacy_reconcile_orders_cli.OPERATOR_INTERVENTION_RECONCILE_PATH == (
+        janus_reconciliation.OPERATOR_INTERVENTION_RECONCILE_PATH
+    )
+    assert legacy_reconcile_orders_cli.build_order_reconciliation_payload is (
+        janus_reconciliation.build_order_reconciliation_payload
+    )
+    assert legacy_reconcile_orders_cli.reconcile_operator_interventions is (
+        janus_reconciliation.reconcile_operator_interventions
+    )
+    assert legacy_reconcile_orders_cli.main_for_order_reconciliation is (
+        janus_reconciliation.main_for_order_reconciliation
+    )
+    assert legacy_reconcile_trades_cli.TRADE_RECONCILIATION_PATH == janus_reconciliation.TRADE_RECONCILIATION_PATH
+    assert legacy_reconcile_trades_cli.build_trade_reconciliation_query is (
+        janus_reconciliation.build_trade_reconciliation_query
+    )
+    assert legacy_reconcile_trades_cli.get_trade_reconciliation is janus_reconciliation.get_trade_reconciliation
+    assert legacy_reconcile_trades_cli.main_for_trade_reconciliation is (
+        janus_reconciliation.main_for_trade_reconciliation
+    )
 
 
 def test_polymarket_fallback_blocks_when_gates_are_missing() -> None:

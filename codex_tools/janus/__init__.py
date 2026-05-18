@@ -33,6 +33,18 @@ from codex_tools.janus.ops import (
     main_for_cycle,
     run_ops_cycle,
 )
+from codex_tools.janus.reconciliation import (
+    OPERATOR_INTERVENTION_RECONCILE_PATH,
+    TRADE_RECONCILIATION_PATH,
+    build_order_reconciliation_parser,
+    build_order_reconciliation_payload,
+    build_trade_reconciliation_parser,
+    build_trade_reconciliation_query,
+    get_trade_reconciliation,
+    main_for_order_reconciliation,
+    main_for_trade_reconciliation,
+    reconcile_operator_interventions,
+)
 from codex_tools.janus.status import STATUS_PATH, get_status, main_for_status
 from codex_tools.janus.strategy import (
     LLM_REVISION_ADOPT_PATH_TEMPLATE,
@@ -125,6 +137,16 @@ __all__ = [
     "build_cycle_parser",
     "main_for_cycle",
     "run_ops_cycle",
+    "OPERATOR_INTERVENTION_RECONCILE_PATH",
+    "TRADE_RECONCILIATION_PATH",
+    "build_order_reconciliation_parser",
+    "build_order_reconciliation_payload",
+    "build_trade_reconciliation_parser",
+    "build_trade_reconciliation_query",
+    "get_trade_reconciliation",
+    "main_for_order_reconciliation",
+    "main_for_trade_reconciliation",
+    "reconcile_operator_interventions",
     "STATUS_PATH",
     "get_status",
     "main_for_status",
