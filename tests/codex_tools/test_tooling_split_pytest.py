@@ -10,6 +10,11 @@ from codex_tools.janus import client as janus_client
 from codex_tools.polymarket import (
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
+    build_polymarket_safety_gate_snapshot,
+    evaluate_direct_truth_freshness,
+    evaluate_kill_switch,
+    evaluate_minimum_order_policy,
+    evaluate_risk_budget,
     read_account_snapshot,
     build_fallback_decision,
     write_fallback_decision_ledger,
@@ -233,3 +238,129 @@ def test_account_snapshot_is_partial_without_clob_credentials() -> None:
     assert snapshot.trade_count == 0
     assert snapshot.section_status["open_orders"] == "blocked_missing_clob_credentials"
     assert snapshot.section_status["trades"] == "blocked_missing_clob_credentials"
+
+
+def _fresh_snapshot() -> dict[str, object]:
+    return {
+        "status": "read_only_snapshot",
+        "read_at_utc": "2026-05-18T14:20:00Z",
+        "section_status": {
+            "open_positions": "ok",
+            "open_orders": "ok",
+            "trades": "ok",
+        },
+        "open_order_count": 1,
+        "open_position_count": 1,
+        "trade_count": 1,
+    }
+
+
+def test_direct_truth_freshness_requires_complete_recent_snapshot() -> None:
+    stale = evaluate_direct_truth_freshness(
+        _fresh_snapshot(),
+        now_utc=datetime(2026, 5, 18, 14, 35, 1, tzinfo=UTC),
+        max_age_seconds=300.0,
+    )
+    partial = evaluate_direct_truth_freshness(
+        {
+            **_fresh_snapshot(),
+            "status": "read_only_snapshot_partial",
+            "section_status": {"open_positions": "ok", "open_orders": "blocked_missing_clob_credentials"},
+        },
+        now_utc=datetime(2026, 5, 18, 14, 20, 30, tzinfo=UTC),
+    )
+
+    assert stale.passed is False
+    assert "direct_truth_snapshot_stale" in stale.blockers
+    assert partial.passed is False
+    assert "direct_truth_snapshot_not_complete" in partial.blockers
+    assert "direct_truth_section_open_orders_blocked_missing_clob_credentials" in partial.blockers
+
+
+def test_risk_budget_minimum_order_and_kill_switch_checks_block_missing_inputs() -> None:
+    risk = evaluate_risk_budget(proposed_notional_usd=2.1)
+    minimum = evaluate_minimum_order_policy(
+        PolymarketFallbackIntent(
+            action="open_position",
+            account_id="account-1",
+            market_slug="test-market",
+            token_id="token-yes",
+            side="BUY",
+            price="0.10",
+            size="4",
+            reason="unit test",
+        )
+    )
+    kill_switch = evaluate_kill_switch(kill_switch_clear=False)
+
+    assert risk.passed is False
+    assert "risk_budget_not_selected" in risk.blockers
+    assert "risk_budget_limit_missing" in risk.blockers
+    assert minimum.passed is False
+    assert "minimum_order_size_not_met" in minimum.blockers
+    assert "minimum_buy_notional_not_met" in minimum.blockers
+    assert kill_switch.passed is False
+    assert "kill_switch_not_clear" in kill_switch.blockers
+
+
+def test_safety_gate_snapshot_blocks_without_integrated_gate_inputs() -> None:
+    intent = _intent(dry_run=False)
+    gate = build_polymarket_safety_gate_snapshot(
+        intent,
+        direct_truth_snapshot=_fresh_snapshot(),
+        now_utc=datetime(2026, 5, 18, 14, 20, 30, tzinfo=UTC),
+        risk_budget_name="global-portfolio-test",
+        risk_budget_max_notional_usd=10.0,
+        kill_switch_clear=False,
+        janus_degraded_or_direct_path_selected=True,
+        ledger_available=False,
+        reconciliation_plan="reconcile back to Janus action ledger",
+        explicit_execution_approval=True,
+        truth_sources=["direct_clob", "screenshot"],
+    )
+    decision = build_fallback_decision(intent, gate)
+
+    assert gate.direct_truth_fresh is True
+    assert gate.risk_budget_selected is True
+    assert gate.minimum_order_policy_passed is True
+    assert gate.kill_switch_clear is False
+    assert gate.ledger_idempotency_available is False
+    assert gate.non_authoritative_truth_rejected is False
+    assert "kill_switch_clear" in gate.missing_gates()
+    assert "ledger_idempotency_available" in gate.missing_gates()
+    assert "non_authoritative_truth_rejected" in gate.missing_gates()
+    assert gate.evidence["order_preparation_attempted"] is False
+    assert gate.evidence["order_submission_attempted"] is False
+    assert gate.evidence["rejected_truth_sources"] == ["screenshot"]
+    assert decision.status == "blocked_missing_execution_gates"
+    assert decision.order_preparation_attempted is False
+    assert decision.order_submission_attempted is False
+
+
+def test_safety_gate_snapshot_can_feed_preview_only_decision_when_all_gates_pass() -> None:
+    intent = _intent(dry_run=True)
+    gate = build_polymarket_safety_gate_snapshot(
+        intent,
+        direct_truth_snapshot=_fresh_snapshot(),
+        now_utc=datetime(2026, 5, 18, 14, 20, 30, tzinfo=UTC),
+        risk_budget_name="global-portfolio-test",
+        risk_budget_max_notional_usd=10.0,
+        kill_switch_clear=True,
+        kill_switch_source="unit-test",
+        janus_degraded_or_direct_path_selected=True,
+        ledger_available=True,
+        reconciliation_plan={"target": "Janus action ledger"},
+        explicit_execution_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+    )
+    decision = build_fallback_decision(intent, gate)
+
+    assert gate.execution_gates_satisfied() is True
+    assert gate.evidence["direct_truth"]["passed"] is True
+    assert gate.evidence["risk_budget"]["passed"] is True
+    assert gate.evidence["minimum_order_policy"]["passed"] is True
+    assert gate.evidence["kill_switch"]["passed"] is True
+    assert decision.status == "dry_run_preview_only"
+    assert decision.execution_authorized is False
+    assert decision.order_preparation_attempted is False
+    assert decision.order_submission_attempted is False

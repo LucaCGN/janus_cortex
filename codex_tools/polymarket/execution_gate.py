@@ -77,6 +77,7 @@ class PolymarketFallbackDecision:
     action: str
     dry_run: bool
     execution_authorized: bool
+    order_preparation_attempted: bool
     order_submission_attempted: bool
     idempotency_key: str
     ledger_id: str
@@ -141,6 +142,7 @@ def build_fallback_decision(
         action=intent.action,
         dry_run=intent.dry_run,
         execution_authorized=execution_authorized,
+        order_preparation_attempted=False,
         order_submission_attempted=False,
         idempotency_key=idempotency_key,
         ledger_id=ledger_id,
