@@ -870,9 +870,18 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
         "status": "ready",
         "errors": [],
         "market_event": {"event_key": "event-123", "title": "Test event"},
-        "market_outcomes": [{"outcome_id": "outcome-1", "label": "Home"}],
+        "market_outcomes": [{"outcome_id": "outcome-1", "label": "Home"}, {"outcome_id": "outcome-2", "label": "Away"}],
         "watch_sessions": [{"watch_session_id": "watch-1", "started_at": "2026-05-10T20:00:00+00:00"}],
-        "orderbook_ticks": [{"captured_at": "2026-05-10T20:00:30+00:00", "spread": 0.01, "mid_price": 0.51}],
+        "orderbook_ticks": [
+            {"captured_at": "2026-05-10T20:00:30+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.48},
+            {"captured_at": "2026-05-10T20:00:30+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.52},
+            {"captured_at": "2026-05-10T20:01:00+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.52},
+            {"captured_at": "2026-05-10T20:01:00+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.48},
+            {"captured_at": "2026-05-10T20:01:30+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.49},
+            {"captured_at": "2026-05-10T20:01:30+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.51},
+            {"captured_at": "2026-05-10T20:02:00+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.54},
+            {"captured_at": "2026-05-10T20:02:00+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.46},
+        ],
         "market_trades": [{"trade_time": "2026-05-10T20:02:00+00:00", "side": "BUY", "price": 0.51, "size": 5}],
         "strategy_decisions": [
             {
@@ -944,6 +953,14 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
     assert payload["runtime_evidence"]["market_event"]["title"] == "Test event"
     assert payload["llm_runtime_status"]["status"] == "recorded"
     assert payload["portfolio_pnl_attribution"]["status"] == "ready"
+    microstructure = payload["market_microstructure"]
+    assert microstructure["favorite_underdog_inversion_count"] == 3
+    assert microstructure["price_inversion_point_count"] == 4
+    assert microstructure["oscillation_band_count"] == 4
+    assert microstructure["grid_opportunity_count"] == 6
+    assert microstructure["trend_profile"] == "jagged_oscillation"
+    assert microstructure["outcome_summaries"]["outcome-1"]["spike_count"] == 3
+    assert microstructure["outcome_summaries"]["outcome-2"]["grid_opportunity_count"] == 3
     timeline = payload["decision_timeline"]
     assert timeline["entry_count"] >= 5
     assert timeline["kind_counts"]["order_intent"] == 1

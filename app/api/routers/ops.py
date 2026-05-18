@@ -1869,7 +1869,7 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
     ticks = runtime_evidence.get("orderbook_ticks") if isinstance(runtime_evidence.get("orderbook_ticks"), list) else []
     mids = [_safe_float(row.get("mid_price")) for row in ticks if isinstance(row, dict)]
     mids = [item for item in mids if item is not None]
-    prices_by_outcome: dict[str, list[float]] = {}
+    prices_by_outcome: dict[str, list[dict[str, Any]]] = {}
     for row in ticks:
         if not isinstance(row, dict):
             continue
@@ -1877,19 +1877,28 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
         value = _safe_float(row.get("mid_price"))
         if value is None:
             continue
-        prices_by_outcome.setdefault(outcome_id, []).append(value)
-    inversion_count = 0
-    if len(prices_by_outcome) >= 2:
-        ordered = sorted(prices_by_outcome.items())
-        series = list(zip(*(values for _, values in ordered if values)))
-        for point in series:
-            if len(point) >= 2 and min(point) < 0.5 < max(point):
-                inversion_count += 1
-    spike_count = 0
-    for values in prices_by_outcome.values():
-        for left, right in zip(values, values[1:]):
-            if abs(right - left) >= 0.03:
-                spike_count += 1
+        prices_by_outcome.setdefault(outcome_id, []).append(
+            {
+                "captured_at": row.get("captured_at") or row.get("captured_at_utc") or row.get("source_timestamp"),
+                "mid_price": value,
+                "spread": _safe_float(row.get("spread")),
+            }
+        )
+    outcome_summaries = {
+        outcome_id: _microstructure_outcome_summary(outcome_id, rows)
+        for outcome_id, rows in sorted(prices_by_outcome.items())
+    }
+    inversion_count = _paired_price_inversion_point_count(prices_by_outcome)
+    leader_inversion_count = _favorite_underdog_leader_inversion_count(prices_by_outcome)
+    spike_count = sum(_safe_int(summary.get("spike_count")) for summary in outcome_summaries.values())
+    oscillation_band_count = sum(_safe_int(summary.get("oscillation_band_count")) for summary in outcome_summaries.values())
+    grid_opportunity_count = sum(_safe_int(summary.get("grid_opportunity_count")) for summary in outcome_summaries.values())
+    smoothness_values = [
+        _safe_float(summary.get("trend_smoothness_score"))
+        for summary in outcome_summaries.values()
+        if summary.get("trend_smoothness_score") is not None
+    ]
+    avg_smoothness = sum(smoothness_values) / len(smoothness_values) if smoothness_values else None
     return {
         "schema_version": "event_market_microstructure_summary_v1",
         "tick_count": len(ticks),
@@ -1898,9 +1907,152 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
         "max_mid_price": max(mids) if mids else None,
         "mid_price_range": round(max(mids) - min(mids), 6) if mids else None,
         "price_inversion_point_count": inversion_count,
+        "favorite_underdog_inversion_count": leader_inversion_count,
         "spike_count": spike_count,
+        "oscillation_band_count": oscillation_band_count,
+        "grid_opportunity_count": grid_opportunity_count,
+        "trend_smoothness_score": round(avg_smoothness, 6) if avg_smoothness is not None else None,
+        "trend_profile": _microstructure_trend_profile(
+            spike_count=spike_count,
+            oscillation_band_count=oscillation_band_count,
+            trend_smoothness_score=avg_smoothness,
+            mid_price_range=round(max(mids) - min(mids), 6) if mids else None,
+        ),
+        "outcome_summaries": outcome_summaries,
         "orderbook_window_summary": runtime_evidence.get("orderbook_window_summary") or {},
+        "metric_definitions": {
+            "price_inversion_point_count": "paired sampled ticks where one outcome is below 50c and the other is above 50c",
+            "favorite_underdog_inversion_count": "leader changes between paired sampled binary outcomes",
+            "oscillation_band_count": "direction changes in chronological mid-price movement",
+            "grid_opportunity_count": "adjacent sampled mid-price moves of at least 2c",
+            "spike_count": "adjacent sampled mid-price moves of at least 3c",
+            "trend_smoothness_score": "absolute net move divided by total absolute move; lower means more jagged",
+        },
     }
+
+
+def _microstructure_outcome_summary(outcome_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = _chronological_microstructure_rows(rows)
+    prices = [_safe_float(row.get("mid_price")) for row in ordered]
+    prices = [price for price in prices if price is not None]
+    if not prices:
+        return {
+            "outcome_id": outcome_id,
+            "tick_count": 0,
+            "status": "not_recorded",
+        }
+    deltas = [round(right - left, 6) for left, right in zip(prices, prices[1:])]
+    abs_deltas = [abs(delta) for delta in deltas]
+    total_abs_move = sum(abs_deltas)
+    net_move = prices[-1] - prices[0] if len(prices) >= 2 else 0.0
+    smoothness = abs(net_move) / total_abs_move if total_abs_move > 0 else None
+    return {
+        "outcome_id": outcome_id,
+        "status": "recorded",
+        "tick_count": len(prices),
+        "first_captured_at": _microstructure_timestamp(ordered[0]),
+        "last_captured_at": _microstructure_timestamp(ordered[-1]),
+        "min_mid_price": min(prices),
+        "max_mid_price": max(prices),
+        "mid_price_range": round(max(prices) - min(prices), 6),
+        "net_move": round(net_move, 6),
+        "total_absolute_move": round(total_abs_move, 6),
+        "average_absolute_move": round(total_abs_move / len(abs_deltas), 6) if abs_deltas else 0.0,
+        "trend_smoothness_score": round(smoothness, 6) if smoothness is not None else None,
+        "trend_profile": _microstructure_trend_profile(
+            spike_count=_movement_count(deltas, threshold=0.03),
+            oscillation_band_count=_direction_change_count(deltas),
+            trend_smoothness_score=smoothness,
+            mid_price_range=round(max(prices) - min(prices), 6),
+        ),
+        "spike_count": _movement_count(deltas, threshold=0.03),
+        "oscillation_band_count": _direction_change_count(deltas),
+        "grid_opportunity_count": _movement_count(deltas, threshold=0.02),
+        "deltas": deltas,
+    }
+
+
+def _chronological_microstructure_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            _parse_datetime(row.get("captured_at")) is None,
+            (_parse_datetime(row.get("captured_at")) or datetime.min.replace(tzinfo=timezone.utc)).isoformat(),
+        ),
+    )
+
+
+def _microstructure_timestamp(row: dict[str, Any]) -> str | None:
+    parsed = _parse_datetime(row.get("captured_at"))
+    return parsed.isoformat() if parsed is not None else None
+
+
+def _paired_price_series(prices_by_outcome: dict[str, list[dict[str, Any]]]) -> list[tuple[float, float]]:
+    ordered = [
+        [
+            _safe_float(row.get("mid_price"))
+            for row in _chronological_microstructure_rows(rows)
+            if _safe_float(row.get("mid_price")) is not None
+        ]
+        for _, rows in sorted(prices_by_outcome.items())
+    ]
+    if len(ordered) < 2:
+        return []
+    left, right = ordered[0], ordered[1]
+    return list(zip(left, right))
+
+
+def _paired_price_inversion_point_count(prices_by_outcome: dict[str, list[dict[str, Any]]]) -> int:
+    count = 0
+    for left, right in _paired_price_series(prices_by_outcome):
+        if min(left, right) < 0.5 < max(left, right):
+            count += 1
+    return count
+
+
+def _favorite_underdog_leader_inversion_count(prices_by_outcome: dict[str, list[dict[str, Any]]]) -> int:
+    previous_leader: int | None = None
+    changes = 0
+    for left, right in _paired_price_series(prices_by_outcome):
+        if left == right:
+            continue
+        leader = 0 if left > right else 1
+        if previous_leader is not None and leader != previous_leader:
+            changes += 1
+        previous_leader = leader
+    return changes
+
+
+def _movement_count(deltas: list[float], *, threshold: float) -> int:
+    return sum(1 for delta in deltas if abs(delta) >= threshold)
+
+
+def _direction_change_count(deltas: list[float], *, noise_floor: float = 0.005) -> int:
+    directions: list[int] = []
+    for delta in deltas:
+        if abs(delta) < noise_floor:
+            continue
+        directions.append(1 if delta > 0 else -1)
+    return sum(1 for left, right in zip(directions, directions[1:]) if left != right)
+
+
+def _microstructure_trend_profile(
+    *,
+    spike_count: int,
+    oscillation_band_count: int,
+    trend_smoothness_score: float | None,
+    mid_price_range: float | None,
+) -> str:
+    price_range = mid_price_range or 0.0
+    if price_range < 0.01:
+        return "flat_or_sparse"
+    if spike_count >= 2 or oscillation_band_count >= 2:
+        return "jagged_oscillation"
+    if trend_smoothness_score is not None and trend_smoothness_score >= 0.75:
+        return "smooth_trend"
+    if trend_smoothness_score is not None and trend_smoothness_score <= 0.35:
+        return "jagged_trend"
+    return "mixed_trend"
 
 
 def _build_event_review_missed_opportunity_candidates(
@@ -1928,6 +2080,15 @@ def _build_event_review_missed_opportunity_candidates(
                 "reason": "multiple_microstructure_spikes",
                 "spike_count": spike_count,
                 "status": "candidate_micro_grid_review",
+            }
+        )
+    grid_opportunity_count = _safe_int(market_microstructure.get("grid_opportunity_count"))
+    if grid_opportunity_count >= 2 and order_intent_count == 0:
+        candidates.append(
+            {
+                "reason": "grid_opportunity_without_order_intent",
+                "grid_opportunity_count": grid_opportunity_count,
+                "status": "needs_replay_fillability_check",
             }
         )
     return {
