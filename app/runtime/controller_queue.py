@@ -143,6 +143,17 @@ def _completed_lock_path(lock_id: str, paths: ControllerQueuePaths, *, now: date
     return paths.completed_locks / timestamp.strftime("%Y-%m-%d") / f"{safe.replace('/', '__')}.json"
 
 
+def _find_completed_lock_path(lock_id: str, paths: ControllerQueuePaths) -> Path | None:
+    safe = normalize_resource(lock_id)
+    if not safe:
+        raise ValueError("lock_id is required")
+    filename = f"{safe.replace('/', '__')}.json"
+    for path in sorted(paths.completed_locks.glob(f"*/{filename}"), reverse=True):
+        if path.is_file():
+            return path
+    return None
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -436,7 +447,23 @@ def release_lock(
     active_path = _lock_path(lock_id, resolved_paths)
     payload = _read_json(active_path)
     if not payload:
-        result = {"status": "missing_lock", "ok": False, "lock_id": lock_id, "path": str(active_path)}
+        completed_path = _find_completed_lock_path(lock_id, resolved_paths)
+        if completed_path:
+            completed_payload = _read_json(completed_path)
+            return {
+                "status": "already_released",
+                "ok": True,
+                "lock_id": lock_id,
+                "path": str(completed_path),
+                "lock": completed_payload,
+            }
+        result = {
+            "status": "missing_active_lock",
+            "ok": False,
+            "lock_id": lock_id,
+            "path": str(active_path),
+            "reason": "active_and_completed_lock_missing",
+        }
         append_pass_ledger(result, paths=resolved_paths, now=now)
         return result
 

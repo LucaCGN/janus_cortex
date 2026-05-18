@@ -56,6 +56,37 @@ def test_claim_and_release_move_lock_and_record_ledger_pytest(tmp_path) -> None:
     assert (paths.completed_locks / "2026-05-18" / "lock-39.json").exists()
     assert [entry["outcome"] for entry in _ledger_entries(paths)] == ["claimed", "implemented"]
 
+    repeated = controller_queue.release_lock(
+        "lock-39",
+        outcome="implemented",
+        material_outputs=["commit dbfb5f8"],
+        evidence_links=["https://github.com/LucaCGN/janus_cortex/issues/39"],
+        paths=paths,
+        now=_now(),
+    )
+
+    assert repeated["status"] == "already_released"
+    assert repeated["ok"] is True
+    assert repeated["path"].replace("\\", "/").endswith("completed_locks/2026-05-18/lock-39.json")
+    assert [entry["outcome"] for entry in _ledger_entries(paths)] == ["claimed", "implemented"]
+
+
+def test_missing_release_records_distinct_queue_integrity_reason_pytest(tmp_path) -> None:
+    paths = _paths(tmp_path)
+
+    missing = controller_queue.release_lock(
+        "unknown-lock",
+        outcome="abandoned",
+        paths=paths,
+        now=_now(),
+    )
+
+    assert missing["status"] == "missing_active_lock"
+    assert missing["ok"] is False
+    assert missing["reason"] == "active_and_completed_lock_missing"
+    assert _ledger_entries(paths)[-1]["status"] == "missing_active_lock"
+    assert _ledger_entries(paths)[-1]["reason"] == "active_and_completed_lock_missing"
+
 
 def test_duplicate_issue_claim_is_blocked_without_overwriting_pytest(tmp_path) -> None:
     paths = _paths(tmp_path)
