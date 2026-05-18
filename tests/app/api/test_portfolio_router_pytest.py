@@ -832,6 +832,189 @@ def test_direct_trade_backfill_endpoint_dry_run_returns_reviewed_trade_actions_p
     assert payload["applied"] == []
 
 
+def test_direct_open_order_mirror_plan_maps_token_and_flags_missing_catalog_pytest() -> None:
+    captured_at = datetime(2026, 5, 18, 9, 16, tzinfo=timezone.utc)
+
+    plan = portfolio_router.build_direct_open_order_mirror_plan(
+        account_id=ACCOUNT_ID,
+        direct_open_orders=[
+            {
+                "id": "0xopen",
+                "token_id": "token-demo",
+                "side": "SELL",
+                "price": "0.39",
+                "size": "10",
+                "filled_size": "2",
+                "status": "LIVE",
+                "created_at": 1_779_000_000,
+            },
+            {
+                "id": "0xmissing",
+                "token_id": "token-missing",
+                "side": "BUY",
+                "price": "0.12",
+                "size": "5",
+            },
+        ],
+        token_to_pair={"token-demo": (MARKET_ID, OUTCOME_ID)},
+        captured_at=captured_at,
+    )
+
+    assert plan["direct_order_count"] == 2
+    assert plan["eligible_upsert_count"] == 1
+    assert plan["review_required_count"] == 1
+    upsert = plan["actions"][0]
+    assert upsert["action"] == "upsert_order"
+    assert upsert["external_order_id"] == "0xopen"
+    assert upsert["market_id"] == MARKET_ID
+    assert upsert["outcome_id"] == OUTCOME_ID
+    assert upsert["side"] == "sell"
+    assert upsert["status"] == "open"
+    assert upsert["filled_notional"] == Decimal("0.78")
+    assert plan["actions"][1]["reason"] == "missing_token_catalog_mapping"
+
+
+def test_direct_open_order_mirror_endpoint_dry_run_returns_catalog_mapped_actions_pytest(monkeypatch) -> None:
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.query = query
+            self.params = params
+
+        def fetchall(self):
+            return [("token-demo", OUTCOME_ID, MARKET_ID)]
+
+    class FakeConnection:
+        def cursor(self, *_, **__):
+            return FakeCursor()
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    def fake_direct_evidence(connection, *, account_id: str):
+        return {
+            "enabled": True,
+            "ok": True,
+            "error": None,
+            "open_order_external_ids": ["0xopen"],
+            "open_order_count": 1,
+            "open_position_count": 1,
+            "trade_count": 0,
+            "open_orders": [
+                {
+                    "id": "0xopen",
+                    "token_id": "token-demo",
+                    "side": "SELL",
+                    "price": "0.39",
+                    "size": "10",
+                    "status": "OPEN",
+                }
+            ],
+            "trades": [],
+        }
+
+    monkeypatch.setattr(portfolio_router, "_fetch_direct_order_lifecycle_evidence", fake_direct_evidence)
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/orders/direct-open-mirror",
+            params={"account_id": ACCOUNT_ID},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dry_run"] is True
+    assert payload["direct_evidence"]["open_order_count"] == 1
+    assert "open_orders" not in payload["direct_evidence"]
+    assert payload["direct_open_order_mirror"]["eligible_upsert_count"] == 1
+    assert payload["direct_open_order_mirror"]["actions"][0]["external_order_id"] == "0xopen"
+    assert payload["applied"] == []
+
+
+def test_apply_direct_open_order_mirror_actions_persists_order_and_event_pytest() -> None:
+    class FakeCursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.connection.executed.append((query, params))
+            if "INSERT INTO portfolio.orders" in query:
+                self.row = (params[0],)
+            elif "INSERT INTO portfolio.order_events" in query:
+                self.row = (params[0],)
+            else:
+                self.row = None
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        def cursor(self, *_, **__):
+            return FakeCursor(self)
+
+    connection = FakeConnection()
+    order_id = "33333333-3333-4333-8333-333333333333"
+    applied = portfolio_router.apply_direct_open_order_mirror_actions(
+        connection,
+        actions=[
+            {
+                "action": "upsert_order",
+                "order_id": order_id,
+                "account_id": ACCOUNT_ID,
+                "market_id": MARKET_ID,
+                "outcome_id": OUTCOME_ID,
+                "external_order_id": "0xopen",
+                "client_order_id": None,
+                "side": "sell",
+                "order_type": "limit",
+                "time_in_force": "gtc",
+                "limit_price": Decimal("0.39"),
+                "size": Decimal("10"),
+                "status": "open",
+                "placed_at": datetime(2026, 5, 18, 9, 16, tzinfo=timezone.utc),
+                "updated_at": datetime(2026, 5, 18, 9, 16, tzinfo=timezone.utc),
+                "filled_size": Decimal("0"),
+                "filled_notional": Decimal("0"),
+                "token_id": "token-demo",
+                "raw_direct_order": {"id": "0xopen"},
+            }
+        ],
+        reviewed_by="controller",
+        reason="mirror direct open order evidence",
+    )
+
+    assert applied == [
+        {
+            "order_id": order_id,
+            "external_order_id": "0xopen",
+            "applied": True,
+            "order_event_inserted": True,
+        }
+    ]
+    assert any("INSERT INTO portfolio.orders" in query for query, _ in connection.executed)
+    assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
+
+
 def test_apply_direct_trade_backfill_actions_persists_trade_and_event_pytest() -> None:
     class FakeCursor:
         def __init__(self, connection):

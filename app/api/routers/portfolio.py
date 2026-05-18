@@ -366,6 +366,202 @@ def _direct_order_external_id(order: Any) -> str | None:
     return None
 
 
+def _direct_order_value(order: Any, *keys: str) -> Any:
+    item = order if isinstance(order, dict) else _direct_item_to_dict(order)
+    for key in keys:
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return value
+    return None
+
+
+def _direct_order_timestamp(value: Any, *, default: datetime) -> datetime:
+    if isinstance(value, datetime):
+        return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, (int, float)):
+        timestamp = float(value)
+        if timestamp > 10_000_000_000:
+            timestamp /= 1000.0
+        try:
+            return datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return default
+    raw = str(value or "").strip()
+    if not raw:
+        return default
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError:
+        return default
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+
+
+def _direct_order_status(order: Any) -> str:
+    raw_status = str(_direct_order_value(order, "status") or "open").strip().lower()
+    return {
+        "live": "open",
+        "opened": "open",
+        "partial": "partially_filled",
+    }.get(raw_status, raw_status or "open")
+
+
+def _direct_order_side(order: Any) -> str:
+    raw_side = str(_direct_order_value(order, "side") or "").strip().lower()
+    return {"buy": "buy", "sell": "sell"}.get(raw_side, raw_side or "unknown")
+
+
+def _load_outcome_pairs_by_token(connection: PsycopgConnection) -> dict[str, tuple[str, str]]:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT token_id, outcome_id, market_id
+            FROM catalog.outcomes
+            WHERE token_id IS NOT NULL AND token_id <> '';
+            """
+        )
+        return {str(token_id): (str(market_id), str(outcome_id)) for token_id, outcome_id, market_id in cursor.fetchall()}
+
+
+def build_direct_open_order_mirror_plan(
+    *,
+    account_id: str,
+    direct_open_orders: list[Any],
+    token_to_pair: dict[str, tuple[str, str]],
+    captured_at: datetime | None = None,
+) -> dict[str, Any]:
+    now = captured_at or datetime.now(timezone.utc)
+    actions: list[dict[str, Any]] = []
+    for order in direct_open_orders:
+        item = _direct_item_to_dict(order)
+        external_order_id = _direct_order_external_id(item)
+        token_id = _direct_order_value(item, "token_id", "asset_id", "asset", "outcomeTokenId", "clobTokenId")
+        token_text = str(token_id or "").strip()
+        if not external_order_id:
+            actions.append(
+                {
+                    "action": "review_required",
+                    "reason": "missing_external_order_id",
+                    "token_id": token_text or None,
+                    "raw_direct_order": item,
+                }
+            )
+            continue
+        if not token_text or token_text not in token_to_pair:
+            actions.append(
+                {
+                    "action": "review_required",
+                    "reason": "missing_token_catalog_mapping",
+                    "external_order_id": external_order_id,
+                    "token_id": token_text or None,
+                    "raw_direct_order": item,
+                }
+            )
+            continue
+        market_id, outcome_id = token_to_pair[token_text]
+        price = _decimal_or_zero(_direct_order_value(item, "price"))
+        size = _decimal_or_zero(_direct_order_value(item, "size", "original_size"))
+        filled_size = _decimal_or_zero(_direct_order_value(item, "filled_size", "filledSize", "size_matched"))
+        placed_at = _direct_order_timestamp(_direct_order_value(item, "created_at", "timestamp", "createdAt"), default=now)
+        updated_at = _direct_order_timestamp(_direct_order_value(item, "updated_at", "updatedAt"), default=now)
+        order_id = _portfolio_sync_uuid_for("direct_open_order", account_id, external_order_id)
+        actions.append(
+            {
+                "action": "upsert_order",
+                "order_id": order_id,
+                "account_id": account_id,
+                "market_id": market_id,
+                "outcome_id": outcome_id,
+                "external_order_id": external_order_id,
+                "client_order_id": None,
+                "side": _direct_order_side(item),
+                "order_type": "limit",
+                "time_in_force": "gtc",
+                "limit_price": price,
+                "size": size,
+                "status": _direct_order_status(item),
+                "placed_at": placed_at,
+                "updated_at": updated_at,
+                "filled_size": filled_size,
+                "filled_notional": filled_size * price,
+                "token_id": token_text,
+                "raw_direct_order": item,
+            }
+        )
+
+    eligible = [action for action in actions if action.get("action") == "upsert_order"]
+    review_required = [action for action in actions if action.get("action") == "review_required"]
+    return {
+        "direct_order_count": len(direct_open_orders),
+        "eligible_upsert_count": len(eligible),
+        "review_required_count": len(review_required),
+        "actions": actions,
+    }
+
+
+def apply_direct_open_order_mirror_actions(
+    connection: PsycopgConnection,
+    *,
+    actions: list[dict[str, Any]],
+    reviewed_by: str | None = None,
+    reason: str | None = None,
+) -> list[dict[str, Any]]:
+    repo = JanusUpsertRepository(connection)
+    applied: list[dict[str, Any]] = []
+    for action in actions:
+        if action.get("action") != "upsert_order":
+            continue
+        metadata = {
+            "source": "direct_clob_open_order_mirror",
+            "reviewed_by": reviewed_by,
+            "reason": reason,
+            "token_id": action.get("token_id"),
+            "raw_direct_order": action.get("raw_direct_order") or {},
+        }
+        order_id = repo.upsert_order(
+            order_id=str(action["order_id"]),
+            account_id=str(action["account_id"]),
+            market_id=str(action["market_id"]),
+            outcome_id=str(action["outcome_id"]) if action.get("outcome_id") else None,
+            side=str(action["side"]),
+            order_type=str(action["order_type"]),
+            status=str(action["status"]),
+            placed_at=action["placed_at"],
+            updated_at=action["updated_at"],
+            external_order_id=str(action["external_order_id"]),
+            client_order_id=action.get("client_order_id"),
+            time_in_force=action.get("time_in_force"),
+            limit_price=float(action["limit_price"]) if action.get("limit_price") is not None else None,
+            size=float(action["size"]) if action.get("size") is not None else None,
+            metadata_json=metadata,
+        )
+        event_inserted = repo.insert_order_event(
+            order_event_id=_portfolio_sync_uuid_for(
+                "direct_open_order_mirror_event",
+                order_id,
+                str(action.get("updated_at")),
+                str(action.get("status")),
+            ),
+            order_id=order_id,
+            event_time=action["updated_at"],
+            event_type=f"direct_open_order_mirror_{action['status']}",
+            filled_size_delta=float(action["filled_size"]) if action.get("filled_size") is not None else None,
+            filled_notional_delta=float(action["filled_notional"]) if action.get("filled_notional") is not None else None,
+            raw_json=metadata,
+            ignore_duplicates=True,
+        )
+        applied.append(
+            {
+                "order_id": order_id,
+                "external_order_id": action.get("external_order_id"),
+                "applied": True,
+                "order_event_inserted": event_inserted,
+            }
+        )
+    return applied
+
+
 def _credentials_for_account(account: dict[str, Any]) -> PolymarketCredentials:
     creds = PolymarketCredentials.from_env()
     wallet = str(account.get("wallet_address") or "").strip()
@@ -395,6 +591,7 @@ def _fetch_direct_order_lifecycle_evidence(
             "open_order_count": None,
             "open_position_count": None,
             "trade_count": None,
+            "open_orders": [],
             "trades": [],
         }
 
@@ -411,6 +608,7 @@ def _fetch_direct_order_lifecycle_evidence(
             "open_order_count": None,
             "open_position_count": None,
             "trade_count": None,
+            "open_orders": [],
             "trades": [],
         }
 
@@ -419,6 +617,7 @@ def _fetch_direct_order_lifecycle_evidence(
         for order_id in (_direct_order_external_id(order) for order in open_orders)
         if order_id is not None
     ]
+    open_order_rows = [_direct_item_to_dict(order) for order in open_orders]
     trade_rows = [_direct_item_to_dict(trade) for trade in trades]
     return {
         "enabled": True,
@@ -428,6 +627,7 @@ def _fetch_direct_order_lifecycle_evidence(
         "open_order_count": len(open_orders),
         "open_position_count": len(open_positions),
         "trade_count": len(trade_rows),
+        "open_orders": open_order_rows,
         "trades": trade_rows,
     }
 
@@ -1927,7 +2127,7 @@ def reconcile_portfolio_orders(
         direct_trade_rows=direct_context["direct_trade_rows"],
     )
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
     return {
         "filters": {
             "account_id": str(account_id) if account_id is not None else None,
@@ -1994,7 +2194,7 @@ def reconcile_portfolio_order_pnl_attribution(
         final_winning_outcome_id=final_winning_outcome_id,
     )
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
     return {
         "filters": {
             "account_id": str(account_id) if account_id is not None else None,
@@ -2061,7 +2261,7 @@ def backfill_portfolio_order_statuses(
         )
 
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
     return {
         "dry_run": payload.dry_run,
         "filters": {
@@ -2130,7 +2330,7 @@ def backfill_portfolio_order_trades(
         )
 
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
     return {
         "dry_run": payload.dry_run,
         "filters": {
@@ -2146,6 +2346,49 @@ def backfill_portfolio_order_trades(
         "direct_evidence": to_jsonable(direct_evidence_summary),
         "reconciliation": to_jsonable(report),
         "trade_backfill": to_jsonable(plan),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.post("/orders/direct-open-mirror")
+def mirror_direct_open_portfolio_orders(
+    account_id: UUID = Query(...),
+    dry_run: bool = Query(default=True),
+    reviewed_by: str | None = Query(default=None),
+    reason: str | None = Query(default=None),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(reviewed_by or "").strip()
+    review_reason = str(reason or "").strip()
+    if not dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    direct_evidence = _fetch_direct_order_lifecycle_evidence(connection, account_id=str(account_id))
+    direct_open_orders = list(direct_evidence.get("open_orders") or []) if direct_evidence.get("ok") else []
+    token_to_pair = _load_outcome_pairs_by_token(connection)
+    plan = build_direct_open_order_mirror_plan(
+        account_id=str(account_id),
+        direct_open_orders=direct_open_orders,
+        token_to_pair=token_to_pair,
+    )
+    applied: list[dict[str, Any]] = []
+    if not dry_run and direct_evidence.get("ok"):
+        applied = apply_direct_open_order_mirror_actions(
+            connection,
+            actions=plan["actions"],
+            reviewed_by=reviewer,
+            reason=review_reason,
+        )
+
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
+    return {
+        "dry_run": dry_run,
+        "status": "planned" if dry_run else "applied",
+        "filters": {
+            "account_id": str(account_id),
+        },
+        "direct_evidence": to_jsonable(direct_evidence_summary),
+        "direct_open_order_mirror": to_jsonable(plan),
         "applied": to_jsonable(applied),
     }
 
