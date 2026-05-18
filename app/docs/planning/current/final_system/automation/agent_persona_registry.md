@@ -9,6 +9,8 @@ Define the personas the master controller can select, what each persona may do, 
 
 The controller should choose personas from market/scope axes, not from chat memory.
 
+All personas inherit `app/docs/planning/current/final_system/global_ego_and_purpose.md`. That document defines the User/Codex/Janus triad, the expectation-markets identity, and the rule that ambition does not override evidence or safety gates.
+
 ## Persona Table
 
 | Persona | Primary Scope | Allowed Work | Not Allowed |

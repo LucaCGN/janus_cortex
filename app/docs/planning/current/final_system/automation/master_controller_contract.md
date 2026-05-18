@@ -39,27 +39,29 @@ Every controller pass must read or inspect:
 
 1. `app/docs/planning/current/final_system/README.md`
 2. `app/docs/planning/current/final_system/source_of_truth_map.md`
-3. `app/docs/planning/current/final_system/market_scope_registry.md`
-4. `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
-5. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
-6. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
-7. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
-8. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-9. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-10. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-11. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-12. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-13. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-15. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
-16. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
-17. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-18. `local/shared/handoffs/daily-live-validation/status.md`
-19. `local/shared/handoffs/development-agent/status.md`
-20. Latest relevant daily reports.
-21. GitHub issue state once the issue seed is created.
-22. Obsidian index notes once populated.
-23. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+3. `app/docs/planning/current/final_system/global_ego_and_purpose.md`
+4. `app/docs/planning/current/final_system/market_scope_registry.md`
+5. `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
+6. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
+7. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
+8. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+9. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+10. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+11. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+12. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+13. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+15. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+16. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+17. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+18. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+19. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+20. `local/shared/handoffs/daily-live-validation/status.md`
+21. `local/shared/handoffs/development-agent/status.md`
+22. Latest relevant daily reports.
+23. GitHub issue state once the issue seed is created.
+24. Obsidian index notes once populated.
+25. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
 
 ## Axis-First Decision Model
 

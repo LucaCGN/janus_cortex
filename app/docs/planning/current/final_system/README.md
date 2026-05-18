@@ -21,6 +21,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | File | Role |
 |---|---|
 | `premise_decisions_2026-05-17.md` | Normalized operator review of the premise register. |
+| `global_ego_and_purpose.md` | Global operating identity, User/Codex/Janus triad, ambition-vs-authority rules, and economic model-cost stance. |
 | `source_of_truth_map.md` | Authority stack and stable automation anchor map. |
 | `market_scope_registry.md` | Market/domain axes, maturity stages, and scope registry. |
 | `automation/master_controller_contract.md` | Mutable source-of-truth contract for the recurring controller automation. |
@@ -33,6 +34,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | `automation/global_portfolio_explorer_contract.md` | Separate read-only global portfolio explorer automation contract. |
 | `automation/docs_memory_health_check.md` | Checklist for repo, Obsidian, GitHub, and handoff health. |
 | `backlog/immediate_issue_seed_2026-05-17.md` | Issue-ready backlog from the current P0/P1 lanes and new missing pieces. |
+| `backlog/premise_to_backlog_map_2026-05-18.md` | Post-foundation premise-to-issue map for open issues `#30`, `#32`, and `#37-#48`. |
 | `obsidian/bootstrap_map.md` | Obsidian vault structure and repo-linking plan. |
 
 ## Authority
@@ -51,6 +53,8 @@ It becomes binding only after review and promotion into core docs.
 The automation prompt should remain small and stable. Behavior should be changed by editing this folder and the Obsidian notes it references, not by rewriting the immutable automation prompt.
 
 The controller must evaluate market/domain scope before applying lifecycle rules. `pregame`, `live`, and `postgame` are basketball lifecycle phases, not universal Janus modes.
+
+Every controller/persona pass should inherit `global_ego_and_purpose.md`: Janus is an expectation-markets system with basketball as the immediate implementation domain, not the system boundary. That identity does not override the authority stack or safety gates.
 
 ## Current Activation Gate
 

@@ -31,18 +31,20 @@ The controller automation should read these anchor files on every material pass:
 
 1. `app/docs/planning/current/final_system/README.md`
 2. `app/docs/planning/current/final_system/source_of_truth_map.md`
-3. `app/docs/planning/current/final_system/market_scope_registry.md`
-4. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
-5. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
-6. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
-7. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-8. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-9. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-10. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-11. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-12. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-13. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-14. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+3. `app/docs/planning/current/final_system/global_ego_and_purpose.md`
+4. `app/docs/planning/current/final_system/market_scope_registry.md`
+5. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
+6. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
+7. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+8. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+9. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+10. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+11. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+12. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+13. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+15. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+16. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -114,3 +116,14 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | closed | Read-only global portfolio explorer automation. |
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | closed | Absorbed ML replay branch deleted after operator approval. |
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | open | Fresh-DB NBA probe and account mapping gaps discovered during reconciliation. |
+| [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | closed | Encode Janus global ego and purpose contract in repo prompts and Obsidian. |
+| [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | open | Implement controller active queue locks and pass ledger. |
+| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | open | Build current architecture and service degradation maps. |
+| [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | open | Validate budget-aware model routing and Codex fallback state. |
+| [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | open | Validate Polymarket minimum order constraints and market-order exception policy. |
+| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | open | Add chart-equivalent microstructure metrics to event review bundle. |
+| [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
+| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | open | Build global portfolio target/rebuy ledger and watchlist schema. |
+| [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
+| [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
+| [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |

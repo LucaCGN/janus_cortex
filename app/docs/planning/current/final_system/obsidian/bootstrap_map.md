@@ -45,6 +45,7 @@ Reference: `https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f`
 | `00_Janus_Control/Janus Wiki Maintenance Runbook.md` | Janus-specific ingest/query/lint workflow. |
 | `00_Janus_Control/Issue Backlog Index.md` | Current canonical GitHub issues and duplicate issue hygiene. |
 | `10_System_Specs/Premise Decisions 2026-05-17.md` | `premise_decisions_2026-05-17.md`. |
+| `10_System_Specs/Janus Global Ego And Purpose.md` | `global_ego_and_purpose.md`. |
 | `10_System_Specs/Source Of Truth Layering.md` | Repo/runtime/GitHub/Obsidian authority model. |
 | `10_System_Specs/Controller And Queue Design.md` | Master controller and issue queue design. |
 | `10_System_Specs/Market Domain And Scope Registry.md` | Market/domain axes and maturity ladder. |
@@ -57,6 +58,15 @@ Reference: `https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f`
 | `30_Game_Reviews/CLE DET 2026-05-13.md` | CLE/DET final performance review. |
 | `30_Game_Reviews/WNBA Lynx Wings 2026-05-14.md` | WNBA Lynx/Wings risk review. |
 | `40_Profile_Studies/Polymarket Winning Profiles Overview.md` | Profile report context. |
+| `40_Profile_Studies/Profile - aenews2.md` | Generalist profile analysis. |
+| `40_Profile_Studies/Profile - car.md` | Generalist profile analysis. |
+| `40_Profile_Studies/Profile - classified.md` | Generalist profile analysis. |
+| `40_Profile_Studies/Profile - 0xb55fa Crypto.md` | Crypto profile analysis. |
+| `40_Profile_Studies/Profile - pbot-6.md` | Crypto profile analysis. |
+| `40_Profile_Studies/Profile - baloneigh.md` | Crypto profile analysis. |
+| `40_Profile_Studies/Profile - mikeaddon.md` | Crypto profile analysis. |
+| `40_Profile_Studies/Profile - predictfolio.md` | Generalist/global portfolio profile analysis. |
+| `40_Profile_Studies/Profile - wuhuuuuuuli.md` | Crypto profile analysis. |
 
 ## Linking Rule
 

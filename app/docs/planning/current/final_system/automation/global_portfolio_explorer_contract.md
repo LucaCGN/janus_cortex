@@ -12,6 +12,8 @@ Define the separate Codex automation/persona used to inspect the full Polymarket
 
 This automation is not the master controller. It is a read-only portfolio analyst that helps the operator reason about non-Janus positions, stale targets, exit/rebuy candidates, concentration, and future-domain ideas.
 
+It inherits `app/docs/planning/current/final_system/global_ego_and_purpose.md`: Janus is an expectation-markets system, but global portfolio analysis remains read-only until a separate execution policy exists.
+
 ## Authority
 
 Use the normal Janus authority stack:
@@ -58,14 +60,16 @@ Ad hoc use is allowed when the operator asks for help analyzing a specific marke
 
 1. `app/docs/planning/current/final_system/source_of_truth_map.md`
 2. `app/docs/planning/current/final_system/market_scope_registry.md`
-3. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-4. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-5. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-6. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-7. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-8. `00_Janus_Control/Janus Master Index.md` in the Obsidian vault
-9. `00_Janus_Control/Issue Backlog Index.md` in the Obsidian vault
-10. Any existing global-portfolio or profile-study notes in the Obsidian vault
+3. `app/docs/planning/current/final_system/global_ego_and_purpose.md`
+4. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+5. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+6. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+7. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+8. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+9. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+10. `00_Janus_Control/Janus Master Index.md` in the Obsidian vault
+11. `00_Janus_Control/Issue Backlog Index.md` in the Obsidian vault
+12. Any existing global-portfolio or profile-study notes in the Obsidian vault
 
 Then inspect read-only account, CLOB, Janus API, or generated portfolio data surfaces if available.
 
