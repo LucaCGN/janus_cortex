@@ -338,6 +338,104 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     ]
 
 
+def test_live_monitor_endpoint_returns_compact_microstructure_context_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "connection_matches": connection is fake_connection,
+            "direct_trade_token_ids": direct_trade_token_ids or [],
+            "ready_for_live_minimum_orders": True,
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_build_event_review_runtime_evidence",
+        lambda connection, *, event_id: {
+            "schema_version": "event_review_runtime_evidence_v1",
+            "event_id": event_id,
+            "status": "ready",
+            "errors": [],
+            "orderbook_ticks": [
+                {
+                    "captured_at": "2026-05-10T20:00:00+00:00",
+                    "outcome_id": "outcome-1",
+                    "spread": 0.01,
+                    "mid_price": 0.45,
+                    "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "06:00"}}},
+                },
+                {
+                    "captured_at": "2026-05-10T20:00:00+00:00",
+                    "outcome_id": "outcome-2",
+                    "spread": 0.01,
+                    "mid_price": 0.55,
+                    "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "06:00"}}},
+                },
+                {
+                    "captured_at": "2026-05-10T20:01:00+00:00",
+                    "outcome_id": "outcome-1",
+                    "spread": 0.01,
+                    "mid_price": 0.52,
+                    "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "05:00"}}},
+                },
+                {
+                    "captured_at": "2026-05-10T20:01:00+00:00",
+                    "outcome_id": "outcome-2",
+                    "spread": 0.01,
+                    "mid_price": 0.48,
+                    "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "05:00"}}},
+                },
+            ],
+            "orderbook_window_summary": {"tick_count": 4},
+        },
+    )
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    plan_payload = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+
+    try:
+        submit_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-11",
+                "event_ids": ["event-123"],
+                "source": "pytest",
+                "strategy_plans": [plan_payload],
+            },
+        )
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-11", "event_ids": ["event-123"], "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert submit_response.status_code == 202
+    assert response.status_code == 202
+    microstructure = response.json()["live_microstructure_context"]
+    assert microstructure["schema_version"] == "live_monitor_microstructure_context_v1"
+    assert microstructure["status"] == "recorded"
+    assert microstructure["event_count"] == 1
+    item = microstructure["items"][0]
+    assert item["schema_version"] == "live_monitor_event_microstructure_context_v1"
+    assert item["event_id"] == "event-123"
+    assert item["tick_count"] == 4
+    assert item["favorite_underdog_inversion_count"] == 1
+    assert item["period_context_status"] == "recorded"
+    assert item["period_summaries"][0]["period_key"] == "period_2"
+    assert item["screenshot_dependency"] is False
+    assert item["trading_authority"] == "review_evidence_only"
+
+
 def test_live_monitor_discovers_current_plan_events_when_event_ids_omitted_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

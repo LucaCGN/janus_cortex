@@ -175,6 +175,10 @@ def run_ops_live_monitor(
         worker_required=bool(live_strategy_worker_status.get("worker_required")),
         worker_ready=bool(live_strategy_worker_status.get("ready_for_live_execution")),
     )
+    live_microstructure_context = _build_live_monitor_microstructure_context(
+        connection,
+        event_ids=live_monitor_event_ids,
+    )
     live_monitor_readiness = _build_live_monitor_readiness(
         integrity=integrity,
         strategy_plan_gate=strategy_plan_gate,
@@ -193,6 +197,7 @@ def run_ops_live_monitor(
             "llm_runtime_status": llm_runtime_status,
             "live_strategy_worker_status": live_strategy_worker_status,
             "live_execution_evidence": live_execution_evidence,
+            "live_microstructure_context": live_microstructure_context,
             "live_monitor_readiness": live_monitor_readiness,
         },
         day=payload.session_date,
@@ -207,6 +212,7 @@ def run_ops_live_monitor(
         "llm_runtime_status": llm_runtime_status,
         "live_strategy_worker_status": live_strategy_worker_status,
         "live_execution_evidence": live_execution_evidence,
+        "live_microstructure_context": live_microstructure_context,
         "live_monitor_readiness": live_monitor_readiness,
     }
 
@@ -1661,6 +1667,81 @@ def _build_event_review_runtime_evidence(
         **sections,
         "orderbook_window_summary": _orderbook_window_summary(orderbook_ticks),
     }
+
+
+def _build_live_monitor_microstructure_context(
+    connection: PsycopgConnection,
+    *,
+    event_ids: list[str],
+) -> dict[str, Any]:
+    unique_event_ids = _normalized_unique_values(event_ids)
+    items: list[dict[str, Any]] = []
+    for event_id in unique_event_ids:
+        runtime_evidence = _build_event_review_runtime_evidence(connection, event_id=event_id)
+        summary = _build_event_review_microstructure_summary(runtime_evidence)
+        tick_count = _safe_int(summary.get("tick_count"))
+        items.append(
+            {
+                "schema_version": "live_monitor_event_microstructure_context_v1",
+                "event_id": event_id,
+                "status": "recorded" if tick_count > 0 else "not_recorded",
+                "runtime_evidence_status": runtime_evidence.get("status"),
+                "runtime_evidence_error_count": len(runtime_evidence.get("errors") or []),
+                "tick_count": tick_count,
+                "outcome_count": _safe_int(summary.get("outcome_count")),
+                "trend_profile": summary.get("trend_profile"),
+                "mid_price_range": summary.get("mid_price_range"),
+                "spike_count": _safe_int(summary.get("spike_count")),
+                "oscillation_band_count": _safe_int(summary.get("oscillation_band_count")),
+                "grid_opportunity_count": _safe_int(summary.get("grid_opportunity_count")),
+                "favorite_underdog_inversion_count": _safe_int(
+                    summary.get("favorite_underdog_inversion_count")
+                ),
+                "period_context_status": summary.get("period_context_status"),
+                "period_summary_count": _safe_int(summary.get("period_summary_count")),
+                "period_summaries": _compact_microstructure_period_summaries(summary),
+                "orderbook_window_summary": summary.get("orderbook_window_summary") or {},
+                "screenshot_dependency": False,
+                "trading_authority": "review_evidence_only",
+                "requires_replay_fillability_before_trading_authority": True,
+            }
+        )
+    recorded_count = sum(1 for item in items if item.get("status") == "recorded")
+    return {
+        "schema_version": "live_monitor_microstructure_context_v1",
+        "status": "not_required" if not unique_event_ids else ("recorded" if recorded_count else "not_recorded"),
+        "event_count": len(unique_event_ids),
+        "recorded_event_count": recorded_count,
+        "screenshot_dependency": False,
+        "items": items,
+    }
+
+
+def _compact_microstructure_period_summaries(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    period_summaries = summary.get("period_summaries") if isinstance(summary.get("period_summaries"), dict) else {}
+    items: list[dict[str, Any]] = []
+    for period_key, period_summary in sorted(
+        period_summaries.items(),
+        key=lambda item: _microstructure_period_sort_key(str(item[0])),
+    ):
+        if not isinstance(period_summary, dict):
+            continue
+        items.append(
+            {
+                "period_key": str(period_key),
+                "period": period_summary.get("period"),
+                "status": period_summary.get("status"),
+                "tick_count": _safe_int(period_summary.get("tick_count")),
+                "first_clock": period_summary.get("first_clock"),
+                "last_clock": period_summary.get("last_clock"),
+                "trend_profile": period_summary.get("trend_profile"),
+                "mid_price_range": period_summary.get("mid_price_range"),
+                "grid_opportunity_count": _safe_int(period_summary.get("grid_opportunity_count")),
+                "spike_count": _safe_int(period_summary.get("spike_count")),
+                "oscillation_band_count": _safe_int(period_summary.get("oscillation_band_count")),
+            }
+        )
+    return items
 
 
 def _fetch_event_review_rows(
