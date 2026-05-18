@@ -25,6 +25,7 @@ import codex_tool.submit_pregame_research as legacy_pregame_cli
 import codex_tool.submit_strategy_plan as legacy_submit_cli
 import codex_tool.adopt_llm_revision as legacy_adopt_cli
 import codex_tool.watch_market as legacy_watch_cli
+import codex_tools.janus as janus_namespace
 from codex_tools.janus import client as janus_client
 from codex_tools.janus import events as janus_events
 from codex_tools.janus import live_strategy_tick as janus_live_strategy_tick
@@ -296,6 +297,16 @@ def test_legacy_worker_clis_delegate_to_target_namespace() -> None:
         is janus_worker.build_live_strategy_worker_tick_payload
     )
     assert legacy_worker_tick_cli.main_for_live_strategy_worker_tick is janus_worker.main_for_live_strategy_worker_tick
+
+
+def test_janus_namespace_exports_worker_tick_helpers() -> None:
+    assert janus_namespace.LIVE_STRATEGY_WORKER_TICK_PATH == janus_worker.LIVE_STRATEGY_WORKER_TICK_PATH
+    assert janus_namespace.build_live_strategy_worker_tick_parser is janus_worker.build_live_strategy_worker_tick_parser
+    assert janus_namespace.build_live_strategy_worker_tick_payload is janus_worker.build_live_strategy_worker_tick_payload
+    assert janus_namespace.run_live_strategy_worker_tick is janus_worker.run_live_strategy_worker_tick
+    assert janus_namespace.main_for_live_strategy_worker_tick is janus_worker.main_for_live_strategy_worker_tick
+    assert "LIVE_STRATEGY_WORKER_TICK_PATH" in janus_namespace.__all__
+    assert "main_for_live_strategy_worker_tick" in janus_namespace.__all__
 
 
 def test_janus_live_strategy_tick_bridge_preserves_legacy_cli_shape() -> None:
