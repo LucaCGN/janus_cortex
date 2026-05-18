@@ -61,7 +61,7 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 
 | Issue | Priority | Layer | Purpose |
 |---|---|---|---|
-| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Sprint backlog | Create GitHub issue taxonomy labels and label closed/open issues. |
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Sprint backlog | Label taxonomy created; remaining project hygiene and optional retroactive seed labeling. |
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Sprint backlog | Refresh runtime handoffs after operator event-data reconciliation. |
 | [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Sprint backlog | Validate repo-local runtime root and controller activation gate. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Planned/sprint | Validate closed seed foundations against a running API, read-only. |

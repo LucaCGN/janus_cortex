@@ -119,11 +119,13 @@ Every sprint-ready issue should include:
 - evidence links
 - Obsidian links if useful
 
-## Current Setup Gap
+## Current Setup Status
 
-Open issue [#30](https://github.com/LucaCGN/janus_cortex/issues/30) tracks creation of the native GitHub labels and retroactive labeling of the closed seed issues.
+Native GitHub taxonomy labels were created on 2026-05-18 and open follow-up issues `#30-#36` were labeled.
 
-Until labels exist in GitHub, issue titles and bodies must include the same taxonomy fields explicitly:
+Open issue [#30](https://github.com/LucaCGN/janus_cortex/issues/30) remains the project-hygiene tracker for retroactive labeling of closed seed issues `#17-#29` and any future GitHub Projects/type setup.
+
+Issue titles and bodies should still include the same taxonomy fields explicitly because labels are not runtime truth and can be lost during exports:
 
 - Priority
 - Type

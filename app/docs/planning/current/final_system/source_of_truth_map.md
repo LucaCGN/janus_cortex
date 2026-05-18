@@ -102,7 +102,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 
 | Issue | Priority | Scope |
 |---|---|---|
-| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | GitHub issue taxonomy labels and project hygiene. |
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | GitHub issue taxonomy labels created; project hygiene remains. |
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Runtime handoff refresh after 2026-05-18 event reconciliation. |
 | [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Controller activation gate validation against repo-local runtime root. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | API-up validation of closed seed foundations. |
