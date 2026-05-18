@@ -1,34 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
 
 from app.modules.nba.execution import LiveRunCreateRequest, get_live_run_service
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-LIVE_CONTROL_ROOT = REPO_ROOT / "frontend" / "live_control"
-LIVE_CONTROL_STATIC_ROOT = LIVE_CONTROL_ROOT / "static"
-LIVE_CONTROL_INDEX_PATH = LIVE_CONTROL_ROOT / "index.html"
-
 router = APIRouter(tags=["nba-live"])
-
-
-@router.get("/live-control", include_in_schema=False)
-def get_live_control_page() -> FileResponse:
-    if not LIVE_CONTROL_INDEX_PATH.exists():
-        raise HTTPException(status_code=404, detail="live-control UI not found")
-    return FileResponse(
-        LIVE_CONTROL_INDEX_PATH,
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
 
 
 @router.post("/v1/nba/live/runs")
@@ -119,7 +98,5 @@ def stop_live_run(run_id: str) -> dict[str, Any]:
 
 
 __all__ = [
-    "LIVE_CONTROL_INDEX_PATH",
-    "LIVE_CONTROL_STATIC_ROOT",
     "router",
 ]

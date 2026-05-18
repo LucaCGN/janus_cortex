@@ -29,7 +29,7 @@ Define the path from the offline NBA analysis baseline to the first live-safe co
 | `v1.4.8` | full regular-season lock check | completed | lock confirmed on all-games replay |
 | `v1.5.0` | live Polymarket executor | next critical path | primary controller plus deterministic fallback |
 | `v1.5.1` | controller decision logging | next after executor shell exists | ML-ready candidate and fill dataset |
-| `v1.5.2` | focused locked-controller review dashboard | parallel after executor contracts stabilize | review only, not broad exploration |
+| `v1.5.2` | focused locked-controller review/reporting surface | superseded by backend-first final-system direction | frontend module removed |
 | `v1.5.2b` | unified benchmark-control layer | parallel with replay, ML, and LLM lane milestones | one replay-aware scoreboard, one contract, one merge gate |
 | `v1.5.3` | live-paper validation and payout policy hardening | after executor plus logging | real execution feedback loop |
 | `v1.5.x` | season continuity and WNBA bootstrap | secondary | keep data continuity without changing controller math |
@@ -141,7 +141,6 @@ The success condition is:
 
 ### Parallel Or Secondary Tracks
 - [benchmark_integration_roadmap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/benchmark_integration_roadmap.md)
-- [branches/frontend_analysis_portfolio_viz.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_portfolio_viz.md)
 - [branches/season_playoffs_preseason.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_playoffs_preseason.md)
 - [branches/season_wnba_bootstrap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_wnba_bootstrap.md)
 
@@ -150,10 +149,9 @@ The success condition is:
 | Branch | Milestone | Depends On | Can Run In Parallel With | Blocks | Notes |
 | --- | --- | --- | --- | --- | --- |
 | `codex/live-polymarket-executor` | `v1.5.0` | locked controller state merged on `main` | docs cleanup only | `codex/controller-decision-logging` | first live-safe paper or execution shell |
-| `codex/controller-decision-logging` | `v1.5.1` | executor contracts stabilized | frontend review UI, season continuity | later ML ranking work | append-only candidate and fill datasets |
-| `codex/frontend-analysis-portfolio-viz` | `v1.5.2` | locked controller state on `main` | executor and logging | no critical-path branch | should only review the locked controller pair |
+| `codex/controller-decision-logging` | `v1.5.1` | executor contracts stabilized | backend reporting, season continuity | later ML ranking work | append-only candidate and fill datasets |
 | `codex/benchmark-integration` | `v1.5.2b` | replay contract published | executor, logging, ML lane, LLM lane | no critical-path branch | owns the unified benchmark contract, dashboard, and merge gate |
-| `codex/season-playoffs-preseason` | `v1.5.3` | merged locked state | executor, frontend | no critical-path branch | keep season continuity without changing controller math |
+| `codex/season-playoffs-preseason` | `v1.5.3` | merged locked state | executor, backend reporting | no critical-path branch | keep season continuity without changing controller math |
 | `codex/season-wnba-bootstrap` | `v1.5.x` | safety workflow already merged | executor, playoffs | no critical-path branch | secondary research lane |
 
 ## Stable Risks

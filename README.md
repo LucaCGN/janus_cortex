@@ -20,6 +20,8 @@ Live game execution is owned by the service-owned live strategy worker exposed t
 - Current live posture: live money and live LLM dispatch remain blocked until runtime cost/shutdown controls, ledger/reportability, and direct CLOB inventory gates are safe.
 - Current API posture: the local Janus API may be intentionally down after the LLM cost incident; restore it only after a direct CLOB risk snapshot when integrity, passive capture, or same-day readiness work requires it.
 - Current priority: immediate issue bootstrap `#17-#29` now has tested foundations on `main`; next work should deepen integration, calibration, and live-readiness gates rather than recreate the seed backlog.
+- Current remote rule: every committed change must be pulled/rebased as needed and pushed to GitHub promptly because GitHub is the operator's current remote interaction surface.
+- Current frontend posture: the tracked frontend module is deprecated and removed. Backend API endpoints, `codex_tool\`, repo docs, GitHub issues, runtime handoffs, and Obsidian are the operating surfaces.
 
 ## Scope Definitions
 - `Phase 0`: stabilize Janus as a safe backend-first trading runtime. This includes direct CLOB authority, current-event inventory, LLM cost/shutdown safety, account ledger truth, event review bundles, manual/Codex intervention reconciliation, source-of-truth docs, Obsidian memory, and GitHub issue-backed CI/CD.
@@ -63,9 +65,16 @@ Crypto, geopolitics, economics, elections, culture, and global portfolio managem
 
 ## Key Planning Docs
 - `app/docs/planning/current/final_system/README.md`
+- `app/docs/planning/current/final_system/source_of_truth_map.md`
+- `app/docs/planning/current/final_system/market_scope_registry.md`
 - `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
 - `app/docs/planning/current/final_system/automation/master_controller_contract.md`
+- `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+- `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
 - `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+- `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+- `app/docs/planning/current/final_system/automation/backlog_layers.md`
+- `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
 - `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
 - `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
 - `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
@@ -116,4 +125,4 @@ Common commands:
 - Use `powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 status` at the start of a session when preparing parallel work.
 - Basketball-core safety, CLOB truth, ledger attribution, and event review tooling come before broader crypto/geopolitics strategy branches.
 - Strategy development is active but must flow through tested families, structured StrategyPlanJSON, direct CLOB reconciliation, risk sleeves, and replay/live-validation evidence.
-- The frontend is not the production operating surface. Backend API endpoints, `codex_tool\`, tracked docs, and runtime handoffs are the operating interface.
+- The removed frontend module must not be reintroduced without an explicit issue, source-of-truth update, and operator approval. Backend API endpoints, `codex_tool\`, tracked docs, GitHub issues, runtime handoffs, and Obsidian are the operating interface.

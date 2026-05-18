@@ -12,7 +12,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$localRoot = "C:\code-personal\janus-local\janus_cortex"
+$localRoot = if ($env:JANUS_LOCAL_ROOT) { $env:JANUS_LOCAL_ROOT } else { Join-Path $repoRoot "local" }
 $defaultSourceDir = Join-Path $localRoot ("archives\output\nba_analysis\{0}\{1}\{2}\backtests" -f $Season, $SeasonPhase, $AnalysisVersion)
 $defaultRenderDir = Join-Path $defaultSourceDir "quicklook_png"
 Push-Location $repoRoot

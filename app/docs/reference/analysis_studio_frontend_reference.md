@@ -1,25 +1,27 @@
 # Analysis Studio Frontend Reference
 
-## Purpose
-Define the stable architecture for the permanent analysis frontend.
+Status: superseded 2026-05-17
 
-This document is reference, not planning. It describes what the frontend is allowed to depend on and which runtime choices are currently true.
+> The tracked `frontend/` module has been removed. Keep this document as historical context for the old analysis studio frontend. Current operation is backend-first through API endpoints, `codex_tool`, repo docs, GitHub issues, runtime handoffs, and Obsidian.
+
+## Purpose
+Define the historical architecture for the removed analysis frontend.
+
+This document is historical reference, not current planning. It describes what the removed frontend depended on.
 
 ## Current Architecture Decision
-- the permanent frontend lives under `frontend/analysis_studio/*`
-- the first implementation uses the existing FastAPI runtime and serves static assets directly
+- the former frontend lived under `frontend/analysis_studio/*`
+- static assets are no longer served from the repo
 - `F1` does not introduce a Node or separate JS build toolchain because the repository does not currently own one
-- the frontend consumes the analysis consumer snapshot contract instead of loading raw artifact JSONs independently
+- the former frontend consumed the analysis consumer snapshot contract instead of loading raw artifact JSONs independently
 - the default studio page now also consumes a dedicated unified benchmark dashboard payload for shared lane comparison
 - the benchmark dashboard now treats replay as the realism baseline and separates standard backtest, replay result, and live observed views explicitly
 - local operator run control also stays in the existing FastAPI runtime for now, but it is limited to whitelisted commands and local workspace paths
-- `F3a` adds a mart-backed game explorer through thin read-only API routes, so the frontend still does not parse analysis artifacts directly
+- `F3a` added a mart-backed game explorer through thin read-only API routes, so the frontend did not parse analysis artifacts directly
 - `F4a` adds a read-only family comparison surface, and the studio now consumes a separate backtest detail contract for that view
-- `F4b` repurposes the main `/analysis-studio` page into the benchmark-control dashboard while keeping the bounded detail APIs available
+- `F4b` repurposed the main `/analysis-studio` page into the benchmark-control dashboard while keeping the bounded detail APIs available
 
-## Stable Read Surface
-- page route:
-  - `GET /analysis-studio`
+## Remaining Backend Read Surface
 - unified dashboard route:
   - `GET /v1/analysis/studio/benchmark-dashboard`
 - read-only snapshot route:
@@ -45,8 +47,8 @@ Query parameters for the snapshot route align with `AnalysisConsumerRequest`:
 - `backtest_experiment_id`
 - `output_root`
 
-## Dependency Rules
-The frontend should read:
+## Historical Dependency Rules
+The former frontend read:
 - `build_unified_benchmark_dashboard`
 - `load_analysis_consumer_snapshot`
 - `AnalysisConsumerRequest`
@@ -56,7 +58,7 @@ The frontend should read:
 - the studio game explorer routes for finished-game profile and state-panel inspection
 - the studio backtest comparison routes for family index and bounded detail reads
 
-The frontend should not read:
+The former frontend was not allowed to read:
 - shared replay, ML, or LLM artifacts directly from the browser
 - raw ingest tables
 - report, backtest, or model JSON files directly
@@ -73,7 +75,7 @@ The frontend should not read:
   - `train_analysis_baselines`
 - studio-launched runs write under `JANUS_LOCAL_ROOT\archives\output\nba_analysis_studio_runs\...`
 - validation history is discovered from `JANUS_LOCAL_ROOT\archives\output\nba_analysis_validation\...`
-- available analysis versions are resolved from the dynamic default analysis root, not hard-coded into the frontend
+- available analysis versions were resolved from the dynamic default analysis root, not hard-coded into the frontend
 
 ## Current Explorer Rules
 - the game explorer is read-only and bounded
@@ -82,14 +84,11 @@ The frontend should not read:
 - the backend may read CSV or parquet artifacts, but the browser only depends on the normalized route payloads
 
 ## Current Module Layout
-- `frontend/analysis_studio/index.html`
-- `frontend/analysis_studio/static/analysis_studio.css`
-- `frontend/analysis_studio/static/analysis_studio.js`
 - `app/api/routers/analysis_studio.py`
 
 ## Completed And Deferred Frontend Subphases
-- completed on the current branch:
-  - `F1` scaffolded the permanent frontend module
+- historical completed subphases:
+  - `F1` scaffolded the former frontend module
   - `F2` added run control, validation visibility, and local operator state
   - `F3a` added mart-backed game explorer routes plus frontend game index/detail panels
   - `F4a` added read-only family comparison routes and studio views
@@ -101,4 +100,4 @@ The frontend should not read:
   - `F5` operator hardening after the comparison surface settles
 
 ## Constraint
-If a future frontend branch needs a separate JS toolchain, that decision should be explicit and documented as a branch-level architecture change rather than introduced opportunistically.
+If a future frontend branch is reintroduced, that decision must be explicit, issue-backed, and documented as a source-of-truth architecture change rather than introduced opportunistically.

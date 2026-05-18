@@ -10,7 +10,7 @@ This contract is additive:
 
 ## Source-Of-Truth Order
 1. the replay lane owns the first shared replay contract:
-   - [replay_contract_current.md](</C:/code-personal/janus-local/janus_cortex/shared/benchmark_contract/replay_contract_current.md>)
+   - `JANUS_LOCAL_ROOT\shared\benchmark_contract\replay_contract_current.md`
 2. the locked controller state remains:
    - [current_analysis_system_state.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/current_analysis_system_state.md)
 3. this document defines the project-wide comparison layer above those published artifacts

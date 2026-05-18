@@ -62,7 +62,7 @@ The artifact should include:
 - Live-safety gate summary.
 - Next recommended issue-backed task.
 
-For repeated no-change passes, follow `master_controller_contract.md` no-change compression. Do not emit a fresh artifact every 10 minutes unless a material state change occurred or at least 60 minutes passed since the last artifact.
+For repeated no-change passes, follow `master_controller_contract.md` no-change compression. Do not emit a fresh artifact every recurring pass unless a material state change occurred or at least 60 minutes passed since the last artifact.
 
 ## Failure Handling
 

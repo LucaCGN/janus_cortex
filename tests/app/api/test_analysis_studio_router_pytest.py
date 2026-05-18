@@ -1569,31 +1569,12 @@ def _write_shared_benchmark_fixture(shared_root: Path) -> None:
     )
 
 
-def test_analysis_studio_index_route_serves_html_pytest() -> None:
+def test_analysis_studio_frontend_routes_are_removed_pytest() -> None:
     client = TestClient(create_app())
     response = client.get("/analysis-studio")
-    assert response.status_code == 200
-    assert "Janus Cortex Unified Benchmark Dashboard" in response.text
-    assert "One comparison layer for the locked baselines" in response.text
-    assert "Who can compare globally right now" in response.text
-    assert "Current promoted stack" in response.text
-    assert "Today’s live slate posture" in response.text
-    assert "/analysis-studio/static/analysis_studio.js" in response.text
-
-
-def test_analysis_studio_static_asset_route_serves_javascript_pytest() -> None:
-    client = TestClient(create_app())
-    response = client.get("/analysis-studio/static/analysis_studio.js")
-    assert response.status_code == 200
-    assert "loadUnifiedBenchmarkDashboard" in response.text
-    assert "renderLaneStatuses" in response.text
-    assert "renderLaneRankings" in response.text
-    assert "renderCompareReadyRanking" in response.text
-    assert "renderMergeRecommendations" in response.text
-    assert "renderResultModes" in response.text
-    assert "renderDailyLiveValidation" in response.text
-    assert "renderPromotedStack" in response.text
-    assert "Live state" in response.text
+    assert response.status_code == 404
+    static_response = client.get("/analysis-studio/static/analysis_studio.js")
+    assert static_response.status_code == 404
 
 
 def test_analysis_studio_benchmark_dashboard_route_loads_shared_snapshot_pytest(tmp_path: Path) -> None:
@@ -2013,3 +1994,4 @@ def test_analysis_studio_run_route_queues_record_and_lists_it_pytest(tmp_path: P
     detail_response = client.get(f"/v1/analysis/studio/runs/{created['run_id']}")
     assert detail_response.status_code == 200
     assert detail_response.json()["pid"] == 4321
+

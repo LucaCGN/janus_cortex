@@ -1,7 +1,11 @@
 # Branch Plan: `codex/frontend-analysis-portfolio-viz`
 
+Status: superseded 2026-05-17
+
+> Superseded by the backend-first final-system direction. The tracked `frontend/` module was removed; future visualization/UI work requires a new GitHub issue, source-of-truth update, and operator approval.
+
 ## Role
-Read-only visualization lane for the frozen benchmark, robustness, and controller outputs exposed through the existing analysis studio surface.
+Historical read-only visualization lane for the frozen benchmark, robustness, and controller outputs exposed through the previous analysis studio surface.
 
 ## Target Milestone
 - `v1.5.2`
@@ -11,9 +15,6 @@ Read-only visualization lane for the frozen benchmark, robustness, and controlle
 - stable consumer adapters and existing studio routes already on `main`
 
 ## Owns
-- `frontend/analysis_studio/index.html`
-- `frontend/analysis_studio/static/analysis_studio.js`
-- `frontend/analysis_studio/static/analysis_studio.css`
 - `app/data/pipelines/daily/nba/analysis/consumer_adapters.py`
 - read-only screens for portfolio rankings
 - robustness tables and distributions
@@ -50,7 +51,7 @@ Deliverables:
 
 ## Merge Gate
 - read-only routes work against the consumer adapter layer
-- no benchmark math is reimplemented in the frontend
+- no benchmark math is reimplemented in any future visualization surface
 - the UI reflects frozen artifact contracts rather than bespoke transforms
 - the UI names the actual promoted building blocks and master-router family from the benchmark bundle
 

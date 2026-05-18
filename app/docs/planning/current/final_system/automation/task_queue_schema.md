@@ -16,6 +16,10 @@ This is a schema contract, not yet an implementation.
 | `github_issue` | Preferred | GitHub issue URL or number once created. |
 | `priority` | Yes | `P0`, `P1`, `P2`, `P3`. |
 | `lane` | Yes | Work lane such as `runtime-cost`, `event-review`, `wnba-readiness`. |
+| `market_domain` | Yes | Market/domain scope such as `sports`, `global-portfolio`, `crypto`. |
+| `market_subdomain` | Preferred | More specific scope such as `basketball/nba`, `basketball/wnba`, `btc-up-down`. |
+| `event_lifecycle` | Preferred | `pregame`, `live`, `postgame`, `settlement`, `monitor`, `research`, `backtest`. |
+| `maturity_stage` | Yes | `idea`, `research`, `shadow`, `min-size-test`, `live-limited`, `active`, `scaled`. |
 | `status` | Yes | `draft`, `ready`, `claimed`, `in_progress`, `blocked`, `review`, `done`. |
 | `owner_agent` | Yes | Agent persona responsible for next action. |
 | `write_scope` | Yes | Files/modules the worker may edit. |
@@ -40,6 +44,8 @@ This is a schema contract, not yet an implementation.
 | `execution-ledger` | Direct CLOB order/fill linkage, lifecycle attribution. |
 | `wnba-readiness` | WNBA passive to minimal live readiness. |
 | `docs-obsidian-github` | Source-of-truth docs, Obsidian, issues, automation health. |
+| `global-portfolio` | Read-only portfolio scan, target/rebuy proposals, concentration review. |
+| `future-domain` | Crypto, geopolitics, economics, culture incubation. |
 
 ## Resource Locks
 
@@ -52,6 +58,7 @@ Every active task should claim locks:
 | `event` | `nba-cle-det-2026-05-13` |
 | `service` | Janus API, live strategy worker |
 | `domain` | NBA, WNBA, crypto |
+| `market` | `sports/basketball/nba`, `global-portfolio`, `crypto/up-down-options` |
 | `runtime` | `local/shared/artifacts/llm-runtime/YYYY-MM-DD` |
 
 No two coding agents should write the same file/module lock unless one is explicitly reviewing the other.
@@ -69,6 +76,14 @@ No two coding agents should write the same file/module lock unless one is explic
 | `postgame-reviewer` | Event review, performance, missed opportunities. |
 | `wnba-data-agent` | WNBA data/replay/readiness. |
 | `docs-memory-agent` | Repo docs, Obsidian, issue hygiene. |
+| `issue-backlog-manager` | GitHub issue taxonomy, labels, planned/sprint backlog. |
+| `system-architect-spec-enforcer` | Architecture, service boundaries, source-of-truth contracts. |
+| `basketball-intelligence-agent` | Basketball scenario/regime/PBP/quarter/microstructure logic. |
+| `llm-orchestration-agent` | Model routing, cost controls, prompt contracts, Codex fallback. |
+| `risk-ledger-agent` | Bankroll sleeves, exposure, inventory, lifecycle attribution. |
+| `profile-research-agent` | Winning profile studies and caveated implications. |
+| `future-domain-research-agent` | New market/domain incubation. |
+| `global-portfolio-agent` | Future read-only global Polymarket portfolio review. |
 
 ## Initial Queue Storage
 

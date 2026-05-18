@@ -5,7 +5,13 @@
 2. read [app/docs/planning/README.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/README.md)
 3. read the current branch strategy and next-steps docs before creating or reusing a branch
 4. read the specific branch plan under `app/docs/planning/current/branches/` before starting implementation
-5. confirm whether the task belongs to `analysis`, `data`, `frontend`, `ops`, `season`, or `docs`
+5. confirm whether the task belongs to `analysis`, `data`, `ops`, `season`, `docs`, or `final-system`
+
+## Remote Sync Rules
+- GitHub is the operator's current remote control surface.
+- Before committing, fetch remote state and avoid committing on a stale local branch.
+- After every commit, pull/rebase or fast-forward if needed, then push the committed branch.
+- If push or pull fails, stop and report the blocker instead of continuing local-only.
 
 ## Database Safety Ladder
 - always validate data-shape logic locally before touching shared databases
@@ -43,9 +49,9 @@
 - require visual and tabular feedback for entry, exit, MFE, MAE, and hold-time behavior before promotion
 
 ## Frontend Rules
-- permanent UI work belongs in `frontend/analysis_studio/`, not in `app/sandboxes`
-- frontend branches consume read-only contracts and stable artifacts
-- do not let UI needs force direct reads from raw ingest tables
+- The tracked frontend module is deprecated and removed.
+- Do not create new `frontend/*` work without an explicit GitHub issue, source-of-truth update, and operator approval.
+- Current operating surfaces are backend API endpoints, `codex_tool`, repo docs, GitHub issues, runtime handoffs, and Obsidian.
 
 ## Branch Hygiene Rules
 - one branch, one narrow write scope
@@ -58,3 +64,4 @@
 - active branch planning lives under `app/docs/planning/current`
 - historical execution rationale is listed under `app/docs/planning/archive`
 - local, non-committed branch tracking lives under `JANUS_LOCAL_ROOT\tracks\planning`
+- `JANUS_LOCAL_ROOT` defaults to the repo-local `local\` folder. Do not use legacy external local-root paths for current work.

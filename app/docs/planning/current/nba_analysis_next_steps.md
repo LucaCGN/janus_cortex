@@ -154,6 +154,6 @@ Target outputs:
 - execution changes should version the execution profile (`v1`, `v2`, `v3`) instead of renaming the controller core
 - tonight's acceptance gate is operational:
   - live runner stays alive
-  - orders/events appear on `/live-control`
+  - orders/events are visible through backend API/tooling evidence
   - restart/resume does not duplicate entries
   - fill/slippage data is captured for every attempted trade

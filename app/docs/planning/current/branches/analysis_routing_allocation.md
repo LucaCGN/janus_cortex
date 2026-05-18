@@ -23,7 +23,7 @@ Critical-path analysis branch for deterministic portfolio routing, overlap contr
 ## Does Not Own
 - new raw data products
 - LLM gating
-- frontend rendering
+- frontend rendering or UI work
 - schema or ingest changes
 - team-specific hard-coded rules
 
@@ -78,4 +78,4 @@ Deliverables:
 ## Handoff
 Next branch:
 - `codex/analysis-context-models`
-- or `codex/frontend-analysis-portfolio-viz` once the promoted allocation surface is frozen
+- or backend reporting/Obsidian synthesis once the promoted allocation surface is frozen

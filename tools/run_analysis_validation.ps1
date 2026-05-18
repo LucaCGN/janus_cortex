@@ -16,7 +16,7 @@ if ($null -ne (Get-Variable -Name PSNativeCommandUseErrorActionPreference -Error
 }
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$DefaultLocalRoot = 'C:\code-personal\janus-local\janus_cortex'
+$DefaultLocalRoot = Join-Path $RepoRoot 'local'
 $LocalRoot = if ($env:JANUS_LOCAL_ROOT) { $env:JANUS_LOCAL_ROOT } else { $DefaultLocalRoot }
 
 if ([string]::IsNullOrWhiteSpace($OutputRoot)) {

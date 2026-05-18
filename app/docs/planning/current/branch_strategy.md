@@ -12,16 +12,16 @@
 | --- | --- | --- | --- |
 | Analysis core | `codex/analysis-...` | `app/data/pipelines/daily/nba/analysis/*`, analysis tests, analysis docs | offline mart, reports, backtests, models, strategy refinement, sequential portfolio benchmarking |
 | Data platform | `codex/data-...` | `app/data/databases/*`, `app/data/pipelines/daily/*`, data tests, schema docs | migrations, sync pipelines, dev DB safety, season-scope ingestion |
-| Frontend | `codex/frontend-...` | future `frontend/*`, consumer-facing contracts, frontend docs | permanent UI only, not sandboxes |
 | Ops/runtime | `codex/ops-...` | automation scripts, validation jobs, operator runbooks | daily refresh hardening, validation orchestration, monitoring |
 | Season expansion | `codex/season-...` | playoff/preseason/WNBA support across data, analysis, and docs | cross-cuts multiple subsystems after upstream safety gates |
 | Documentation | `codex/docs-...` | planning docs, guide docs, repo hygiene docs | use only for doc-only changes |
+| Final system | `codex/final-system-...` | `app/docs/planning/current/final_system/*`, Obsidian sync notes, controller governance docs | source-of-truth, automation, issue taxonomy, persona, and market-scope design |
 
 ## Recommended Repository Shape Going Forward
 - keep offline research logic under `app/data/pipelines/daily/nba/analysis/*`
-- keep sequential portfolio simulation under the analysis core lane rather than in frontend code
+- keep sequential portfolio simulation under the analysis core lane
 - keep read-only consumer adapters under a dedicated backend surface after `A8` approval
-- create the permanent frontend under `frontend/analysis_studio/`
+- do not recreate `frontend/*` without an explicit issue and operator approval
 - keep local-only branch registers, outputs, and active notes under `JANUS_LOCAL_ROOT`
 
 ## Parallel Work Method
@@ -32,7 +32,7 @@
 5. keep one branch focused on one category and one narrow write scope
 6. if two branches need the same file, split the work differently before coding
 7. merge one lane at a time back into `main`
-8. after merge, push `main`, remove the worktree, delete the branch, and archive any local-only notes or outputs
+8. after merge or direct commit, pull/rebase or fast-forward if needed, push the branch to GitHub, remove the worktree, delete the branch, and archive any local-only notes or outputs
 
 ## Integration Rule
 - avoid long-lived integration branches unless multiple already-finished lanes must be tested together
@@ -54,11 +54,9 @@
    - run second-round live testing with one bounded entries-enabled path per slate and all other candidates shadow-only
 2. `codex/analysis-ml-replay-expansion-nn`
    - expand regular-season replay-labeled samples and test ML/neural sidecars without execution authority
-3. `codex/frontend-analysis-portfolio-viz`
-   - review live/shadow route mix and portfolio diagnostics after the live-validation contract stabilizes
-4. `codex/season-playoffs-preseason`
+3. `codex/season-playoffs-preseason`
    - keep season-scope structures current for the remaining playoffs and preseason
-5. `codex/season-wnba-bootstrap`
+4. `codex/season-wnba-bootstrap`
    - prepare WNBA carry-over and offseason continuity work
 
 Detailed subphase plans live under:
@@ -70,3 +68,4 @@ Detailed subphase plans live under:
 - do not let the ML branch change live routing, budgets, or promotion buckets
 - do not let the live branch add neural models or broaden replay training samples
 - do not widen the entries-enabled set before replay plus live/shadow evidence justifies it
+- frontend branches listed in historical docs remain archive context only; they are not active work categories.

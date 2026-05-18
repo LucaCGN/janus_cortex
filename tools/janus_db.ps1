@@ -4,9 +4,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ($null -ne (Get-Variable -Name PSNativeCommandUseErrorActionPreference -ErrorAction SilentlyContinue)) {
+    $PSNativeCommandUseErrorActionPreference = $false
+}
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$DefaultLocalRoot = 'C:\code-personal\janus-local\janus_cortex'
+$DefaultLocalRoot = Join-Path $RepoRoot 'local'
 $LocalRoot = if ($env:JANUS_LOCAL_ROOT) { $env:JANUS_LOCAL_ROOT } else { $DefaultLocalRoot }
 $ReferenceDir = Join-Path $LocalRoot 'tracks\reference\db'
 $EnvFile = Join-Path $ReferenceDir 'disposable_postgres.env'
@@ -41,7 +44,15 @@ function Write-DisposableEnvFile {
 }
 
 function Get-ContainerStatus {
-    $status = docker ps -a --filter "name=^/$ContainerName$" --format "{{.Status}}" 2>$null
+    try {
+        $status = docker ps -a --filter "name=^/$ContainerName$" --format "{{.Status}}" 2>$null
+    }
+    catch {
+        return 'docker_unavailable'
+    }
+    if ($LASTEXITCODE -ne 0) {
+        return 'docker_unavailable'
+    }
     if (-not $status) {
         return 'missing'
     }

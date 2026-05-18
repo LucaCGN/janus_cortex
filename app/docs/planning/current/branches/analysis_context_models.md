@@ -19,7 +19,7 @@ Analysis branch for the first statistical models built around the promoted deter
 ## Does Not Own
 - live execution
 - free-form LLM routing
-- frontend charting
+- frontend charting or UI work
 - player-level enrichment beyond what already exists in the mart
 
 ## Subphases
@@ -54,5 +54,5 @@ Objective:
 
 ## Handoff
 Next branch:
-- `codex/frontend-analysis-portfolio-viz`
-- or a later structured-tag lane if statistical baselines expose a real gap that text context can plausibly fill
+- later structured-tag lane if statistical baselines expose a real gap that text context can plausibly fill
+- backend reporting or Obsidian synthesis issue if human-readable review output is needed

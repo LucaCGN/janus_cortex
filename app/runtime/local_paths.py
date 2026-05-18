@@ -5,7 +5,6 @@ from pathlib import Path
 
 
 DEFAULT_LOCAL_ROOT_ENV_VAR = "JANUS_LOCAL_ROOT"
-LEGACY_WINDOWS_LOCAL_ROOT = Path(r"C:\code-personal\janus-local\janus_cortex")
 
 
 def repo_root() -> Path:
@@ -37,7 +36,6 @@ def resolve_output_root() -> Path:
 
 __all__ = [
     "DEFAULT_LOCAL_ROOT_ENV_VAR",
-    "LEGACY_WINDOWS_LOCAL_ROOT",
     "default_local_root",
     "repo_root",
     "resolve_live_tracks_root",

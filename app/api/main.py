@@ -6,11 +6,8 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import RequestContextMiddleware, install_exception_handlers
-from app.api.routers.analysis_studio import ANALYSIS_STUDIO_STATIC_ROOT
-from app.api.routers.nba_live import LIVE_CONTROL_STATIC_ROOT
 from app.api.routers import (
     analysis_studio_router,
     catalog_router,
@@ -27,15 +24,6 @@ from app.modules.agentic.live_strategy_worker import get_live_strategy_worker
 
 logger = logging.getLogger(__name__)
 API_VERSION = "1.1.0"
-
-
-class NoCacheStaticFiles(StaticFiles):
-    def file_response(self, *args: Any, **kwargs: Any):  # type: ignore[override]
-        response = super().file_response(*args, **kwargs)
-        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-        return response
 
 
 @asynccontextmanager
@@ -59,19 +47,6 @@ def create_app() -> FastAPI:
 
     app.add_middleware(RequestContextMiddleware)
     install_exception_handlers(app)
-
-    if ANALYSIS_STUDIO_STATIC_ROOT.exists():
-        app.mount(
-            "/analysis-studio/static",
-            NoCacheStaticFiles(directory=str(ANALYSIS_STUDIO_STATIC_ROOT)),
-            name="analysis-studio-static",
-        )
-    if LIVE_CONTROL_STATIC_ROOT.exists():
-        app.mount(
-            "/live-control/static",
-            NoCacheStaticFiles(directory=str(LIVE_CONTROL_STATIC_ROOT)),
-            name="live-control-static",
-        )
 
     app.include_router(analysis_studio_router)
     app.include_router(system_registry_router)

@@ -1,7 +1,7 @@
 ﻿# Janus Master Controller Automation Contract
 
-Status: initial draft
-Cadence target: every 10 minutes
+Status: draft control contract
+Cadence target: every 5 minutes after reconciliation; 10 minutes is acceptable during bootstrap hardening
 Mode: one stable controller automation, mutable repo and Obsidian instructions
 Current automation id: `janus-master-controller`
 
@@ -14,6 +14,12 @@ The automation itself should remain stable. Behavior changes should come from ed
 ## Core Principle
 
 Use Codex for reasoning, coding, debugging, review, and orchestration. Do not use Codex chat memory as the system memory.
+
+## Activation Gate
+
+The recurring controller must remain paused until the operator manually reconciles today's missing event data in the Codex app and the runtime handoffs are refreshed.
+
+The controller may still be used manually for docs/source-of-truth cleanup while paused, but it should not run as recurring automation until the reconciliation gate is cleared.
 
 ## Control Actors
 
@@ -30,18 +36,41 @@ All actor actions must be attributable in event inventory and postgame review.
 Every controller pass must read or inspect:
 
 1. `app/docs/planning/current/final_system/README.md`
-2. `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
-3. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
-4. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-5. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
-6. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
-7. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-8. `local/shared/handoffs/daily-live-validation/status.md`
-9. `local/shared/handoffs/development-agent/status.md`
-10. Latest relevant daily reports.
-11. GitHub issue state once the issue seed is created.
-12. Obsidian index notes once populated.
-13. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+2. `app/docs/planning/current/final_system/source_of_truth_map.md`
+3. `app/docs/planning/current/final_system/market_scope_registry.md`
+4. `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
+5. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
+6. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+7. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+8. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+9. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+10. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+11. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+12. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+13. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+14. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+15. `local/shared/handoffs/daily-live-validation/status.md`
+16. `local/shared/handoffs/development-agent/status.md`
+17. Latest relevant daily reports.
+18. GitHub issue state once the issue seed is created.
+19. Obsidian index notes once populated.
+20. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+
+## Axis-First Decision Model
+
+The controller must classify work across these axes before choosing a persona:
+
+| Axis | Examples |
+|---|---|
+| `market_domain` | `sports`, `global-portfolio`, `crypto`, `geopolitics`, `economics` |
+| `market_subdomain` | `basketball/nba`, `basketball/wnba`, `btc-up-down` |
+| `event_lifecycle` | `pregame`, `live`, `postgame`, `settlement`, `monitor`, `research` |
+| `janus_control_level` | `janus-controlled`, `codex-assisted`, `operator-manual`, `watch-only` |
+| `system_work_mode` | `monitoring`, `planning`, `review`, `development`, `docs-sync`, `issue-triage`, `no-op` |
+| `maturity_stage` | `idea`, `research`, `shadow`, `min-size-test`, `live-limited`, `active`, `scaled` |
+| `risk_state` | `protect-only`, `base-scalp`, `realized-profit-expansion`, `tail-sleeve` |
+
+Basketball-specific lifecycle terms such as `pregame`, `live`, and `postgame` must not be treated as universal modes for every market domain.
 
 ## Timeframe Decision Tree
 
@@ -54,6 +83,8 @@ The controller should derive America/Sao_Paulo time and evaluate:
 5. Is a development task already in progress or blocked?
 6. Are there unresolved safety issues that block live testing?
 7. Are repo docs, Obsidian, or GitHub issue state stale enough to need housekeeping?
+
+The detailed routing rules live in `automation/controller_decision_tree.md`.
 
 ## Operating Modes
 
@@ -102,6 +133,8 @@ Each task should state:
 - Live-order impact.
 - Acceptance criteria.
 
+After any commit, the acting persona must pull/rebase or fast-forward if needed and push the branch to GitHub. GitHub is the operator's current remote interaction surface.
+
 ## Controller Outputs
 
 Each controller pass should update or append:
@@ -137,7 +170,7 @@ Material changes include:
 The actual recurring automation prompt should be short:
 
 ```text
-Run one Janus master controller pass from the repo root. Read app/docs/planning/current/final_system/automation/master_controller_contract.md and follow it as the mutable source of truth. Do not rely on chat memory when repo/runtime/GitHub/Obsidian state is available. Stop after one bounded pass and update the appropriate handoff/status files.
+Run one Janus master controller pass from the repo root. Read app/docs/planning/current/final_system/source_of_truth_map.md and app/docs/planning/current/final_system/automation/master_controller_contract.md, then follow the referenced mutable source-of-truth docs. Do not rely on chat memory when repo/runtime/GitHub/Obsidian state is available. Stop after one bounded pass and update the appropriate artifacts, reports, handoffs, issues, or notes only when state materially changes.
 ```
 
 All detailed behavior belongs in repo docs, not in the immutable automation prompt.

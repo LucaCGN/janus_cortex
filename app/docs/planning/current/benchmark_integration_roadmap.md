@@ -16,15 +16,13 @@ This lane owns:
 
 ## Current State On April 24, 2026
 - replay-engine lane has published the first shared replay contract:
-  - [replay_contract_current.md](</C:/code-personal/janus-local/janus_cortex/shared/benchmark_contract/replay_contract_current.md>)
+  - `JANUS_LOCAL_ROOT\shared\benchmark_contract\replay_contract_current.md`
 - replay is now the realism baseline for global comparison
 - standard backtest counts remain visible, but they overstate executable trade counts
 - `signal_stale` is the dominant current divergence cause
 - `quarter_open_reprice` is the clearest promising new higher-frequency family from the replay lane
 - `micro_momentum_continuation` is now in the same replay-backed compare-ready HF tier
-- the benchmark-control dashboard exists at:
-  - `/analysis-studio`
-- the normalized payload exists at:
+- the normalized benchmark-control payload exists at:
   - `/v1/analysis/studio/benchmark-dashboard`
 - the shared export now publishes:
   - unified dashboard JSON and markdown
@@ -156,7 +154,6 @@ Current operator-promoted stack:
 ## Deliverables From This Lane
 - [unified_benchmark_contract.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/unified_benchmark_contract.md)
 - [benchmark_compare_ready_criteria.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/benchmark_compare_ready_criteria.md)
-- `/analysis-studio`
 - `/v1/analysis/studio/benchmark-dashboard`
 - `tools/export_benchmark_dashboard.py`
 - shared coordination artifacts under:

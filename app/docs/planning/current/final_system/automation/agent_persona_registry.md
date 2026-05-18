@@ -1,0 +1,84 @@
+# Janus Agent Persona Registry
+
+Status: draft control contract
+Created: 2026-05-17
+
+## Purpose
+
+Define the personas the master controller can select, what each persona may do, and what evidence it must leave behind.
+
+The controller should choose personas from market/scope axes, not from chat memory.
+
+## Persona Table
+
+| Persona | Primary Scope | Allowed Work | Not Allowed |
+|---|---|---|---|
+| `master-controller` | All scopes | Classify state, choose persona, enforce locks, no-op, route work. | Broad implementation, live orders, undocumented scope changes. |
+| `docs-memory-agent` | Repo docs and Obsidian | Sync source-of-truth maps, indexes, curated notes, logs. | Treat Obsidian as live truth. |
+| `issue-backlog-manager` | GitHub and backlog docs | Create/triage issues, labels, planned/sprint backlog, acceptance criteria. | Implement code without a scoped issue. |
+| `system-architect-spec-enforcer` | Architecture/spec governance | Maintain service boundaries, source-of-truth contracts, domain registry. | Rewrite runtime behavior without explicit issue/task. |
+| `development-agent` | Scoped implementation | Implement issue-backed code/docs/tests in owned scope. | Merge to main alone, place orders, modify unrelated files. |
+| `development-end-phase` | Reconciliation/readiness | Test, reconcile branch/main state, update readiness handoffs. | Start broad new features during readiness pass. |
+| `pregame-integrity` | Event readiness | Check API, CLOB, plans, data freshness, worker readiness, gates. | Research narrative strategy before integrity status. |
+| `pregame-planner` | Event planning | Build context, watchpoints, candidate StrategyPlanJSON, no orders. | Define arbitrary sizing or bypass gates. |
+| `live-monitor-analyst` | Active events | Monitor runtime, CLOB truth, inventory, worker behavior, urgent patches. | Broad backlog development during live event. |
+| `postgame-reviewer` | Closed events | Build review, attribution, missed windows, development handoff. | Claim profitability without direct CLOB/ledger evidence. |
+| `wnba-data-agent` | WNBA portability | Passive capture, replay, fillability, calibration, minimal readiness evidence. | Treat NBA thresholds as automatically valid for WNBA. |
+| `basketball-intelligence-agent` | Basketball models | Scenario/regime logic, PBP/quarter features, microstructure, replay ideas. | Own global portfolio or crypto logic. |
+| `llm-orchestration-agent` | LLM/Codex fallback | Model routing, cost controls, trigger policy, prompt contracts, usefulness metrics. | Bypass Janus validators for execution. |
+| `risk-ledger-agent` | Risk and inventory | Profit-ratcheted ledgers, exposure caps, lifecycle proof, tail-risk rules. | Unlock risk from unrealized profit. |
+| `profile-research-agent` | External profile studies | Study winning profiles, caveats, market archetypes, implications. | Treat profile success as copyable proof. |
+| `future-domain-research-agent` | New markets | Crypto/geopolitics/economics concept research and incubation specs. | Promote a domain directly to live trading. |
+| `global-portfolio-agent` | Future global portfolio | Read-only account scan, target/rebuy proposals, concentration review. | Execute non-Janus positions without separate policy. |
+
+## Persona Selection Inputs
+
+The controller should select a persona from:
+
+- `market_domain`
+- `market_subdomain`
+- `event_lifecycle`
+- `janus_control_level`
+- `system_work_mode`
+- `maturity_stage`
+- `risk_state`
+- active GitHub issue state
+- runtime readiness state
+- active locks and running agents
+
+## Persona Output Contract
+
+Every material persona pass must produce at least one of:
+
+| Output | When Required |
+|---|---|
+| Runtime artifact | Machine-readable evidence, lock state, review bundle, queue snapshot. |
+| Dated report | Postgame, development, integrity, or planning review. |
+| Handoff update | Current status, blockers, next action, ownership. |
+| GitHub issue update | Durable task state changed. |
+| Obsidian update | Curated memory changed. |
+
+For docs-only passes, avoid runtime noise unless the docs materially affect controller behavior.
+
+## GitHub Sync Responsibility
+
+Any persona that creates a commit must make the branch visible on GitHub before considering its pass complete.
+
+| Persona | Sync Responsibility |
+|---|---|
+| `development-agent` | Commit scoped changes, then ensure remote push succeeds or report blocker. |
+| `development-end-phase` | Pull/rebase or fast-forward, verify tests/status, push `main` or the active branch. |
+| `docs-memory-agent` | For repo-doc changes, commit and push; for Obsidian-only changes, log that they are outside the repo. |
+| `issue-backlog-manager` | Keep GitHub issues/labels aligned with the taxonomy and link commits/issues where useful. |
+| `master-controller` | Detect unpushed local commits and route a sync task before treating work as remotely available. |
+
+## Authority Limits
+
+Persona authority is scoped. A persona can recommend outside its scope, but it cannot silently promote itself to another scope.
+
+Examples:
+
+- `profile-research-agent` can propose a crypto research issue, but cannot launch a crypto trading lane.
+- `live-monitor-analyst` can create a bug issue during a live game, but should not implement broad refactors.
+- `docs-memory-agent` can link a risk principle, but cannot change live risk authority.
+- `global-portfolio-agent` starts read-only until a separate execution policy exists.

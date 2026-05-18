@@ -16,7 +16,7 @@ Secondary offseason branch for keeping basketball research active through WNBA p
 
 ## Does Not Own
 - current regular-season NBA benchmark critical path
-- frontend work
+- frontend/UI work
 - immediate algorithm benchmarking delivery
 
 ## Subphases

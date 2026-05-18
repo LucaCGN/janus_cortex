@@ -12,11 +12,13 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+$script:RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+
 function Get-DefaultLocalRoot {
     if ($env:JANUS_LOCAL_ROOT) {
         return $env:JANUS_LOCAL_ROOT
     }
-    return "C:\code-personal\janus-local\janus_cortex"
+    return (Join-Path $script:RepoRoot "local")
 }
 
 function Get-ResolvedLocalRoot {
@@ -127,7 +129,7 @@ function Export-Stash {
     return @($patchPath, $statPath, $nameStatusPath, $commitPath)
 }
 
-$repoRoot = (Get-Location).Path
+$repoRoot = $script:RepoRoot
 $resolvedLocalRoot = Get-ResolvedLocalRoot -Candidate $LocalRoot
 $layout = Get-JanusLayout -Root $resolvedLocalRoot
 

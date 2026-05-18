@@ -15,7 +15,7 @@ Secondary season-continuity branch for keeping the data platform alive beyond th
 
 ## Does Not Own
 - the critical path to `v1.1.0`
-- frontend work
+- frontend/UI work
 - regular-season strategy benchmarking logic
 
 ## Subphases

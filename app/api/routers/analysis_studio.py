@@ -10,7 +10,6 @@ from typing import Any, Literal
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict
 
 from app.data.pipelines.daily.nba.analysis.consumer_adapters import (
@@ -34,9 +33,6 @@ from app.runtime.local_paths import resolve_local_root
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-ANALYSIS_STUDIO_ROOT = REPO_ROOT / "frontend" / "analysis_studio"
-ANALYSIS_STUDIO_STATIC_ROOT = ANALYSIS_STUDIO_ROOT / "static"
-ANALYSIS_STUDIO_INDEX_PATH = ANALYSIS_STUDIO_ROOT / "index.html"
 VALIDATION_ROOT_SUFFIX = Path("archives") / "output" / "nba_analysis_validation"
 STUDIO_RUN_ROOT_SUFFIX = Path("archives") / "output" / "nba_analysis_studio_runs"
 
@@ -605,13 +601,6 @@ def _create_run_record(request: AnalysisStudioRunRequest) -> dict[str, Any]:
     )
 
 
-@router.get("/analysis-studio", include_in_schema=False)
-def get_analysis_studio_index() -> FileResponse:
-    if not ANALYSIS_STUDIO_INDEX_PATH.exists():
-        raise HTTPException(status_code=404, detail="analysis studio frontend is not available")
-    return FileResponse(ANALYSIS_STUDIO_INDEX_PATH)
-
-
 @router.get("/v1/analysis/studio/snapshot")
 def get_analysis_studio_snapshot(
     season: str = Query(...),
@@ -891,9 +880,6 @@ def create_analysis_studio_run(request: AnalysisStudioRunRequest) -> dict[str, A
 
 
 __all__ = [
-    "ANALYSIS_STUDIO_INDEX_PATH",
-    "ANALYSIS_STUDIO_ROOT",
-    "ANALYSIS_STUDIO_STATIC_ROOT",
     "AnalysisStudioRunRequest",
     "router",
 ]

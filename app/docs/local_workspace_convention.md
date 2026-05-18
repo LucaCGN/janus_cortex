@@ -53,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 export-stash -N
 powershell -ExecutionPolicy Bypass -File .\tools\janus_local.ps1 clean-generated
 ```
 
-For the analysis CLI, default artifact output resolves to `JANUS_LOCAL_ROOT\archives\output\nba_analysis` when `JANUS_LOCAL_ROOT` is set, or to the standard Windows local root if it exists.
+For the analysis CLI, default artifact output resolves to `JANUS_LOCAL_ROOT\archives\output\nba_analysis` when `JANUS_LOCAL_ROOT` is set, or to `<repo>\local\archives\output\nba_analysis` when it is unset.
 
 Disposable Postgres env snapshots and DB reference notes should live under `JANUS_LOCAL_ROOT\tracks\reference\db`.
 
