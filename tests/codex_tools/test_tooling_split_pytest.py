@@ -16,6 +16,7 @@ import codex_tool.record_market_trade as legacy_market_trade_cli
 import codex_tool.record_orderbook_tick as legacy_orderbook_tick_cli
 import codex_tool.reconcile_orders as legacy_reconcile_orders_cli
 import codex_tool.reconcile_trades as legacy_reconcile_trades_cli
+import codex_tool.run_live_strategy_worker_tick as legacy_worker_tick_cli
 import codex_tool.start_watch_session as legacy_watch_session_cli
 import codex_tool.start_live_strategy_worker as legacy_worker_start_cli
 import codex_tool.stop_live_strategy_worker as legacy_worker_stop_cli
@@ -151,7 +152,7 @@ def test_legacy_janus_status_cli_delegates_to_target_namespace() -> None:
     assert legacy_status_cli.main_for_status is janus_status.main_for_status
 
 
-def test_janus_worker_namespace_wraps_status_start_and_stop(monkeypatch) -> None:
+def test_janus_worker_namespace_wraps_status_start_stop_and_tick(monkeypatch) -> None:
     calls: list[tuple[str, str, str, dict[str, object] | None]] = []
 
     def _api_json(
@@ -171,10 +172,15 @@ def test_janus_worker_namespace_wraps_status_start_and_stop(monkeypatch) -> None
         {"event_ids": ["event-1"], "execute": False},
     )
     stopped = janus_worker.stop_live_strategy_worker("http://janus.local")
+    ticked = janus_worker.run_live_strategy_worker_tick(
+        "http://janus.local",
+        {"event_ids": ["event-1"], "execute": False},
+    )
 
     assert status == {"ok": True, "path": "/v1/ops/live-strategy-worker/status"}
     assert started == {"ok": True, "path": "/v1/ops/live-strategy-worker/start"}
     assert stopped == {"ok": True, "path": "/v1/ops/live-strategy-worker/stop"}
+    assert ticked == {"ok": True, "path": "/v1/ops/live-strategy-worker/tick"}
     assert calls == [
         ("http://janus.local", "GET", "/v1/ops/live-strategy-worker/status", None),
         (
@@ -184,6 +190,12 @@ def test_janus_worker_namespace_wraps_status_start_and_stop(monkeypatch) -> None
             {"event_ids": ["event-1"], "execute": False},
         ),
         ("http://janus.local", "POST", "/v1/ops/live-strategy-worker/stop", {}),
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/ops/live-strategy-worker/tick",
+            {"event_ids": ["event-1"], "execute": False},
+        ),
     ]
 
 
@@ -225,6 +237,43 @@ def test_janus_worker_start_parser_preserves_legacy_start_payload_shape() -> Non
     }
 
 
+def test_janus_worker_tick_parser_preserves_legacy_tick_payload_shape() -> None:
+    parser = janus_worker.build_live_strategy_worker_tick_parser("tick")
+    args = parser.parse_args(
+        [
+            "--session-date",
+            "2026-05-18",
+            "--event-id",
+            "event-1",
+            "--account-id",
+            "account-1",
+            "--source",
+            "pytest",
+            "--execute",
+            "--live-money",
+            "--max-intents",
+            "1",
+            "--timeout-seconds",
+            "30",
+            "--no-auto-protect-manual-positions",
+        ]
+    )
+
+    assert janus_worker.build_live_strategy_worker_tick_payload(args) == {
+        "session_date": "2026-05-18",
+        "event_ids": ["event-1"],
+        "account_id": "account-1",
+        "source": "pytest",
+        "execute": True,
+        "live_money": True,
+        "enable_llm_dispatch": False,
+        "submit_candidate_strategy_plan": False,
+        "max_intents": 1,
+        "timeout_seconds": 30.0,
+        "auto_protect_manual_positions": False,
+    }
+
+
 def test_legacy_worker_clis_delegate_to_target_namespace() -> None:
     assert legacy_worker_status_cli.LIVE_STRATEGY_WORKER_STATUS_PATH == janus_worker.LIVE_STRATEGY_WORKER_STATUS_PATH
     assert (
@@ -239,6 +288,12 @@ def test_legacy_worker_clis_delegate_to_target_namespace() -> None:
     assert legacy_worker_start_cli.main_for_live_strategy_worker_start is janus_worker.main_for_live_strategy_worker_start
     assert legacy_worker_stop_cli.LIVE_STRATEGY_WORKER_STOP_PATH == janus_worker.LIVE_STRATEGY_WORKER_STOP_PATH
     assert legacy_worker_stop_cli.main_for_live_strategy_worker_stop is janus_worker.main_for_live_strategy_worker_stop
+    assert legacy_worker_tick_cli.LIVE_STRATEGY_WORKER_TICK_PATH == janus_worker.LIVE_STRATEGY_WORKER_TICK_PATH
+    assert (
+        legacy_worker_tick_cli.build_live_strategy_worker_tick_payload
+        is janus_worker.build_live_strategy_worker_tick_payload
+    )
+    assert legacy_worker_tick_cli.main_for_live_strategy_worker_tick is janus_worker.main_for_live_strategy_worker_tick
 
 
 def test_janus_strategy_namespace_wraps_plan_submit_and_evaluate(monkeypatch) -> None:
