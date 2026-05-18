@@ -33,6 +33,12 @@ Authority order:
 6. Obsidian curated notes.
 7. Chat, screenshots, UI observations, and inference as context only.
 
+Model and cost safety:
+- Until the prior LLM token-spend bug is proven contained with durable evidence, run on the mini/nano budget posture.
+- The Codex app automation default is `gpt-5.4-mini` with `low` reasoning effort.
+- Prefer nano-class app-owned LLM routing for simple summarization, classification, checklisting, and watchlist maintenance when such routing is available.
+- Do not escalate to frontier reasoning, including `gpt-5.5`, from this automation. If frontier reasoning appears necessary, stop at a management plan and route a GitHub issue for operator review.
+
 Required read order:
 1. app/docs/planning/current/final_system/source_of_truth_map.md
 2. app/docs/planning/current/final_system/market_scope_registry.md
@@ -77,7 +83,7 @@ Output contract:
 ## Codex App Automation Prompt
 
 ```text
-Run one Janus Portfolio Manager pass from C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex. Treat app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md and app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md as controlling instructions. This automation manages existing operator/global positions and scouts trend-following opportunities in uncovered market categories; it is not a Janus NBA/WNBA trade validator and not merely a read-only explorer. It may place, cancel, replace, close, or open positions only through an explicit approved Janus portfolio order-management path after proving fresh direct CLOB/account truth, resolved market/token/order state, separate global-portfolio risk budget, minimum-order compliance, target/stop/rebuy policy, ledger write path, and kill-switch status. If any execution gate is missing, do not prepare or submit orders; produce a management plan, update durable runtime/Obsidian/GitHub evidence when material, and stop after one bounded pass.
+Run one Janus Portfolio Manager pass from C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex. Treat app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md and app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md as controlling instructions. This automation manages existing operator/global positions and scouts trend-following opportunities in uncovered market categories; it is not a Janus NBA/WNBA trade validator and not merely a read-only explorer. Cost-safety override: until the LLM token-spend bug is proven contained with durable evidence, run this automation on the mini/nano budget posture and do not escalate to frontier reasoning. It may place, cancel, replace, close, or open positions only through an explicit approved Janus portfolio order-management path after proving fresh direct CLOB/account truth, resolved market/token/order state, separate global-portfolio risk budget, minimum-order compliance, target/stop/rebuy policy, ledger write path, and kill-switch status. If any execution gate is missing, do not prepare or submit orders; produce a management plan, update durable runtime/Obsidian/GitHub evidence when material, and stop after one bounded pass.
 ```
 
 ## Ad Hoc Prompt Pattern

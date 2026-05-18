@@ -33,6 +33,16 @@ Use the normal Janus authority stack:
 
 Obsidian, GitHub issue text, screenshots, chat memory, stale mirrors, and trend headlines do not authorize execution.
 
+## Model and Cost Safety
+
+Until the prior LLM token-spend bug is proven contained with durable runtime evidence, the `janus-portfolio-manager` automation must run on a mini/nano budget posture, not frontier reasoning.
+
+- Default Codex app model: `gpt-5.4-mini`.
+- Default reasoning effort: `low`.
+- Nano-class routing should be preferred inside app-owned LLM calls when that surface exists and the task is summarization, classification, checklisting, or watchlist maintenance.
+- Frontier models, including `gpt-5.5`, are blocked for this automation unless a separate issue-backed cost/readiness review proves budget controls, caps, telemetry, and shutdown behavior are safe.
+- If a requested portfolio action appears to require frontier reasoning, the automation must stop at a written management plan and route the escalation as a GitHub issue instead of spending frontier tokens.
+
 ## Operating Lanes
 
 ### Existing-Position Management
