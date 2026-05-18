@@ -31,6 +31,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | `automation/issue_taxonomy.md` | GitHub issue label and sprint-readiness taxonomy. |
 | `automation/backlog_layers.md` | Idea, planned, sprint, active queue, and evidence backlog layers. |
 | `automation/subagent_parallelism_contract.md` | Rules for Codex sub-agent use, locks, and integration. |
+| `automation/codex_tooling_contract.md` | Codex tool split between Janus API wrappers and independent Polymarket fallback tooling. |
 | `automation/global_portfolio_explorer_contract.md` | Legacy/read-only global portfolio discovery contract. |
 | `automation/global_portfolio_manager_contract.md` | Active portfolio-manager intent contract for existing-position management, trend scouting, and gated execution. |
 | `automation/docs_memory_health_check.md` | Checklist for repo, Obsidian, GitHub, and handoff health. |
@@ -71,4 +72,4 @@ Do not enable the recurring controller until today's missing event data is manua
 - Obsidian remains the curated second-brain vault, not a runtime-artifact root.
 - Every repo commit must be pushed to GitHub promptly because GitHub is the operator's current remote interaction surface.
 - The tracked `frontend/` module is removed. Future UI work requires an explicit issue, source-of-truth update, and operator approval.
-- The `janus-portfolio-manager` automation is separate from the master controller and is intended to manage the broader global portfolio, including existing-position target/exit/rebuy maintenance and trend-following scouting. It may trade only through an approved Janus portfolio order-management path with direct CLOB/account truth, separate risk budget, minimum-order compliance, ledger evidence, and kill-switch gates.
+- The `janus-portfolio-manager` automation is separate from the master controller and is intended to manage the broader global portfolio, including existing-position target/exit/rebuy maintenance and trend-following scouting. It may trade only through an approved Janus portfolio order-management path or approved independent Polymarket fallback path with direct CLOB/account truth, separate risk budget, minimum-order compliance, ledger/idempotency evidence, reconciliation plan, and kill-switch gates. The `codex_tools/polymarket` path is not authority until `#53` is implemented and approved.

@@ -80,11 +80,11 @@ The `janus-portfolio-manager` lane is active-management intent, not a Janus NBA/
 
 1. Manage existing operator/global positions: verify direct CLOB truth, matching targets, stale/missing targets, exits, rebuy watches, and concentration risk.
 2. Scout uncovered categories for trend-following opportunities where the thesis is trend, market structure, liquidity, and return path rather than direct final-outcome prediction.
-3. Execute only through an approved Janus portfolio order-management path after all gates in `automation/global_portfolio_manager_contract.md` are true.
+3. Execute only through an approved Janus portfolio order-management path or an approved independent `codex_tools/polymarket/*` fallback path after all gates in `automation/global_portfolio_manager_contract.md` and `automation/codex_tooling_contract.md` are true.
 4. If execution gates are missing, update watchlists, Obsidian lessons, GitHub blockers, and runtime evidence without preparing or submitting orders.
 5. Successful new-market trades must become backlog tests or Obsidian do/don't lessons before any domain is promoted.
 
-Detailed global-portfolio automation rules live in `automation/global_portfolio_manager_contract.md`. The older explorer contract is retained as read-only discovery context.
+Detailed global-portfolio automation rules live in `automation/global_portfolio_manager_contract.md`. Codex tool split and direct Polymarket fallback rules live in `automation/codex_tooling_contract.md`. The older explorer contract is retained as read-only discovery context.
 
 ## New Domain Rules
 

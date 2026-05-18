@@ -50,19 +50,20 @@ Every controller pass must read or inspect:
 11. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
 12. `app/docs/planning/current/final_system/automation/backlog_layers.md`
 13. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-15. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-16. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
-17. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
-18. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-19. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-20. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
-21. `local/shared/handoffs/daily-live-validation/status.md`
-22. `local/shared/handoffs/development-agent/status.md`
-23. Latest relevant daily reports.
-24. GitHub issue state once the issue seed is created.
-25. Obsidian index notes once populated.
-26. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+14. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
+15. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+16. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+17. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+18. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+19. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+20. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+21. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+22. `local/shared/handoffs/daily-live-validation/status.md`
+23. `local/shared/handoffs/development-agent/status.md`
+24. Latest relevant daily reports.
+25. GitHub issue state once the issue seed is created.
+26. Obsidian index notes once populated.
+27. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
 
 ## Axis-First Decision Model
 
@@ -104,7 +105,7 @@ The detailed routing rules live in `automation/controller_decision_tree.md`.
 | `postgame_review` | Closed events exist and no review completed | Build event review/report/development handoff. |
 | `development` | No live/pregame/postgame urgent work | Work issue-backed task queue on branch/worktree. |
 | `system_organization` | Docs/issues/Obsidian/queue incomplete | Maintain source-of-truth system and issue backlog. |
-| `global_portfolio_management` | Daily or ad hoc global portfolio management/scouting pass | Use `global_portfolio_manager_contract.md`; manage existing positions, scout trend opportunities, and execute only through approved portfolio order-management gates. |
+| `global_portfolio_management` | Daily or ad hoc global portfolio management/scouting pass | Use `global_portfolio_manager_contract.md` and `codex_tooling_contract.md`; manage existing positions, scout trend opportunities, and execute only through approved portfolio order-management or independent Polymarket fallback gates. |
 | `no_op` | Nothing safe or useful to do | Write short status only if useful. |
 
 ## Live-Game Rule

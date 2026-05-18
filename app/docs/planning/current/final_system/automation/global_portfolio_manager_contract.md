@@ -21,6 +21,12 @@ It inherits `app/docs/planning/current/final_system/global_ego_and_purpose.md`: 
 
 The business purpose is to produce auditable return receipts that justify future Janus credits/token spend on new systems. The first portfolio proof thresholds are realized-return milestones of `1,000`, `10,000`, and `100,000`.
 
+The portfolio manager must also route through the correct Codex tool surface:
+
+- Janus-facing work uses Janus API/runtime wrappers, currently `codex_tool/*` and target `codex_tools/janus/*`.
+- Direct Polymarket fallback work uses target `codex_tools/polymarket/*`, not Janus API, when Janus is degraded and the independent execution gate is implemented and approved.
+- The target split is governed by `automation/codex_tooling_contract.md` and GitHub issue `#53`.
+
 ## Authority Stack
 
 Use the normal Janus authority stack:
@@ -80,14 +86,17 @@ New-market trend entries require stronger gates than existing-position target ma
 The portfolio manager is intended to become trading-capable, but it may only place, cancel, replace, submit, or prepare orders when all required authority gates are true:
 
 1. Direct CLOB/account truth is fresh and resolves the relevant market, token, open orders, fills, collateral, and position state.
-2. Janus API/order manager exposes an explicit global-portfolio execution path for the action.
-3. The action is recorded in a portfolio ledger with source evidence, strategy reason, target/stop/rebuy policy, and external order ids when available.
-4. A global-portfolio risk budget exists separately from NBA/WNBA live-testing risk.
-5. The action satisfies Polymarket minimum-size/minimum-notional constraints and any market-order exception policy.
-6. A kill switch or disabled execution flag is not active.
-7. The automation can prove that it is not using screenshots, stale portfolio mirrors, or chat memory as execution truth.
+2. One approved execution path is selected: either Janus API/order manager exposes an explicit global-portfolio execution path for the action, or Janus API/runtime is degraded and an approved independent `codex_tools/polymarket/*` path exists and passes `automation/codex_tooling_contract.md`.
+4. The action is recorded in a portfolio ledger with source evidence, strategy reason, target/stop/rebuy policy, idempotency key, and external order ids when available.
+5. A global-portfolio risk budget exists separately from NBA/WNBA live-testing risk.
+6. The action satisfies Polymarket minimum-size/minimum-notional constraints and any market-order exception policy.
+7. A kill switch or disabled execution flag is not active.
+8. The automation can prove that it is not using screenshots, stale portfolio mirrors, or chat memory as execution truth.
+9. Any direct Polymarket fallback action has a reconciliation plan back into Janus once Janus is healthy.
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
+
+Current state: `#53` is open, so the independent `codex_tools/polymarket/*` execution path is not yet complete authority. Until it exists and passes tests, direct fallback is plan-only.
 
 ## New-Market Learning Rule
 
@@ -134,6 +143,8 @@ The run must explicitly state one of:
 ## Must Not Do
 
 - Do not bypass Janus order validators, direct CLOB/account truth, or kill switches.
+- Do not use `codex_tool/*` Janus API wrappers as if they were independent Polymarket execution tools.
+- Do not use `tools/polymarket_smoke_order.py` from automation or portfolio-manager passes.
 - Do not use this automation to validate Janus NBA/WNBA live trades.
 - Do not merge global-portfolio risk with NBA/WNBA live-testing budgets.
 - Do not promote an uncovered category directly to autonomous scaled trading.

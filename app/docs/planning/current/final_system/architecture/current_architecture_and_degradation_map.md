@@ -28,7 +28,8 @@ Janus is currently a single-repo FastAPI modular monolith with repo-local runtim
 | DB | `app/data/databases/*`, migrations `0001` through `0024` | Stores catalog, market data, portfolio, NBA/WNBA data, and agentic runtime state. |
 | Repo-local runtime root | `app/runtime/local_paths.py` | Resolves `local`, `local/shared/artifacts`, `local/shared/handoffs`, `local/shared/reports`, and `local/tracks/live-controller`. |
 | Controller queue | `app/runtime/controller_queue.py`, `tools/controller_queue.py` | Owns active locks, stale/duplicate/dirty-worktree checks, completed locks, and pass ledger. |
-| Codex wrappers | `codex_tool/*` | Thin CLI/API wrappers used by Codex automations for status, data refresh, integrity, live monitor, strategy plan, review, reconciliation, and worker control. |
+| Codex/Janus wrappers | `codex_tool/*` today; target `codex_tools/janus/*` | Thin CLI/API wrappers used by Codex automations for Janus status, data refresh, integrity, live monitor, strategy plan, review, reconciliation, and worker control. Existing `codex_tool` imports are compatibility entrypoints until `#53` migrates them. |
+| Codex/Polymarket fallback tools | target `codex_tools/polymarket/*` | Direct Polymarket account/CLOB/orderbook/order-management tools for portfolio-manager and live-monitor fallback when Janus API/runtime is degraded. Not implemented/approved until `#53` passes. |
 | Operator tools | `tools/*` | Bounded scripts for startup reconciliation, operational cycles, WNBA checks, replay, profile reports, microstructure analysis, and controller queue operations. |
 | Obsidian | `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain` | Curated memory, rationale, indexes, and strategy knowledge; never live runtime truth. |
 | GitHub issues | `LucaCGN/janus_cortex` | Durable backlog identity, acceptance criteria, and operator-visible work state. |
@@ -82,7 +83,7 @@ Observed during the 2026-05-18 `#40` controller pass:
 | Direct CLOB read access unavailable | Repo docs, issue triage, Obsidian, offline tests, historical replay. | Portfolio mirror and DB-only review may continue with explicit caveat. | Live execution, live readiness GREEN, current-event inventory proof, settlement claims. |
 | Direct CLOB write/order credentials unavailable | Read-only integrity, pregame planning, shadow replay, Codex fallback drafting. | Manual assistant can preview only. | Order creation/cancel/replacement, live worker execution, urgent profit capture. |
 | Janus DB unavailable | Repo docs, GitHub/Obsidian, pure unit tests, code review. | Some provider/API probes may run outside DB only if explicitly designed. | API-up validation, sync persistence, StrategyPlanJSON persistence, integrity, live monitor, worker execution. |
-| FastAPI down | Repo docs, direct CLI/provider inspection, code/tests. | Startup reconciliation can report connection failure. | API route validation, live monitor, worker HTTP tick path, pregame/postgame endpoint proofs. |
+| FastAPI down | Repo docs, direct CLI/provider inspection, code/tests. Future `codex_tools/polymarket/*` may inspect direct CLOB/account truth if implemented. | Startup reconciliation can report connection failure. Direct Polymarket fallback may produce management plans. | API route validation, live monitor, worker HTTP tick path, pregame/postgame endpoint proofs. Any direct Polymarket order action remains blocked unless the independent execution gate in `automation/codex_tooling_contract.md` is implemented and approved. |
 | NBA schedule/PBP feed stale | Non-NBA work, issue-backed code/docs, global portfolio read-only scan. | Pregame planning may draft only with stale-feed caveat. | NBA live readiness, NBA live strategy execution, postgame review completeness claims. |
 | WNBA feed/history incomplete | NBA work, generic docs, WNBA source audit. | WNBA shadow/backtest can continue with blocker notes. | WNBA min-size-test promotion and WNBA live authority. |
 | Polymarket Gamma/catalog probes fail | Existing mapped-event review may continue if DB/direct CLOB truth is enough. | Startup reconciliation reports blocker categories. | New market/outcome/token discovery, fresh DB mapping, new StrategyPlanJSON for unmapped markets. |
@@ -120,7 +121,8 @@ Observed during the 2026-05-18 `#40` controller pass:
 | `app/modules/agentic/manual_order_assistant.py` | Keep | Needed audited manual/Codex path; defaults preview and validates guardrails. |
 | `app/modules/agentic/llm_runtime.py` | Keep and harden under `#41` | Implements trigger/budget/dedup/final-flat foundation; budget-aware routing still needs validation. |
 | `app/modules/agentic/live_strategy_worker.py` | Keep with strict gates | App-owned worker path, disabled by default and useful after current-plan/integrity gates pass. |
-| `codex_tool/*` wrappers | Wrap | Useful operator/Codex interface, but should remain thin wrappers over API/runtime truth. |
+| `codex_tool/*` wrappers | Wrap | Useful operator/Codex interface. Preserve as compatibility entrypoints while migrating Janus-facing wrappers to `codex_tools/janus/*` under `#53`. |
+| `codex_tools/polymarket/*` direct fallback tools | Build under `#53` | Needed for portfolio-manager and live-monitor break cases where Janus API/runtime is unavailable but direct Polymarket account/CLOB action is explicitly approved. Must default read-only/dry-run and maintain local ledger/idempotency/reconciliation. |
 | `tools/run_janus_startup_reconciliation.py` and `tools/run_janus_operational_cycle.py` | Wrap | Useful deterministic restart/data-refresh proof; not a live controller. |
 | `/v1/nba/live/runs` and `app/modules/nba/execution/*` live-run service | Wrap then migrate | Keeps historical live-run/shadow artifacts and pause/resume mechanics; primary strategy authority should move through StrategyPlanJSON, ops live-monitor, and event review contracts. |
 | `controller_vnext_*` backtest scripts and replay subjects | Migrate selectively | Convert validated controller lessons into StrategyPlan templates, deterministic lanes, or ML/replay features; do not swap live baseline by script label alone. |
@@ -142,6 +144,7 @@ No new GitHub issue is required from this map. The material implementation gaps 
 | Analytical chart-equivalent microstructure metrics for review/live context | `#43` |
 | Profit-ratcheted risk ladder calibration from mapped account/DB histories | `#44` |
 | Global portfolio target/rebuy ledger and watchlist schema | `#45` |
+| Codex tooling split into Janus wrappers and independent Polymarket execution fallback | `#53` |
 
 ## Controller Use
 

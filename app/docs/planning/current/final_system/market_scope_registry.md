@@ -29,7 +29,7 @@ The controller should evaluate all axes before selecting a persona.
 |---|---|---|---|---|
 | `sports` | `basketball/nba` | `live-limited` | `janus-controlled` plus `codex-assisted` | First mature implementation base; source of current live-event architecture. |
 | `sports` | `basketball/wnba` | `min-size-test-pending` | `shadow` to `codex-assisted` | High-priority portability lane; needs capture/replay/fillability evidence and careful minimal testing. |
-| `global-portfolio` | `polymarket-account` | `research` | `watch-only` | Monitor non-Janus positions, exits, stale targets, rebuy zones, and concentration risk. |
+| `global-portfolio` | `polymarket-account` | `research / order-path-incubation` | `watch-only` to `codex-assisted` after approved gates | Monitor non-Janus positions, exits, stale targets, rebuy zones, concentration risk, and prepare gated portfolio-manager/direct-Polymarket fallback execution. |
 | `crypto` | `up-down-options` | `idea` | `watch-only` | Future high-frequency domain requiring extensive backtest, tick data, and separate risk model. |
 | `geopolitics` | `long-term-events` | `idea` | `watch-only` | Future long-horizon signal and target/rebuy domain. |
 | `economics` | `macro-events` | `idea` | `watch-only` | Future domain after core ledger/risk/review infrastructure is stable. |
@@ -82,6 +82,11 @@ Initial allowed work:
 
 Execution authority requires a separate safety policy and should not inherit basketball live permissions.
 
+The approved execution surface may be either:
+
+- Janus portfolio order-management through Janus API/runtime gates.
+- Independent direct Polymarket fallback through `codex_tools/polymarket/*` only after `automation/codex_tooling_contract.md` and `#53` are implemented and approved.
+
 ## Crypto Mapping
 
 Crypto up/down options require a separate incubation path:
@@ -95,4 +100,3 @@ Crypto up/down options require a separate incubation path:
 7. Live-limited promotion only after review.
 
 This domain should share CLOB, ledger, reporting, and risk infrastructure, but not basketball-specific quarter/PBP logic.
-

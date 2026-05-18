@@ -78,6 +78,7 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Planned/sprint | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Planned/sprint | Build global portfolio target/rebuy ledger and watchlist schema. |
 | [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Planned/sprint | Define active portfolio-manager execution policy and trend lane. |
+| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Planned/sprint | Split Codex tooling into Janus wrappers and independent Polymarket execution fallback. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Planned/sprint | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Planned backlog | Turn winning profile studies into benchmark hypotheses. |

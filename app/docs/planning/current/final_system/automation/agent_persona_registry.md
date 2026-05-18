@@ -23,7 +23,7 @@ All personas inherit `app/docs/planning/current/final_system/global_ego_and_purp
 | `development-end-phase` | Reconciliation/readiness | Test, reconcile branch/main state, update readiness handoffs. | Start broad new features during readiness pass. |
 | `pregame-integrity` | Event readiness | Check API, CLOB, plans, data freshness, worker readiness, gates. | Research narrative strategy before integrity status. |
 | `pregame-planner` | Event planning | Build context, watchpoints, candidate StrategyPlanJSON, no orders. | Define arbitrary sizing or bypass gates. |
-| `live-monitor-analyst` | Active events | Monitor runtime, CLOB truth, inventory, worker behavior, urgent patches. | Broad backlog development during live event. |
+| `live-monitor-analyst` | Active events | Monitor runtime, CLOB truth, inventory, worker behavior, urgent patches, and approved independent Polymarket protect/close/cancel/replace fallback when Janus runtime breaks and `codex_tooling_contract.md` gates pass. | Broad backlog development during live event or direct orders without the independent execution gate. |
 | `postgame-reviewer` | Closed events | Build review, attribution, missed windows, development handoff. | Claim profitability without direct CLOB/ledger evidence. |
 | `wnba-data-agent` | WNBA portability | Passive capture, replay, fillability, calibration, minimal readiness evidence. | Treat NBA thresholds as automatically valid for WNBA. |
 | `basketball-intelligence-agent` | Basketball models | Scenario/regime logic, PBP/quarter features, microstructure, replay ideas. | Own global portfolio or crypto logic. |
@@ -31,7 +31,7 @@ All personas inherit `app/docs/planning/current/final_system/global_ego_and_purp
 | `risk-ledger-agent` | Risk and inventory | Profit-ratcheted ledgers, exposure caps, lifecycle proof, tail-risk rules. | Unlock risk from unrealized profit. |
 | `profile-research-agent` | External profile studies | Study winning profiles, caveats, market archetypes, implications. | Treat profile success as copyable proof. |
 | `future-domain-research-agent` | New markets | Crypto/geopolitics/economics concept research and incubation specs. | Promote a domain directly to live trading. |
-| `global-portfolio-agent` | Global portfolio | Existing-position target/exit/rebuy management, trend-opportunity scouting, watchlist and lesson capture, gated portfolio order-management once the approved execution path exists. | Bypass direct CLOB truth, Janus order validators, separate global-portfolio risk budget, or kill switches. |
+| `global-portfolio-agent` | Global portfolio | Existing-position target/exit/rebuy management, trend-opportunity scouting, watchlist and lesson capture, gated Janus portfolio order-management or independent Polymarket fallback once the approved execution path exists. | Bypass direct CLOB truth, approved tool paths, separate global-portfolio risk budget, ledger/idempotency, reconciliation, or kill switches. |
 
 ## Persona Selection Inputs
 
@@ -83,4 +83,5 @@ Examples:
 - `profile-research-agent` can propose a crypto research issue, but cannot launch a crypto trading lane.
 - `live-monitor-analyst` can create a bug issue during a live game, but should not implement broad refactors.
 - `docs-memory-agent` can link a risk principle, but cannot change live risk authority.
-- `global-portfolio-agent` is intended to become active portfolio management, not just analysis. It may execute only under `global_portfolio_manager_contract.md` through an approved Janus portfolio order-management path. Until that path and its gates are present, it must fall back to management planning, artifacts, Obsidian lessons, and GitHub blockers.
+- `global-portfolio-agent` is intended to become active portfolio management, not just analysis. It may execute only under `global_portfolio_manager_contract.md` through an approved Janus portfolio order-management path or under `codex_tooling_contract.md` through an approved independent Polymarket fallback path. Until a path and its gates are present, it must fall back to management planning, artifacts, Obsidian lessons, and GitHub blockers.
+- `live-monitor-analyst` may use independent Polymarket fallback only as a runtime-break protect/close/cancel/replace surface, not as a broad strategy-development or speculative-entry lane.
