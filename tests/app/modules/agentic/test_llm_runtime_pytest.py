@@ -141,6 +141,43 @@ def test_manual_operator_exposure_routes_to_frontier_pytest() -> None:
     assert "open_exposure" in decision.critical_reasons
 
 
+def test_critical_trigger_downgrades_frontier_when_budget_or_min_size_context_blocks_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-sas-min-2026-05-10",
+        operator_interventions=[
+            {
+                "action": "adopt_operator_position",
+                "token_id": "token-sas",
+                "position_size": 5,
+                "current_position": {"avg_price": 0.6},
+            }
+        ],
+        portfolio_state={"open_positions": 1, "open_exposure_usd": 2.0},
+    )
+
+    decision = route_llm_model(
+        triggers,
+        portfolio_state={"open_positions": 1, "open_exposure_usd": 2.0},
+        budget_state={
+            "warning": True,
+            "available_openai_budget_usd": 0.25,
+            "frontier_min_available_budget_usd": 1.0,
+        },
+        bankroll_state={
+            "minimum_size_testing": True,
+            "open_exposure_usd": 2.0,
+            "frontier_min_exposure_usd": 10.0,
+        },
+    )
+
+    assert decision.selected_model == MINI_MODEL
+    assert decision.selected_tier == "mini"
+    assert decision.fallback_alias == FRONTIER_MODEL
+    assert "frontier_downgraded_by_budget_warning" in decision.critical_reasons
+    assert "frontier_blocked_by_available_openai_budget" in decision.critical_reasons
+    assert "frontier_downgraded_min_size_low_exposure" in decision.critical_reasons
+
+
 def test_position_adverse_move_routes_to_frontier_pytest() -> None:
     triggers = detect_llm_runtime_triggers(
         event_id="nba-okc-lal-2026-05-11",
@@ -821,8 +858,60 @@ def test_latest_llm_runtime_status_loads_persisted_event_trace_pytest(tmp_path) 
     assert status["items"][0]["adoption_status"] == "not_adoptable"
     assert status["codex_strategy_required_count"] == 1
     assert status["items"][0]["codex_fallback_state"]["status"] == "codex_strategy_required"
+    assert status["items"][0]["codex_fallback_state"]["reason_code"] == "dispatch_disabled"
+    assert status["items"][0]["codex_fallback_state"]["internal_llm_unavailable"] is True
+    assert status["items"][0]["codex_fallback_state"]["codex_strategy_required"] is True
+    assert status["items"][0]["llm_runtime_state"]["internal_llm_unavailable"] is True
+    assert status["items"][0]["llm_runtime_state"]["codex_strategy_required"] is True
     assert status["items"][0]["codex_fallback_state"]["must_use_janus_validators"] is True
     assert status["items"][0]["llm_revision_adoption"]["blocker"] == "response_skipped_or_unavailable"
+    assert status["safety_controls"]["model_tier_policy"]["frontier"]["default_allowed"] is False
+
+
+def test_latest_llm_runtime_status_exposes_budget_blocked_state_pytest(tmp_path) -> None:
+    day_root = tmp_path / "llm-runtime" / "2026-05-11"
+    day_root.mkdir(parents=True)
+    (day_root / "trace.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "llm_runtime_trace_artifact_v1",
+                "event_id": "nba-det-cle-2026-05-11",
+                "trace_id": "trace-budget-blocked",
+                "status": "skipped_unavailable",
+                "response_status": "skipped_unavailable",
+                "trigger_count": 1,
+                "trigger_types": ["quarter_end"],
+                "selected_model": MINI_MODEL,
+                "model_routing_decision": {"selected_model": MINI_MODEL, "selected_tier": "mini"},
+                "response": {
+                    "request_id": "request-budget-blocked",
+                    "status": "skipped_unavailable",
+                    "selected_model": MINI_MODEL,
+                    "skipped_reason": "llm_event_budget_exceeded",
+                    "trace_metadata": {
+                        "openai_call_attempted": False,
+                        "order_endpoint_call_allowed": False,
+                    },
+                },
+                "persisted_at_utc": "2026-05-11T20:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    status = load_latest_llm_runtime_status(
+        session_date="2026-05-11",
+        event_ids=["nba-det-cle-2026-05-11"],
+        artifact_root=tmp_path / "llm-runtime",
+    )
+
+    item = status["items"][0]
+    assert item["codex_fallback_state"]["status"] == "codex_strategy_required"
+    assert item["codex_fallback_state"]["reason_code"] == "llm_event_budget_exceeded"
+    assert item["codex_fallback_state"]["budget_blocked"] is True
+    assert item["llm_runtime_state"]["budget_blocked"] is True
+    assert item["llm_runtime_state"]["codex_strategy_required"] is True
+    assert item["llm_runtime_state"]["order_endpoint_call_allowed"] is False
 
 
 def test_latest_llm_runtime_status_marks_valid_response_adoptable_pytest(tmp_path) -> None:

@@ -30,6 +30,7 @@ SAFETY_CONTROLS_VERSION = "llm_runtime_safety_controls_2026-05-17"
 DEFAULT_EVENT_TOKEN_BUDGET = 20_000
 DEFAULT_EVENT_COST_BUDGET_USD = 0.50
 DEFAULT_EVENT_WARNING_FRACTION = 0.80
+DEFAULT_FRONTIER_MIN_EXPOSURE_USD = 25.0
 
 _TRIGGER_NAMESPACE = uuid.UUID("4f61cce7-2098-44d7-a59e-2b3c92a48f0f")
 _CRITICAL_TRIGGER_TYPES = {
@@ -72,6 +73,19 @@ _ESTIMATED_MODEL_COST_PER_MILLION_TOKENS = {
     MINI_MODEL: {"input": 0.25, "output": 2.00},
     FRONTIER_MODEL: {"input": 2.00, "output": 16.00},
 }
+_BUDGET_BLOCK_REASONS = {
+    "llm_event_budget_exceeded",
+    "llm_trigger_call_cap_exceeded",
+}
+_INTERNAL_LLM_UNAVAILABLE_MARKERS = (
+    "openai",
+    "api_key",
+    "client_unavailable",
+    "dispatch_disabled",
+    "llm_event_budget_exceeded",
+    "llm_trigger_call_cap_exceeded",
+    "repeated_trigger_hash_dedup",
+)
 
 
 class _OpenAIRevisionResponse(BaseModel):
@@ -225,8 +239,10 @@ def build_llm_runtime_safety_controls_status() -> dict[str, Any]:
             "trigger_type_call_caps",
             "final_flat_shutdown",
             "cost_telemetry",
+            "explicit_codex_fallback_state",
         ],
         "budget_policy": policy,
+        "model_tier_policy": _model_tier_policy(),
     }
 
 
@@ -422,6 +438,8 @@ def route_llm_model(
     *,
     live_state: dict[str, Any] | None = None,
     portfolio_state: dict[str, Any] | None = None,
+    budget_state: dict[str, Any] | None = None,
+    bankroll_state: dict[str, Any] | None = None,
     high_uncertainty: bool = False,
 ) -> LLMModelRoutingDecision:
     trigger_ids = [trigger.trigger_id for trigger in triggers]
@@ -459,6 +477,24 @@ def route_llm_model(
         critical_reasons.append("missing_protection_or_stop_hedge")
 
     if critical_reasons:
+        frontier_blockers = _frontier_routing_blockers(
+            budget_state=budget_state,
+            bankroll_state=bankroll_state,
+            portfolio_state=portfolio_state,
+        )
+        if frontier_blockers:
+            return LLMModelRoutingDecision(
+                selected_model=MINI_MODEL,
+                selected_tier="mini",
+                reason=(
+                    "Critical live-money revision path would normally use frontier, but Janus downgraded "
+                    "to mini because budget or minimum-size exposure context blocks frontier escalation."
+                ),
+                trigger_ids=trigger_ids,
+                critical_reasons=sorted(set([*critical_reasons, *frontier_blockers])),
+                fallback_alias=FRONTIER_MODEL,
+                routing_rules_version=ROUTING_RULES_VERSION,
+            )
         return LLMModelRoutingDecision(
             selected_model=FRONTIER_MODEL,
             selected_tier="frontier",
@@ -566,7 +602,27 @@ def build_llm_runtime_trace(
         source=source,
         routine_live_review=routine_live_review,
     )
-    routing = route_llm_model(triggers, live_state=live_state, portfolio_state=portfolio_state)
+    routing = route_llm_model(
+        triggers,
+        live_state=live_state,
+        portfolio_state=portfolio_state,
+        budget_state=_routing_context_mapping(
+            "llm_budget_state",
+            "openai_budget_state",
+            "budget_state",
+            portfolio_state,
+            event_context,
+            live_state,
+        ),
+        bankroll_state=_routing_context_mapping(
+            "bankroll_state",
+            "testing_exposure_state",
+            "risk_state",
+            portfolio_state,
+            event_context,
+            live_state,
+        ),
+    )
     revision_request: LLMRevisionRequest | None = None
     revision_response: LLMRevisionResponse | None = None
     if triggers:
@@ -933,6 +989,12 @@ def load_latest_llm_runtime_status(
     for event_id in normalized_event_ids:
         item = latest_by_event.get(event_id)
         if item is None:
+            codex_fallback_state = _codex_fallback_state_for_status(
+                response_status=None,
+                skipped_reason=None,
+                trigger_count=0,
+                adoption_status="not_available",
+            )
             items.append(
                 {
                     "event_id": event_id,
@@ -951,11 +1013,12 @@ def load_latest_llm_runtime_status(
                         "trace_artifact_path": None,
                         "order_endpoint_call_allowed": False,
                     },
-                    "codex_fallback_state": _codex_fallback_state_for_status(
+                    "codex_fallback_state": codex_fallback_state,
+                    "llm_runtime_state": _llm_runtime_state_for_status(
                         response_status=None,
                         skipped_reason=None,
                         trigger_count=0,
-                        adoption_status="not_available",
+                        codex_fallback_state=codex_fallback_state,
                     ),
                 }
             )
@@ -992,6 +1055,99 @@ def _llm_budget_policy() -> dict[str, Any]:
         "pricing_source": "janus_configured_estimates",
         "estimated_cost_per_million_tokens": _ESTIMATED_MODEL_COST_PER_MILLION_TOKENS,
     }
+
+
+def _model_tier_policy() -> dict[str, Any]:
+    return {
+        "schema_version": "llm_model_tier_policy_v1",
+        "nano": {
+            "model": NANO_MODEL,
+            "allowed_for": ["compression", "tagging", "repetitive_summary"],
+            "not_allowed_for": ["live_money_revision", "ambiguous_exposure_management"],
+        },
+        "mini": {
+            "model": MINI_MODEL,
+            "allowed_for": ["routine_live_review", "normal_strategy_revision", "budget_warning_fallback"],
+            "default_for_minimum_size_testing": True,
+        },
+        "frontier": {
+            "model": FRONTIER_MODEL,
+            "allowed_when": [
+                "critical_uncertainty",
+                "material_open_exposure",
+                "severe_runtime_failure",
+                "operator_approved_architecture_work",
+            ],
+            "blocked_when": [
+                "event_budget_warning_or_exceeded",
+                "openai_budget_unavailable_or_too_low",
+                "minimum_size_testing_low_exposure",
+            ],
+            "default_allowed": False,
+        },
+    }
+
+
+def _routing_context_mapping(
+    *names_and_sources: Any,
+) -> dict[str, Any] | None:
+    names = [str(item) for item in names_and_sources if isinstance(item, str)]
+    sources = [item for item in names_and_sources if isinstance(item, dict)]
+    for source in sources:
+        for name in names:
+            value = source.get(name)
+            if isinstance(value, dict):
+                return dict(value)
+    return None
+
+
+def _frontier_routing_blockers(
+    *,
+    budget_state: dict[str, Any] | None,
+    bankroll_state: dict[str, Any] | None,
+    portfolio_state: dict[str, Any] | None,
+) -> list[str]:
+    blockers: list[str] = []
+    budget = dict(budget_state or {})
+    bankroll = dict(bankroll_state or {})
+    portfolio = dict(portfolio_state or {})
+
+    if _truthy(budget.get("hard_block")) or _normalize_reason_code(budget.get("reason")) in _BUDGET_BLOCK_REASONS:
+        blockers.append("frontier_blocked_by_event_budget")
+    elif _truthy(budget.get("warning")):
+        blockers.append("frontier_downgraded_by_budget_warning")
+
+    available_budget = _safe_float(
+        budget.get("available_openai_budget_usd")
+        or budget.get("available_api_budget_usd")
+        or budget.get("remaining_openai_budget_usd")
+    )
+    frontier_min_budget = _safe_float(budget.get("frontier_min_available_budget_usd")) or 1.0
+    if available_budget is not None and available_budget < frontier_min_budget:
+        blockers.append("frontier_blocked_by_available_openai_budget")
+
+    exposure_usd = _safe_float(
+        bankroll.get("open_exposure_usd")
+        or bankroll.get("testing_exposure_usd")
+        or portfolio.get("open_exposure_usd")
+        or portfolio.get("exposure_usd")
+    )
+    frontier_min_exposure = _safe_float(bankroll.get("frontier_min_exposure_usd")) or DEFAULT_FRONTIER_MIN_EXPOSURE_USD
+    minimum_size_mode = (
+        _truthy(bankroll.get("minimum_size_testing"))
+        or _truthy(bankroll.get("min_size_test"))
+        or str(bankroll.get("maturity_stage") or "").strip().lower() in {"min-size-test", "minimum-size-testing"}
+        or str(bankroll.get("testing_mode") or "").strip().lower() in {"min-size", "minimum-size", "minimum_size"}
+    )
+    if (
+        minimum_size_mode
+        and exposure_usd is not None
+        and exposure_usd < frontier_min_exposure
+        and not _truthy(bankroll.get("allow_frontier_low_exposure"))
+    ):
+        blockers.append("frontier_downgraded_min_size_low_exposure")
+
+    return sorted(dict.fromkeys(blockers))
 
 
 def _trigger_call_caps_from_env() -> dict[str, int]:
@@ -1681,13 +1837,22 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
     telemetry = payload.get("llm_runtime_telemetry") if isinstance(payload.get("llm_runtime_telemetry"), dict) else None
     if telemetry is None and isinstance(trace_metadata.get("llm_runtime_telemetry"), dict):
         telemetry = trace_metadata["llm_runtime_telemetry"]
+    response_status = payload.get("response_status") or response.get("status")
+    skipped_reason = response.get("skipped_reason")
+    trigger_count = int(payload.get("trigger_count") or trace.get("trigger_count") or 0)
+    codex_fallback_state = _codex_fallback_state_for_status(
+        response_status=response_status,
+        skipped_reason=skipped_reason,
+        trigger_count=trigger_count,
+        adoption_status=adoption["status"],
+    )
     return {
         "event_id": event_id,
         "trace_id": payload.get("trace_id") or trace.get("trace_id"),
         "status": payload.get("status") or trace.get("status"),
-        "response_status": payload.get("response_status") or response.get("status"),
-        "skipped_reason": response.get("skipped_reason"),
-        "trigger_count": int(payload.get("trigger_count") or trace.get("trigger_count") or 0),
+        "response_status": response_status,
+        "skipped_reason": skipped_reason,
+        "trigger_count": trigger_count,
         "trigger_types": payload.get("trigger_types") or [item.get("trigger_type") for item in trigger_list if isinstance(item, dict)],
         "selected_model": payload.get("selected_model") or model_routing.get("selected_model"),
         "selected_tier": model_routing.get("selected_tier"),
@@ -1696,11 +1861,12 @@ def _status_from_artifact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "artifact_schema_version": payload.get("schema_version"),
         "adoption_status": adoption["status"],
         "llm_revision_adoption": adoption,
-        "codex_fallback_state": _codex_fallback_state_for_status(
-            response_status=payload.get("response_status") or response.get("status"),
-            skipped_reason=response.get("skipped_reason"),
-            trigger_count=int(payload.get("trigger_count") or trace.get("trigger_count") or 0),
-            adoption_status=adoption["status"],
+        "codex_fallback_state": codex_fallback_state,
+        "llm_runtime_state": _llm_runtime_state_for_status(
+            response_status=response_status,
+            skipped_reason=skipped_reason,
+            trigger_count=trigger_count,
+            codex_fallback_state=codex_fallback_state,
         ),
     }
 
@@ -1751,20 +1917,12 @@ def _codex_fallback_state_for_status(
     adoption_status: str,
 ) -> dict[str, Any]:
     reason = str(skipped_reason or "").strip()
-    unavailable_markers = (
-        "openai",
-        "api_key",
-        "client_unavailable",
-        "dispatch_disabled",
-        "llm_event_budget_exceeded",
-        "llm_trigger_call_cap_exceeded",
-        "repeated_trigger_hash_dedup",
-    )
+    reason_code = _normalize_reason_code(reason)
     if response_status == "response_recorded" and adoption_status == "adoptable_review_required":
         status_value = "review_recorded_revision"
         review_required = True
     elif trigger_count > 0 and response_status == "skipped_unavailable" and (
-        not reason or any(marker in reason for marker in unavailable_markers)
+        not reason or any(marker in reason for marker in _INTERNAL_LLM_UNAVAILABLE_MARKERS)
     ):
         status_value = "codex_strategy_required"
         review_required = True
@@ -1778,8 +1936,13 @@ def _codex_fallback_state_for_status(
         "schema_version": "codex_llm_fallback_state_v1",
         "status": status_value,
         "review_required": review_required,
+        "codex_strategy_required": status_value == "codex_strategy_required",
         "response_status": response_status,
         "skipped_reason": skipped_reason,
+        "reason_code": reason_code,
+        "internal_llm_unavailable": response_status == "skipped_unavailable"
+        and (not reason or any(marker in reason for marker in _INTERNAL_LLM_UNAVAILABLE_MARKERS)),
+        "budget_blocked": reason_code in _BUDGET_BLOCK_REASONS,
         "trigger_count": trigger_count,
         "allowed_fallback_actions": [
             "submit_reviewed_strategy_plan_candidate",
@@ -1791,6 +1954,39 @@ def _codex_fallback_state_for_status(
         "must_use_janus_validators": True,
         "raw_exchange_order_bypass_allowed": False,
     }
+
+
+def _llm_runtime_state_for_status(
+    *,
+    response_status: str | None,
+    skipped_reason: str | None,
+    trigger_count: int,
+    codex_fallback_state: dict[str, Any],
+) -> dict[str, Any]:
+    reason_code = _normalize_reason_code(skipped_reason)
+    return {
+        "schema_version": "llm_runtime_state_flags_v1",
+        "response_status": response_status,
+        "reason_code": reason_code,
+        "trigger_count": trigger_count,
+        "internal_llm_unavailable": bool(codex_fallback_state.get("internal_llm_unavailable")),
+        "budget_blocked": bool(codex_fallback_state.get("budget_blocked")),
+        "codex_strategy_required": bool(codex_fallback_state.get("codex_strategy_required")),
+        "review_required": bool(codex_fallback_state.get("review_required")),
+        "must_use_janus_validators": True,
+        "order_endpoint_call_allowed": False,
+    }
+
+
+def _normalize_reason_code(value: Any) -> str | None:
+    reason = str(value or "").strip().lower()
+    if not reason:
+        return None
+    if reason.startswith("response_schema_validation_failed:"):
+        return "response_schema_validation_failed"
+    if reason.startswith("openai_call_error:"):
+        return "openai_call_error"
+    return reason
 
 
 def _write_json(path: Path, payload: Any) -> None:
