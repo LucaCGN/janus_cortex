@@ -65,15 +65,17 @@ Required first read:
 10. app/docs/planning/current/final_system/automation/backlog_layers.md
 11. app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md
 12. app/docs/planning/current/final_system/automation/codex_tooling_contract.md
-13. app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md
-14. app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md
-15. app/docs/planning/current/final_system/obsidian/bootstrap_map.md
-16. app/docs/planning/current/final_system/obsidian/modular_curation_policy.md
-17. local/shared/handoffs/daily-live-validation/status.md if present
-18. local/shared/handoffs/development-agent/status.md if present
-19. python codex_tool/janus_status.py unless explicitly running docs-only
-20. Relevant GitHub issue state for active/open work
-21. Relevant Obsidian indexes only after repo/runtime authority has been checked
+13. app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md
+14. app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md
+15. app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md
+16. app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md
+17. app/docs/planning/current/final_system/obsidian/bootstrap_map.md
+18. app/docs/planning/current/final_system/obsidian/modular_curation_policy.md
+19. local/shared/handoffs/daily-live-validation/status.md if present
+20. local/shared/handoffs/development-agent/status.md if present
+21. python codex_tool/janus_status.py unless explicitly running docs-only
+22. Relevant GitHub issue state for active/open work
+23. Relevant Obsidian indexes only after repo/runtime authority has been checked
 
 Active lock/pass ledger rule:
 - Before any write to code, docs, runtime handoffs, runtime artifacts, GitHub issue state, or Obsidian, claim the relevant issue/resource scope with `python tools/controller_queue.py claim`.
@@ -112,6 +114,9 @@ Issue progress discipline:
 - If the issue cannot be worked in the current pass, record the exact blocker and next unblock action once; subsequent unchanged passes should no-op instead of repeating the same comment.
 - A solved issue requires a pushed commit, validation evidence, and GitHub issue update or closure.
 - If several passes or automations comment on the same open issue without fixing, claiming, or narrowing it, classify that as YELLOW process drift and route to queue/lock hardening.
+- If acceptance criteria are complete and remaining work is broader calibration, promotion, or execution hardening, close the solved issue and move the remaining scope to a smaller follow-up issue.
+- If multiple unblocked issues can be worked with disjoint issue/file/module/event/service/market locks, route them as parallel-safe bounded slices instead of keeping all agents focused on one umbrella issue.
+- For NBA/WNBA test days, do not let global-portfolio expansion outrank sports readiness unless direct live-money safety is unclear.
 
 Persona selection:
 - master-controller: classify, route, enforce locks, no-op.
@@ -130,7 +135,8 @@ Persona selection:
 - risk-ledger-agent: exposure, sleeves, lifecycle, realized-profit risk policy.
 - profile-research-agent: winning profiles, caveats, market archetypes.
 - future-domain-research-agent: crypto/geopolitics/economics/culture incubation.
-- global-portfolio-agent: active global portfolio management intent, existing-position target/exit/rebuy decisions, trend-opportunity scouting, and gated execution only through an approved Janus portfolio order-management path or approved independent Polymarket fallback path defined in `codex_tooling_contract.md`.
+- janus-covered-market-portfolio-agent: internal Janus covered-market portfolio/inventory management for NBA/WNBA and future Janus-owned market lanes; owns app portfolio state, StrategyPlanJSON inventory effects, target/exit/rebuy evidence, and Janus order-manager integration for covered markets only.
+- codex-global-portfolio-agent (alias: global-portfolio-agent): Codex app automation for operator/global positions and uncovered-market trend scouting; owns existing-position target/exit/rebuy decisions, proactive underpriced-underdog opportunity scans, return receipts, and gated execution only through `global_portfolio_manager_contract.md` plus approved `codex_tooling_contract.md` paths.
 
 Sub-agent policy:
 - Spawn Codex sub-agents only when the current task explicitly benefits from parallel, bounded, non-overlapping work.

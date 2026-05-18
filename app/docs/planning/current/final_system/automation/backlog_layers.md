@@ -74,11 +74,12 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Closed foundation | Current architecture and degradation maps completed. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | Closed foundation | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | Planned/sprint | Validate minimum order constraints and market-order exception policy. |
-| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Planned/sprint | Add chart-equivalent microstructure metrics to event review bundle. |
+| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Closed foundation | Chart-equivalent microstructure metrics implemented for event review/live monitor. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Planned/sprint | Calibrate profit-ratcheted risk ladder from account and DB histories. |
-| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Planned/sprint | Build global portfolio target/rebuy ledger and watchlist schema. |
-| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Planned/sprint | Define active portfolio-manager execution policy and trend lane. |
-| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Planned/sprint | Split Codex tooling into Janus wrappers and independent Polymarket execution fallback. |
+| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Closed foundation | Global portfolio target/rebuy ledger and watchlist schema implemented. |
+| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Closed foundation | Active Codex global portfolio-manager execution policy and trend lane defined with ledger/preview surfaces. |
+| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | Codex tooling split and preview-first Polymarket fallback base implemented. |
+| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Planned/sprint | Implement approved global portfolio execution gate proof and concrete order adapter. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Planned/sprint | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Planned backlog | Turn winning profile studies into benchmark hypotheses. |

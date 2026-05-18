@@ -27,9 +27,9 @@ The controller should evaluate all axes before selecting a persona.
 
 | Domain | Subdomain | Current Stage | Default Control Level | Current Purpose |
 |---|---|---|---|---|
-| `sports` | `basketball/nba` | `live-limited` | `janus-controlled` plus `codex-assisted` | First mature implementation base; source of current live-event architecture. |
-| `sports` | `basketball/wnba` | `min-size-test-pending` | `shadow` to `codex-assisted` | High-priority portability lane; needs capture/replay/fillability evidence and careful minimal testing. |
-| `global-portfolio` | `polymarket-account` | `research / order-path-incubation` | `watch-only` to `codex-assisted` after approved gates | Monitor non-Janus positions, exits, stale targets, rebuy zones, concentration risk, and prepare gated portfolio-manager/direct-Polymarket fallback execution. |
+| `sports` | `basketball/nba` | `live-limited` | `janus-controlled` plus `codex-assisted` | First mature implementation base; source of current live-event architecture and internal covered-market portfolio/inventory behavior. |
+| `sports` | `basketball/wnba` | `min-size-test-pending` | `shadow` to `codex-assisted` | High-priority portability lane; needs capture/replay/fillability evidence, careful minimal testing, and internal covered-market inventory handling before live expansion. |
+| `global-portfolio` | `polymarket-account` | `research / order-path-incubation` | `codex-assisted` after approved gates | Codex global portfolio management for operator/global positions, exits, stale targets, rebuy zones, concentration risk, and uncovered-market trend scouting. It is separate from Janus covered-market portfolio/inventory. |
 | `crypto` | `up-down-options` | `idea` | `watch-only` | Future high-frequency domain requiring extensive backtest, tick data, and separate risk model. |
 | `geopolitics` | `long-term-events` | `idea` | `watch-only` | Future long-horizon signal and target/rebuy domain. |
 | `economics` | `macro-events` | `idea` | `watch-only` | Future domain after core ledger/risk/review infrastructure is stable. |
@@ -70,7 +70,7 @@ NBA and WNBA share contracts where possible, but WNBA retains separate liquidity
 
 ## Global Portfolio Mapping
 
-Global portfolio monitoring is not the same as live sports trading.
+Global portfolio management is not the same as live sports trading and not the same as the internal Janus covered-market portfolio/inventory manager.
 
 Initial allowed work:
 
@@ -79,8 +79,9 @@ Initial allowed work:
 - concentration and correlation notes
 - proposed exits/rebuys as issues or operator-review tasks
 - Obsidian profile/market notes
+- proactive trend-opportunity scouting in uncovered categories when higher-priority live safety and NBA/WNBA readiness work is not active
 
-Execution authority requires a separate safety policy and should not inherit basketball live permissions.
+Execution authority requires a separate safety policy and must not inherit basketball live permissions or NBA/WNBA testing budget.
 
 The approved execution surface may be either:
 

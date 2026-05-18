@@ -47,7 +47,8 @@ The v1 repo-local implementation is `app/runtime/controller_queue.py`, with CLI 
 | `execution-ledger` | Direct CLOB order/fill linkage, lifecycle attribution. |
 | `wnba-readiness` | WNBA passive to minimal live readiness. |
 | `docs-obsidian-github` | Source-of-truth docs, Obsidian, issues, automation health. |
-| `global-portfolio` | Read-only portfolio scan, target/rebuy proposals, concentration review. |
+| `covered-market-portfolio` | Internal Janus portfolio/inventory work for NBA/WNBA and future covered market lanes. |
+| `global-portfolio` | Codex global portfolio management: existing operator/global position targets, stale exits/rebuys, concentration review, and uncovered-market trend scouting under gated execution contracts. |
 | `future-domain` | Crypto, geopolitics, economics, culture incubation. |
 
 ## Resource Locks
@@ -140,7 +141,9 @@ An issue comment without a blocker change, implementation evidence, validation r
 | `risk-ledger-agent` | Bankroll sleeves, exposure, inventory, lifecycle attribution. |
 | `profile-research-agent` | Winning profile studies and caveated implications. |
 | `future-domain-research-agent` | New market/domain incubation. |
-| `global-portfolio-agent` | Active global portfolio management intent: existing-position target/exit/rebuy decisions, trend-opportunity scouting, and gated execution only through `global_portfolio_manager_contract.md` plus `codex_tooling_contract.md`. |
+| `janus-covered-market-portfolio-agent` | Internal Janus covered-market portfolio/inventory management for NBA/WNBA and future Janus-owned lanes. |
+| `codex-global-portfolio-agent` | Active global portfolio management intent: existing-position target/exit/rebuy decisions, proactive trend-opportunity scouting in uncovered categories, return-receipt tracking, and gated execution only through `global_portfolio_manager_contract.md` plus `codex_tooling_contract.md`. |
+| `global-portfolio-agent` | Compatibility alias for `codex-global-portfolio-agent`; do not use for internal Janus covered-market portfolio work. |
 
 ## Initial Queue Storage
 

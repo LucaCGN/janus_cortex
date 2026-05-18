@@ -8,9 +8,9 @@ Prompt file: `app/docs/planning/current/final_system/automation/global_portfolio
 
 ## Purpose
 
-Define the separate portfolio-management automation for non-Janus or partially-Janus Polymarket exposure.
+Define the separate Codex global portfolio-management automation for non-Janus or partially-Janus Polymarket exposure.
 
-This automation is not a validator for NBA/WNBA Janus trades and is not merely a read-only explorer. Its intended job is to help Janus make money across the operator's broader expectation-markets portfolio by:
+This automation is not a validator for NBA/WNBA Janus trades, not the internal Janus covered-market portfolio/inventory agent, and not merely a read-only explorer. Its intended job is to help Janus make money across the operator's broader expectation-markets portfolio by:
 
 - managing already-existing positions that the operator chose to buy
 - maintaining or closing matching sell targets when direct CLOB truth and Janus gates allow it
@@ -26,6 +26,16 @@ The portfolio manager must also route through the correct Codex tool surface:
 - Janus-facing work uses Janus API/runtime wrappers, currently `codex_tool/*` and target `codex_tools/janus/*`.
 - Direct Polymarket fallback work uses target `codex_tools/polymarket/*`, not Janus API, when Janus is degraded and the independent execution gate is implemented and approved.
 - The target split is governed by `automation/codex_tooling_contract.md` and GitHub issue `#53`.
+- Concrete non-dry-run portfolio execution beyond preview/ledger planning is tracked separately in GitHub issue `#54`.
+
+## Scope Boundary
+
+Janus has two portfolio concepts that must not be merged:
+
+| Name | Owner | Scope | Not Scope |
+|---|---|---|---|
+| Internal Janus covered-market portfolio agent | Janus trading Python system | Covered markets such as NBA/WNBA: StrategyPlanJSON inventory effects, covered-market target/exit/rebuy evidence, Janus order-manager validators, event review, and DB/API reconciliation. | Proactive scouting of uncovered geopolitics/economics/culture markets. |
+| Codex global portfolio manager | Codex app automation `janus-portfolio-manager` | Operator/global positions, target maintenance, stale exits/rebuys, uncovered-category trend scouting, return receipts, and future-domain lessons. | Validating Janus NBA/WNBA trades or owning covered-market strategy authority. |
 
 ## Authority Stack
 
@@ -66,7 +76,7 @@ The default action for unmatched open positions is to produce a target-policy de
 
 ### Trend-Opportunity Scouting
 
-For markets where Janus has no current position, the portfolio manager may scout uncovered categories such as geopolitics, economics, culture, crypto, sports futures, and other prediction-market domains.
+For markets where Janus has no current position, the portfolio manager should proactively scout uncovered categories such as geopolitics, economics, culture, crypto, sports futures, and other prediction-market domains when higher-priority safety and NBA/WNBA readiness work is not active.
 
 The premise is trend trading, not final-outcome prediction. A candidate must record:
 
@@ -78,6 +88,8 @@ The premise is trend trading, not final-outcome prediction. A candidate must rec
 - maximum risk and portfolio budget bucket
 - why this is a trend or mispricing setup rather than a raw outcome prediction
 - what would falsify the trade
+- why the candidate is an underpriced underdog, trend continuation, or asymmetric return setup rather than a headline prediction
+- what receipt would prove the business idea useful for future credits/token spend
 
 New-market trend entries require stronger gates than existing-position target maintenance because they expand the portfolio into uncovered categories.
 
@@ -87,16 +99,16 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 
 1. Direct CLOB/account truth is fresh and resolves the relevant market, token, open orders, fills, collateral, and position state.
 2. One approved execution path is selected: either Janus API/order manager exposes an explicit global-portfolio execution path for the action, or Janus API/runtime is degraded and an approved independent `codex_tools/polymarket/*` path exists and passes `automation/codex_tooling_contract.md`.
-4. The action is recorded in a portfolio ledger with source evidence, strategy reason, target/stop/rebuy policy, idempotency key, and external order ids when available.
-5. A global-portfolio risk budget exists separately from NBA/WNBA live-testing risk.
-6. The action satisfies Polymarket minimum-size/minimum-notional constraints and any market-order exception policy.
-7. A kill switch or disabled execution flag is not active.
-8. The automation can prove that it is not using screenshots, stale portfolio mirrors, or chat memory as execution truth.
-9. Any direct Polymarket fallback action has a reconciliation plan back into Janus once Janus is healthy.
+3. The action is recorded in a portfolio ledger with source evidence, strategy reason, target/stop/rebuy policy, idempotency key, and external order ids when available.
+4. A global-portfolio risk budget exists separately from NBA/WNBA live-testing risk.
+5. The action satisfies Polymarket minimum-size/minimum-notional constraints and any market-order exception policy.
+6. A kill switch or disabled execution flag is not active.
+7. The automation can prove that it is not using screenshots, stale portfolio mirrors, or chat memory as execution truth.
+8. Any direct Polymarket fallback action has a reconciliation plan back into Janus once Janus is healthy.
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
-Current state: `#53` is open, so the independent `codex_tools/polymarket/*` execution path is not yet complete authority. Until it exists and passes tests, direct fallback is plan-only.
+Current state: base `#53` tooling is preview-first and non-executing. Concrete non-dry-run execution is tracked by `#54`; until that issue passes, direct fallback remains plan-only or dry-run preview-only.
 
 ## New-Market Learning Rule
 

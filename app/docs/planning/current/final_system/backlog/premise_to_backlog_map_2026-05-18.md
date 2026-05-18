@@ -53,11 +53,12 @@ Obsidian sources:
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Closed foundation | Seed issues `#17-#29` | API-up validation completed against the running non-live API. |
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | Closed foundation | P257-P265 | WNBA minimal-readiness dry run completed; follow-up `#50` owns passive capture and season-level shadow backtests. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | Readiness builder | P138-P142, P197-P199 | Validate minimum order constraints and market-order exception policy. |
-| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Readiness builder | P243-P251 | Add analytical chart-equivalent metrics to event review bundle. |
+| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Closed foundation | P243-P251 | Analytical chart-equivalent metrics implemented for event review/live monitor. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Readiness builder | P190-P208, P252-P255 | Calibrate profit-ratcheted risk ladder from account and DB histories. |
-| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Readiness builder | P268-P274 | Build global portfolio target/rebuy ledger and watchlist schema. |
-| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Active portfolio/order-path policy | P268-P274, operator correction 2026-05-18 | Define active portfolio-manager execution policy and trend lane. |
-| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Active tooling/order-path policy | P268-P274, NP005-NP006, operator correction 2026-05-18 | Split Codex tooling into Janus wrappers and independent Polymarket execution fallback. |
+| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Closed foundation | P268-P274 | Global portfolio target/rebuy ledger and watchlist schema implemented. |
+| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Closed foundation | P268-P274, operator correction 2026-05-18 | Active Codex global portfolio-manager policy, prompt, ledger, and preview surfaces implemented. |
+| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | P268-P274, NP005-NP006, operator correction 2026-05-18 | Codex tooling split and preview-first Polymarket fallback base implemented. |
+| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Active portfolio/order-path implementation | P268-P274, operator correction 2026-05-18 | Implement approved global portfolio execution gate proof and concrete order adapter. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | P268-P274, global portfolio evidence | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Readiness builder | P257-P265 | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Research/incubation | P270-P274 | Turn winning profile studies into benchmark hypotheses. |
@@ -68,7 +69,7 @@ Obsidian sources:
 
 | Idea | Why Deferred | Promotion Trigger |
 |---|---|---|
-| Direct raw Codex/MCP Polymarket manager bypass | Raw connector execution must not bypass direct CLOB truth, risk, order, ledger, idempotency, reconciliation, and kill-switch gates. | `#52` defines portfolio-manager authority and `#53` proves an approved independent Polymarket fallback path exists. |
+| Direct raw Codex/MCP Polymarket manager bypass | Raw connector execution must not bypass direct CLOB truth, risk, order, ledger, idempotency, reconciliation, and kill-switch gates. | `#54` implements the first concrete approved execution gate proof after `#52/#53` base policy/tooling acceptance. |
 | Multiple FastAPI apps or Redis-backed workers | Current direction is modular monolith first. | `#40` proves modular monolith cannot meet independence/latency needs. |
 | Fully automated future-domain execution | Basketball and core ledger/risk/review are not stable enough. | `#47` or `#48` reach shadow evidence and min-size-test criteria. |
 | Frontier model as normal live analyst | Cost/return ratio is not justified at current bankroll scale. | `#41` defines budget state and realized returns justify escalation. |
@@ -82,10 +83,11 @@ Obsidian sources:
 5. Completed: run API-up validation `#33`.
 6. Completed: run WNBA dry run `#34`.
 7. Completed: validate direct open CLOB order mirroring through `#49`.
-8. Next: finish `#52` so `janus-portfolio-manager` has explicit active-management authority, gates, and trend-lane evidence requirements before it can trade.
-9. Implement `#53` before relying on independent direct Polymarket fallback for portfolio-manager or live-monitor break cases.
-10. Route WNBA passive capture/shadow publication through `#50`, or expand review/risk/execution/portfolio metrics through `#42-#45` when live safety does not preempt.
-11. Use `#46-#48` for future-domain and profile research without live authority unless promoted by `#52` evidence and operator-approved gates.
+8. Completed: close `#52` after active Codex global portfolio-manager authority, gates, trend-lane evidence requirements, action ledger, and order-management preview were implemented.
+9. Completed: close `#53` after base `codex_tools/janus` and `codex_tools/polymarket` split, preview-first fallback gates, ledger, account reads, CLI, and compatibility wrappers were implemented.
+10. Next portfolio execution work is `#54`, but it must not preempt NBA/WNBA readiness unless direct live-money safety is unclear.
+11. Route WNBA passive capture/shadow publication through `#50`, and expand sports readiness through `#42` and `#44` when live safety does not preempt.
+12. Use `#46-#48` for future-domain and profile research without live authority unless promoted by `#54` execution-gate evidence and operator-approved gates.
 
 ## Issue Creation Rule Going Forward
 

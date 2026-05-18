@@ -138,13 +138,14 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | closed | Current architecture and service degradation map completed in `architecture/current_architecture_and_degradation_map.md`. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | closed | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | open | Validate Polymarket minimum order constraints and market-order exception policy. |
-| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | open | Add chart-equivalent microstructure metrics to event review bundle. |
+| [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | closed | Chart-equivalent microstructure metrics implemented for event review/live monitor; later authority promotion belongs to replay/fillability follow-up work. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
-| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | open | Build global portfolio target/rebuy ledger and watchlist schema. |
+| [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | closed | Global portfolio watchlist schema, read-only tooling, target policy flags, and artifacts implemented; active execution moved to `#54`. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | closed | Direct open CLOB order mirror endpoint implemented and runtime-validated; portfolio HTTP orders now expose the four current direct open sell targets. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | open | Run passive WNBA CLOB capture and season-level shadow backtests. |
-| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | open | Define active portfolio-manager execution policy and trend lane. |
-| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | open | Split Codex tooling into Janus wrappers and independent Polymarket execution fallback. |
+| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | closed | Active Codex global portfolio-manager policy, prompt, action ledger, and dry-run order-management preview implemented. |
+| [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | closed | Base `codex_tools/janus` and `codex_tools/polymarket` split, preview-first fallback gates, account reads, ledgers, CLI, and compatibility wrappers implemented. |
+| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | open | Implement approved global portfolio execution gate proof and concrete order adapter. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |

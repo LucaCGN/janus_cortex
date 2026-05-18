@@ -51,7 +51,7 @@ The controller should record:
 | 6 | Development task is claimed or review-ready | `development-agent` or `development-end-phase` |
 | 7 | Backlog/issue taxonomy/queue missing or stale | `issue-backlog-manager` |
 | 8 | Source-of-truth docs or Obsidian indexes stale | `docs-memory-agent` |
-| 9 | Global portfolio management/scouting pass is due and no higher-priority live safety task is active | `global-portfolio-agent` |
+| 9 | Codex global portfolio management/scouting pass is due and no higher-priority live safety or NBA/WNBA readiness task is active | `codex-global-portfolio-agent` / `global-portfolio-agent` alias |
 | 10 | New market/domain idea needs classification | `future-domain-research-agent` or `profile-research-agent` |
 | 11 | No material state change | `master-controller` no-op |
 
@@ -76,15 +76,25 @@ The 2026-05-18 bootstrap pass performed the first repo-local reconciliation and 
 
 ## Global Portfolio Rules
 
-The `janus-portfolio-manager` lane is active-management intent, not a Janus NBA/WNBA trade validator and not merely a read-only explorer:
+The `janus-portfolio-manager` lane is the Codex global portfolio manager. It is active-management intent for the operator/global book, not a Janus NBA/WNBA trade validator, not the internal Janus covered-market portfolio/inventory agent, and not merely a read-only explorer:
 
 1. Manage existing operator/global positions: verify direct CLOB truth, matching targets, stale/missing targets, exits, rebuy watches, and concentration risk.
-2. Scout uncovered categories for trend-following opportunities where the thesis is trend, market structure, liquidity, and return path rather than direct final-outcome prediction.
+2. Proactively scout uncovered categories such as geopolitics, economics, culture, crypto, and sports futures for trend-following opportunities where the thesis is trend, market structure, liquidity, mispricing, and return path rather than direct final-outcome prediction.
 3. Execute only through an approved Janus portfolio order-management path or an approved independent `codex_tools/polymarket/*` fallback path after all gates in `automation/global_portfolio_manager_contract.md` and `automation/codex_tooling_contract.md` are true.
 4. If execution gates are missing, update watchlists, Obsidian lessons, GitHub blockers, and runtime evidence without preparing or submitting orders.
 5. Successful new-market trades must become backlog tests or Obsidian do/don't lessons before any domain is promoted.
+6. During NBA/WNBA test days, global-portfolio expansion is lower priority than sports readiness unless direct live-money safety is unclear.
 
 Detailed global-portfolio automation rules live in `automation/global_portfolio_manager_contract.md`. Codex tool split and direct Polymarket fallback rules live in `automation/codex_tooling_contract.md`. The older explorer contract is retained as read-only discovery context.
+
+## Covered-Market Portfolio Rules
+
+The internal Janus covered-market portfolio agent is different from the Codex global portfolio manager:
+
+1. It is associated with markets covered by the Janus trading Python system, currently NBA and WNBA.
+2. It works through Janus DB/API state, StrategyPlanJSON inventory effects, direct CLOB/account reconciliation, Janus order-manager validators, and event review.
+3. It does not scout uncovered geopolitics, economics, culture, crypto, or other future-domain opportunities.
+4. It may run in parallel with Codex global portfolio work only when file/module/event/service/market locks are disjoint and no live-game safety window forbids development.
 
 ## New Domain Rules
 

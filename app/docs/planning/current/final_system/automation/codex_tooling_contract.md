@@ -15,6 +15,7 @@ The current `codex_tool/` package is useful, but it is mostly a thin Codex-to-Ja
 - `codex_tool/*` exists and is imported by current tests and reports.
 - Existing `codex_tool` scripts should be treated as compatibility entrypoints until `#53` migrates them safely.
 - Most current `codex_tool` scripts call Janus API endpoints on `http://127.0.0.1:8010`.
+- The `codex_tools/janus/` and `codex_tools/polymarket/` base namespaces now exist with tests, preview-first direct Polymarket safety gates, read-only account snapshot helpers, inert fallback ledger writes, and selected Janus compatibility migrations.
 - `tools/polymarket_smoke_order.py` is not an automation path and must remain retired from controller/portfolio-manager use.
 
 Do not rename or delete `codex_tool/` until compatibility tests prove the existing imports and automation prompts still work.
@@ -50,14 +51,15 @@ If any gate is missing, the tool must return a management plan or blocker and mu
 
 ## Persona Use
 
-- `global-portfolio-agent` may use `codex_tools/polymarket/` for approved portfolio management when Janus is degraded or when the portfolio-manager contract selects the direct path.
+- `codex-global-portfolio-agent` may use `codex_tools/polymarket/` for approved portfolio management when Janus is degraded or when the portfolio-manager contract selects the direct path. The older `global-portfolio-agent` name is only a compatibility alias for this Codex global portfolio persona.
+- `janus-covered-market-portfolio-agent` uses `codex_tools/janus/` and Janus API/order-manager gates for covered markets such as NBA/WNBA. It must not use direct Polymarket fallback tools for speculative uncovered-market scouting.
 - `live-monitor-analyst` may use `codex_tools/polymarket/` only for urgent protect/close/cancel/replace actions during a Janus runtime break, and only under the independent Polymarket execution gate.
 - `master-controller` may inspect tool availability, create issues, route blockers, and no-op. It must not execute orders itself.
 - `development-agent` owns implementation under `#53`.
 
 ## Implementation Acceptance
 
-`#53` is not complete until:
+`#53` base acceptance is complete when:
 
 - `codex_tools/janus/` and `codex_tools/polymarket/` package skeletons exist.
 - Existing `codex_tool` imports are preserved.
@@ -65,3 +67,4 @@ If any gate is missing, the tool must return a management plan or blocker and mu
 - Direct Polymarket execution defaults to read-only/dry-run.
 - Tests cover blocked execution without direct truth, without risk budget, without ledger/idempotency, without kill-switch clearance, and without explicit execution approval.
 
+Concrete non-dry-run direct execution is a separate implementation issue after base tooling acceptance. It must not be smuggled into `#53` as a residual comment thread.
