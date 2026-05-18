@@ -6,8 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from codex_tool import _client as legacy_client
+import codex_tool.janus_status as legacy_status_cli
 from codex_tools.janus import client as janus_client
 from codex_tools.janus import ops as janus_ops
+from codex_tools.janus import status as janus_status
 from codex_tools.polymarket import (
     PREVIEW_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
@@ -106,6 +108,26 @@ def test_janus_ops_cycle_parser_preserves_legacy_cycle_args() -> None:
         "notes": None,
         "execute": False,
     }
+
+
+def test_janus_status_namespace_wraps_status_endpoint(monkeypatch) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def _api_json(api_root: str, method: str, path: str) -> dict[str, object]:
+        calls.append((api_root, method, path))
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(janus_status, "api_json", _api_json)
+
+    response = janus_status.get_status("http://janus.local")
+
+    assert response == {"ok": True, "path": "/v1/ops/status"}
+    assert calls == [("http://janus.local", "GET", "/v1/ops/status")]
+
+
+def test_legacy_janus_status_cli_delegates_to_target_namespace() -> None:
+    assert legacy_status_cli.STATUS_PATH == janus_status.STATUS_PATH
+    assert legacy_status_cli.main_for_status is janus_status.main_for_status
 
 
 def test_polymarket_fallback_blocks_when_gates_are_missing() -> None:
