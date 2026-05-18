@@ -153,4 +153,3 @@ Recommended routing effect:
 2. If no live safety task is active and the queue is clean, this map makes `#41` the next P0 activation task after `#40`.
 3. If a component is degraded, use the dependency table to decide whether the pass can still perform read-only inspection, docs/issue work, shadow/replay work, or no-op.
 4. If an agent proposes a broad rewrite, require concrete evidence that the modular monolith cannot meet the need before introducing Redis, a new service, or a new app boundary.
-
