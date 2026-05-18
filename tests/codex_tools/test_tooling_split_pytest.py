@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
+from datetime import UTC, datetime
+from pathlib import Path
 
 from codex_tool import _client as legacy_client
 from codex_tools.janus import client as janus_client
@@ -8,6 +11,7 @@ from codex_tools.polymarket import (
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
     build_fallback_decision,
+    write_fallback_decision_ledger,
 )
 
 
@@ -95,3 +99,50 @@ def test_idempotency_and_ledger_id_are_stable_for_same_intent() -> None:
     assert first.idempotency_key == second.idempotency_key
     assert first.ledger_id == second.ledger_id
     assert asdict(intent)["idempotency_key"] is None
+
+
+def test_fallback_decision_ledger_writes_blocked_decision_once(tmp_path: Path) -> None:
+    written_at = datetime(2026, 5, 18, 14, 5, 0, tzinfo=UTC)
+    decision = build_fallback_decision(_intent(), PolymarketExecutionGateSnapshot())
+
+    first = write_fallback_decision_ledger(
+        decision,
+        ledger_root=tmp_path,
+        written_at_utc=written_at,
+    )
+    second = write_fallback_decision_ledger(
+        decision,
+        ledger_root=tmp_path,
+        written_at_utc=written_at,
+    )
+
+    assert first.status == "written"
+    assert first.created is True
+    assert second.status == "already_recorded"
+    assert second.created is False
+
+    ledger_path = tmp_path / "2026-05-18" / "fallback_decisions.jsonl"
+    rows = ledger_path.read_text(encoding="utf-8").splitlines()
+    assert len(rows) == 1
+
+    entry = json.loads(rows[0])
+    assert entry["schema_version"] == "polymarket_fallback_ledger_entry_v1"
+    assert entry["ledger_id"] == decision.ledger_id
+    assert entry["decision"]["status"] == "blocked_missing_execution_gates"
+    assert entry["decision"]["order_submission_attempted"] is False
+    assert "No order was placed" in entry["no_execution_statement"]
+
+
+def test_fallback_decision_ledger_records_preview_without_execution(tmp_path: Path) -> None:
+    decision = build_fallback_decision(_intent(), _satisfied_gate())
+
+    result = write_fallback_decision_ledger(
+        decision,
+        ledger_root=tmp_path,
+        written_at_utc=datetime(2026, 5, 18, 14, 6, 0, tzinfo=UTC),
+    )
+
+    entry = json.loads(Path(result.ledger_path).read_text(encoding="utf-8").splitlines()[0])
+    assert entry["decision"]["status"] == "dry_run_preview_only"
+    assert entry["decision"]["execution_authorized"] is False
+    assert entry["decision"]["order_submission_attempted"] is False
