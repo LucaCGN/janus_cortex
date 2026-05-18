@@ -7,6 +7,7 @@ from pathlib import Path
 
 from codex_tool import _client as legacy_client
 from codex_tools.janus import client as janus_client
+from codex_tools.janus import ops as janus_ops
 from codex_tools.polymarket import (
     PREVIEW_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
@@ -64,6 +65,47 @@ def test_janus_client_namespace_preserves_legacy_api_client() -> None:
     assert janus_client.DEFAULT_API_ROOT == legacy_client.DEFAULT_API_ROOT
     assert janus_client.api_json is legacy_client.api_json
     assert janus_client.base_parser is legacy_client.base_parser
+
+
+def test_janus_ops_namespace_wraps_cycle_endpoints(monkeypatch) -> None:
+    calls: list[tuple[str, str, str, dict[str, object]]] = []
+
+    def _api_json(api_root: str, method: str, path: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append((api_root, method, path, payload))
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(janus_ops, "api_json", _api_json)
+
+    response = janus_ops.run_ops_cycle(
+        "http://janus.local",
+        janus_ops.INTEGRITY_CHECK_PATH,
+        {"event_id": "event-1", "dry_run": True},
+    )
+
+    assert response == {"ok": True, "path": "/v1/ops/integrity-check"}
+    assert calls == [
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/ops/integrity-check",
+            {"event_id": "event-1", "dry_run": True},
+        )
+    ]
+
+
+def test_janus_ops_cycle_parser_preserves_legacy_cycle_args() -> None:
+    parser = janus_ops.build_cycle_parser("cycle")
+    args = parser.parse_args(["--event-id", "event-1", "--source", "pytest"])
+
+    assert janus_ops.build_cycle_payload(args) == {
+        "session_date": None,
+        "event_ids": ["event-1"],
+        "run_id": None,
+        "account_id": None,
+        "source": "pytest",
+        "notes": None,
+        "execute": False,
+    }
 
 
 def test_polymarket_fallback_blocks_when_gates_are_missing() -> None:
