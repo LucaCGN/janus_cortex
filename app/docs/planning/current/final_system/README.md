@@ -36,6 +36,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | `backlog/immediate_issue_seed_2026-05-17.md` | Issue-ready backlog from the current P0/P1 lanes and new missing pieces. |
 | `backlog/premise_to_backlog_map_2026-05-18.md` | Post-foundation premise-to-issue map for open issues `#30`, `#32`, and `#37-#48`. |
 | `obsidian/bootstrap_map.md` | Obsidian vault structure and repo-linking plan. |
+| `obsidian/modular_curation_policy.md` | Edit-before-create policy that keeps Obsidian modular instead of append-only. |
 
 ## Authority
 
@@ -55,6 +56,8 @@ The automation prompt should remain small and stable. Behavior should be changed
 The controller must evaluate market/domain scope before applying lifecycle rules. `pregame`, `live`, and `postgame` are basketball lifecycle phases, not universal Janus modes.
 
 Every controller/persona pass should inherit `global_ego_and_purpose.md`: Janus is an expectation-markets system with basketball as the immediate implementation domain, not the system boundary. That identity does not override the authority stack or safety gates.
+
+Obsidian maintenance must follow `obsidian/modular_curation_policy.md`. Future agents should edit, merge, split, supersede, and relink existing notes before creating new notes. A docs-memory pass that creates no new note can still be successful if it improves navigation, removes duplication, or clarifies authority.
 
 ## Current Activation Gate
 

@@ -26,14 +26,16 @@ This check does not validate live trading readiness. It validates whether agents
 3. Confirm `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md` lists GitHub issue URLs.
 4. Query GitHub for open `JANUS-P0-*` and `JANUS-P1-*` issues.
 5. Confirm Obsidian index exists at `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\00_Janus_Control\Janus Master Index.md`.
-6. Confirm LLM-wiki control files exist:
+6. Confirm Obsidian modular curation policy exists at `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\00_Janus_Control\Obsidian Modular Curation Policy.md`.
+7. Confirm LLM-wiki control files exist:
    - `AGENTS.md`
    - `index.md`
    - `log.md`
    - `raw\README.md`
-7. Confirm the first curated notes exist:
+8. Confirm the first curated notes exist:
    - `00_Janus_Control\Issue Backlog Index.md`
    - `00_Janus_Control\Janus Wiki Maintenance Runbook.md`
+   - `00_Janus_Control\Obsidian Modular Curation Policy.md`
    - `10_System_Specs\Premise Decisions 2026-05-17.md`
    - `10_System_Specs\Source Of Truth Layering.md`
    - `10_System_Specs\Controller And Queue Design.md`
@@ -43,8 +45,14 @@ This check does not validate live trading readiness. It validates whether agents
    - `30_Game_Reviews\CLE DET 2026-05-13.md`
    - `30_Game_Reviews\WNBA Lynx Wings 2026-05-14.md`
    - `40_Profile_Studies\Polymarket Winning Profiles Overview.md`
-8. Confirm `local/shared/handoffs/daily-live-validation/status.md` includes the latest controller pass.
-9. Confirm unresolved live-safety gates are explicit before any pregame/live mode.
+9. Check Obsidian curation quality:
+   - new notes have parent index links
+   - profile/game notes update their overview notes
+   - duplicate concept notes are merged or marked superseded
+   - `90_Inbox` items have next actions
+   - no curated note is only a pasted report or chat dump
+10. Confirm `local/shared/handoffs/daily-live-validation/status.md` includes the latest controller pass.
+11. Confirm unresolved live-safety gates are explicit before any pregame/live mode.
 
 ## Output
 
@@ -58,6 +66,7 @@ The artifact should include:
 - Selected controller mode.
 - GitHub issue state summary.
 - Obsidian note presence summary.
+- Obsidian curation outcome summary: updated, merged, split, created, superseded, inboxed, or no material change.
 - Janus API/service state if checked.
 - Live-safety gate summary.
 - Next recommended issue-backed task.
@@ -82,6 +91,7 @@ For repeated no-change passes, follow `master_controller_contract.md` no-change 
 - Repo final-system docs exist and are linked.
 - Obsidian bootstrap notes exist.
 - Obsidian includes the LLM-wiki control files: `AGENTS.md`, `index.md`, `log.md`, and `raw/`.
+- Obsidian includes the modular curation policy and the health check enforces edit-before-create behavior.
 - GitHub issues are created and linked from the issue seed.
 - Controller automation exists and points to repo docs.
 - This health-check procedure exists.

@@ -45,6 +45,7 @@ The controller automation should read these anchor files on every material pass:
 14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
 15. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
 16. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+17. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -95,6 +96,8 @@ Obsidian should hold curated context:
 - market-domain wisdom
 
 Obsidian should not hold live order truth, worker status, active lock authority, or service readiness truth.
+
+Obsidian maintenance must follow `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`. The default action is to update, merge, split, relink, or mark notes superseded before creating new notes. New notes are valid only when they represent durable concepts, cases, profiles, or source summaries that are linked from the relevant index and overview pages.
 
 ## Promotion Rule
 

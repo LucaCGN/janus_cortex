@@ -56,12 +56,13 @@ Every controller pass must read or inspect:
 17. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
 18. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
 19. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-20. `local/shared/handoffs/daily-live-validation/status.md`
-21. `local/shared/handoffs/development-agent/status.md`
-22. Latest relevant daily reports.
-23. GitHub issue state once the issue seed is created.
-24. Obsidian index notes once populated.
-25. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+20. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+21. `local/shared/handoffs/daily-live-validation/status.md`
+22. `local/shared/handoffs/development-agent/status.md`
+23. Latest relevant daily reports.
+24. GitHub issue state once the issue seed is created.
+25. Obsidian index notes once populated.
+26. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
 
 ## Axis-First Decision Model
 
@@ -151,7 +152,7 @@ Each controller pass should update or append:
 - `local/shared/handoffs/development-agent/status.md` for development state when relevant.
 - A final-system queue/status artifact once implemented.
 - GitHub issues for durable backlog items.
-- Obsidian notes only when the pass adds curated knowledge or cross-links.
+- Obsidian notes only when the pass adds curated knowledge or improves existing navigation, following `obsidian/modular_curation_policy.md`.
 
 ## No-Change Compression
 

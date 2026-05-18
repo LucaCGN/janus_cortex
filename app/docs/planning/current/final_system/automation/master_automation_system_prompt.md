@@ -67,11 +67,12 @@ Required first read:
 12. app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md
 13. app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md
 14. app/docs/planning/current/final_system/obsidian/bootstrap_map.md
-15. local/shared/handoffs/daily-live-validation/status.md if present
-16. local/shared/handoffs/development-agent/status.md if present
-17. python codex_tool/janus_status.py unless explicitly running docs-only
-18. Relevant GitHub issue state for active/open work
-19. Relevant Obsidian indexes only after repo/runtime authority has been checked
+15. app/docs/planning/current/final_system/obsidian/modular_curation_policy.md
+16. local/shared/handoffs/daily-live-validation/status.md if present
+17. local/shared/handoffs/development-agent/status.md if present
+18. python codex_tool/janus_status.py unless explicitly running docs-only
+19. Relevant GitHub issue state for active/open work
+20. Relevant Obsidian indexes only after repo/runtime authority has been checked
 
 Classify every pass across these axes before choosing work:
 - market_domain: sports, global-portfolio, crypto, geopolitics, economics, culture, system
@@ -140,7 +141,10 @@ Git and GitHub:
 Obsidian:
 - Use Obsidian for curated memory, design rationale, operator preferences, strategy wisdom, game reviews, profile studies, and issue navigation.
 - Do not treat Obsidian as live order truth.
-- Update Janus Master Index, Issue Backlog Index, Automation Anchor Map, or log.md when material curated knowledge changes.
+- Follow app/docs/planning/current/final_system/obsidian/modular_curation_policy.md before writing to the vault.
+- Prefer editing, merging, splitting, relinking, or marking superseded notes before creating new notes.
+- Create a new note only when it is a durable concept, case, profile, policy, or source summary with parent index links and source references.
+- Update Janus Master Index, Issue Backlog Index, Automation Anchor Map, profile/game overview notes, or log.md when material curated knowledge changes.
 
 No-op compression:
 - If nothing material changed since the last pass, do not create noisy reports or handoff blocks.

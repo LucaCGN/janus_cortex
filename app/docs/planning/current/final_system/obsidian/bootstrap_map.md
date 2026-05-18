@@ -32,6 +32,7 @@ Reference: `https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f`
 | `AGENTS.md` | Agent schema for maintaining the wiki. |
 | `index.md` | Content-oriented catalog of all maintained notes. |
 | `log.md` | Append-only chronological record of ingests, queries, and lint passes. |
+| `00_Janus_Control/Obsidian Modular Curation Policy.md` | Edit-before-create and vault refactor policy. |
 
 ## First Notes To Populate
 
@@ -43,6 +44,7 @@ Reference: `https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f`
 | `raw/sources/Karpathy LLM Wiki Gist 2026-05-17.md` | External LLM-wiki source. |
 | `00_Janus_Control/Janus Master Index.md` | This bootstrap map and final-system README. |
 | `00_Janus_Control/Janus Wiki Maintenance Runbook.md` | Janus-specific ingest/query/lint workflow. |
+| `00_Janus_Control/Obsidian Modular Curation Policy.md` | `obsidian/modular_curation_policy.md`. |
 | `00_Janus_Control/Issue Backlog Index.md` | Current canonical GitHub issues and duplicate issue hygiene. |
 | `10_System_Specs/Premise Decisions 2026-05-17.md` | `premise_decisions_2026-05-17.md`. |
 | `10_System_Specs/Janus Global Ego And Purpose.md` | `global_ego_and_purpose.md`. |
@@ -72,14 +74,22 @@ Reference: `https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f`
 
 Repo docs should link to Obsidian note titles and paths when curated wisdom is required. Obsidian notes should link back to repo docs and runtime reports.
 
+## Curation Rule
+
+The vault is not an append-only memory dump. Every Obsidian maintenance pass must follow `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`.
+
+Before creating a note, the agent must scan the relevant folder, `index.md`, and the parent overview note. Prefer updating, merging, splitting, relinking, or marking superseded notes before creating new notes.
+
 ## Health Check
 
 The controller should periodically check:
 
 - Are core Obsidian notes present?
 - Are `AGENTS.md`, `index.md`, and `log.md` present?
+- Is `00_Janus_Control/Obsidian Modular Curation Policy.md` present and linked?
 - Do notes link back to repo source docs?
 - Are raw chat/report insights stuck in `90_Inbox` without curation?
 - Are obsolete assumptions marked as superseded?
 - Are key winning/losing events captured as reusable examples?
 - Are GitHub issue state changes reflected in the issue/backlog notes?
+- Are duplicate notes being merged or superseded instead of allowed to accumulate?
