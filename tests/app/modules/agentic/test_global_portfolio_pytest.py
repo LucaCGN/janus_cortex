@@ -61,6 +61,12 @@ def test_build_watchlist_artifact_adds_review_questions_and_summary_pytest() -> 
     assert artifact.order_preparation_authorized is False
     assert artifact.summary["entry_count"] == 2
     assert artifact.summary["needs_operator_review_count"] == 1
+    assert artifact.summary["policy_flags"] == {
+        "future_domain_watch_only": 1,
+        "operator_manual_review": 1,
+        "target_stale": 1,
+    }
+    assert artifact.summary["target_policy"]["target_uncovered_or_stale_rows"] == 1
     assert artifact.entries[0].source_actor == "operator"
     assert artifact.entries[0].operator_review_questions == ["target requires operator review before any action"]
     assert artifact.entries[1].risk_bucket == "future-domain"
@@ -116,9 +122,12 @@ def test_tool_writes_schema_artifact_and_report_pytest(tmp_path: Path) -> None:
     payload = json.loads(artifact_path.read_text(encoding="utf-8"))
     assert payload["no_execution_statement"] == "No execution is authorized by this artifact."
     assert payload["summary"]["target_states"] == {"target_missing": 1}
+    assert payload["summary"]["policy_flags"] == {"target_missing": 1}
     report = report_path.read_text(encoding="utf-8")
     assert "No orders were placed" in report
     assert "Direct CLOB/account truth remains required" in report
+    assert "Target Policy Review" in report
+    assert "review_only_no_execution" in report
 
 
 def test_render_watchlist_report_handles_empty_schema_pytest() -> None:
@@ -128,3 +137,39 @@ def test_render_watchlist_report_handles_empty_schema_pytest() -> None:
 
     assert "| none | watch-only | No source rows supplied |" in report
     assert "No execution is authorized by this artifact." in report
+
+
+def test_artifact_flags_paired_yes_no_exposure_pytest() -> None:
+    artifact = build_watchlist_artifact(
+        [
+            {
+                "market_title": "Will Team A win the title?",
+                "market_slug": "team-a-title-2026",
+                "outcome": "Yes",
+                "side": "yes",
+                "group": "operator-manual",
+                "target_state": "target_present",
+                "current_target": {"side": "sell", "limit_price": 0.5},
+                "source_evidence": ["direct_clob_position_snapshot"],
+            },
+            {
+                "market_title": "Will Team A win the title?",
+                "market_slug": "team-a-title-2026",
+                "outcome": "No",
+                "side": "no",
+                "group": "operator-manual",
+                "target_state": "target_missing",
+                "source_evidence": ["direct_clob_position_snapshot"],
+            },
+        ],
+        generated_at_utc="2026-05-18T11:15:00Z",
+    )
+
+    assert artifact.summary["target_policy"]["paired_exposure_rows"] == 2
+    assert artifact.summary["policy_flags"]["paired_yes_no_exposure"] == 2
+    assert "paired_yes_no_exposure" in artifact.entries[0].policy_flags
+    assert "target_present" in artifact.entries[0].policy_flags
+    assert "target_missing" in artifact.entries[1].policy_flags
+    assert artifact.entries[0].operator_review_questions == [
+        "Resolve paired Yes/No exposure before interpreting directional thesis."
+    ]
