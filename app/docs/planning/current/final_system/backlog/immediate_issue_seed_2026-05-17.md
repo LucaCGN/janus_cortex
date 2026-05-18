@@ -11,7 +11,7 @@ These are not the full final-system specs. They were the initial issue set used 
 
 Implementation note 2026-05-17: issues `#17-#29` now have tested foundations on `main`. Future work should open narrower follow-up issues for deeper calibration, live-readiness promotion, and production hardening instead of reopening this seed.
 
-Follow-up note 2026-05-18: current open follow-up issues are tracked in `premise_to_backlog_map_2026-05-18.md`. The first post-foundation set is `#30`, `#32`, and `#37-#48`; closed follow-up foundations include `#31`, `#35`, and `#36`.
+Follow-up note 2026-05-18: current follow-up issues are tracked in `premise_to_backlog_map_2026-05-18.md`. Governance issue `#30` created the label taxonomy and retro-labeled the closed seed issues `#17-#29`; later closed foundations are recorded in the premise-to-backlog map.
 
 ## Issue Labels Proposed
 
@@ -265,7 +265,7 @@ Created on 2026-05-18 after the seed foundation closed.
 
 | Issue | Priority | Purpose |
 |---|---|---|
-| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Create GitHub issue taxonomy labels and project hygiene. |
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | GitHub issue taxonomy labels created and closed seed issues retro-labeled. |
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Runtime handoff refresh completed after 2026-05-18 event reconciliation. |
 | [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Validate controller activation gate against repo-local runtime root. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | API-up validation of closed seed foundations completed against the running non-live Janus API. |

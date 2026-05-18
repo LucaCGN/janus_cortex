@@ -35,7 +35,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | `automation/docs_memory_health_check.md` | Checklist for repo, Obsidian, GitHub, and handoff health. |
 | `architecture/current_architecture_and_degradation_map.md` | Current FastAPI modular-monolith, service dependency, degradation, and legacy-controller classification map. |
 | `backlog/immediate_issue_seed_2026-05-17.md` | Issue-ready backlog from the current P0/P1 lanes and new missing pieces. |
-| `backlog/premise_to_backlog_map_2026-05-18.md` | Post-foundation premise-to-issue map for open issues `#30`, `#32`, and `#37-#48`. |
+| `backlog/premise_to_backlog_map_2026-05-18.md` | Post-foundation premise-to-issue map for follow-up issues `#30`, `#32`, and `#37-#50`. |
 | `obsidian/bootstrap_map.md` | Obsidian vault structure and repo-linking plan. |
 | `obsidian/modular_curation_policy.md` | Edit-before-create policy that keeps Obsidian modular instead of append-only. |
 

@@ -36,14 +36,14 @@ Obsidian sources:
 | P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | None currently open after `#41` closure; live readiness remains event-specific gated. |
 | P1 readiness builders | Needed for WNBA/NBA minimum-size testing and reliable reviews. | `#42`, `#43`, `#44`, `#45`, `#50` |
 | P2 research/incubation | Future-domain, profile-study, and strategy-expansion work. | `#46`, `#47`, `#48` |
-| Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#29`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`, `#39`, `#40`, `#41`, `#49` |
-| Governance hygiene | Issue labels, project hygiene, Obsidian/repo drift checks. | `#30` |
+| Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#30`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`, `#39`, `#40`, `#41`, `#49` |
+| Governance hygiene | Ongoing Obsidian/repo drift checks and future project setup if needed. | Closed foundation `#30`; open a focused follow-up only when new hygiene work is material. |
 
 ## Current Follow-Up Issue Backlog
 
 | Issue | Priority | Backlog Layer | Premise Coverage | Purpose |
 |---|---|---|---|---|
-| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Governance hygiene | P115-P122 | Complete GitHub project/label hygiene and optional seed retro-labeling. |
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Closed foundation | P115-P122 | GitHub taxonomy labels created and closed seed issues `#17-#29` retro-labeled. |
 | [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Closed foundation | P091-P109 | Repo-local runtime root and controller activation gate validated on 2026-05-18. |
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Closed foundation | P019-P030, P146-P149, P246-P255 | Fresh-DB NBA probe/account mapping gaps repaired and HTTP-path validated. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | Closed foundation | P004-P018, NP001-NP010 | Encode global ego/purpose across repo prompts and Obsidian. |

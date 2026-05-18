@@ -121,9 +121,9 @@ Every sprint-ready issue should include:
 
 ## Current Setup Status
 
-Native GitHub taxonomy labels were created on 2026-05-18 and open follow-up issues `#30-#36` were labeled.
+Native GitHub taxonomy labels were created on 2026-05-18. Open follow-up issues `#30-#36` were labeled first, and closed seed issues `#17-#29` were retro-labeled during the controller hygiene pass.
 
-Open issue [#30](https://github.com/LucaCGN/janus_cortex/issues/30) remains the project-hygiene tracker for retroactive labeling of closed seed issues `#17-#29` and any future GitHub Projects/type setup.
+[Issue #30](https://github.com/LucaCGN/janus_cortex/issues/30) is closed as the taxonomy/bootstrap hygiene tracker. Future GitHub Projects or native issue-type setup should use a new focused issue if it becomes useful.
 
 Issue titles and bodies should still include the same taxonomy fields explicitly because labels are not runtime truth and can be lost during exports:
 
