@@ -33,19 +33,19 @@ Obsidian sources:
 
 | Layer | Meaning | Current Use |
 |---|---|---|
-| P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | `#32`, `#37`, `#40`, `#41` |
+| P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | `#40`, `#41` |
 | P1 readiness builders | Needed for WNBA/NBA minimum-size testing and reliable reviews. | `#33`, `#34`, `#42`, `#43`, `#44`, `#45` |
 | P2 research/incubation | Future-domain, profile-study, and strategy-expansion work. | `#46`, `#47`, `#48` |
-| Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#29`, `#31`, `#35`, `#36`, `#39` |
+| Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#29`, `#31`, `#32`, `#35`, `#36`, `#37`, `#39` |
 | Governance hygiene | Issue labels, project hygiene, Obsidian/repo drift checks. | `#30` |
 
-## Current Open Issue Backlog
+## Current Follow-Up Issue Backlog
 
 | Issue | Priority | Backlog Layer | Premise Coverage | Purpose |
 |---|---|---|---|---|
 | [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Governance hygiene | P115-P122 | Complete GitHub project/label hygiene and optional seed retro-labeling. |
-| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Activation blocker | P091-P109 | Validate repo-local runtime root and controller activation gate. |
-| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Activation blocker | P019-P030, P146-P149, P246-P255 | Resolve fresh-DB NBA probe/account mapping gaps. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Closed foundation | P091-P109 | Repo-local runtime root and controller activation gate validated on 2026-05-18. |
+| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Closed foundation | P019-P030, P146-P149, P246-P255 | Fresh-DB NBA probe/account mapping gaps repaired and HTTP-path validated. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | Closed foundation | P004-P018, NP001-NP010 | Encode global ego/purpose across repo prompts and Obsidian. |
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | Closed foundation | P078-P090, P119-P122 | Active queue locks and controller pass ledger implemented for repo-local controller passes. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Activation blocker | P036-P069, P289, P294 | Build current architecture and service degradation maps. |
@@ -71,9 +71,9 @@ Obsidian sources:
 
 ## Execution Order
 
-1. Close or unblock `#37`.
-2. Validate controller activation gate through `#32`.
-3. Produce architecture/degradation maps in `#40`.
+1. Completed: close or unblock `#37`.
+2. Completed: validate controller activation gate through `#32`.
+3. Next: produce architecture/degradation maps in `#40`.
 4. Validate budget-aware LLM/Codex fallback in `#41`.
 5. Run API-up validation `#33`.
 6. Run WNBA dry run `#34`.

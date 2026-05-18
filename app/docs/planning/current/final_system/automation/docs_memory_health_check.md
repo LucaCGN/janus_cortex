@@ -53,6 +53,7 @@ This check does not validate live trading readiness. It validates whether agents
    - no curated note is only a pasted report or chat dump
 10. Confirm `local/shared/handoffs/daily-live-validation/status.md` includes the latest controller pass.
 11. Confirm unresolved live-safety gates are explicit before any pregame/live mode.
+12. For controller activation root validation, run `tools/janus_local.ps1 status` and `tools/janus_db.ps1 status` from a clean PowerShell shell, then fail the gate if `local_root` is ambiguous, outside the repo-local `local` folder, or if current final-system docs / active Obsidian source-of-truth notes point to a legacy runtime root.
 
 ## Output
 

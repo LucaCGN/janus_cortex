@@ -88,6 +88,8 @@ The recurring controller should remain paused until:
 
 As of the 2026-05-18 bootstrap pass, Codex performed the initial repo-local reconciliation and handoff refresh. The controller should still be manually enabled by the operator in the Codex app only after reviewing the refreshed handoffs and pushed docs.
 
+Validation checkpoint 2026-05-18T07:45Z: issue [#32](https://github.com/LucaCGN/janus_cortex/issues/32) verified that `tools/janus_local.ps1 status` and `tools/janus_db.ps1 status` resolve to the repo-local `local` root from a clean PowerShell shell, and that current final-system docs plus active Obsidian source-of-truth notes do not point to the legacy external runtime root. This validates the runtime-root portion of controller activation. It does not grant live-money readiness; StrategyPlanJSON, direct CLOB, worker, feed freshness, cost, and integrity gates remain event-specific requirements.
+
 ## Obsidian Relationship
 
 Obsidian should hold curated context:
@@ -118,12 +120,12 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 |---|---|---|---|
 | [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | open | GitHub issue taxonomy labels created; project hygiene remains. |
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | closed | Runtime handoff refresh after 2026-05-18 event reconciliation. |
-| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | open | Controller activation gate validation against repo-local runtime root. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | closed | Repo-local runtime-root activation gate validation completed; live readiness remains event-gated. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | open | API-up validation of closed seed foundations. |
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | open | WNBA minimal-readiness dry run without live orders. |
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | closed | Read-only global portfolio explorer automation. |
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | closed | Absorbed ML replay branch deleted after operator approval. |
-| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | open | Fresh-DB NBA probe and account mapping gaps discovered during reconciliation. |
+| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | closed | Fresh-DB NBA probe and account mapping gaps repaired and HTTP-path validated. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | closed | Encode Janus global ego and purpose contract in repo prompts and Obsidian. |
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | closed | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | open | Build current architecture and service degradation maps. |
