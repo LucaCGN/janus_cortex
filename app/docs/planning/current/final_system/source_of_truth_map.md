@@ -43,9 +43,10 @@ The controller automation should read these anchor files on every material pass:
 12. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
 13. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
 14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-15. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-16. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-17. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+15. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
+16. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+17. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+18. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -128,7 +129,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | closed | Fresh-DB NBA probe and account mapping gaps repaired and HTTP-path validated. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | closed | Encode Janus global ego and purpose contract in repo prompts and Obsidian. |
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | closed | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
-| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | open | Build current architecture and service degradation maps. |
+| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | closed | Current architecture and service degradation map completed in `architecture/current_architecture_and_degradation_map.md`. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | open | Validate budget-aware model routing and Codex fallback state. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | open | Validate Polymarket minimum order constraints and market-order exception policy. |
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | open | Add chart-equivalent microstructure metrics to event review bundle. |

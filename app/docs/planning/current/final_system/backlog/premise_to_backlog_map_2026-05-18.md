@@ -33,7 +33,7 @@ Obsidian sources:
 
 | Layer | Meaning | Current Use |
 |---|---|---|
-| P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | `#40`, `#41` |
+| P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | `#41` |
 | P1 readiness builders | Needed for WNBA/NBA minimum-size testing and reliable reviews. | `#33`, `#34`, `#42`, `#43`, `#44`, `#45` |
 | P2 research/incubation | Future-domain, profile-study, and strategy-expansion work. | `#46`, `#47`, `#48` |
 | Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#29`, `#31`, `#32`, `#35`, `#36`, `#37`, `#39` |
@@ -48,7 +48,7 @@ Obsidian sources:
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Closed foundation | P019-P030, P146-P149, P246-P255 | Fresh-DB NBA probe/account mapping gaps repaired and HTTP-path validated. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | Closed foundation | P004-P018, NP001-NP010 | Encode global ego/purpose across repo prompts and Obsidian. |
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | Closed foundation | P078-P090, P119-P122 | Active queue locks and controller pass ledger implemented for repo-local controller passes. |
-| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Activation blocker | P036-P069, P289, P294 | Build current architecture and service degradation maps. |
+| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Closed foundation | P036-P069, P289, P294 | Current architecture and service degradation maps completed. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | Activation blocker | P212-P228, NP003-NP006 | Validate budget-aware model routing and Codex fallback state. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Readiness builder | Seed issues `#17-#29` | Validate closed seed foundations against a running API. |
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | Readiness builder | P257-P265 | Run WNBA minimal-readiness dry run without live orders. |
@@ -73,8 +73,8 @@ Obsidian sources:
 
 1. Completed: close or unblock `#37`.
 2. Completed: validate controller activation gate through `#32`.
-3. Next: produce architecture/degradation maps in `#40`.
-4. Validate budget-aware LLM/Codex fallback in `#41`.
+3. Completed: produce architecture/degradation maps in `#40`.
+4. Next: validate budget-aware LLM/Codex fallback in `#41`.
 5. Run API-up validation `#33`.
 6. Run WNBA dry run `#34`.
 7. Expand review/risk/execution metrics through `#42-#45`.
