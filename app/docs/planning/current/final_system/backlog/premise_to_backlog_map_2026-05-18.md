@@ -34,9 +34,9 @@ Obsidian sources:
 | Layer | Meaning | Current Use |
 |---|---|---|
 | P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | None currently open after `#41` closure; live readiness remains event-specific gated. |
-| P1 readiness builders | Needed for WNBA/NBA minimum-size testing and reliable reviews. | `#42`, `#43`, `#44`, `#45`, `#49`, `#50` |
+| P1 readiness builders | Needed for WNBA/NBA minimum-size testing and reliable reviews. | `#42`, `#43`, `#44`, `#45`, `#50` |
 | P2 research/incubation | Future-domain, profile-study, and strategy-expansion work. | `#46`, `#47`, `#48` |
-| Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#29`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`, `#39`, `#40`, `#41` |
+| Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#29`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`, `#39`, `#40`, `#41`, `#49` |
 | Governance hygiene | Issue labels, project hygiene, Obsidian/repo drift checks. | `#30` |
 
 ## Current Follow-Up Issue Backlog
@@ -56,7 +56,7 @@ Obsidian sources:
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Readiness builder | P243-P251 | Add analytical chart-equivalent metrics to event review bundle. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Readiness builder | P190-P208, P252-P255 | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Readiness builder | P268-P274 | Build global portfolio target/rebuy ledger and watchlist schema. |
-| [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Readiness builder | P268-P274, global portfolio evidence | Mirror direct open CLOB orders into portfolio HTTP surfaces. |
+| [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | P268-P274, global portfolio evidence | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Readiness builder | P257-P265 | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Research/incubation | P270-P274 | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | Research/incubation | P127-P134, P266 | Incubate crypto up/down options research and backtest lane. |
@@ -79,8 +79,9 @@ Obsidian sources:
 4. Completed: validate budget-aware LLM/Codex fallback in `#41`.
 5. Completed: run API-up validation `#33`.
 6. Completed: run WNBA dry run `#34`.
-7. Next: route WNBA passive capture/shadow publication through `#50`, or expand review/risk/execution/portfolio metrics through `#42-#45` and `#49` when live safety does not preempt.
-8. Use `#46-#48` for future-domain and profile research without live authority.
+7. Completed: validate direct open CLOB order mirroring through `#49`.
+8. Next: route WNBA passive capture/shadow publication through `#50`, or expand review/risk/execution/portfolio metrics through `#42-#45` when live safety does not preempt.
+9. Use `#46-#48` for future-domain and profile research without live authority.
 
 ## Issue Creation Rule Going Forward
 

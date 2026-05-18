@@ -137,7 +137,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | open | Add chart-equivalent microstructure metrics to event review bundle. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | open | Build global portfolio target/rebuy ledger and watchlist schema. |
-| [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | open | Mirror direct open CLOB orders into portfolio HTTP surfaces. |
+| [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | closed | Direct open CLOB order mirror endpoint implemented and runtime-validated; portfolio HTTP orders now expose the four current direct open sell targets. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | open | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
