@@ -8,9 +8,11 @@ import pytest
 from app.modules.agentic.global_portfolio import (
     GlobalPortfolioWatchlistEntry,
     build_execution_gate_snapshot,
+    build_manager_action_plan,
     build_watchlist_artifact,
     load_watchlist_source,
     render_execution_gate_report,
+    render_manager_action_plan,
     render_watchlist_report,
 )
 from tools.build_global_portfolio_watchlist import build_from_source, write_outputs
@@ -241,3 +243,78 @@ def test_execution_gate_snapshot_satisfies_only_when_all_gates_true_pytest() -> 
     assert snapshot.order_preparation_authorized is True
     assert snapshot.live_order_impact == "order-path"
     assert snapshot.missing_gates == []
+
+
+def test_manager_action_plan_records_missing_gates_without_order_preparation_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_replace",
+        market_title="NBA title winner",
+        market_slug="nba-title-winner-2026",
+        token_id="token-123",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api"],
+        evidence={"direct_open_order_count": 1},
+    )
+
+    plan = build_manager_action_plan(
+        gate_snapshot=snapshot,
+        proposed_action={"target_state": "target_stale", "desired_state": "replace_target_after_review"},
+        generated_at_utc="2026-05-18T13:00:00Z",
+    )
+
+    assert plan.status == "management_plan_only_execution_gate_missing"
+    assert plan.execution_authorized is False
+    assert plan.order_preparation_authorized is False
+    assert plan.live_order_impact == "read-only"
+    assert plan.ledger_record["schema_version"] == "global_portfolio_manager_action_ledger_v1"
+    assert plan.ledger_record["missing_gates"] == ["approved_order_management_path"]
+    assert plan.ledger_record["proposed_action"] == {
+        "target_state": "target_stale",
+        "desired_state": "replace_target_after_review",
+    }
+    assert plan.operator_review_questions == ["Which missing gate should be implemented or validated next?"]
+
+    report = render_manager_action_plan(plan)
+    assert "management_plan_only_execution_gate_missing" in report
+    assert "No orders were placed, cancelled, replaced, submitted, prepared, authorized, or executed" in report
+    assert "approved Janus portfolio order-management path" in report
+
+
+def test_manager_action_plan_is_ready_only_after_gate_snapshot_succeeds_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        market_title="NBA title winner",
+        market_slug="nba-title-winner-2026",
+        token_id="token-123",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+    )
+
+    plan = build_manager_action_plan(
+        gate_snapshot=snapshot,
+        management_plan=["Submit only through the approved portfolio manager order path."],
+        generated_at_utc="2026-05-18T13:00:00Z",
+    )
+
+    assert plan.status == "ready_for_approved_order_management_call"
+    assert plan.execution_authorized is True
+    assert plan.order_preparation_authorized is True
+    assert plan.live_order_impact == "order-path"
+    assert plan.ledger_record["missing_gates"] == []
+
+    report = render_manager_action_plan(plan)
+    assert "ready_for_approved_order_management_call" in report
+    assert "A separate approved order-management call is still required" in report

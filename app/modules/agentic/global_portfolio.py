@@ -42,6 +42,10 @@ ExecutionGateName = Literal[
     "non_runtime_truth_rejected",
 ]
 ExecutionGateResult = Literal["execution_gates_satisfied", "management_plan_only_execution_gate_missing"]
+PortfolioManagerActionPlanStatus = Literal[
+    "management_plan_only_execution_gate_missing",
+    "ready_for_approved_order_management_call",
+]
 
 
 NO_EXECUTION_STATEMENT = "No execution is authorized by this artifact."
@@ -126,6 +130,82 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
 
 def build_execution_gate_snapshot(**kwargs: Any) -> GlobalPortfolioExecutionGateSnapshot:
     return GlobalPortfolioExecutionGateSnapshot.model_validate(kwargs)
+
+
+class GlobalPortfolioManagerActionPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "global_portfolio_manager_action_plan_v1"
+    generated_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    issue: str = "#52"
+    action: PortfolioManagerAction = "unknown"
+    gate_snapshot: GlobalPortfolioExecutionGateSnapshot
+    proposed_action: dict[str, Any] = Field(default_factory=dict)
+    management_plan: list[str] = Field(default_factory=list)
+    operator_review_questions: list[str] = Field(default_factory=list)
+    no_execution_statement: str = NO_EXECUTION_STATEMENT
+    status: PortfolioManagerActionPlanStatus = "management_plan_only_execution_gate_missing"
+    execution_authorized: bool = False
+    order_preparation_authorized: bool = False
+    live_order_impact: Literal["read-only", "order-path"] = "read-only"
+    ledger_record: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _summarize_action_plan(self) -> "GlobalPortfolioManagerActionPlan":
+        if self.no_execution_statement != NO_EXECUTION_STATEMENT:
+            raise ValueError("no_execution_statement must preserve the standard non-action wording")
+        if self.action == "unknown":
+            self.action = self.gate_snapshot.action
+        elif self.gate_snapshot.action != "unknown" and self.action != self.gate_snapshot.action:
+            raise ValueError("action must match gate_snapshot.action")
+
+        self.execution_authorized = self.gate_snapshot.execution_authorized
+        self.order_preparation_authorized = self.gate_snapshot.order_preparation_authorized
+        self.live_order_impact = self.gate_snapshot.live_order_impact
+        self.status = (
+            "ready_for_approved_order_management_call"
+            if self.gate_snapshot.execution_authorized
+            else "management_plan_only_execution_gate_missing"
+        )
+
+        if not self.management_plan:
+            if self.gate_snapshot.missing_gates:
+                self.management_plan.append("Resolve missing execution gates before preparing or submitting any order.")
+            else:
+                self.management_plan.append(
+                    "Use a separate approved Janus portfolio order-management call for any concrete action."
+                )
+        if self.gate_snapshot.missing_gates and not self.operator_review_questions:
+            self.operator_review_questions.append("Which missing gate should be implemented or validated next?")
+
+        self.ledger_record = _build_manager_action_ledger_record(self)
+        return self
+
+
+def build_manager_action_plan(
+    *,
+    gate_snapshot: GlobalPortfolioExecutionGateSnapshot | dict[str, Any],
+    action: PortfolioManagerAction = "unknown",
+    proposed_action: dict[str, Any] | None = None,
+    management_plan: list[str] | None = None,
+    operator_review_questions: list[str] | None = None,
+    generated_at_utc: str | datetime | None = None,
+    issue: str = "#52",
+) -> GlobalPortfolioManagerActionPlan:
+    snapshot = (
+        gate_snapshot
+        if isinstance(gate_snapshot, GlobalPortfolioExecutionGateSnapshot)
+        else GlobalPortfolioExecutionGateSnapshot.model_validate(gate_snapshot)
+    )
+    return GlobalPortfolioManagerActionPlan(
+        generated_at_utc=_parse_datetime(generated_at_utc),
+        issue=issue,
+        action=action,
+        gate_snapshot=snapshot,
+        proposed_action=dict(proposed_action or {}),
+        management_plan=list(management_plan or []),
+        operator_review_questions=list(operator_review_questions or []),
+    )
 
 
 class GlobalPortfolioWatchlistEntry(BaseModel):
@@ -437,6 +517,94 @@ def render_execution_gate_report(snapshot: GlobalPortfolioExecutionGateSnapshot,
     return "\n".join(lines) + "\n"
 
 
+def render_manager_action_plan(plan: GlobalPortfolioManagerActionPlan) -> str:
+    generated_at = plan.generated_at_utc.isoformat().replace("+00:00", "Z")
+    missing_labels = [EXECUTION_GATE_LABELS[gate] for gate in plan.gate_snapshot.missing_gates]
+    lines = [
+        "# Global Portfolio Manager Action Plan - 2026-05-18",
+        "",
+        f"- timestamp_utc: `{generated_at}`",
+        f"- GitHub issue: `{plan.issue}`",
+        "- automation: `janus-master-controller`",
+        "- persona: `development-agent`",
+        f"- action: `{plan.action}`",
+        f"- status: `{plan.status}`",
+        f"- execution_authorized: `{plan.execution_authorized}`",
+        f"- order_preparation_authorized: `{plan.order_preparation_authorized}`",
+        f"- live_order_impact: `{plan.live_order_impact}`",
+        f"- non-action statement: `{plan.no_execution_statement}`",
+        "",
+        "## Gate Summary",
+        "",
+    ]
+    if missing_labels:
+        lines.extend(f"- missing: {label}" for label in missing_labels)
+    else:
+        lines.append("- missing: none")
+    if plan.gate_snapshot.rejected_truth_sources:
+        lines.append(f"- rejected truth sources: `{plan.gate_snapshot.rejected_truth_sources}`")
+
+    lines.extend(
+        [
+            "",
+            "## Management Plan",
+            "",
+        ]
+    )
+    lines.extend(f"- {item}" for item in plan.management_plan)
+    if plan.operator_review_questions:
+        lines.extend(
+            [
+                "",
+                "## Operator Review Questions",
+                "",
+            ]
+        )
+        lines.extend(f"- {item}" for item in plan.operator_review_questions)
+    lines.extend(
+        [
+            "",
+            "## Ledger Record",
+            "",
+            f"- schema_version: `{plan.ledger_record['schema_version']}`",
+            f"- result: `{plan.ledger_record['status']}`",
+            f"- missing_gates: `{plan.ledger_record['missing_gates']}`",
+            "",
+            "## Live-Order Impact",
+            "",
+            "- No orders were placed, cancelled, replaced, submitted, prepared, authorized, or executed by this plan.",
+            "- A separate approved order-management call is still required for any concrete action.",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _build_manager_action_ledger_record(plan: GlobalPortfolioManagerActionPlan) -> dict[str, Any]:
+    snapshot = plan.gate_snapshot
+    return {
+        "schema_version": "global_portfolio_manager_action_ledger_v1",
+        "issue": plan.issue,
+        "generated_at_utc": plan.generated_at_utc.isoformat().replace("+00:00", "Z"),
+        "action": plan.action,
+        "status": plan.status,
+        "result": snapshot.result,
+        "execution_authorized": plan.execution_authorized,
+        "order_preparation_authorized": plan.order_preparation_authorized,
+        "live_order_impact": plan.live_order_impact,
+        "market_title": snapshot.market_title,
+        "market_slug": snapshot.market_slug,
+        "token_id": snapshot.token_id,
+        "truth_sources": list(snapshot.truth_sources),
+        "rejected_truth_sources": list(snapshot.rejected_truth_sources),
+        "missing_gates": list(snapshot.missing_gates),
+        "evidence": dict(snapshot.evidence),
+        "proposed_action": dict(plan.proposed_action),
+        "management_plan": list(plan.management_plan),
+        "operator_review_questions": list(plan.operator_review_questions),
+        "no_execution_statement": plan.no_execution_statement,
+    }
+
+
 def _entry_from_raw(entry: dict[str, Any] | GlobalPortfolioWatchlistEntry, index: int) -> GlobalPortfolioWatchlistEntry:
     if isinstance(entry, GlobalPortfolioWatchlistEntry):
         return entry
@@ -491,15 +659,18 @@ def _parse_datetime(value: str | datetime | None) -> datetime:
 __all__ = [
     "EXECUTION_GATE_LABELS",
     "EXECUTION_GATE_ORDER",
+    "GlobalPortfolioManagerActionPlan",
     "GlobalPortfolioWatchlistArtifact",
     "GlobalPortfolioWatchlistEntry",
     "GlobalPortfolioExecutionGateSnapshot",
     "NO_EXECUTION_STATEMENT",
     "apply_watchlist_policy_flags",
+    "build_manager_action_plan",
     "build_watchlist_artifact",
     "build_execution_gate_snapshot",
     "build_watchlist_summary",
     "load_watchlist_source",
+    "render_manager_action_plan",
     "render_execution_gate_report",
     "render_watchlist_report",
 ]
