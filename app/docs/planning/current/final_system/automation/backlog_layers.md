@@ -57,22 +57,22 @@ The immediate seed issues `#17-#29` are closed foundations. Follow-up work shoul
 
 Follow-up issues should use GitHub issue types when available, plus the `type:*`, `priority:*`, `market:*`, `lane:*`, `phase:*`, `stage:*`, and `live-impact:*` labels from `issue_taxonomy.md`.
 
-## Current Open Sprint/Follow-Up Issues
+## Current Sprint/Follow-Up Issues
 
 | Issue | Priority | Layer | Purpose |
 |---|---|---|---|
 | [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Sprint backlog | Label taxonomy created; remaining project hygiene and optional retroactive seed labeling. |
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Closed foundation | Refresh runtime handoffs after operator event-data reconciliation. |
-| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Sprint backlog | Validate repo-local runtime root and controller activation gate. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Closed foundation | Repo-local runtime root and controller activation gate validated. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Planned/sprint | Validate closed seed foundations against a running API, read-only. |
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | Planned/sprint | Run WNBA minimal-readiness dry run without live orders. |
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Closed foundation | Build/read the global portfolio explorer automation contract. |
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Closed foundation | Archive or delete absorbed ML replay branch after operator approval. |
-| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Sprint backlog | Resolve fresh-DB NBA probe and account mapping gaps. |
+| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Closed foundation | Fresh-DB NBA probe and account mapping gaps repaired and HTTP-path validated. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | Closed foundation | Encode Janus global ego and purpose contract. |
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | Closed foundation | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
-| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Sprint backlog | Build current architecture and degradation maps. |
-| [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | Sprint backlog | Validate budget-aware model routing and Codex fallback state. |
+| [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Closed foundation | Current architecture and degradation maps completed. |
+| [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | Closed foundation | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | Planned/sprint | Validate minimum order constraints and market-order exception policy. |
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Planned/sprint | Add chart-equivalent microstructure metrics to event review bundle. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Planned/sprint | Calibrate profit-ratcheted risk ladder from account and DB histories. |

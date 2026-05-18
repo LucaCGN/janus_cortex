@@ -2227,7 +2227,7 @@ def _resolve_llm_revision_response(
     payload: LLMRevisionAdoptionRequest,
 ) -> tuple[LLMRevisionResponse, dict[str, Any]]:
     if payload.response is not None:
-        return payload.response, {"source": "request_body"}
+        return payload.response, {**payload.response.trace_metadata, "source": "request_body"}
     path = Path(str(payload.trace_artifact_path or "")).expanduser().resolve()
     try:
         artifact = json.loads(path.read_text(encoding="utf-8"))

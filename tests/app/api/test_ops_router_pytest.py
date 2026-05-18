@@ -1102,6 +1102,121 @@ def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tm
     assert len(persist_calls) == 2
 
 
+def test_codex_fallback_strategy_plan_adoption_still_uses_safety_gates_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    persist_plan_calls = []
+    decision_calls = []
+    order_calls = []
+    monkeypatch.setattr(
+        agentic_store,
+        "try_persist_strategy_plan",
+        lambda plan: persist_plan_calls.append(plan) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "try_persist_strategy_decisions",
+        lambda result, **kwargs: decision_calls.append({"result": result, **kwargs}) or {"ok": True, "row_count": 1},
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "create_live_order",
+        lambda *args, **kwargs: order_calls.append({"args": args, "kwargs": kwargs}) or {"ok": False},
+    )
+    client = TestClient(create_app())
+    codex_plan = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    codex_plan["plan_owner"] = "codex_agent"
+    codex_plan["context_summary"] = {
+        "codex_fallback_state": {
+            "reason_code": "llm_event_budget_exceeded",
+            "must_use_janus_validators": True,
+        }
+    }
+    codex_plan["active_strategies"][0]["strategy_id"] = "codex-fallback-grid"
+    codex_plan["active_strategies"][0]["entry_rules"].update(
+        {
+            "max_orderbook_age_seconds": 90,
+            "max_scoreboard_age_seconds": 90,
+            "max_spread_cents": 2,
+            "max_abs_score_gap": 10,
+            "max_open_positions": 1,
+            "allow_ultra_low_underdog": True,
+        }
+    )
+
+    adoption_response = client.post(
+        "/v1/events/event-123/llm-revision/adopt",
+        json={
+            "session_date": "2026-05-12",
+            "source": "codex-fallback-validation",
+            "reviewed_by": "pytest-reviewer",
+            "review_reason": "budget blocked internal LLM; reviewed Codex StrategyPlanJSON fallback",
+            "apply_current": True,
+            "response": {
+                "request_id": "codex-fallback-request-1",
+                "status": "response_recorded",
+                "selected_model": "codex-fallback-reviewed",
+                "revised_strategy_plan": codex_plan,
+                "reconciliation_actions": [{"action": "revise_plan"}],
+                "blocked_actions": [{"action": "raw_order", "reason": "validators_required"}],
+                "confidence": 0.66,
+                "skipped_reason": None,
+                "trace_metadata": {
+                    "codex_strategy_required": True,
+                    "reason_code": "llm_event_budget_exceeded",
+                    "order_endpoint_call_allowed": False,
+                },
+            },
+        },
+    )
+    blocked_response = client.post(
+        "/v1/events/event-123/strategy-plan/evaluate",
+        json={
+            "dry_run": True,
+            "session_date": "2026-05-12",
+            "source": "codex-fallback-validation",
+            "market_state": {"price": 0.2},
+            "portfolio_state": {"open_positions": 0, "open_orders": 0},
+        },
+    )
+    valid_response = client.post(
+        "/v1/events/event-123/strategy-plan/evaluate",
+        json={
+            "dry_run": True,
+            "session_date": "2026-05-12",
+            "source": "codex-fallback-validation",
+            "market_state": {
+                "price": 0.2,
+                "orderbook_age_seconds": 1,
+                "scoreboard_age_seconds": 1,
+                "spread": 0.01,
+                "score_gap": 4,
+            },
+            "portfolio_state": {"open_positions": 0, "open_orders": 0},
+        },
+    )
+    current_response = client.get("/v1/events/event-123/strategy-plan/current?session_date=2026-05-12")
+
+    assert adoption_response.status_code == 202
+    assert adoption_response.json()["order_endpoint_call_allowed"] is False
+    assert blocked_response.status_code == 200
+    blocked_payload = blocked_response.json()
+    assert blocked_payload["intent_count"] == 0
+    assert blocked_payload["blockers"][0]["reason"] == "orderbook_freshness_required"
+    assert valid_response.status_code == 200
+    valid_payload = valid_response.json()
+    assert valid_payload["intent_count"] == 1
+    assert valid_payload["intents"][0]["dry_run"] is True
+    assert current_response.status_code == 200
+    current_plan = current_response.json()
+    assert current_plan["plan_owner"] == "codex_agent"
+    assert current_plan["explainability"]["llm_revision_adoption"]["order_endpoint_call_allowed"] is False
+    assert current_plan["explainability"]["llm_revision_adoption"]["trace_metadata"]["codex_strategy_required"] is True
+    assert len(persist_plan_calls) == 1
+    assert [call["source"] for call in decision_calls] == ["codex-fallback-validation", "codex-fallback-validation"]
+    assert order_calls == []
+
+
 def test_llm_revision_adoption_stamps_quarter_end_review_marker_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

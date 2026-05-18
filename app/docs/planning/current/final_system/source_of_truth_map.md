@@ -91,6 +91,8 @@ As of the 2026-05-18 bootstrap pass, Codex performed the initial repo-local reco
 
 Validation checkpoint 2026-05-18T07:45Z: issue [#32](https://github.com/LucaCGN/janus_cortex/issues/32) verified that `tools/janus_local.ps1 status` and `tools/janus_db.ps1 status` resolve to the repo-local `local` root from a clean PowerShell shell, and that current final-system docs plus active Obsidian source-of-truth notes do not point to the legacy external runtime root. This validates the runtime-root portion of controller activation. It does not grant live-money readiness; StrategyPlanJSON, direct CLOB, worker, feed freshness, cost, and integrity gates remain event-specific requirements.
 
+LLM fallback checkpoint 2026-05-18T08:26Z: issue [#41](https://github.com/LucaCGN/janus_cortex/issues/41) verified budget-aware model routing, explicit internal-LLM/Codex-required fallback state, and reviewed Codex fallback StrategyPlanJSON adoption against Janus safety gates. Request-body LLM revision adoption now preserves trace metadata in the adoption record. This closes the P0 LLM fallback activation blocker, but it does not grant live-money readiness; event-specific StrategyPlanJSON, direct CLOB, worker, feed freshness, cost, and integrity gates still apply.
+
 ## Obsidian Relationship
 
 Obsidian should hold curated context:
@@ -130,7 +132,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | closed | Encode Janus global ego and purpose contract in repo prompts and Obsidian. |
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | closed | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | closed | Current architecture and service degradation map completed in `architecture/current_architecture_and_degradation_map.md`. |
-| [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | open | Validate budget-aware model routing and Codex fallback state. |
+| [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | closed | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | open | Validate Polymarket minimum order constraints and market-order exception policy. |
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | open | Add chart-equivalent microstructure metrics to event review bundle. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
