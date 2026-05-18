@@ -322,6 +322,28 @@ def _median(values: list[Any]) -> float | None:
     return (numeric[middle - 1] + numeric[middle]) / 2.0
 
 
+def _summary_needs_attention(summary: dict[str, Any]) -> bool:
+    if summary.get("failed_calls"):
+        return True
+    for call in summary.get("calls") or []:
+        result = call.get("result") if isinstance(call, dict) else None
+        if isinstance(result, dict) and _api_result_needs_attention(result):
+            return True
+    result = summary.get("result") or summary.get("shadow_result") or {}
+    return isinstance(result, dict) and _api_result_needs_attention(result)
+
+
+def _api_result_needs_attention(result: dict[str, Any]) -> bool:
+    if not bool(result.get("ok", True)):
+        return True
+    status = str(result.get("status") or "").lower()
+    return status in {"blocked", "error", "failed", "needs_attention"}
+
+
+def _summaries_need_attention(summaries: list[dict[str, Any]]) -> bool:
+    return any(_summary_needs_attention(summary) for summary in summaries)
+
+
 def _run_shadow_test(args: argparse.Namespace, artifact_dir: Path) -> dict[str, Any]:
     run_id = args.run_id or f"live-{args.session_date}-operational-cycle"
     shadow = _api_json(str(args.api_root), "GET", f"/v1/nba/live/runs/{run_id}/shadow", query={"persist": "true"}, timeout=180)
@@ -361,11 +383,7 @@ def _render_status(session_date: str, summaries: list[dict[str, Any]], report_pa
         "",
     ]
     for summary in summaries:
-        failed = summary.get("failed_calls") or []
-        result = summary.get("result") or summary.get("shadow_result") or {}
-        ok = bool(result.get("ok", True)) if isinstance(result, dict) else True
-        if failed:
-            ok = False
+        ok = not _summary_needs_attention(summary)
         lines.append(f"- `{summary.get('stage')}`: `{'ok' if ok else 'needs_attention'}`")
     lines.extend(
         [
@@ -420,8 +438,18 @@ def main() -> int:
         summaries,
         report_dir / f"operational_cycle_status_{args.session_date}.md",
     )
-    print(json.dumps({"artifact_dir": str(artifact_dir), "stage_count": len(summaries)}, indent=2))
-    return 0
+    needs_attention = _summaries_need_attention(summaries)
+    print(
+        json.dumps(
+            {
+                "artifact_dir": str(artifact_dir),
+                "stage_count": len(summaries),
+                "status": "needs_attention" if needs_attention else "success",
+            },
+            indent=2,
+        )
+    )
+    return 1 if needs_attention else 0
 
 
 if __name__ == "__main__":

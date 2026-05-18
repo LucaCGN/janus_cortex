@@ -7,6 +7,15 @@ from typing import Optional, Tuple, List, Dict, Any
 logger = logging.getLogger(__name__)
 
 CDN_URL = "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json"
+NBA_CDN_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    ),
+    "Accept": "application/json,text/plain,*/*",
+    "Referer": "https://www.nba.com/",
+    "Origin": "https://www.nba.com",
+}
 
 def fetch_season_schedule_df(season: str = "2025-26") -> pd.DataFrame:
     """
@@ -15,7 +24,7 @@ def fetch_season_schedule_df(season: str = "2025-26") -> pd.DataFrame:
     """
     logger.info(f"Fetching season schedule from {CDN_URL}...")
     try:
-        r = requests.get(CDN_URL, timeout=10)
+        r = requests.get(CDN_URL, headers=NBA_CDN_HEADERS, timeout=10)
         if r.status_code != 200:
             logger.error(f"Failed to fetch schedule: {r.status_code}")
             return pd.DataFrame()
