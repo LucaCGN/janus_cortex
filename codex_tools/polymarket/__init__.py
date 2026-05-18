@@ -18,8 +18,15 @@ from codex_tools.polymarket.ledger import (
     default_fallback_ledger_root,
     write_fallback_decision_ledger,
 )
+from codex_tools.polymarket.account import (
+    ACCOUNT_SNAPSHOT_SCHEMA_VERSION,
+    PolymarketAccountReadSnapshot,
+    read_account_snapshot,
+)
 
 __all__ = [
+    "ACCOUNT_SNAPSHOT_SCHEMA_VERSION",
+    "PolymarketAccountReadSnapshot",
     "PolymarketExecutionGateSnapshot",
     "PolymarketFallbackDecision",
     "PolymarketFallbackIntent",
@@ -28,5 +35,6 @@ __all__ = [
     "build_ledger_entry",
     "default_fallback_ledger_root",
     "derive_idempotency_key",
+    "read_account_snapshot",
     "write_fallback_decision_ledger",
 ]

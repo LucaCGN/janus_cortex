@@ -10,6 +10,7 @@ from codex_tools.janus import client as janus_client
 from codex_tools.polymarket import (
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
+    read_account_snapshot,
     build_fallback_decision,
     write_fallback_decision_ledger,
 )
@@ -42,6 +43,13 @@ def _satisfied_gate() -> PolymarketExecutionGateSnapshot:
         market_token_resolved=True,
         non_authoritative_truth_rejected=True,
     )
+
+
+class _Creds:
+    def __init__(self, *, wallet_address: str = "", private_key: str | None = None) -> None:
+        self.wallet_address = wallet_address
+        self.funder_address = wallet_address
+        self.private_key = private_key
 
 
 def test_janus_client_namespace_preserves_legacy_api_client() -> None:
@@ -146,3 +154,82 @@ def test_fallback_decision_ledger_records_preview_without_execution(tmp_path: Pa
     assert entry["decision"]["status"] == "dry_run_preview_only"
     assert entry["decision"]["execution_authorized"] is False
     assert entry["decision"]["order_submission_attempted"] is False
+
+
+def test_account_snapshot_blocks_without_account_credentials() -> None:
+    def _raise_if_called(*args: object, **kwargs: object) -> list[object]:
+        raise AssertionError("reader should not be called without credentials")
+
+    snapshot = read_account_snapshot(
+        creds=_Creds(),
+        position_reader=_raise_if_called,
+        order_reader=_raise_if_called,
+        trade_reader=_raise_if_called,
+    )
+
+    assert snapshot.status == "blocked_missing_account_credentials"
+    assert snapshot.section_status["open_positions"] == "blocked_missing_wallet_address"
+    assert snapshot.section_status["open_orders"] == "blocked_missing_clob_credentials"
+    assert snapshot.section_status["trades"] == "blocked_missing_clob_credentials"
+    assert snapshot.order_preparation_attempted is False
+    assert snapshot.order_submission_attempted is False
+    assert "No order was placed" in snapshot.no_execution_statement
+
+
+def test_account_snapshot_reads_direct_state_without_execution() -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def _positions(creds: _Creds, **kwargs: object) -> list[dict[str, object]]:
+        calls.append(("positions", kwargs))
+        return [{"asset": "token-yes", "size": 5.0}]
+
+    def _orders(creds: _Creds, **kwargs: object) -> list[dict[str, object]]:
+        calls.append(("orders", kwargs))
+        return [{"id": "0xopen", "asset_id": "token-yes", "side": "SELL"}]
+
+    def _trades(creds: _Creds) -> list[dict[str, object]]:
+        calls.append(("trades", {}))
+        return [{"id": "trade-1", "asset_id": "token-yes", "side": "BUY"}]
+
+    snapshot = read_account_snapshot(
+        creds=_Creds(wallet_address="0xabc", private_key="0xpk"),
+        account_id="account-1",
+        event_slug="test-event",
+        min_position_size=0.0,
+        position_reader=_positions,
+        order_reader=_orders,
+        trade_reader=_trades,
+        read_at_utc=datetime(2026, 5, 18, 14, 7, 0, tzinfo=UTC),
+    )
+
+    assert snapshot.status == "read_only_snapshot"
+    assert snapshot.account_id == "account-1"
+    assert snapshot.read_at_utc == "2026-05-18T14:07:00Z"
+    assert snapshot.open_order_count == 1
+    assert snapshot.open_position_count == 1
+    assert snapshot.trade_count == 1
+    assert snapshot.section_status == {
+        "open_positions": "ok",
+        "open_orders": "ok",
+        "trades": "ok",
+    }
+    assert calls == [
+        ("positions", {"event_slug": "test-event", "min_size": 0.0}),
+        ("orders", {"open_only": True}),
+        ("trades", {}),
+    ]
+    assert snapshot.order_submission_attempted is False
+
+
+def test_account_snapshot_is_partial_without_clob_credentials() -> None:
+    snapshot = read_account_snapshot(
+        creds=_Creds(wallet_address="0xabc"),
+        position_reader=lambda *args, **kwargs: [{"asset": "token-yes"}],
+    )
+
+    assert snapshot.status == "read_only_snapshot_partial"
+    assert snapshot.open_position_count == 1
+    assert snapshot.open_order_count == 0
+    assert snapshot.trade_count == 0
+    assert snapshot.section_status["open_orders"] == "blocked_missing_clob_credentials"
+    assert snapshot.section_status["trades"] == "blocked_missing_clob_credentials"
