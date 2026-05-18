@@ -11,6 +11,8 @@ These are not the full final-system specs. They were the initial issue set used 
 
 Implementation note 2026-05-17: issues `#17-#29` now have tested foundations on `main`. Future work should open narrower follow-up issues for deeper calibration, live-readiness promotion, and production hardening instead of reopening this seed.
 
+Follow-up note 2026-05-18: current open follow-up issues are `#30-#36`. These cover GitHub label taxonomy, post-reconciliation handoff refresh, repo-local runtime gate validation, API-up validation, WNBA dry run, global portfolio explorer automation, and stale ML branch cleanup.
+
 ## Issue Labels Proposed
 
 - `priority:P0`
@@ -256,6 +258,20 @@ Created on 2026-05-17 in `LucaCGN/janus_cortex`.
 | `#27` | Closed | Profit-ratcheted risk-state helper with base/profit/sleeve/tail budgets. |
 | `#28` | Closed | Virtual-dead classifier and loss-exit comparison requirements. |
 | `#29` | Closed | WNBA minimal live-readiness gate with shared basketball contract and calibration blockers. |
+
+## Current Follow-Up Issues
+
+Created on 2026-05-18 after the seed foundation closed.
+
+| Issue | Priority | Purpose |
+|---|---|---|
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Create GitHub issue taxonomy labels and project hygiene. |
+| [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Refresh runtime handoffs after 2026-05-18 event reconciliation. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Validate controller activation gate against repo-local runtime root. |
+| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Validate closed seed foundations against a running Janus API. |
+| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | Run WNBA minimal-readiness dry run without live orders. |
+| [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Build read-only global portfolio explorer automation. |
+| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Archive or delete absorbed ML replay branch after operator approval. |
 
 ## Duplicate Issue Cleanup
 

@@ -6,7 +6,6 @@ Each active branch plan defines one narrow write scope, explicit dependencies, s
 Read the branch doc before creating the branch or spawning a subagent into that lane.
 
 ## Active Branch Plans
-- [analysis_ml_replay_expansion_nn.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_ml_replay_expansion_nn.md)
 - [ops_second_round_live_validation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/ops_second_round_live_validation.md)
 - [analysis_routing_allocation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_routing_allocation.md)
 - [analysis_context_models.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_context_models.md)
@@ -14,6 +13,7 @@ Read the branch doc before creating the branch or spawning a subagent into that 
 - [season_wnba_bootstrap.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/season_wnba_bootstrap.md)
 
 ## Deprecated Current Branch Plans
+- [analysis_ml_replay_expansion_nn.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/analysis_ml_replay_expansion_nn.md) is absorbed into `main`; do not merge it back. Delete the remote branch only after operator approval.
 - [frontend_analysis_portfolio_viz.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/planning/current/branches/frontend_analysis_portfolio_viz.md) is superseded because the tracked frontend module was removed. Keep it only as historical branch-planning context until archived.
 
 ## Archived Branch Plans

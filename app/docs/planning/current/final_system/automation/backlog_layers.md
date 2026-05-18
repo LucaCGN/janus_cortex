@@ -57,6 +57,18 @@ The immediate seed issues `#17-#29` are closed foundations. Follow-up work shoul
 
 Follow-up issues should use GitHub issue types when available, plus the `type:*`, `priority:*`, `market:*`, `lane:*`, `phase:*`, `stage:*`, and `live-impact:*` labels from `issue_taxonomy.md`.
 
+## Current Open Sprint/Follow-Up Issues
+
+| Issue | Priority | Layer | Purpose |
+|---|---|---|---|
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Sprint backlog | Create GitHub issue taxonomy labels and label closed/open issues. |
+| [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Sprint backlog | Refresh runtime handoffs after operator event-data reconciliation. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Sprint backlog | Validate repo-local runtime root and controller activation gate. |
+| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Planned/sprint | Validate closed seed foundations against a running API, read-only. |
+| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | Planned/sprint | Run WNBA minimal-readiness dry run without live orders. |
+| [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Planned/sprint | Build/read the global portfolio explorer automation contract. |
+| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Planned backlog | Archive or delete absorbed ML replay branch after operator approval. |
+
 ## Active Queue
 
 The active queue is runtime state, not planning truth.

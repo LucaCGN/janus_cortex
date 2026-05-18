@@ -46,15 +46,16 @@ Every controller pass must read or inspect:
 9. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
 10. `app/docs/planning/current/final_system/automation/backlog_layers.md`
 11. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-12. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
-13. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
-14. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-15. `local/shared/handoffs/daily-live-validation/status.md`
-16. `local/shared/handoffs/development-agent/status.md`
-17. Latest relevant daily reports.
-18. GitHub issue state once the issue seed is created.
-19. Obsidian index notes once populated.
-20. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+12. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+13. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+14. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+15. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+16. `local/shared/handoffs/daily-live-validation/status.md`
+17. `local/shared/handoffs/development-agent/status.md`
+18. Latest relevant daily reports.
+19. GitHub issue state once the issue seed is created.
+20. Obsidian index notes once populated.
+21. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
 
 ## Axis-First Decision Model
 
@@ -96,6 +97,7 @@ The detailed routing rules live in `automation/controller_decision_tree.md`.
 | `postgame_review` | Closed events exist and no review completed | Build event review/report/development handoff. |
 | `development` | No live/pregame/postgame urgent work | Work issue-backed task queue on branch/worktree. |
 | `system_organization` | Docs/issues/Obsidian/queue incomplete | Maintain source-of-truth system and issue backlog. |
+| `global_portfolio_review` | Daily or ad hoc global portfolio watch-only review | Use `global_portfolio_explorer_contract.md`; read-only account/portfolio analysis and Obsidian/GitHub follow-up only. |
 | `no_op` | Nothing safe or useful to do | Write short status only if useful. |
 
 ## Live-Game Rule

@@ -118,3 +118,16 @@ Every sprint-ready issue should include:
 - validation/tests
 - evidence links
 - Obsidian links if useful
+
+## Current Setup Gap
+
+Open issue [#30](https://github.com/LucaCGN/janus_cortex/issues/30) tracks creation of the native GitHub labels and retroactive labeling of the closed seed issues.
+
+Until labels exist in GitHub, issue titles and bodies must include the same taxonomy fields explicitly:
+
+- Priority
+- Type
+- Market
+- Lane
+- Phase or stage when relevant
+- Live impact

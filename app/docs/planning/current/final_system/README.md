@@ -30,6 +30,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | `automation/issue_taxonomy.md` | GitHub issue label and sprint-readiness taxonomy. |
 | `automation/backlog_layers.md` | Idea, planned, sprint, active queue, and evidence backlog layers. |
 | `automation/subagent_parallelism_contract.md` | Rules for Codex sub-agent use, locks, and integration. |
+| `automation/global_portfolio_explorer_contract.md` | Separate read-only global portfolio explorer automation contract. |
 | `automation/docs_memory_health_check.md` | Checklist for repo, Obsidian, GitHub, and handoff health. |
 | `backlog/immediate_issue_seed_2026-05-17.md` | Issue-ready backlog from the current P0/P1 lanes and new missing pieces. |
 | `obsidian/bootstrap_map.md` | Obsidian vault structure and repo-linking plan. |
@@ -61,3 +62,4 @@ Do not enable the recurring controller until today's missing event data is manua
 - Obsidian remains the curated second-brain vault, not a runtime-artifact root.
 - Every repo commit must be pushed to GitHub promptly because GitHub is the operator's current remote interaction surface.
 - The tracked `frontend/` module is removed. Future UI work requires an explicit issue, source-of-truth update, and operator approval.
+- The global portfolio explorer is separate from the master controller and remains read-only until a future approved execution policy exists.

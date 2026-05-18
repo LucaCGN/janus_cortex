@@ -48,15 +48,14 @@
 - `codex/frontend-analysis-studio`
 - `codex/analysis-backtest-detail-contract`
 - `codex/frontend-analysis-comparison`
+- `codex/analysis-ml-replay-expansion-nn` is absorbed into `main` as of 2026-05-18; do not merge the stale remote branch back over current `main`.
 
 ## Current Dependency Ladder
 1. `codex/ops-second-round-live-validation`
    - run second-round live testing with one bounded entries-enabled path per slate and all other candidates shadow-only
-2. `codex/analysis-ml-replay-expansion-nn`
-   - expand regular-season replay-labeled samples and test ML/neural sidecars without execution authority
-3. `codex/season-playoffs-preseason`
+2. `codex/season-playoffs-preseason`
    - keep season-scope structures current for the remaining playoffs and preseason
-4. `codex/season-wnba-bootstrap`
+3. `codex/season-wnba-bootstrap`
    - prepare WNBA carry-over and offseason continuity work
 
 Detailed subphase plans live under:
@@ -64,7 +63,7 @@ Detailed subphase plans live under:
 
 ## Branch Launch Guidance
 - launch second-round live validation from clean `main`; keep code changes operational and minimal
-- launch ML replay expansion from clean `main`; keep it separate from live order placement
+- launch any follow-up ML replay expansion from clean `main`; keep it separate from live order placement and do not reuse the stale absorbed branch
 - do not let the ML branch change live routing, budgets, or promotion buckets
 - do not let the live branch add neural models or broaden replay training samples
 - do not widen the entries-enabled set before replay plus live/shadow evidence justifies it

@@ -50,8 +50,9 @@ The controller should record:
 | 6 | Development task is claimed or review-ready | `development-agent` or `development-end-phase` |
 | 7 | Backlog/issue taxonomy/queue missing or stale | `issue-backlog-manager` |
 | 8 | Source-of-truth docs or Obsidian indexes stale | `docs-memory-agent` |
-| 9 | New market/domain idea needs classification | `future-domain-research-agent` or `profile-research-agent` |
-| 10 | No material state change | `master-controller` no-op |
+| 9 | Daily/ad hoc read-only global portfolio review is due and no live safety task is active | `global-portfolio-agent` |
+| 10 | New market/domain idea needs classification | `future-domain-research-agent` or `profile-research-agent` |
+| 11 | No material state change | `master-controller` no-op |
 
 Safety and live event state override backlog progress.
 
@@ -78,6 +79,8 @@ Initial global portfolio work is read-only:
 2. Identify stale targets, exit/rebuy candidates, concentration, and risk conflicts.
 3. Write proposals to issues or operator-review tasks.
 4. Do not execute without a separate approved policy.
+
+Detailed global-portfolio automation rules live in `automation/global_portfolio_explorer_contract.md`.
 
 ## New Domain Rules
 

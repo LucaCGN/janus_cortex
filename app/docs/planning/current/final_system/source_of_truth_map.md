@@ -39,7 +39,8 @@ The controller automation should read these anchor files on every material pass:
 8. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
 9. `app/docs/planning/current/final_system/automation/backlog_layers.md`
 10. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-11. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+11. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+12. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -96,3 +97,15 @@ If an Obsidian insight becomes operational behavior, it must be promoted into a 
 ## GitHub Remote Sync Rule
 
 Every committed change should be pushed to GitHub promptly. GitHub is the operator's current remote interaction surface, so local-only commits are incomplete work unless the operator explicitly asks to keep them local.
+
+## Current Open Follow-Up Issues
+
+| Issue | Priority | Scope |
+|---|---|---|
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | GitHub issue taxonomy labels and project hygiene. |
+| [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Runtime handoff refresh after 2026-05-18 event reconciliation. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Controller activation gate validation against repo-local runtime root. |
+| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | API-up validation of closed seed foundations. |
+| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | WNBA minimal-readiness dry run without live orders. |
+| [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Read-only global portfolio explorer automation. |
+| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Archive/delete absorbed ML replay branch after operator approval. |

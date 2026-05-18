@@ -1,5 +1,19 @@
 # Analysis ML Replay Expansion And Neural Sidecar
 
+## Current Status
+- status: absorbed into `main`
+- reviewed: `2026-05-18`
+- branch tip reviewed: `b02feb8 Add shadow neural ML sidecar`
+- remote branch: `origin/codex/analysis-ml-replay-expansion-nn`
+
+The useful branch work is already present on `main`. The branch tip is an ancestor
+of `main`, with no commits ahead of `main` as of the 2026-05-18 review.
+
+Do not merge this branch back into `main`. A direct merge or reverse diff review
+would reintroduce older repository state. The remote branch can be deleted after
+operator approval once GitHub issue/backlog references no longer need it as an
+active branch marker.
+
 ## Branch
 - recommended branch: `codex/analysis-ml-replay-expansion-nn`
 - category: analysis core
@@ -54,6 +68,7 @@ This branch expands the replay-labeled ML sample before testing neural methods. 
 - Expanded artifact coverage: `1224` finished regular-season games, `1198` state-panel games, `26` derived-bundle games.
 - Replay engine full-regular run now uses cached per-game state/tick lookups to avoid repeated per-poll table scans.
 - ML handoff report: `shared/reports/ml-trading-lane/sample_coverage_report.md`.
+- `2026-05-18`: verified `tools/run_ml_neural_sidecar.py` and `tests/tools/test_run_ml_neural_sidecar_pytest.py` are already on `main`.
 
 ## Subphases
 1. `sample_audit`
