@@ -334,6 +334,8 @@ class ManualClobOrderAssistantRequest(BaseModel):
     execute: bool = False
     allow_market_urgent_profit_capture: bool = False
     urgent_profit_capture_reason: str | None = None
+    market_order_exception_reviewed_by: str | None = None
+    market_order_max_slippage_cents: float | None = Field(default=None, ge=0.0, le=100.0)
     idempotency_key: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 

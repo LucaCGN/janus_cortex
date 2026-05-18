@@ -112,7 +112,7 @@ def test_manual_order_assistant_market_orders_disabled_except_sell_profit_except
     )
     assert {item["reason"] for item in blocked["blockers"]} == {"market_orders_disabled"}
 
-    allowed = build_manual_clob_order_assistant_review(
+    missing_review = build_manual_clob_order_assistant_review(
         _request(
             side="sell",
             order_type="market",
@@ -128,7 +128,57 @@ def test_manual_order_assistant_market_orders_disabled_except_sell_profit_except
         inventory={"open_orders": [], "pending_intents": [], "unresolved_inventory_present": False},
         now_utc=NOW,
     )
+    assert {item["reason"] for item in missing_review["blockers"]} == {
+        "market_order_max_slippage_required",
+        "market_order_operator_review_required",
+    }
+
+    allowed = build_manual_clob_order_assistant_review(
+        _request(
+            side="sell",
+            order_type="market",
+            limit_price=None,
+            max_price=None,
+            max_notional_usd=1.0,
+            allow_market_urgent_profit_capture=True,
+            urgent_profit_capture_reason="profit spike likely to mean revert",
+            market_order_exception_reviewed_by="operator",
+            market_order_max_slippage_cents=1.0,
+        ),
+        event_id="event-1",
+        matched_outcome=_outcome(),
+        orderbook=_book(),
+        inventory={"open_orders": [], "pending_intents": [], "unresolved_inventory_present": False},
+        now_utc=NOW,
+    )
     assert allowed["approved"] is True
+    assert allowed["metadata"]["guardrails"]["market_order_exception_reviewed_by"] == "operator"
+    assert allowed["metadata"]["guardrails"]["market_order_max_slippage_cents"] == 1.0
+    assert allowed["metadata"]["guardrails"]["post_action_reconciliation_required"] is True
+
+
+def test_manual_order_assistant_blocks_market_exception_when_slippage_cap_exceeded_pytest() -> None:
+    review = build_manual_clob_order_assistant_review(
+        _request(
+            side="sell",
+            order_type="market",
+            limit_price=None,
+            max_price=None,
+            max_notional_usd=1.0,
+            allow_market_urgent_profit_capture=True,
+            urgent_profit_capture_reason="profit spike likely to mean revert",
+            market_order_exception_reviewed_by="operator",
+            market_order_max_slippage_cents=0.05,
+        ),
+        event_id="event-1",
+        matched_outcome=_outcome(),
+        orderbook=_book(spread_cents=0.1),
+        inventory={"open_orders": [], "pending_intents": [], "unresolved_inventory_present": False},
+        now_utc=NOW,
+    )
+
+    assert review["status"] == "blocked"
+    assert {item["reason"] for item in review["blockers"]} == {"market_order_slippage_too_high"}
 
 
 def test_manual_order_assistant_rejects_buy_limit_above_max_price_at_schema_pytest() -> None:

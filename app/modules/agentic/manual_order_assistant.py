@@ -106,6 +106,9 @@ def build_manual_clob_order_metadata(
             "min_depth": payload.min_depth,
             "market_order_exception": bool(payload.allow_market_urgent_profit_capture),
             "urgent_profit_capture_reason": payload.urgent_profit_capture_reason,
+            "market_order_exception_reviewed_by": payload.market_order_exception_reviewed_by,
+            "market_order_max_slippage_cents": payload.market_order_max_slippage_cents,
+            "post_action_reconciliation_required": bool(payload.allow_market_urgent_profit_capture),
         },
         "blockers": blockers,
         "orderbook_snapshot": orderbook,
@@ -148,6 +151,10 @@ def _validate_order_type_policy(payload: ManualClobOrderAssistantRequest, *, blo
         return
     if payload.side != "sell":
         blockers.append({"reason": "market_order_exception_sell_only", "side": payload.side})
+    if not str(payload.market_order_exception_reviewed_by or "").strip():
+        blockers.append({"reason": "market_order_operator_review_required"})
+    if payload.market_order_max_slippage_cents is None:
+        blockers.append({"reason": "market_order_max_slippage_required"})
 
 
 def _validate_price_and_notional(payload: ManualClobOrderAssistantRequest, *, blockers: list[dict[str, Any]]) -> None:
@@ -199,6 +206,21 @@ def _validate_orderbook(
         warnings.append({"reason": "spread_unavailable"})
     elif spread_cents > payload.max_spread_cents + 1e-9:
         blockers.append({"reason": "spread_too_wide", "spread_cents": spread_cents, "max_spread_cents": payload.max_spread_cents})
+    market_order_max_slippage = payload.market_order_max_slippage_cents
+    if (
+        payload.order_type == "market"
+        and payload.allow_market_urgent_profit_capture
+        and spread_cents is not None
+        and market_order_max_slippage is not None
+        and spread_cents > market_order_max_slippage + 1e-9
+    ):
+        blockers.append(
+            {
+                "reason": "market_order_slippage_too_high",
+                "spread_cents": spread_cents,
+                "market_order_max_slippage_cents": market_order_max_slippage,
+            }
+        )
     if payload.order_type == "market":
         reference_price = _side_reference_price(payload, orderbook)
         if reference_price is None:

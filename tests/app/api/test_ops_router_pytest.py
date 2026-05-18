@@ -1036,6 +1036,91 @@ def test_manual_order_assistant_endpoint_records_preview_and_never_raw_exchange_
     assert payload["executed_order"] is None
 
 
+def test_manual_order_assistant_execute_market_exception_requires_review_metadata_pytest(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_manual_order_assistant_outcome_mapping",
+        lambda *args, **kwargs: {
+            "event_id": "event-123",
+            "market_id": "market-123",
+            "outcome_id": "outcome-123",
+            "token_id": "token-123",
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_manual_order_assistant_orderbook",
+        lambda *args, **kwargs: {
+            "event_id": "event-123",
+            "market_id": "market-123",
+            "outcome_id": "outcome-123",
+            "token_id": "token-123",
+            "captured_at_utc": datetime.now(timezone.utc).isoformat(),
+            "best_bid": 0.44,
+            "best_ask": 0.45,
+            "spread_cents": 1.0,
+            "bid_depth": 100,
+            "ask_depth": 100,
+        },
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_fetch_manual_order_assistant_inventory",
+        lambda *args, **kwargs: {
+            "open_orders": [],
+            "pending_intents": [],
+            "unresolved_inventory_present": False,
+        },
+    )
+    monkeypatch.setattr(ops_router, "_write_manual_order_assistant_artifact", lambda **kwargs: {"status": "stored", "path": "artifact.json"})
+    monkeypatch.setattr(ops_router, "try_persist_operator_intervention", lambda payload: {"status": "stored"})
+    monkeypatch.setattr(
+        ops_router,
+        "create_live_order",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("blocked market exception must not place orders")),
+    )
+
+    class FakeConnection:
+        pass
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    try:
+        response = client.post(
+            "/v1/events/event-123/manual-order-assistant",
+            json={
+                "account_id": "account-1",
+                "market_id": "market-123",
+                "outcome_id": "outcome-123",
+                "token_id": "token-123",
+                "side": "sell",
+                "order_type": "market",
+                "size": 5,
+                "max_notional_usd": 3.0,
+                "actor": "codex",
+                "reason": "urgent profit spike review",
+                "execute": True,
+                "allow_market_urgent_profit_capture": True,
+                "urgent_profit_capture_reason": "profit spike likely to mean revert",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "blocked"
+    assert payload["approved"] is False
+    assert payload["executed_order"] is None
+    assert {item["reason"] for item in payload["blockers"]} == {
+        "market_order_max_slippage_required",
+        "market_order_operator_review_required",
+    }
+
+
 def test_llm_revision_adoption_requires_review_and_writes_current_plan_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
