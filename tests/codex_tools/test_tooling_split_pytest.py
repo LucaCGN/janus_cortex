@@ -9,15 +9,20 @@ from codex_tool import _client as legacy_client
 import codex_tool.build_replay_from_watch_session as legacy_replay_cli
 import codex_tool.export_event_context as legacy_context_cli
 import codex_tool.export_event_review_bundle as legacy_review_cli
+import codex_tool.evaluate_strategy_plan as legacy_evaluate_cli
 import codex_tool.janus_status as legacy_status_cli
 import codex_tool.live_strategy_worker_status as legacy_worker_status_cli
 import codex_tool.start_live_strategy_worker as legacy_worker_start_cli
 import codex_tool.stop_live_strategy_worker as legacy_worker_stop_cli
+import codex_tool.submit_pregame_research as legacy_pregame_cli
+import codex_tool.submit_strategy_plan as legacy_submit_cli
+import codex_tool.adopt_llm_revision as legacy_adopt_cli
 import codex_tool.watch_market as legacy_watch_cli
 from codex_tools.janus import client as janus_client
 from codex_tools.janus import events as janus_events
 from codex_tools.janus import ops as janus_ops
 from codex_tools.janus import status as janus_status
+from codex_tools.janus import strategy as janus_strategy
 from codex_tools.janus import worker as janus_worker
 from codex_tools.polymarket import (
     PREVIEW_SCHEMA_VERSION,
@@ -227,6 +232,145 @@ def test_legacy_worker_clis_delegate_to_target_namespace() -> None:
     assert legacy_worker_start_cli.main_for_live_strategy_worker_start is janus_worker.main_for_live_strategy_worker_start
     assert legacy_worker_stop_cli.LIVE_STRATEGY_WORKER_STOP_PATH == janus_worker.LIVE_STRATEGY_WORKER_STOP_PATH
     assert legacy_worker_stop_cli.main_for_live_strategy_worker_stop is janus_worker.main_for_live_strategy_worker_stop
+
+
+def test_janus_strategy_namespace_wraps_plan_submit_and_evaluate(monkeypatch) -> None:
+    calls: list[tuple[str, str, str, dict[str, object]]] = []
+
+    def _api_json(api_root: str, method: str, path: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append((api_root, method, path, payload))
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(janus_strategy, "api_json", _api_json)
+
+    submitted = janus_strategy.submit_strategy_plan("http://janus.local", "event-1", {"plan": "v1"})
+    evaluated = janus_strategy.evaluate_strategy_plan(
+        "http://janus.local",
+        "event-1",
+        {"dry_run": True},
+    )
+    execute_preview = janus_strategy.evaluate_strategy_plan(
+        "http://janus.local",
+        "event-1",
+        {"dry_run": True, "execute": True},
+        execute=True,
+    )
+
+    assert submitted == {"ok": True, "path": "/v1/events/event-1/strategy-plan"}
+    assert evaluated == {"ok": True, "path": "/v1/events/event-1/strategy-plan/evaluate"}
+    assert execute_preview == {"ok": True, "path": "/v1/events/event-1/strategy-plan/execute"}
+    assert calls == [
+        ("http://janus.local", "POST", "/v1/events/event-1/strategy-plan", {"plan": "v1"}),
+        ("http://janus.local", "POST", "/v1/events/event-1/strategy-plan/evaluate", {"dry_run": True}),
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/events/event-1/strategy-plan/execute",
+            {"dry_run": True, "execute": True},
+        ),
+    ]
+
+
+def test_janus_strategy_namespace_preserves_eval_and_research_payloads(tmp_path: Path) -> None:
+    plan_path = tmp_path / "plan.json"
+    market_path = tmp_path / "market.json"
+    research_path = tmp_path / "research.md"
+    plan_path.write_text(json.dumps({"event_id": "event-1"}), encoding="utf-8-sig")
+    market_path.write_text(json.dumps({"price": 0.42}), encoding="utf-8-sig")
+    research_path.write_text("research", encoding="utf-8-sig")
+
+    eval_args = janus_strategy.build_strategy_plan_evaluate_parser("eval").parse_args(
+        [
+            "--event-id",
+            "event-1",
+            "--plan-path",
+            str(plan_path),
+            "--market-state-path",
+            str(market_path),
+            "--account-id",
+            "account-1",
+            "--execute",
+            "--live-money",
+            "--max-intents",
+            "2",
+        ]
+    )
+    research_args = janus_strategy.build_pregame_research_parser("research").parse_args(
+        ["--event-id", "event-1", "--source", "pytest", "--research-path", str(research_path)]
+    )
+
+    assert janus_strategy.build_strategy_plan_evaluate_payload(eval_args) == {
+        "plan": {"event_id": "event-1"},
+        "account_id": "account-1",
+        "dry_run": False,
+        "execute": True,
+        "market_state": {"price": 0.42},
+        "portfolio_state": {},
+        "source": "codex",
+        "max_intents": 2,
+    }
+    assert janus_strategy.build_pregame_research_payload(research_args) == {
+        "session_date": None,
+        "event_ids": ["event-1"],
+        "run_id": None,
+        "account_id": None,
+        "source": "pytest",
+        "notes": None,
+        "execute": False,
+        "research_path": str(research_path),
+        "research_markdown": "research",
+    }
+
+
+def test_janus_strategy_namespace_preserves_llm_revision_payload(tmp_path: Path) -> None:
+    response_path = tmp_path / "response.json"
+    response_path.write_text(json.dumps({"request_id": "request-1"}), encoding="utf-8-sig")
+    args = janus_strategy.build_llm_revision_adoption_parser("adopt").parse_args(
+        [
+            "--event-id",
+            "event-1",
+            "--session-date",
+            "2026-05-18",
+            "--reviewed-by",
+            "reviewer",
+            "--review-reason",
+            "valid response",
+            "--notes",
+            "candidate",
+            "--response-path",
+            str(response_path),
+            "--apply-current",
+        ]
+    )
+
+    assert janus_strategy.build_llm_revision_adoption_payload(args) == {
+        "session_date": "2026-05-18",
+        "source": "codex-llm-revision-adoption",
+        "reviewed_by": "reviewer",
+        "review_reason": "valid response",
+        "apply_current": True,
+        "notes": "candidate",
+        "response": {"request_id": "request-1"},
+    }
+
+
+def test_legacy_strategy_clis_delegate_to_target_namespace() -> None:
+    assert legacy_submit_cli.STRATEGY_PLAN_PATH_TEMPLATE == janus_strategy.STRATEGY_PLAN_PATH_TEMPLATE
+    assert legacy_submit_cli.submit_strategy_plan is janus_strategy.submit_strategy_plan
+    assert legacy_submit_cli.main_for_strategy_plan_submit is janus_strategy.main_for_strategy_plan_submit
+    assert legacy_evaluate_cli.STRATEGY_PLAN_EVALUATE_PATH_TEMPLATE == (
+        janus_strategy.STRATEGY_PLAN_EVALUATE_PATH_TEMPLATE
+    )
+    assert legacy_evaluate_cli.STRATEGY_PLAN_EXECUTE_PATH_TEMPLATE == janus_strategy.STRATEGY_PLAN_EXECUTE_PATH_TEMPLATE
+    assert legacy_evaluate_cli.evaluate_strategy_plan is janus_strategy.evaluate_strategy_plan
+    assert legacy_evaluate_cli.main_for_strategy_plan_evaluate is janus_strategy.main_for_strategy_plan_evaluate
+    assert legacy_adopt_cli.LLM_REVISION_ADOPT_PATH_TEMPLATE == janus_strategy.LLM_REVISION_ADOPT_PATH_TEMPLATE
+    assert legacy_adopt_cli.adopt_llm_revision is janus_strategy.adopt_llm_revision
+    assert legacy_adopt_cli._build_payload is janus_strategy.build_llm_revision_adoption_payload
+    assert legacy_adopt_cli.main_for_llm_revision_adoption is janus_strategy.main_for_llm_revision_adoption
+    assert legacy_pregame_cli.PREGAME_PLAN_PATH == janus_strategy.PREGAME_PLAN_PATH
+    assert legacy_pregame_cli.submit_pregame_research is janus_strategy.submit_pregame_research
+    assert legacy_pregame_cli.main_for_pregame_research is janus_strategy.main_for_pregame_research
 
 
 def test_janus_events_namespace_wraps_context_and_review_endpoints(monkeypatch) -> None:
