@@ -18,6 +18,11 @@ from codex_tools.polymarket.ledger import (
     default_fallback_ledger_root,
     write_fallback_decision_ledger,
 )
+from codex_tools.polymarket.preview import (
+    PREVIEW_SCHEMA_VERSION,
+    PolymarketFallbackPreview,
+    build_fallback_preview,
+)
 from codex_tools.polymarket.safety import (
     DEFAULT_DIRECT_TRUTH_MAX_AGE_SECONDS,
     DEFAULT_MIN_BUY_NOTIONAL_USD,
@@ -40,13 +45,16 @@ __all__ = [
     "DEFAULT_DIRECT_TRUTH_MAX_AGE_SECONDS",
     "DEFAULT_MIN_BUY_NOTIONAL_USD",
     "DEFAULT_MIN_ORDER_SIZE",
+    "PREVIEW_SCHEMA_VERSION",
     "PolymarketAccountReadSnapshot",
     "PolymarketExecutionGateSnapshot",
     "PolymarketFallbackDecision",
     "PolymarketFallbackIntent",
     "PolymarketFallbackLedgerWrite",
+    "PolymarketFallbackPreview",
     "PolymarketSafetyCheck",
     "build_fallback_decision",
+    "build_fallback_preview",
     "build_ledger_entry",
     "build_polymarket_safety_gate_snapshot",
     "default_fallback_ledger_root",

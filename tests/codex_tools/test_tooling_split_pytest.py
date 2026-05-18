@@ -8,8 +8,10 @@ from pathlib import Path
 from codex_tool import _client as legacy_client
 from codex_tools.janus import client as janus_client
 from codex_tools.polymarket import (
+    PREVIEW_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
+    build_fallback_preview,
     build_polymarket_safety_gate_snapshot,
     evaluate_direct_truth_freshness,
     evaluate_kill_switch,
@@ -19,6 +21,7 @@ from codex_tools.polymarket import (
     build_fallback_decision,
     write_fallback_decision_ledger,
 )
+from codex_tools.polymarket.cli import main as polymarket_cli_main
 
 
 def _intent(*, dry_run: bool = True) -> PolymarketFallbackIntent:
@@ -364,3 +367,90 @@ def test_safety_gate_snapshot_can_feed_preview_only_decision_when_all_gates_pass
     assert decision.execution_authorized is False
     assert decision.order_preparation_attempted is False
     assert decision.order_submission_attempted is False
+
+
+def test_fallback_preview_service_entrypoint_blocks_without_execution() -> None:
+    preview = build_fallback_preview(
+        _intent(dry_run=False),
+        direct_truth_snapshot=_fresh_snapshot(),
+        now_utc=datetime(2026, 5, 18, 14, 20, 30, tzinfo=UTC),
+        risk_budget_name="global-portfolio-test",
+        risk_budget_max_notional_usd=10.0,
+        kill_switch_clear=True,
+        kill_switch_source="unit-test",
+        janus_degraded_or_direct_path_selected=True,
+        ledger_available=True,
+        reconciliation_plan="reconcile back to Janus action ledger",
+        explicit_execution_approval=False,
+        truth_sources=["direct_clob"],
+    )
+
+    assert preview.schema_version == PREVIEW_SCHEMA_VERSION
+    assert preview.status == "blocked_missing_execution_gates"
+    assert preview.decision["order_preparation_attempted"] is False
+    assert preview.decision["order_submission_attempted"] is False
+    assert preview.ledger_write is None
+    assert preview.order_preparation_attempted is False
+    assert preview.order_submission_attempted is False
+    assert preview.gate_snapshot["evidence"]["order_submission_attempted"] is False
+
+
+def test_fallback_preview_can_write_preview_ledger_without_execution(tmp_path: Path) -> None:
+    preview = build_fallback_preview(
+        _intent(dry_run=True),
+        direct_truth_snapshot=_fresh_snapshot(),
+        now_utc=datetime(2026, 5, 18, 14, 20, 30, tzinfo=UTC),
+        risk_budget_name="global-portfolio-test",
+        risk_budget_max_notional_usd=10.0,
+        kill_switch_clear=True,
+        kill_switch_source="unit-test",
+        janus_degraded_or_direct_path_selected=True,
+        ledger_available=True,
+        reconciliation_plan={"target": "Janus action ledger"},
+        explicit_execution_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+        write_ledger=True,
+        ledger_root=tmp_path,
+        written_at_utc=datetime(2026, 5, 18, 14, 33, 0, tzinfo=UTC),
+    )
+
+    assert preview.status == "dry_run_preview_only"
+    assert preview.decision["execution_authorized"] is False
+    assert preview.ledger_write is not None
+    assert preview.ledger_write["status"] == "written"
+    assert Path(preview.ledger_write["ledger_path"]).exists()
+    assert preview.order_preparation_attempted is False
+    assert preview.order_submission_attempted is False
+
+
+def test_polymarket_cli_preview_fallback_outputs_blocked_json(capsys) -> None:
+    exit_code = polymarket_cli_main(
+        [
+            "preview-fallback",
+            "--action",
+            "open_position",
+            "--account-id",
+            "account-1",
+            "--market-slug",
+            "test-market",
+            "--token-id",
+            "token-yes",
+            "--side",
+            "BUY",
+            "--price",
+            "0.42",
+            "--size",
+            "5",
+            "--reason",
+            "unit test",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == PREVIEW_SCHEMA_VERSION
+    assert payload["decision"]["status"] == "blocked_missing_execution_gates"
+    assert payload["decision"]["order_preparation_attempted"] is False
+    assert payload["decision"]["order_submission_attempted"] is False
+    assert payload["order_preparation_attempted"] is False
+    assert payload["order_submission_attempted"] is False
