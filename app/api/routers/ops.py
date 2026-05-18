@@ -65,6 +65,10 @@ from app.modules.nba.execution.adapter import create_live_order, resolve_trading
 
 router = APIRouter(prefix="/v1", tags=["ops"])
 
+_MICROSTRUCTURE_BASE_GRID_MOVE_THRESHOLD = 0.02
+_MICROSTRUCTURE_BASE_SPIKE_MOVE_THRESHOLD = 0.03
+_MICROSTRUCTURE_BASE_DIRECTION_NOISE_FLOOR = 0.005
+
 
 @router.get("/ops/status")
 def get_ops_status() -> dict[str, Any]:
@@ -1765,6 +1769,7 @@ def _build_live_monitor_microstructure_context(
                 "period_context_status": summary.get("period_context_status"),
                 "period_summary_count": _safe_int(summary.get("period_summary_count")),
                 "period_summaries": _compact_microstructure_period_summaries(summary),
+                "threshold_calibration": summary.get("threshold_calibration") or {},
                 "orderbook_window_summary": summary.get("orderbook_window_summary") or {},
                 "screenshot_dependency": False,
                 "trading_authority": "review_evidence_only",
@@ -1804,6 +1809,7 @@ def _compact_microstructure_period_summaries(summary: dict[str, Any]) -> list[di
                 "grid_opportunity_count": _safe_int(period_summary.get("grid_opportunity_count")),
                 "spike_count": _safe_int(period_summary.get("spike_count")),
                 "oscillation_band_count": _safe_int(period_summary.get("oscillation_band_count")),
+                "threshold_calibration": period_summary.get("threshold_calibration") or {},
             }
         )
     return items
@@ -2045,6 +2051,9 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
         for outcome_id, rows in sorted(prices_by_outcome.items())
     }
     period_summaries = _microstructure_period_summaries(prices_by_outcome)
+    threshold_calibration = _microstructure_threshold_calibration(
+        [row for rows in prices_by_outcome.values() for row in rows]
+    )
     inversion_count = _paired_price_inversion_point_count(prices_by_outcome)
     leader_inversion_count = _favorite_underdog_leader_inversion_count(prices_by_outcome)
     spike_count = sum(_safe_int(summary.get("spike_count")) for summary in outcome_summaries.values())
@@ -2075,6 +2084,9 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
             trend_smoothness_score=avg_smoothness,
             mid_price_range=round(max(mids) - min(mids), 6) if mids else None,
         ),
+        "threshold_calibration": threshold_calibration,
+        "threshold_calibration_status": threshold_calibration["calibration_status"],
+        "trading_authority_status": "review_only_thresholds_pending_backtest",
         "outcome_summaries": outcome_summaries,
         "period_context_status": "recorded"
         if any(str(key).startswith("period_") for key in period_summaries)
@@ -2097,6 +2109,7 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
             "trend_smoothness_score": "absolute net move divided by total absolute move; lower means more jagged",
             "period_summaries": "same metrics grouped by period/clock context from tick evidence or nearest persisted play-by-play rows",
             "pbp_aligned_tick_count": "ticks whose period/clock context was filled from nearest persisted play-by-play evidence",
+            "threshold_calibration": "effective grid, spike, and direction-noise thresholds after observed spread calibration",
         },
     }
 
@@ -2125,6 +2138,7 @@ def _microstructure_period_sort_key(key: str) -> tuple[int, str]:
 
 def _microstructure_period_summary(key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     ordered = _chronological_microstructure_rows(rows)
+    threshold_calibration = _microstructure_threshold_calibration(ordered)
     prices = [_safe_float(row.get("mid_price")) for row in ordered]
     prices = [price for price in prices if price is not None]
     summaries: dict[str, dict[str, Any]] = {}
@@ -2177,6 +2191,8 @@ def _microstructure_period_summary(key: str, rows: list[dict[str, Any]]) -> dict
         "oscillation_band_count": oscillation_band_count,
         "grid_opportunity_count": grid_opportunity_count,
         "trend_smoothness_score": round(avg_smoothness, 6) if avg_smoothness is not None else None,
+        "threshold_calibration": threshold_calibration,
+        "threshold_calibration_status": threshold_calibration["calibration_status"],
         "trend_profile": _microstructure_trend_profile(
             spike_count=spike_count,
             oscillation_band_count=oscillation_band_count,
@@ -2350,6 +2366,7 @@ def _first_safe_float(candidate: dict[str, Any], keys: tuple[str, ...]) -> float
 
 def _microstructure_outcome_summary(outcome_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
     ordered = _chronological_microstructure_rows(rows)
+    threshold_calibration = _microstructure_threshold_calibration(ordered)
     prices = [_safe_float(row.get("mid_price")) for row in ordered]
     prices = [price for price in prices if price is not None]
     if not prices:
@@ -2363,6 +2380,15 @@ def _microstructure_outcome_summary(outcome_id: str, rows: list[dict[str, Any]])
     total_abs_move = sum(abs_deltas)
     net_move = prices[-1] - prices[0] if len(prices) >= 2 else 0.0
     smoothness = abs(net_move) / total_abs_move if total_abs_move > 0 else None
+    spike_threshold = _safe_float(threshold_calibration["spike_move_threshold"]) or _MICROSTRUCTURE_BASE_SPIKE_MOVE_THRESHOLD
+    grid_threshold = _safe_float(threshold_calibration["grid_move_threshold"]) or _MICROSTRUCTURE_BASE_GRID_MOVE_THRESHOLD
+    direction_noise_floor = (
+        _safe_float(threshold_calibration["direction_noise_floor"])
+        or _MICROSTRUCTURE_BASE_DIRECTION_NOISE_FLOOR
+    )
+    spike_count = _movement_count(deltas, threshold=spike_threshold)
+    oscillation_band_count = _direction_change_count(deltas, noise_floor=direction_noise_floor)
+    grid_opportunity_count = _movement_count(deltas, threshold=grid_threshold)
     return {
         "outcome_id": outcome_id,
         "status": "recorded",
@@ -2376,15 +2402,17 @@ def _microstructure_outcome_summary(outcome_id: str, rows: list[dict[str, Any]])
         "total_absolute_move": round(total_abs_move, 6),
         "average_absolute_move": round(total_abs_move / len(abs_deltas), 6) if abs_deltas else 0.0,
         "trend_smoothness_score": round(smoothness, 6) if smoothness is not None else None,
+        "threshold_calibration": threshold_calibration,
+        "threshold_calibration_status": threshold_calibration["calibration_status"],
         "trend_profile": _microstructure_trend_profile(
-            spike_count=_movement_count(deltas, threshold=0.03),
-            oscillation_band_count=_direction_change_count(deltas),
+            spike_count=spike_count,
+            oscillation_band_count=oscillation_band_count,
             trend_smoothness_score=smoothness,
             mid_price_range=round(max(prices) - min(prices), 6),
         ),
-        "spike_count": _movement_count(deltas, threshold=0.03),
-        "oscillation_band_count": _direction_change_count(deltas),
-        "grid_opportunity_count": _movement_count(deltas, threshold=0.02),
+        "spike_count": spike_count,
+        "oscillation_band_count": oscillation_band_count,
+        "grid_opportunity_count": grid_opportunity_count,
         "deltas": deltas,
     }
 
@@ -2444,7 +2472,52 @@ def _movement_count(deltas: list[float], *, threshold: float) -> int:
     return sum(1 for delta in deltas if abs(delta) >= threshold)
 
 
-def _direction_change_count(deltas: list[float], *, noise_floor: float = 0.005) -> int:
+def _microstructure_threshold_calibration(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    spreads = sorted(
+        value
+        for value in (_safe_float(row.get("spread")) for row in rows)
+        if value is not None and value > 0
+    )
+    median_spread = _median_float(spreads)
+    grid_threshold = max(_MICROSTRUCTURE_BASE_GRID_MOVE_THRESHOLD, median_spread or 0.0)
+    spike_threshold = max(_MICROSTRUCTURE_BASE_SPIKE_MOVE_THRESHOLD, grid_threshold * 1.5)
+    direction_noise_floor = (
+        grid_threshold
+        if median_spread is not None and median_spread > _MICROSTRUCTURE_BASE_GRID_MOVE_THRESHOLD
+        else _MICROSTRUCTURE_BASE_DIRECTION_NOISE_FLOOR
+    )
+    calibration_status = "default"
+    if median_spread is not None and grid_threshold > _MICROSTRUCTURE_BASE_GRID_MOVE_THRESHOLD:
+        calibration_status = "spread_adjusted"
+    return {
+        "schema_version": "microstructure_threshold_calibration_v1",
+        "calibration_status": calibration_status,
+        "base_grid_move_threshold": _MICROSTRUCTURE_BASE_GRID_MOVE_THRESHOLD,
+        "base_spike_move_threshold": _MICROSTRUCTURE_BASE_SPIKE_MOVE_THRESHOLD,
+        "base_direction_noise_floor": _MICROSTRUCTURE_BASE_DIRECTION_NOISE_FLOOR,
+        "observed_spread_count": len(spreads),
+        "observed_median_spread": round(median_spread, 6) if median_spread is not None else None,
+        "grid_move_threshold": round(grid_threshold, 6),
+        "spike_move_threshold": round(spike_threshold, 6),
+        "direction_noise_floor": round(direction_noise_floor, 6),
+        "strategy_authority": "review_only_pending_replay_fillability",
+    }
+
+
+def _median_float(values: list[float]) -> float | None:
+    if not values:
+        return None
+    midpoint = len(values) // 2
+    if len(values) % 2:
+        return values[midpoint]
+    return (values[midpoint - 1] + values[midpoint]) / 2
+
+
+def _direction_change_count(
+    deltas: list[float],
+    *,
+    noise_floor: float = _MICROSTRUCTURE_BASE_DIRECTION_NOISE_FLOOR,
+) -> int:
     directions: list[int] = []
     for delta in deltas:
         if abs(delta) < noise_floor:

@@ -1178,6 +1178,45 @@ def test_event_review_microstructure_classifies_smooth_and_noisy_profiles_pytest
     assert noisy["period_summaries"]["period_4"]["oscillation_band_count"] >= 6
 
 
+def test_event_review_microstructure_spread_adjusts_thresholds_pytest() -> None:
+    summary = ops_router._build_event_review_microstructure_summary(
+        {
+            "orderbook_ticks": [
+                {
+                    "captured_at": "2026-05-18T20:00:00+00:00",
+                    "outcome_id": "wide",
+                    "spread": 0.08,
+                    "mid_price": 0.50,
+                },
+                {
+                    "captured_at": "2026-05-18T20:01:00+00:00",
+                    "outcome_id": "wide",
+                    "spread": 0.08,
+                    "mid_price": 0.53,
+                },
+                {
+                    "captured_at": "2026-05-18T20:02:00+00:00",
+                    "outcome_id": "wide",
+                    "spread": 0.08,
+                    "mid_price": 0.50,
+                },
+            ],
+            "orderbook_window_summary": {},
+        }
+    )
+
+    assert summary["threshold_calibration_status"] == "spread_adjusted"
+    assert summary["trading_authority_status"] == "review_only_thresholds_pending_backtest"
+    thresholds = summary["outcome_summaries"]["wide"]["threshold_calibration"]
+    assert thresholds["observed_median_spread"] == 0.08
+    assert thresholds["grid_move_threshold"] == 0.08
+    assert thresholds["spike_move_threshold"] == 0.12
+    assert thresholds["direction_noise_floor"] == 0.08
+    assert summary["outcome_summaries"]["wide"]["grid_opportunity_count"] == 0
+    assert summary["outcome_summaries"]["wide"]["spike_count"] == 0
+    assert summary["outcome_summaries"]["wide"]["oscillation_band_count"] == 0
+
+
 def test_event_review_microstructure_aligns_ticks_to_persisted_pbp_context_pytest() -> None:
     summary = ops_router._build_event_review_microstructure_summary(
         {
