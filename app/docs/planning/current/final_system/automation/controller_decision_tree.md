@@ -20,9 +20,10 @@ Each controller pass should:
 5. Build an axis snapshot.
 6. Check active locks and running-agent registry.
 7. Choose one primary mode and persona.
-8. Decide whether sub-agents are allowed.
-9. Execute one bounded pass.
-10. Write outputs in authority-safe order.
+8. Claim the selected issue/resource scope before any write, or record a blocked/no-op ledger entry.
+9. Decide whether sub-agents are allowed.
+10. Execute one bounded pass.
+11. Release active claims and write outputs in authority-safe order.
 
 ## Axis Snapshot
 
@@ -109,6 +110,8 @@ Development may proceed only when:
 - tests/validation expectations are known
 - live-order impact is explicit
 
+Write locks are clear only when `python tools/controller_queue.py claim` succeeds for the selected issue and write scope. Duplicate active locks block the pass. Stale active locks are review blockers, not permission to overwrite. A dirty shared worktree before the claim blocks implementation unless the dirty files are already owned by the active claim.
+
 ## Issue Progress Rules
 
 The controller should prefer finishing useful issue-sized work over producing repeated status commentary.
@@ -133,3 +136,5 @@ The controller should no-op when:
 - docs are current enough and no scheduled health check is due
 
 No-op is a valid successful controller pass.
+
+For reviewability without noise, use `python tools/controller_queue.py ledger --outcome no_material_change` when the no-op explains why a high-priority issue was not advanced.

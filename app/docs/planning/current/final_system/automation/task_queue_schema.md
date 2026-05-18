@@ -1,12 +1,12 @@
 # Janus Task Queue And Lane Schema
 
-Status: initial draft
+Status: implemented repo-local v1
 
 ## Purpose
 
 Define the minimum structure needed for the master controller to reason about tasks, lanes, GitHub issues, branches, worktrees, agents, and live-event locks.
 
-This is a schema contract, not yet an implementation.
+The v1 repo-local implementation is `app/runtime/controller_queue.py`, with CLI access through `python tools/controller_queue.py`.
 
 ## Queue Item Fields
 
@@ -65,6 +65,46 @@ Every active task should claim locks:
 | `runtime` | `local/shared/artifacts/llm-runtime/YYYY-MM-DD` |
 
 No two coding agents should write the same file/module lock unless one is explicitly reviewing the other.
+
+## Repo-Local Queue Storage
+
+The controller queue implementation stores runtime state under:
+
+| Path | Purpose |
+|---|---|
+| `local/shared/artifacts/final-system-controller/queue/active_locks/*.json` | Current active claims. These are the authority for write ownership. |
+| `local/shared/artifacts/final-system-controller/queue/completed_locks/YYYY-MM-DD/*.json` | Released claims with outcome and evidence. |
+| `local/shared/artifacts/final-system-controller/queue/pass_ledger.jsonl` | Append-only pass ledger for claims, no-ops, blockers, releases, and material outputs. |
+
+These files are runtime artifacts, not durable product contracts. The durable contract is this tracked repo doc plus `app/runtime/controller_queue.py`.
+
+## Required Controller Lock Flow
+
+Before any code/docs/runtime-handoff write, the controller or assigned persona must either claim or confirm ownership:
+
+```powershell
+python tools/controller_queue.py claim --issue 39 --persona development-agent --owner janus-master-controller --branch main --worktree C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex --file app/runtime/controller_queue.py --file tools/controller_queue.py --module controller-queue --require-clean-worktree
+```
+
+If the command returns `blocked_duplicate_lock`, another active claim owns at least one issue/file/event/runtime scope. The controller must not write that scope.
+
+If the command returns `blocked_stale_lock`, a stale claim exists. The controller must surface it for review instead of overwriting it.
+
+If the command returns `blocked_dirty_worktree`, the shared worktree is dirty before ownership is established. The controller must stop or switch to review-only unless the dirty paths are explicitly owned by the active claim.
+
+When work finishes, release the lock:
+
+```powershell
+python tools/controller_queue.py release --lock-id <lock_id> --outcome implemented --material-output <commit-or-artifact> --evidence <issue-or-report-link>
+```
+
+When a pass intentionally does not write, record a compact ledger entry instead of creating repeated artifacts:
+
+```powershell
+python tools/controller_queue.py ledger --outcome no_material_change --classification YELLOW --persona master-controller --issue 39 --no-op-reason "controller paused; lock implementation pending"
+```
+
+Independent issues may proceed in parallel only when their active claims have no overlapping issue, file, module, event, service, market, domain, or runtime locks.
 
 ## Progress Outcomes
 

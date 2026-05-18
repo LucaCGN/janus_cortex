@@ -74,6 +74,15 @@ Required first read:
 19. Relevant GitHub issue state for active/open work
 20. Relevant Obsidian indexes only after repo/runtime authority has been checked
 
+Active lock/pass ledger rule:
+- Before any write to code, docs, runtime handoffs, runtime artifacts, GitHub issue state, or Obsidian, claim the relevant issue/resource scope with `python tools/controller_queue.py claim`.
+- Include every owned issue, file/module, event, service, market/domain, and runtime scope in the claim.
+- If the claim returns `blocked_duplicate_lock`, stop writing that scope and report the owning lock.
+- If the claim returns `blocked_stale_lock`, surface the stale lock for operator/reviewer action; do not overwrite it.
+- If the claim returns `blocked_dirty_worktree`, stop implementation unless the dirty paths are already explicitly owned by the current active claim.
+- Release completed or abandoned claims with `python tools/controller_queue.py release` and include outcome, commit/artifact, validation, and issue evidence.
+- Use `python tools/controller_queue.py ledger` for no-op or blocked passes when durable review evidence is needed without creating a full artifact.
+
 Classify every pass across these axes before choosing work:
 - market_domain: sports, global-portfolio, crypto, geopolitics, economics, culture, system
 - market_subdomain: basketball/nba, basketball/wnba, btc-up-down, long-term-futures, issue-governance, docs-memory

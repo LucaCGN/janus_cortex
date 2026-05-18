@@ -71,7 +71,9 @@ On the next pass, it should:
 4. Integrate results only after review.
 5. Start new work only if it does not conflict with active locks.
 
-If no active-agent registry exists yet, the controller should be conservative and avoid parallel write work.
+The active registry is the repo-local controller queue under `local/shared/artifacts/final-system-controller/queue/`. A sub-agent that will write must first be covered by a successful `python tools/controller_queue.py claim` call for its issue and resource scope. Parallel write work is allowed only when all active claims are disjoint.
+
+If the queue helper is unavailable or returns a duplicate, stale, or dirty-worktree block, the controller should be conservative and avoid parallel write work.
 
 Sub-agents that produce committed repo changes must not leave those changes local-only. The parent controller or `development-end-phase` owns pull/push reconciliation before the work is considered complete.
 

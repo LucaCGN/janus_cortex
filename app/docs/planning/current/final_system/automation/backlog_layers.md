@@ -70,7 +70,7 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Closed foundation | Archive or delete absorbed ML replay branch after operator approval. |
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Sprint backlog | Resolve fresh-DB NBA probe and account mapping gaps. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | Closed foundation | Encode Janus global ego and purpose contract. |
-| [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | Sprint backlog | Implement controller active queue locks and pass ledger. |
+| [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | Closed foundation | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Sprint backlog | Build current architecture and degradation maps. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | Sprint backlog | Validate budget-aware model routing and Codex fallback state. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | Planned/sprint | Validate minimum order constraints and market-order exception policy. |

@@ -142,6 +142,20 @@ Each task should state:
 - Live-order impact.
 - Acceptance criteria.
 
+Before any code, docs, handoff, Obsidian, or runtime-artifact write, the acting persona must establish ownership through the repo-local controller queue:
+
+```powershell
+python tools/controller_queue.py claim --issue <issue_number> --persona <persona> --owner janus-master-controller --branch <branch> --worktree C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex --file <path> --module <module> --require-clean-worktree
+```
+
+The claim must include the issue and every expected file/module/event/service/runtime scope. If the claim is blocked by an active duplicate, stale lock, or dirty worktree, the pass must stop writing and record the blocker once in the pass ledger. Stale locks are surfaced for review; they are not silently overwritten.
+
+After completing or abandoning the slice, the acting persona must release the lock with the outcome and evidence:
+
+```powershell
+python tools/controller_queue.py release --lock-id <lock_id> --outcome implemented_partial --material-output <commit-or-artifact> --evidence <issue-link>
+```
+
 After any commit, the acting persona must pull/rebase or fast-forward if needed and push the branch to GitHub. GitHub is the operator's current remote interaction surface.
 
 ## Issue Progress Discipline
@@ -151,6 +165,7 @@ The controller must not confuse issue commentary with issue progress.
 When a pass selects an open issue as the next safe task:
 
 - If the issue is executable now and no live/pregame/postgame safety gate blocks it, the pass should claim one bounded slice and attempt implementation, validation, commit, push, and issue update.
+- A claim means a successful `tools/controller_queue.py claim` entry exists for the issue and write scope before edits begin.
 - If the selected issue is too large for one pass, the pass must reduce it to the smallest useful slice with file/module ownership, tests, and expected evidence, then start that slice or hand it to the development-agent status.
 - If the issue is blocked, the pass must record the exact blocker and the next unblock action. Repeating the same blocker is a no-op unless new evidence changes the blocker, priority, owner, or acceptance criteria.
 - A GitHub issue comment is progress only when it changes durable issue state: acceptance criteria, blocker state, owner/lock, reproduction, validation result, commit link, or closure rationale.
@@ -178,6 +193,7 @@ If the previous pass already recorded the same mode, API/service state, queue de
 - Do not append another full daily-status block.
 - Do not create a new per-pass artifact unless at least 60 minutes passed since the last artifact or an explicit health checkpoint is due.
 - Return a quiet heartbeat summary instead.
+- Optionally append a compact pass-ledger entry with `tools/controller_queue.py ledger` when the no-op state matters for later review.
 - Only write files when there is a material change, a missing required artifact, a scheduled health checkpoint, or a transition toward live/pregame/postgame/development mode.
 
 Material changes include:

@@ -60,8 +60,11 @@ The controller should inspect these runtime surfaces when they exist:
 | `local/shared/handoffs/development-agent/status.md` | Development lane handoff |
 | `local/shared/handoffs/development-agent/master_queue.md` | Local operational queue bridge |
 | `local/shared/artifacts/final-system-controller/` | Controller pass artifacts and lock snapshots |
+| `local/shared/artifacts/final-system-controller/queue/active_locks/*.json` | Active controller/persona issue and resource claims |
+| `local/shared/artifacts/final-system-controller/queue/pass_ledger.jsonl` | Controller pass ledger for claims, no-ops, blockers, releases, and material outputs |
 | `local/shared/reports/daily-live-validation/` | Dated postgame/development/integrity reports |
 | `python tools/run_janus_startup_reconciliation.py --start-date <YYYY-MM-DD> --days <N>` | Reproducible post-startup data-refresh reconciliation for a fresh/local DB; read/write data only, no live-order actions |
+| `python tools/controller_queue.py status` | Repo-local controller queue/lock/pass-ledger status |
 
 ## Local Runtime Root
 
@@ -81,6 +84,7 @@ The recurring controller should remain paused until:
 2. Runtime handoffs reflect the reconciled state.
 3. GitHub `main` is pushed with the current source-of-truth docs.
 4. The controller can read the repo-local runtime root consistently.
+5. The controller queue helper is available and can block duplicate/stale/dirty write scopes before implementation.
 
 As of the 2026-05-18 bootstrap pass, Codex performed the initial repo-local reconciliation and handoff refresh. The controller should still be manually enabled by the operator in the Codex app only after reviewing the refreshed handoffs and pushed docs.
 
@@ -121,7 +125,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | closed | Absorbed ML replay branch deleted after operator approval. |
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | open | Fresh-DB NBA probe and account mapping gaps discovered during reconciliation. |
 | [#38](https://github.com/LucaCGN/janus_cortex/issues/38) | P0 | closed | Encode Janus global ego and purpose contract in repo prompts and Obsidian. |
-| [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | open | Implement controller active queue locks and pass ledger. |
+| [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | closed | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | open | Build current architecture and service degradation maps. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | open | Validate budget-aware model routing and Codex fallback state. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | open | Validate Polymarket minimum order constraints and market-order exception policy. |
