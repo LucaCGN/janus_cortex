@@ -113,3 +113,4 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | WNBA minimal-readiness dry run without live orders. |
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Read-only global portfolio explorer automation. |
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Absorbed ML replay branch deleted after operator approval. |
+| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Fresh-DB NBA probe and account mapping gaps discovered during reconciliation. |
