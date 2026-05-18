@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -46,6 +46,8 @@ class PortfolioMirrorSummary:
     unresolved_positions: int
     unresolved_orders: int
     unresolved_trades: int
+    unresolved_blockers: dict[str, dict[str, int]] = field(default_factory=dict)
+    unresolved_samples: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     error_text: str | None = None
 
 
@@ -420,6 +422,93 @@ def _resolve_market_outcome(raw: dict[str, Any], maps: _ResolutionMaps) -> tuple
     return None, None
 
 
+def _resolution_blocker_category(
+    raw: dict[str, Any],
+    maps: _ResolutionMaps,
+    *,
+    require_outcome: bool,
+) -> str:
+    token = _first_present(
+        raw,
+        ["asset", "asset_id", "token_id", "tokenId", "outcomeTokenId", "clobTokenId"],
+    )
+    if token:
+        pair = maps.token_to_pair.get(token)
+        if pair is None:
+            return "missing_token_catalog_mapping"
+        _market_id, outcome_id = pair
+        if require_outcome and outcome_id is None:
+            return "token_mapping_missing_outcome"
+        return "unknown_resolution_blocker"
+
+    condition_id = _first_present(raw, ["conditionId", "condition_id", "condition"])
+    if condition_id:
+        market_id = maps.condition_to_market.get(condition_id)
+        if market_id is None:
+            return "missing_condition_catalog_mapping"
+        if require_outcome and maps.market_to_first_outcome.get(market_id) is None:
+            return "condition_market_missing_outcome"
+        return "unknown_resolution_blocker"
+
+    external_market_id = _first_present(raw, ["market", "marketId", "market_id"])
+    if external_market_id:
+        market_id = maps.external_market_to_market.get(external_market_id)
+        if market_id is None:
+            return "missing_external_market_catalog_mapping"
+        if require_outcome and maps.market_to_first_outcome.get(market_id) is None:
+            return "external_market_missing_outcome"
+        return "unknown_resolution_blocker"
+
+    return "missing_resolvable_identifier"
+
+
+def _unresolved_sample(raw: dict[str, Any], *, category: str) -> dict[str, Any]:
+    sample_keys = (
+        "id",
+        "orderID",
+        "tradeID",
+        "asset",
+        "asset_id",
+        "token_id",
+        "conditionId",
+        "condition_id",
+        "market",
+        "marketId",
+        "market_id",
+        "slug",
+        "eventSlug",
+        "title",
+        "outcome",
+        "side",
+        "timestamp",
+        "createdAt",
+    )
+    sample: dict[str, Any] = {"category": category}
+    for key in sample_keys:
+        value = raw.get(key)
+        if value is not None and str(value).strip():
+            sample[key] = value
+    return sample
+
+
+def _record_resolution_blocker(
+    *,
+    scope: str,
+    raw: dict[str, Any],
+    maps: _ResolutionMaps,
+    blockers: dict[str, dict[str, int]],
+    samples: dict[str, list[dict[str, Any]]],
+    require_outcome: bool,
+    sample_limit: int = 5,
+) -> None:
+    category = _resolution_blocker_category(raw, maps, require_outcome=require_outcome)
+    scope_counts = blockers.setdefault(scope, {})
+    scope_counts[category] = int(scope_counts.get(category, 0)) + 1
+    scope_samples = samples.setdefault(scope, [])
+    if len(scope_samples) < sample_limit:
+        scope_samples.append(_unresolved_sample(raw, category=category))
+
+
 def _fetch_data_api_payload(
     *,
     data_client: PolymarketDataClient,
@@ -532,6 +621,8 @@ def run_portfolio_mirror_sync(
     unresolved_positions = 0
     unresolved_orders = 0
     unresolved_trades = 0
+    unresolved_blockers: dict[str, dict[str, int]] = {}
+    unresolved_samples: dict[str, list[dict[str, Any]]] = {}
 
     with managed_connection() as connection:
         repo = JanusUpsertRepository(connection)
@@ -670,6 +761,14 @@ def run_portfolio_mirror_sync(
                 market_id, outcome_id = _resolve_market_outcome(raw, maps)
                 if outcome_id is None:
                     unresolved_positions += 1
+                    _record_resolution_blocker(
+                        scope="open_positions",
+                        raw=raw,
+                        maps=maps,
+                        blockers=unresolved_blockers,
+                        samples=unresolved_samples,
+                        require_outcome=True,
+                    )
                     continue
                 size = _safe_float(raw.get("size"))
                 current_value = _safe_float(raw.get("currentValue"))
@@ -701,6 +800,14 @@ def run_portfolio_mirror_sync(
                 market_id, outcome_id = _resolve_market_outcome(raw, maps)
                 if outcome_id is None:
                     unresolved_positions += 1
+                    _record_resolution_blocker(
+                        scope="closed_positions",
+                        raw=raw,
+                        maps=maps,
+                        blockers=unresolved_blockers,
+                        samples=unresolved_samples,
+                        require_outcome=True,
+                    )
                     continue
                 inserted = repo.insert_position_snapshot(
                     account_id=account_id,
@@ -725,6 +832,14 @@ def run_portfolio_mirror_sync(
                 market_id, outcome_id = _resolve_market_outcome(raw, maps)
                 if market_id is None:
                     unresolved_orders += 1
+                    _record_resolution_blocker(
+                        scope="orders",
+                        raw=raw,
+                        maps=maps,
+                        blockers=unresolved_blockers,
+                        samples=unresolved_samples,
+                        require_outcome=False,
+                    )
                     continue
                 external_order_id = _first_present(raw, ["id", "orderID", "order_id"])
                 order_id = _uuid_for("order", external_order_id or str(uuid.uuid4()))
@@ -774,6 +889,14 @@ def run_portfolio_mirror_sync(
                 market_id, outcome_id = _resolve_market_outcome(raw, maps)
                 if market_id is None:
                     unresolved_trades += 1
+                    _record_resolution_blocker(
+                        scope="trades",
+                        raw=raw,
+                        maps=maps,
+                        blockers=unresolved_blockers,
+                        samples=unresolved_samples,
+                        require_outcome=False,
+                    )
                     continue
                 external_trade_id = _first_present(raw, ["id", "tradeID", "trade_id"])
                 trade_time = _safe_dt(raw.get("timestamp") or raw.get("createdAt"), default=now)
@@ -843,6 +966,8 @@ def run_portfolio_mirror_sync(
                 unresolved_positions=unresolved_positions,
                 unresolved_orders=unresolved_orders,
                 unresolved_trades=unresolved_trades,
+                unresolved_blockers=unresolved_blockers,
+                unresolved_samples=unresolved_samples,
             )
         except Exception as exc:  # noqa: BLE001
             connection.rollback()
@@ -868,6 +993,8 @@ def run_portfolio_mirror_sync(
                 unresolved_positions=unresolved_positions,
                 unresolved_orders=unresolved_orders,
                 unresolved_trades=unresolved_trades,
+                unresolved_blockers=unresolved_blockers,
+                unresolved_samples=unresolved_samples,
                 error_text=repr(exc),
             )
 
@@ -917,6 +1044,10 @@ def main() -> int:
     )
     if summary.error_text:
         print(f"error={summary.error_text}")
+    if summary.unresolved_blockers:
+        print(f"unresolved_blockers={summary.unresolved_blockers}")
+    if summary.unresolved_samples:
+        print(f"unresolved_samples={summary.unresolved_samples}")
     return 0 if summary.status == "success" else 1
 
 

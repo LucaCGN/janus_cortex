@@ -141,3 +141,63 @@ def test_may_9_duplicate_fill_fixture_collapses_to_unique_exposure_pytest() -> N
     assert len(lal_raw) == 48
     assert len(lal_ids) == 16
     assert round(_net_size(lal_raw, market_id=LAL_MARKET_ID, outcome_id=LAL_OUTCOME_ID), 6) == 1263.331647
+
+
+def test_resolution_blocker_categorizes_missing_token_mapping_pytest() -> None:
+    maps = sync_portfolio._ResolutionMaps(
+        token_to_pair={},
+        condition_to_market={},
+        external_market_to_market={},
+        market_to_first_outcome={},
+    )
+    blockers: dict[str, dict[str, int]] = {}
+    samples: dict[str, list[dict[str, Any]]] = {}
+
+    sync_portfolio._record_resolution_blocker(
+        scope="open_positions",
+        raw={
+            "asset": "token-missing",
+            "eventSlug": "nba-cle-det-2026-05-17",
+            "title": "Cavaliers vs. Pistons",
+            "outcome": "Pistons",
+        },
+        maps=maps,
+        blockers=blockers,
+        samples=samples,
+        require_outcome=True,
+    )
+
+    assert blockers == {"open_positions": {"missing_token_catalog_mapping": 1}}
+    assert samples["open_positions"][0]["category"] == "missing_token_catalog_mapping"
+    assert samples["open_positions"][0]["asset"] == "token-missing"
+    assert samples["open_positions"][0]["eventSlug"] == "nba-cle-det-2026-05-17"
+
+
+def test_resolution_blocker_categorizes_resolved_market_missing_outcome_pytest() -> None:
+    maps = sync_portfolio._ResolutionMaps(
+        token_to_pair={},
+        condition_to_market={"condition-1": DET_MARKET_ID},
+        external_market_to_market={},
+        market_to_first_outcome={},
+    )
+
+    category = sync_portfolio._resolution_blocker_category(
+        {"conditionId": "condition-1"},
+        maps,
+        require_outcome=True,
+    )
+
+    assert category == "condition_market_missing_outcome"
+
+
+def test_resolution_blocker_categorizes_missing_identifier_pytest() -> None:
+    maps = sync_portfolio._ResolutionMaps(
+        token_to_pair={},
+        condition_to_market={},
+        external_market_to_market={},
+        market_to_first_outcome={},
+    )
+
+    category = sync_portfolio._resolution_blocker_category({}, maps, require_outcome=False)
+
+    assert category == "missing_resolvable_identifier"
