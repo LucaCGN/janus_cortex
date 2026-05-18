@@ -22,9 +22,110 @@ RiskBucket = Literal["janus-sports", "global-portfolio", "future-domain", "opera
 TimeHorizon = Literal["intraday", "short", "medium", "long", "unknown"]
 ResolutionRisk = Literal["low", "medium", "high", "unknown"]
 PortfolioSide = Literal["yes", "no", "long", "short", "unknown"]
+PortfolioManagerAction = Literal[
+    "existing_position_target",
+    "existing_position_cancel",
+    "existing_position_replace",
+    "existing_position_close",
+    "trend_entry",
+    "trend_exit",
+    "unknown",
+]
+ExecutionGateName = Literal[
+    "direct_clob_truth_fresh",
+    "market_token_order_state_resolved",
+    "approved_order_management_path",
+    "portfolio_ledger_path",
+    "separate_risk_budget",
+    "minimum_order_compliance",
+    "kill_switch_clear",
+    "non_runtime_truth_rejected",
+]
+ExecutionGateResult = Literal["execution_gates_satisfied", "management_plan_only_execution_gate_missing"]
 
 
 NO_EXECUTION_STATEMENT = "No execution is authorized by this artifact."
+EXECUTION_GATE_ORDER: tuple[ExecutionGateName, ...] = (
+    "direct_clob_truth_fresh",
+    "market_token_order_state_resolved",
+    "approved_order_management_path",
+    "portfolio_ledger_path",
+    "separate_risk_budget",
+    "minimum_order_compliance",
+    "kill_switch_clear",
+    "non_runtime_truth_rejected",
+)
+EXECUTION_GATE_LABELS: dict[ExecutionGateName, str] = {
+    "direct_clob_truth_fresh": "fresh direct CLOB/account truth",
+    "market_token_order_state_resolved": "resolved market/token/order state",
+    "approved_order_management_path": "approved Janus portfolio order-management path",
+    "portfolio_ledger_path": "portfolio ledger evidence path",
+    "separate_risk_budget": "separate global-portfolio risk budget",
+    "minimum_order_compliance": "minimum-order/minimum-notional compliance",
+    "kill_switch_clear": "kill switch clear",
+    "non_runtime_truth_rejected": "screenshots/chat/stale mirrors rejected as execution truth",
+}
+_NON_AUTHORITATIVE_TRUTH_SOURCES = {
+    "chat",
+    "chat_memory",
+    "github",
+    "github_issue",
+    "obsidian",
+    "portfolio_mirror",
+    "screenshot",
+    "screenshots",
+    "stale_mirror",
+    "ui",
+    "web_ui",
+}
+
+
+class GlobalPortfolioExecutionGateSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: PortfolioManagerAction = "unknown"
+    market_title: str | None = None
+    market_slug: str | None = None
+    token_id: str | None = None
+    direct_clob_truth_fresh: bool = False
+    market_token_order_state_resolved: bool = False
+    approved_order_management_path: bool = False
+    portfolio_ledger_path: bool = False
+    separate_risk_budget: bool = False
+    minimum_order_compliance: bool = False
+    kill_switch_clear: bool = False
+    non_runtime_truth_rejected: bool = False
+    truth_sources: list[str] = Field(default_factory=list)
+    evidence: dict[str, Any] = Field(default_factory=dict)
+    missing_gates: list[ExecutionGateName] = Field(default_factory=list)
+    rejected_truth_sources: list[str] = Field(default_factory=list)
+    result: ExecutionGateResult = "management_plan_only_execution_gate_missing"
+    execution_authorized: bool = False
+    order_preparation_authorized: bool = False
+    live_order_impact: Literal["none", "read-only", "order-path"] = "read-only"
+
+    @model_validator(mode="after")
+    def _summarize_execution_gates(self) -> "GlobalPortfolioExecutionGateSnapshot":
+        rejected_sources = _rejected_truth_sources(self.truth_sources)
+        missing: list[ExecutionGateName] = []
+        for gate in EXECUTION_GATE_ORDER:
+            gate_value = bool(getattr(self, gate))
+            if gate == "non_runtime_truth_rejected":
+                gate_value = gate_value and not rejected_sources
+            if not gate_value:
+                missing.append(gate)
+
+        self.rejected_truth_sources = rejected_sources
+        self.missing_gates = missing
+        self.execution_authorized = not missing
+        self.order_preparation_authorized = self.execution_authorized
+        self.result = "execution_gates_satisfied" if self.execution_authorized else "management_plan_only_execution_gate_missing"
+        self.live_order_impact = "order-path" if self.execution_authorized else "read-only"
+        return self
+
+
+def build_execution_gate_snapshot(**kwargs: Any) -> GlobalPortfolioExecutionGateSnapshot:
+    return GlobalPortfolioExecutionGateSnapshot.model_validate(kwargs)
 
 
 class GlobalPortfolioWatchlistEntry(BaseModel):
@@ -275,6 +376,67 @@ def render_watchlist_report(artifact: GlobalPortfolioWatchlistArtifact, *, artif
     return "\n".join(lines) + "\n"
 
 
+def render_execution_gate_report(snapshot: GlobalPortfolioExecutionGateSnapshot, *, issue: str = "#52") -> str:
+    missing_labels = [EXECUTION_GATE_LABELS[gate] for gate in snapshot.missing_gates]
+    lines = [
+        "# Global Portfolio Manager Execution Gate - 2026-05-18",
+        "",
+        f"- GitHub issue: `{issue}`",
+        "- automation: `janus-master-controller`",
+        "- persona: `development-agent`",
+        f"- action: `{snapshot.action}`",
+        f"- result: `{snapshot.result}`",
+        f"- execution_authorized: `{snapshot.execution_authorized}`",
+        f"- order_preparation_authorized: `{snapshot.order_preparation_authorized}`",
+        f"- live_order_impact: `{snapshot.live_order_impact}`",
+        "",
+        "## Gate State",
+        "",
+    ]
+    for gate in EXECUTION_GATE_ORDER:
+        value = getattr(snapshot, gate)
+        if gate == "non_runtime_truth_rejected" and snapshot.rejected_truth_sources:
+            value = False
+        lines.append(f"- {gate}: `{bool(value)}` - {EXECUTION_GATE_LABELS[gate]}")
+
+    lines.extend(
+        [
+            "",
+            "## Missing Gates",
+            "",
+        ]
+    )
+    if missing_labels:
+        lines.extend(f"- {label}" for label in missing_labels)
+    else:
+        lines.append("- none")
+
+    if snapshot.rejected_truth_sources:
+        lines.extend(
+            [
+                "",
+                "## Rejected Truth Sources",
+                "",
+            ]
+        )
+        lines.extend(f"- {source}" for source in snapshot.rejected_truth_sources)
+
+    lines.extend(
+        [
+            "",
+            "## Decision",
+            "",
+            "- This artifact only evaluates whether the portfolio-manager execution gates are satisfied.",
+            "- It does not place, cancel, replace, submit, prepare, or authorize any specific order.",
+        ]
+    )
+    if snapshot.result == "management_plan_only_execution_gate_missing":
+        lines.append("- The only valid current output is management planning until the missing gates are implemented or validated.")
+    else:
+        lines.append("- A separate approved order-management call would still be required for any concrete action.")
+    return "\n".join(lines) + "\n"
+
+
 def _entry_from_raw(entry: dict[str, Any] | GlobalPortfolioWatchlistEntry, index: int) -> GlobalPortfolioWatchlistEntry:
     if isinstance(entry, GlobalPortfolioWatchlistEntry):
         return entry
@@ -303,6 +465,15 @@ def _append_unique(items: list[str], value: str) -> None:
         items.append(value)
 
 
+def _rejected_truth_sources(sources: list[str]) -> list[str]:
+    rejected: list[str] = []
+    for source in sources:
+        normalized = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+        if normalized in _NON_AUTHORITATIVE_TRUTH_SOURCES:
+            rejected.append(normalized)
+    return sorted(set(rejected))
+
+
 def _parse_datetime(value: str | datetime | None) -> datetime:
     if value is None:
         return datetime.now(timezone.utc)
@@ -318,12 +489,17 @@ def _parse_datetime(value: str | datetime | None) -> datetime:
 
 
 __all__ = [
+    "EXECUTION_GATE_LABELS",
+    "EXECUTION_GATE_ORDER",
     "GlobalPortfolioWatchlistArtifact",
     "GlobalPortfolioWatchlistEntry",
+    "GlobalPortfolioExecutionGateSnapshot",
     "NO_EXECUTION_STATEMENT",
     "apply_watchlist_policy_flags",
     "build_watchlist_artifact",
+    "build_execution_gate_snapshot",
     "build_watchlist_summary",
     "load_watchlist_source",
+    "render_execution_gate_report",
     "render_watchlist_report",
 ]

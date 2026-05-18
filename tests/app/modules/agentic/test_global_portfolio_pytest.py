@@ -7,8 +7,10 @@ import pytest
 
 from app.modules.agentic.global_portfolio import (
     GlobalPortfolioWatchlistEntry,
+    build_execution_gate_snapshot,
     build_watchlist_artifact,
     load_watchlist_source,
+    render_execution_gate_report,
     render_watchlist_report,
 )
 from tools.build_global_portfolio_watchlist import build_from_source, write_outputs
@@ -173,3 +175,69 @@ def test_artifact_flags_paired_yes_no_exposure_pytest() -> None:
     assert artifact.entries[0].operator_review_questions == [
         "Resolve paired Yes/No exposure before interpreting directional thesis."
     ]
+
+
+def test_execution_gate_snapshot_blocks_missing_portfolio_manager_path_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api"],
+    )
+
+    assert snapshot.result == "management_plan_only_execution_gate_missing"
+    assert snapshot.execution_authorized is False
+    assert snapshot.order_preparation_authorized is False
+    assert snapshot.live_order_impact == "read-only"
+    assert snapshot.missing_gates == ["approved_order_management_path"]
+
+    report = render_execution_gate_report(snapshot)
+    assert "management_plan_only_execution_gate_missing" in report
+    assert "approved Janus portfolio order-management path" in report
+    assert "does not place, cancel, replace, submit, prepare, or authorize" in report
+
+
+def test_execution_gate_snapshot_rejects_non_authoritative_truth_sources_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="trend_entry",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "screenshot", "stale_mirror"],
+    )
+
+    assert snapshot.result == "management_plan_only_execution_gate_missing"
+    assert snapshot.execution_authorized is False
+    assert snapshot.missing_gates == ["non_runtime_truth_rejected"]
+    assert snapshot.rejected_truth_sources == ["screenshot", "stale_mirror"]
+
+
+def test_execution_gate_snapshot_satisfies_only_when_all_gates_true_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_close",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+    )
+
+    assert snapshot.result == "execution_gates_satisfied"
+    assert snapshot.execution_authorized is True
+    assert snapshot.order_preparation_authorized is True
+    assert snapshot.live_order_impact == "order-path"
+    assert snapshot.missing_gates == []
