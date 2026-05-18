@@ -144,6 +144,21 @@ Each task should state:
 
 After any commit, the acting persona must pull/rebase or fast-forward if needed and push the branch to GitHub. GitHub is the operator's current remote interaction surface.
 
+## Issue Progress Discipline
+
+The controller must not confuse issue commentary with issue progress.
+
+When a pass selects an open issue as the next safe task:
+
+- If the issue is executable now and no live/pregame/postgame safety gate blocks it, the pass should claim one bounded slice and attempt implementation, validation, commit, push, and issue update.
+- If the selected issue is too large for one pass, the pass must reduce it to the smallest useful slice with file/module ownership, tests, and expected evidence, then start that slice or hand it to the development-agent status.
+- If the issue is blocked, the pass must record the exact blocker and the next unblock action. Repeating the same blocker is a no-op unless new evidence changes the blocker, priority, owner, or acceptance criteria.
+- A GitHub issue comment is progress only when it changes durable issue state: acceptance criteria, blocker state, owner/lock, reproduction, validation result, commit link, or closure rationale.
+- A solved issue must have a commit pushed to GitHub, validation evidence, and an issue update or closure. Runtime artifacts alone are not a completed development outcome.
+- The controller should treat repeated comments on the same open issue without a fix, claim, blocker change, or handoff as `YELLOW` process drift.
+
+For P0 issues, a normal development loop should complete at least one issue-sized unit or one explicitly defined sub-slice. If it cannot, it must leave a concrete next command, file scope, and validation plan instead of another general status comment.
+
 ## Controller Outputs
 
 Each controller pass should update or append:

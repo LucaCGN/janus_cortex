@@ -96,6 +96,13 @@ Routing priority:
 10. Future domain research classification.
 11. No-op heartbeat.
 
+Issue progress discipline:
+- Do not treat repeated GitHub comments as progress.
+- When an open issue is selected and no live safety gate blocks development, claim one bounded implementation slice and attempt to finish it with tests, commit, push, and issue update.
+- If the issue cannot be worked in the current pass, record the exact blocker and next unblock action once; subsequent unchanged passes should no-op instead of repeating the same comment.
+- A solved issue requires a pushed commit, validation evidence, and GitHub issue update or closure.
+- If several passes or automations comment on the same open issue without fixing, claiming, or narrowing it, classify that as YELLOW process drift and route to queue/lock hardening.
+
 Persona selection:
 - master-controller: classify, route, enforce locks, no-op.
 - docs-memory-agent: repo docs and Obsidian synchronization.

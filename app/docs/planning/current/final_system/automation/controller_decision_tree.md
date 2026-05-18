@@ -109,6 +109,19 @@ Development may proceed only when:
 - tests/validation expectations are known
 - live-order impact is explicit
 
+## Issue Progress Rules
+
+The controller should prefer finishing useful issue-sized work over producing repeated status commentary.
+
+When the same open issue remains the selected route across consecutive passes:
+
+- Do not add another GitHub comment or full handoff block unless there is material new evidence.
+- If the issue is still the correct next task and development is safe, route to `development-agent` with a bounded implementation slice.
+- If implementation is unsafe or blocked, record the exact blocker once and no-op until the blocker changes.
+- If multiple automations or passes are only commenting on the issue, classify the process state as `YELLOW` and route to queue/lock hardening under issue `#39`.
+
+The minimum useful development result is one completed issue or one explicit sub-slice with files changed, tests run, commit pushed, and issue state updated. Analysis-only passes are allowed for live safety and unclear authority, but they should not repeat unchanged conclusions.
+
 ## No-Op Rules
 
 The controller should no-op when:

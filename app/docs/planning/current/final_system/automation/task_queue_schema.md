@@ -30,6 +30,9 @@ This is a schema contract, not yet an implementation.
 | `runtime_impact` | Yes | Service restart, migration, worker changes, or none. |
 | `dependencies` | No | Task ids or issue numbers that must complete first. |
 | `evidence_links` | No | Reports, artifacts, commits, or Obsidian notes. |
+| `next_executable_step` | Preferred | The smallest next action that can be implemented or validated in one bounded pass. |
+| `last_material_update` | Preferred | Last commit, issue update, artifact, or blocker change that materially advanced the task. |
+| `comment_fingerprint` | Preferred | Short summary of the latest GitHub/handoff comment, used to avoid repeating unchanged status. |
 
 ## Lane Types
 
@@ -62,6 +65,20 @@ Every active task should claim locks:
 | `runtime` | `local/shared/artifacts/llm-runtime/YYYY-MM-DD` |
 
 No two coding agents should write the same file/module lock unless one is explicitly reviewing the other.
+
+## Progress Outcomes
+
+Every issue-backed development pass should end in one of these states:
+
+| Outcome | Meaning |
+|---|---|
+| `implemented` | Code/docs/tests changed, validation passed, commit pushed, issue updated. |
+| `implemented_partial` | A named sub-slice was completed with commit, validation, and remaining scope. |
+| `blocked_once` | Exact blocker and next unblock action were recorded; repeat unchanged blockers should no-op. |
+| `handoff_ready` | File scope, next command, tests, and acceptance target are ready for the next development-agent pass. |
+| `no_material_change` | State unchanged; no new issue comment or full handoff should be written. |
+
+An issue comment without a blocker change, implementation evidence, validation result, commit link, ownership change, or acceptance-criteria update is `no_material_change`.
 
 ## Agent Personas
 
