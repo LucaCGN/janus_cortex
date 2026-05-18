@@ -873,14 +873,62 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
         "market_outcomes": [{"outcome_id": "outcome-1", "label": "Home"}, {"outcome_id": "outcome-2", "label": "Away"}],
         "watch_sessions": [{"watch_session_id": "watch-1", "started_at": "2026-05-10T20:00:00+00:00"}],
         "orderbook_ticks": [
-            {"captured_at": "2026-05-10T20:00:30+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.48},
-            {"captured_at": "2026-05-10T20:00:30+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.52},
-            {"captured_at": "2026-05-10T20:01:00+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.52},
-            {"captured_at": "2026-05-10T20:01:00+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.48},
-            {"captured_at": "2026-05-10T20:01:30+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.49},
-            {"captured_at": "2026-05-10T20:01:30+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.51},
-            {"captured_at": "2026-05-10T20:02:00+00:00", "outcome_id": "outcome-1", "spread": 0.01, "mid_price": 0.54},
-            {"captured_at": "2026-05-10T20:02:00+00:00", "outcome_id": "outcome-2", "spread": 0.01, "mid_price": 0.46},
+            {
+                "captured_at": "2026-05-10T20:00:30+00:00",
+                "outcome_id": "outcome-1",
+                "spread": 0.01,
+                "mid_price": 0.48,
+                "raw_json": {"trace": {"latest_state": {"period": 1, "clock": "08:00", "clock_seconds_remaining": 480}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:00:30+00:00",
+                "outcome_id": "outcome-2",
+                "spread": 0.01,
+                "mid_price": 0.52,
+                "raw_json": {"trace": {"latest_state": {"period": 1, "clock": "08:00", "clock_seconds_remaining": 480}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:01:00+00:00",
+                "outcome_id": "outcome-1",
+                "spread": 0.01,
+                "mid_price": 0.52,
+                "raw_json": {"trace": {"latest_state": {"period": 1, "clock": "07:30", "clock_seconds_remaining": 450}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:01:00+00:00",
+                "outcome_id": "outcome-2",
+                "spread": 0.01,
+                "mid_price": 0.48,
+                "raw_json": {"trace": {"latest_state": {"period": 1, "clock": "07:30", "clock_seconds_remaining": 450}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:01:30+00:00",
+                "outcome_id": "outcome-1",
+                "spread": 0.01,
+                "mid_price": 0.49,
+                "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "11:30", "clock_seconds_remaining": 690}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:01:30+00:00",
+                "outcome_id": "outcome-2",
+                "spread": 0.01,
+                "mid_price": 0.51,
+                "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "11:30", "clock_seconds_remaining": 690}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:02:00+00:00",
+                "outcome_id": "outcome-1",
+                "spread": 0.01,
+                "mid_price": 0.54,
+                "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "11:00", "clock_seconds_remaining": 660}}},
+            },
+            {
+                "captured_at": "2026-05-10T20:02:00+00:00",
+                "outcome_id": "outcome-2",
+                "spread": 0.01,
+                "mid_price": 0.46,
+                "raw_json": {"trace": {"latest_state": {"period": 2, "clock": "11:00", "clock_seconds_remaining": 660}}},
+            },
         ],
         "market_trades": [{"trade_time": "2026-05-10T20:02:00+00:00", "side": "BUY", "price": 0.51, "size": 5}],
         "strategy_decisions": [
@@ -961,6 +1009,11 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
     assert microstructure["trend_profile"] == "jagged_oscillation"
     assert microstructure["outcome_summaries"]["outcome-1"]["spike_count"] == 3
     assert microstructure["outcome_summaries"]["outcome-2"]["grid_opportunity_count"] == 3
+    assert microstructure["period_context_status"] == "recorded"
+    assert microstructure["period_summary_count"] == 2
+    assert microstructure["period_summaries"]["period_1"]["first_clock"] == "08:00"
+    assert microstructure["period_summaries"]["period_2"]["last_clock"] == "11:00"
+    assert microstructure["period_summaries"]["period_2"]["grid_opportunity_count"] == 2
     timeline = payload["decision_timeline"]
     assert timeline["entry_count"] >= 5
     assert timeline["kind_counts"]["order_intent"] == 1
@@ -969,6 +1022,62 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
     assert payload["token_cost_timeline"]["entry_count"] == 1
     assert payload["timeline_slices"]["schema_version"] == "event_timeline_slices_v1"
     assert payload["postgame_tooling_status"]["screenshot_dependency"] is False
+
+
+def test_event_review_microstructure_classifies_smooth_and_noisy_profiles_pytest() -> None:
+    def tick(timestamp: str, outcome_id: str, mid_price: float) -> dict:
+        return {
+            "captured_at": timestamp,
+            "outcome_id": outcome_id,
+            "spread": 0.01,
+            "mid_price": mid_price,
+            "raw_json": {"trace": {"latest_state": {"period": 4, "clock": "04:00", "clock_seconds_remaining": 240}}},
+        }
+
+    smooth = ops_router._build_event_review_microstructure_summary(
+        {
+            "orderbook_ticks": [
+                tick("2026-05-10T20:00:00+00:00", "favorite", 0.55),
+                tick("2026-05-10T20:00:00+00:00", "underdog", 0.45),
+                tick("2026-05-10T20:01:00+00:00", "favorite", 0.65),
+                tick("2026-05-10T20:01:00+00:00", "underdog", 0.35),
+                tick("2026-05-10T20:02:00+00:00", "favorite", 0.75),
+                tick("2026-05-10T20:02:00+00:00", "underdog", 0.25),
+                tick("2026-05-10T20:03:00+00:00", "favorite", 0.88),
+                tick("2026-05-10T20:03:00+00:00", "underdog", 0.12),
+            ],
+            "orderbook_window_summary": {},
+        }
+    )
+
+    assert smooth["trend_profile"] == "smooth_trend"
+    assert smooth["period_context_status"] == "recorded"
+    assert smooth["period_summaries"]["period_4"]["trend_profile"] == "smooth_trend"
+    assert smooth["outcome_summaries"]["favorite"]["oscillation_band_count"] == 0
+
+    noisy = ops_router._build_event_review_microstructure_summary(
+        {
+            "orderbook_ticks": [
+                tick("2026-05-10T20:00:00+00:00", "favorite", 0.85),
+                tick("2026-05-10T20:00:00+00:00", "underdog", 0.15),
+                tick("2026-05-10T20:01:00+00:00", "favorite", 0.70),
+                tick("2026-05-10T20:01:00+00:00", "underdog", 0.30),
+                tick("2026-05-10T20:02:00+00:00", "favorite", 0.76),
+                tick("2026-05-10T20:02:00+00:00", "underdog", 0.24),
+                tick("2026-05-10T20:03:00+00:00", "favorite", 0.55),
+                tick("2026-05-10T20:03:00+00:00", "underdog", 0.45),
+                tick("2026-05-10T20:04:00+00:00", "favorite", 0.60),
+                tick("2026-05-10T20:04:00+00:00", "underdog", 0.40),
+                tick("2026-05-10T20:05:00+00:00", "favorite", 0.32),
+                tick("2026-05-10T20:05:00+00:00", "underdog", 0.68),
+            ],
+            "orderbook_window_summary": {},
+        }
+    )
+
+    assert noisy["trend_profile"] == "jagged_oscillation"
+    assert noisy["favorite_underdog_inversion_count"] == 1
+    assert noisy["period_summaries"]["period_4"]["oscillation_band_count"] >= 6
 
 
 def test_manual_order_assistant_endpoint_records_preview_and_never_raw_exchange_pytest(monkeypatch) -> None:

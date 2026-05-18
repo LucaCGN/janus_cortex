@@ -1877,17 +1877,20 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
         value = _safe_float(row.get("mid_price"))
         if value is None:
             continue
+        context = _microstructure_tick_context(row)
         prices_by_outcome.setdefault(outcome_id, []).append(
             {
                 "captured_at": row.get("captured_at") or row.get("captured_at_utc") or row.get("source_timestamp"),
                 "mid_price": value,
                 "spread": _safe_float(row.get("spread")),
+                **context,
             }
         )
     outcome_summaries = {
         outcome_id: _microstructure_outcome_summary(outcome_id, rows)
         for outcome_id, rows in sorted(prices_by_outcome.items())
     }
+    period_summaries = _microstructure_period_summaries(prices_by_outcome)
     inversion_count = _paired_price_inversion_point_count(prices_by_outcome)
     leader_inversion_count = _favorite_underdog_leader_inversion_count(prices_by_outcome)
     spike_count = sum(_safe_int(summary.get("spike_count")) for summary in outcome_summaries.values())
@@ -1919,6 +1922,11 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
             mid_price_range=round(max(mids) - min(mids), 6) if mids else None,
         ),
         "outcome_summaries": outcome_summaries,
+        "period_context_status": "recorded"
+        if any(str(key).startswith("period_") for key in period_summaries)
+        else "not_recorded",
+        "period_summary_count": len(period_summaries),
+        "period_summaries": period_summaries,
         "orderbook_window_summary": runtime_evidence.get("orderbook_window_summary") or {},
         "metric_definitions": {
             "price_inversion_point_count": "paired sampled ticks where one outcome is below 50c and the other is above 50c",
@@ -1927,8 +1935,191 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
             "grid_opportunity_count": "adjacent sampled mid-price moves of at least 2c",
             "spike_count": "adjacent sampled mid-price moves of at least 3c",
             "trend_smoothness_score": "absolute net move divided by total absolute move; lower means more jagged",
+            "period_summaries": "same metrics grouped by period/clock context when orderbook tick evidence carries it",
         },
     }
+
+
+def _microstructure_period_summaries(prices_by_outcome: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for outcome_id, rows in prices_by_outcome.items():
+        for row in rows:
+            period = _safe_int(row.get("period"))
+            key = f"period_{period}" if period is not None and period > 0 else "unclassified_period"
+            grouped.setdefault(key, []).append({**row, "outcome_id": outcome_id})
+    return {
+        key: _microstructure_period_summary(key, rows)
+        for key, rows in sorted(grouped.items(), key=lambda item: _microstructure_period_sort_key(item[0]))
+    }
+
+
+def _microstructure_period_sort_key(key: str) -> tuple[int, str]:
+    if key.startswith("period_"):
+        try:
+            return (int(key.removeprefix("period_")), key)
+        except ValueError:
+            return (999, key)
+    return (1000, key)
+
+
+def _microstructure_period_summary(key: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    ordered = _chronological_microstructure_rows(rows)
+    prices = [_safe_float(row.get("mid_price")) for row in ordered]
+    prices = [price for price in prices if price is not None]
+    summaries: dict[str, dict[str, Any]] = {}
+    rows_by_outcome: dict[str, list[dict[str, Any]]] = {}
+    for row in ordered:
+        rows_by_outcome.setdefault(str(row.get("outcome_id") or "unknown"), []).append(row)
+    for outcome_id, outcome_rows in sorted(rows_by_outcome.items()):
+        summaries[outcome_id] = _microstructure_outcome_summary(outcome_id, outcome_rows)
+    spike_count = sum(_safe_int(summary.get("spike_count")) for summary in summaries.values())
+    oscillation_band_count = sum(_safe_int(summary.get("oscillation_band_count")) for summary in summaries.values())
+    grid_opportunity_count = sum(_safe_int(summary.get("grid_opportunity_count")) for summary in summaries.values())
+    smoothness_values = [
+        _safe_float(summary.get("trend_smoothness_score"))
+        for summary in summaries.values()
+        if summary.get("trend_smoothness_score") is not None
+    ]
+    avg_smoothness = sum(smoothness_values) / len(smoothness_values) if smoothness_values else None
+    clocks = [str(row.get("clock")) for row in ordered if row.get("clock")]
+    clock_seconds_values = [
+        _safe_float(row.get("clock_seconds_remaining"))
+        for row in ordered
+        if row.get("clock_seconds_remaining") is not None
+    ]
+    clock_seconds_values = [value for value in clock_seconds_values if value is not None]
+    sources = sorted({str(row.get("context_source")) for row in ordered if row.get("context_source")})
+    period = None
+    for row in ordered:
+        parsed_period = _safe_int(row.get("period"))
+        if parsed_period > 0:
+            period = parsed_period
+            break
+    return {
+        "schema_version": "event_market_microstructure_period_summary_v1",
+        "status": "recorded" if prices else "not_recorded",
+        "period": period,
+        "tick_count": len(rows),
+        "outcome_count": len(rows_by_outcome),
+        "first_captured_at": _microstructure_timestamp(ordered[0]) if ordered else None,
+        "last_captured_at": _microstructure_timestamp(ordered[-1]) if ordered else None,
+        "first_clock": clocks[0] if clocks else None,
+        "last_clock": clocks[-1] if clocks else None,
+        "min_clock_seconds_remaining": min(clock_seconds_values) if clock_seconds_values else None,
+        "max_clock_seconds_remaining": max(clock_seconds_values) if clock_seconds_values else None,
+        "clock_context_count": len(clocks) + len(clock_seconds_values),
+        "context_sources": sources,
+        "min_mid_price": min(prices) if prices else None,
+        "max_mid_price": max(prices) if prices else None,
+        "mid_price_range": round(max(prices) - min(prices), 6) if prices else None,
+        "spike_count": spike_count,
+        "oscillation_band_count": oscillation_band_count,
+        "grid_opportunity_count": grid_opportunity_count,
+        "trend_smoothness_score": round(avg_smoothness, 6) if avg_smoothness is not None else None,
+        "trend_profile": _microstructure_trend_profile(
+            spike_count=spike_count,
+            oscillation_band_count=oscillation_band_count,
+            trend_smoothness_score=avg_smoothness,
+            mid_price_range=round(max(prices) - min(prices), 6) if prices else None,
+        ),
+        "outcome_summaries": summaries,
+    }
+
+
+def _microstructure_tick_context(row: dict[str, Any]) -> dict[str, Any]:
+    candidates = _microstructure_context_candidates(row)
+    period: int | None = None
+    clock: Any = None
+    clock_seconds: float | None = None
+    source: str | None = None
+    for source_name, candidate in candidates:
+        if period is None:
+            period = _microstructure_period(candidate)
+        if clock is None:
+            clock = _first_present(candidate, ("clock", "game_clock", "period_clock", "clock_label", "time_remaining"))
+        if clock_seconds is None:
+            clock_seconds = _first_safe_float(
+                candidate,
+                (
+                    "clock_seconds_remaining",
+                    "game_clock_seconds_remaining",
+                    "clock_remaining_seconds",
+                    "seconds_remaining",
+                    "period_seconds_remaining",
+                ),
+            )
+        if source is None and (period is not None or clock is not None or clock_seconds is not None):
+            source = source_name
+        if period is not None and (clock is not None or clock_seconds is not None):
+            break
+    return {
+        "period": period,
+        "clock": clock,
+        "clock_seconds_remaining": clock_seconds,
+        "context_source": source,
+    }
+
+
+def _microstructure_context_candidates(row: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    candidates: list[tuple[str, dict[str, Any]]] = [("tick", row)]
+    raw = row.get("raw_json") if isinstance(row.get("raw_json"), dict) else {}
+    if raw:
+        candidates.append(("raw_json", raw))
+    trace = raw.get("trace") if isinstance(raw.get("trace"), dict) else {}
+    if trace:
+        candidates.append(("trace", trace))
+    for parent_name, parent in (("raw_json", raw), ("trace", trace), ("tick", row)):
+        for key in (
+            "state",
+            "state_context",
+            "latest_state",
+            "latest_state_row",
+            "latest_snapshot",
+            "scoreboard",
+            "game",
+            "play_by_play",
+            "pbp",
+            "evidence",
+            "market_state",
+        ):
+            nested = parent.get(key) if isinstance(parent, dict) else None
+            if isinstance(nested, dict):
+                candidates.append((f"{parent_name}.{key}", nested))
+    return candidates
+
+
+def _microstructure_period(candidate: dict[str, Any]) -> int | None:
+    for key in ("period", "game_period", "quarter", "quarter_number"):
+        parsed = _safe_int(candidate.get(key))
+        if parsed is not None and parsed > 0:
+            return parsed
+    label = candidate.get("period_label") or candidate.get("quarter_label")
+    if label is None:
+        return None
+    text = str(label).strip().lower()
+    for prefix in ("q", "quarter", "period"):
+        if text.startswith(prefix):
+            digits = "".join(char for char in text if char.isdigit())
+            parsed = _safe_int(digits)
+            if parsed is not None and parsed > 0:
+                return parsed
+    return None
+
+
+def _first_present(candidate: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    for key in keys:
+        value = candidate.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
+def _first_safe_float(candidate: dict[str, Any], keys: tuple[str, ...]) -> float | None:
+    for key in keys:
+        value = _safe_float(candidate.get(key))
+        if value is not None:
+            return value
+    return None
 
 
 def _microstructure_outcome_summary(outcome_id: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2046,10 +2237,10 @@ def _microstructure_trend_profile(
     price_range = mid_price_range or 0.0
     if price_range < 0.01:
         return "flat_or_sparse"
+    if trend_smoothness_score is not None and trend_smoothness_score >= 0.75 and oscillation_band_count <= 1:
+        return "smooth_trend"
     if spike_count >= 2 or oscillation_band_count >= 2:
         return "jagged_oscillation"
-    if trend_smoothness_score is not None and trend_smoothness_score >= 0.75:
-        return "smooth_trend"
     if trend_smoothness_score is not None and trend_smoothness_score <= 0.35:
         return "jagged_trend"
     return "mixed_trend"
