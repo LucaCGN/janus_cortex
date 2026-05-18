@@ -24,6 +24,9 @@ def test_build_calibration_keeps_tail_risk_review_only_pytest(tmp_path: Path) ->
     assert calibration["destructive_profile"]["levels"] == ["D", "U"]
     assert calibration["destructive_profile"]["weighted_return"] < 0
     assert calibration["janus_db_performance"]["linked_fills_total"] == 7
+    assert calibration["drawdown_analysis"]["all_events"]["max_drawdown_usd"] == 5.0
+    assert calibration["drawdown_analysis"]["tradable_profile"]["max_drawdown_usd"] == 2.0
+    assert calibration["drawdown_analysis"]["destructive_profile"]["worst_event"]["event_slug"] == "nba-c"
 
     blockers = {item["reason"] for item in calibration["recommendation"]["promotion_blockers"]}
     assert "sparse_janus_linked_fills" in blockers
@@ -76,6 +79,7 @@ def test_render_report_includes_default_ladder_pytest(tmp_path: Path) -> None:
 
     assert "| 0-20% | 3.0% | 10.0% | disabled |" in report
     assert "`D/U` profiles stay mechanically blocked" in report
+    assert "account path drawdown" in report
 
 
 def _write_source_fixture(tmp_path: Path) -> Path:
@@ -161,8 +165,61 @@ def _write_source_fixture(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     with (source_dir / "basketball_event_trade_summary.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["event_slug", "context_coverage"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "event_slug",
+                "title",
+                "first_ts",
+                "context_coverage",
+                "scenario_level",
+                "net_cashflow",
+                "net_including_open_value",
+            ],
+        )
         writer.writeheader()
-        writer.writerow({"event_slug": "nba-a", "context_coverage": "price_ledger_only"})
-        writer.writerow({"event_slug": "nba-b", "context_coverage": "price_ledger_only"})
+        writer.writerow(
+            {
+                "event_slug": "nba-a",
+                "title": "A",
+                "first_ts": "1",
+                "context_coverage": "price_ledger_only",
+                "scenario_level": "A",
+                "net_cashflow": "3.0",
+                "net_including_open_value": "3.0",
+            }
+        )
+        writer.writerow(
+            {
+                "event_slug": "nba-b",
+                "title": "B",
+                "first_ts": "2",
+                "context_coverage": "price_ledger_only",
+                "scenario_level": "B",
+                "net_cashflow": "-2.0",
+                "net_including_open_value": "-2.0",
+            }
+        )
+        writer.writerow(
+            {
+                "event_slug": "nba-c",
+                "title": "C",
+                "first_ts": "3",
+                "context_coverage": "price_ledger_only",
+                "scenario_level": "D",
+                "net_cashflow": "-3.0",
+                "net_including_open_value": "-3.0",
+            }
+        )
+        writer.writerow(
+            {
+                "event_slug": "nba-d",
+                "title": "D",
+                "first_ts": "4",
+                "context_coverage": "local_pbp/report",
+                "scenario_level": "S",
+                "net_cashflow": "4.0",
+                "net_including_open_value": "4.0",
+            }
+        )
     return source_dir

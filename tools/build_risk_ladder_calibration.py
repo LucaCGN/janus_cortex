@@ -41,6 +41,15 @@ def build_calibration(
     tradable = _combine_scenarios(scenario_stats, TRADABLE_SCENARIOS)
     destructive = _combine_scenarios(scenario_stats, DESTRUCTIVE_SCENARIOS)
     context_coverage = _coverage_counts(event_rows, "context_coverage")
+    drawdown_analysis = {
+        "all_events": _drawdown_summary(event_rows),
+        "tradable_profile": _drawdown_summary(
+            [row for row in event_rows if str(row.get("scenario_level") or "") in TRADABLE_SCENARIOS]
+        ),
+        "destructive_profile": _drawdown_summary(
+            [row for row in event_rows if str(row.get("scenario_level") or "") in DESTRUCTIVE_SCENARIOS]
+        ),
+    }
 
     ladder_samples = [
         {
@@ -158,6 +167,7 @@ def build_calibration(
             "janus_strict": _performance_summary(janus_strict),
             "janus_plus_codex_assisted": _performance_summary(janus_plus_codex),
         },
+        "drawdown_analysis": drawdown_analysis,
         "ladder_samples": ladder_samples,
         "recommendation": recommendation,
         "live_order_impact": "none",
@@ -169,6 +179,7 @@ def render_report(calibration: dict[str, Any], *, artifact_path: Path | None = N
     tradable = calibration["tradable_profile"]
     destructive = calibration["destructive_profile"]
     db_perf = calibration["janus_db_performance"]
+    drawdown = calibration["drawdown_analysis"]
     rec = calibration["recommendation"]
     lines = [
         "# Profit-Ratcheted Risk Ladder Calibration - 2026-05-18",
@@ -191,6 +202,8 @@ def render_report(calibration: dict[str, Any], *, artifact_path: Path | None = N
             f"- tradable account profile `A/B/C/S`: {tradable['events']} events, buy notional `${tradable['buy_notional']:.2f}`, net `${tradable['net']:.2f}`, weighted return `{_pct(tradable['weighted_return'])}`.",
             f"- destructive `D/U` profile: {destructive['events']} events, buy notional `${destructive['buy_notional']:.2f}`, net `${destructive['net']:.2f}`, weighted return `{_pct(destructive['weighted_return'])}`.",
             f"- Janus DB linked-fill sample: {db_perf['linked_fills_total']} linked fills; strict Janus weighted return `{_pct(db_perf['janus_strict']['weighted_return'])}`; Janus+Codex weighted return `{_pct(db_perf['janus_plus_codex_assisted']['weighted_return'])}`.",
+            f"- account path drawdown: all events max drawdown `${drawdown['all_events']['max_drawdown_usd']:.2f}`; tradable profile max drawdown `${drawdown['tradable_profile']['max_drawdown_usd']:.2f}`; destructive profile max drawdown `${drawdown['destructive_profile']['max_drawdown_usd']:.2f}`.",
+            f"- worst single-event account loss: `{drawdown['all_events']['worst_event']['event_slug']}` net `${drawdown['all_events']['worst_event']['net_usd']:.2f}`.",
             "",
             "## Calibration Decision",
             "",
@@ -200,6 +213,7 @@ def render_report(calibration: dict[str, Any], *, artifact_path: Path | None = N
             "- base bankroll remains protected; open unrealized profit does not unlock risk.",
             "- high/tail sleeves remain operator-review only and require realized-profit funding plus fresh direct CLOB evidence.",
             "- `D/U` profiles stay mechanically blocked for tail-risk allocation.",
+            "- drawdown path evidence is included for review only; it does not promote risk authority.",
             "",
             "## Default Ladder Snapshot",
             "",
@@ -324,6 +338,65 @@ def _coverage_counts(rows: list[dict[str, str]], field: str) -> dict[str, int]:
         key = str(row.get(field) or "unknown").strip() or "unknown"
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items()))
+
+
+def _drawdown_summary(rows: list[dict[str, str]]) -> dict[str, Any]:
+    ordered = sorted(rows, key=lambda row: (_safe_int(row.get("first_ts")), str(row.get("event_slug") or "")))
+    cumulative = 0.0
+    peak = 0.0
+    max_drawdown = 0.0
+    drawdown_start: dict[str, Any] | None = None
+    drawdown_trough: dict[str, Any] | None = None
+    worst_event: dict[str, Any] | None = None
+    loss_events = 0
+    win_events = 0
+    total_net = 0.0
+
+    for row in ordered:
+        net = _safe_float(row.get("net_including_open_value"))
+        if row.get("net_including_open_value") in (None, ""):
+            net = _safe_float(row.get("net_cashflow"))
+        total_net += net
+        if net < 0:
+            loss_events += 1
+        elif net > 0:
+            win_events += 1
+        if worst_event is None or net < worst_event["net_usd"]:
+            worst_event = _event_marker(row, net=net)
+
+        previous_peak = peak
+        cumulative += net
+        if cumulative > peak:
+            peak = cumulative
+            previous_peak = peak
+        current_drawdown = peak - cumulative
+        if current_drawdown > max_drawdown:
+            max_drawdown = current_drawdown
+            drawdown_start = {"cumulative_peak_usd": round(previous_peak, 6)}
+            drawdown_trough = {
+                **_event_marker(row, net=net),
+                "cumulative_net_usd": round(cumulative, 6),
+            }
+
+    return {
+        "event_count": len(ordered),
+        "win_events": win_events,
+        "loss_events": loss_events,
+        "total_net_usd": round(total_net, 6),
+        "max_drawdown_usd": round(max_drawdown, 6),
+        "worst_event": worst_event or {"event_slug": None, "title": None, "scenario_level": None, "net_usd": 0.0},
+        "drawdown_start": drawdown_start,
+        "drawdown_trough": drawdown_trough,
+    }
+
+
+def _event_marker(row: dict[str, str], *, net: float) -> dict[str, Any]:
+    return {
+        "event_slug": row.get("event_slug") or "",
+        "title": row.get("title") or "",
+        "scenario_level": row.get("scenario_level") or "",
+        "net_usd": round(net, 6),
+    }
 
 
 def _performance_summary(payload: dict[str, Any]) -> dict[str, Any]:
