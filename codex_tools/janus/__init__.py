@@ -23,6 +23,17 @@ from codex_tools.janus.events import (
     main_for_replay_from_watch_session,
     main_for_watch_market,
 )
+from codex_tools.janus.live_strategy_tick import (
+    LIVE_STRATEGY_TICK_COMPATIBILITY_STATE,
+    LIVE_STRATEGY_TICK_EXECUTION_SENSITIVE_FLAGS,
+    LIVE_STRATEGY_TICK_LEGACY_MODULE,
+    build_live_strategy_tick_kwargs,
+    build_live_strategy_tick_parser,
+    describe_live_strategy_tick_compatibility,
+    load_legacy_run_tick,
+    main_for_live_strategy_tick,
+    run_legacy_live_strategy_tick,
+)
 from codex_tools.janus.ops import (
     DATA_REFRESH_PATH,
     INTEGRITY_CHECK_PATH,
@@ -129,6 +140,15 @@ __all__ = [
     "main_for_event_review_bundle",
     "main_for_replay_from_watch_session",
     "main_for_watch_market",
+    "LIVE_STRATEGY_TICK_COMPATIBILITY_STATE",
+    "LIVE_STRATEGY_TICK_EXECUTION_SENSITIVE_FLAGS",
+    "LIVE_STRATEGY_TICK_LEGACY_MODULE",
+    "build_live_strategy_tick_kwargs",
+    "build_live_strategy_tick_parser",
+    "describe_live_strategy_tick_compatibility",
+    "load_legacy_run_tick",
+    "main_for_live_strategy_tick",
+    "run_legacy_live_strategy_tick",
     "DATA_REFRESH_PATH",
     "INTEGRITY_CHECK_PATH",
     "LIVE_MONITOR_PATH",

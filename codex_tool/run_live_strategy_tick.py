@@ -18,8 +18,10 @@ from app.modules.agentic.llm_runtime import (
 )
 
 try:
+    from codex_tools.janus.live_strategy_tick import main_for_live_strategy_tick
     from codex_tool._client import api_json, base_parser, exit_for_response
 except ModuleNotFoundError:  # pragma: no cover - direct script execution
+    main_for_live_strategy_tick = None
     from _client import api_json, base_parser, exit_for_response
 
 
@@ -51,6 +53,10 @@ _MARKET_TRADE_SOURCE_LATENCY_MS_MAX = 999_999_999.999
 
 
 def main() -> None:
+    if main_for_live_strategy_tick is not None:
+        main_for_live_strategy_tick("Run one quote-aware StrategyPlanJSON tick with shadow and optional live execution.")
+        return
+
     parser = base_parser("Run one quote-aware StrategyPlanJSON tick with shadow and optional live execution.")
     parser.add_argument("--session-date", required=True)
     parser.add_argument("--event-id", action="append", dest="event_ids", required=True)

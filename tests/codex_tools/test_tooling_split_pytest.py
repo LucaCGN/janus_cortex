@@ -16,6 +16,7 @@ import codex_tool.record_market_trade as legacy_market_trade_cli
 import codex_tool.record_orderbook_tick as legacy_orderbook_tick_cli
 import codex_tool.reconcile_orders as legacy_reconcile_orders_cli
 import codex_tool.reconcile_trades as legacy_reconcile_trades_cli
+import codex_tool.run_live_strategy_tick as legacy_live_strategy_tick_cli
 import codex_tool.run_live_strategy_worker_tick as legacy_worker_tick_cli
 import codex_tool.start_watch_session as legacy_watch_session_cli
 import codex_tool.start_live_strategy_worker as legacy_worker_start_cli
@@ -26,6 +27,7 @@ import codex_tool.adopt_llm_revision as legacy_adopt_cli
 import codex_tool.watch_market as legacy_watch_cli
 from codex_tools.janus import client as janus_client
 from codex_tools.janus import events as janus_events
+from codex_tools.janus import live_strategy_tick as janus_live_strategy_tick
 from codex_tools.janus import ops as janus_ops
 from codex_tools.janus import reconciliation as janus_reconciliation
 from codex_tools.janus import status as janus_status
@@ -294,6 +296,102 @@ def test_legacy_worker_clis_delegate_to_target_namespace() -> None:
         is janus_worker.build_live_strategy_worker_tick_payload
     )
     assert legacy_worker_tick_cli.main_for_live_strategy_worker_tick is janus_worker.main_for_live_strategy_worker_tick
+
+
+def test_janus_live_strategy_tick_bridge_preserves_legacy_cli_shape() -> None:
+    parser = janus_live_strategy_tick.build_live_strategy_tick_parser("live tick")
+    args = parser.parse_args(
+        [
+            "--session-date",
+            "2026-05-18",
+            "--event-id",
+            "event-1",
+            "--account-id",
+            "account-1",
+            "--source",
+            "pytest",
+            "--execute",
+            "--max-intents",
+            "1",
+            "--no-auto-protect-manual-positions",
+        ]
+    )
+
+    assert janus_live_strategy_tick.build_live_strategy_tick_kwargs(args) == {
+        "api_root": legacy_client.DEFAULT_API_ROOT,
+        "session_date": "2026-05-18",
+        "event_ids": ["event-1"],
+        "account_id": "account-1",
+        "source": "pytest",
+        "execute": True,
+        "live_money": False,
+        "max_intents": 1,
+        "orderbook_sample_count": 2,
+        "orderbook_sample_interval_sec": 0.5,
+        "min_size": 5.0,
+        "min_buy_notional_usd": 1.0,
+        "share_precision": 3,
+        "auto_protect_manual_positions": False,
+        "manual_target_delta_cents": 5.0,
+        "submit_candidate_strategy_plan": False,
+        "enable_llm_dispatch": False,
+        "llm_runtime_artifact_root": None,
+    }
+
+
+def test_janus_live_strategy_tick_bridge_documents_execution_sensitive_boundary() -> None:
+    status = janus_live_strategy_tick.describe_live_strategy_tick_compatibility()
+
+    assert status["state"] == janus_live_strategy_tick.LIVE_STRATEGY_TICK_COMPATIBILITY_STATE
+    assert status["legacy_module"] == "codex_tool.run_live_strategy_tick"
+    assert status["target_namespace"] == "codex_tools.janus.live_strategy_tick"
+    assert "--execute" in status["execution_sensitive_flags"]
+    assert "--live-money" in status["execution_sensitive_flags"]
+    assert "--auto-protect-manual-positions" in status["execution_sensitive_flags"]
+    assert "higher-risk reviewed slice" in status["migration_note"]
+
+
+def test_janus_live_strategy_tick_bridge_runs_legacy_orchestration_lazily(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _run_tick(**kwargs: object) -> dict[str, object]:
+        calls.append(kwargs)
+        return {"ok": True, "source": kwargs["source"]}
+
+    monkeypatch.setattr(janus_live_strategy_tick, "load_legacy_run_tick", lambda: _run_tick)
+
+    response = janus_live_strategy_tick.run_legacy_live_strategy_tick(
+        api_root="http://janus.local",
+        session_date="2026-05-18",
+        event_ids=["event-1"],
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+    )
+
+    assert response == {"ok": True, "source": "pytest"}
+    assert calls == [
+        {
+            "api_root": "http://janus.local",
+            "session_date": "2026-05-18",
+            "event_ids": ["event-1"],
+            "account_id": "account-1",
+            "source": "pytest",
+            "execute": False,
+            "live_money": False,
+        }
+    ]
+
+
+def test_legacy_live_strategy_tick_cli_delegates_to_target_namespace(monkeypatch) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(legacy_live_strategy_tick_cli, "main_for_live_strategy_tick", calls.append)
+
+    legacy_live_strategy_tick_cli.main()
+
+    assert calls == ["Run one quote-aware StrategyPlanJSON tick with shadow and optional live execution."]
 
 
 def test_janus_strategy_namespace_wraps_plan_submit_and_evaluate(monkeypatch) -> None:
