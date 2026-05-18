@@ -268,7 +268,7 @@ Created on 2026-05-18 after the seed foundation closed.
 | [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | Create GitHub issue taxonomy labels and project hygiene. |
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Runtime handoff refresh completed after 2026-05-18 event reconciliation. |
 | [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Validate controller activation gate against repo-local runtime root. |
-| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | Validate closed seed foundations against a running Janus API. |
+| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | API-up validation of closed seed foundations completed against the running non-live Janus API. |
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | Run WNBA minimal-readiness dry run without live orders. |
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Read-only global portfolio explorer automation contract completed. |
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Absorbed ML replay branch archived/deleted after operator approval. |
@@ -281,6 +281,7 @@ Created on 2026-05-18 after the seed foundation closed.
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Add chart-equivalent microstructure metrics to event review bundle. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Build global portfolio target/rebuy ledger and watchlist schema. |
+| [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Mirror direct open CLOB orders into portfolio HTTP surfaces. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | Incubate geopolitics, economics, and culture monitoring lanes. |
