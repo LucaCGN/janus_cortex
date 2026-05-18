@@ -58,9 +58,11 @@ Safety and live event state override backlog progress.
 
 ## Recurring Automation Gate
 
-If today's event data has not been manually reconciled by the operator, the controller may run only in docs/source-of-truth cleanup mode.
+If today's event data has not been reconciled through an explicit Codex/operator reconciliation pass, the controller may run only in docs/source-of-truth cleanup mode.
 
 It must not enable recurring automation, mark live readiness green, or treat runtime handoffs as current until reconciliation is complete.
+
+The 2026-05-18 bootstrap pass performed the first repo-local reconciliation and refreshed handoffs, but the operator still owns manual enablement of the recurring Codex app automation.
 
 ## Basketball Lifecycle Rules
 

@@ -33,14 +33,16 @@ The controller automation should read these anchor files on every material pass:
 2. `app/docs/planning/current/final_system/source_of_truth_map.md`
 3. `app/docs/planning/current/final_system/market_scope_registry.md`
 4. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
-5. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
-6. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-7. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-8. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-9. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-10. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-11. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-12. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+5. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
+6. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+7. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+8. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+9. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+10. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+11. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+12. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+13. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+14. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -71,10 +73,12 @@ Do not use legacy external local-root paths for current work. Obsidian remains t
 
 The recurring controller should remain paused until:
 
-1. Today's missing event data is manually reconciled by the operator in the Codex app.
+1. Today's missing event data is reconciled through an explicit Codex/operator reconciliation pass.
 2. Runtime handoffs reflect the reconciled state.
 3. GitHub `main` is pushed with the current source-of-truth docs.
 4. The controller can read the repo-local runtime root consistently.
+
+As of the 2026-05-18 bootstrap pass, Codex performed the initial repo-local reconciliation and handoff refresh. The controller should still be manually enabled by the operator in the Codex app only after reviewing the refreshed handoffs and pushed docs.
 
 ## Obsidian Relationship
 
@@ -108,4 +112,4 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | API-up validation of closed seed foundations. |
 | [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | WNBA minimal-readiness dry run without live orders. |
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Read-only global portfolio explorer automation. |
-| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Archive/delete absorbed ML replay branch after operator approval. |
+| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Absorbed ML replay branch deleted after operator approval. |

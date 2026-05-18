@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 from psycopg2.extras import Json
 
+from app.api.db import to_jsonable
 from app.data.databases.postgres import managed_connection
 from app.data.databases.repositories import JanusUpsertRepository
 from app.data.nodes.wnba.balldontlie.client import describe_historical_backfill_readiness
@@ -73,7 +74,7 @@ def _uuid_for(*parts: str) -> str:
 def _json_or_none(value: Any) -> Json | None:
     if value is None:
         return None
-    return Json(value)
+    return Json(to_jsonable(value))
 
 
 def _scalar(value: Any) -> Any | None:
@@ -223,7 +224,7 @@ def _insert_raw_payload(
                 endpoint,
                 endpoint,
                 datetime.now(timezone.utc),
-                Json(payload),
+                Json(to_jsonable(payload)),
             ),
         )
 
@@ -1047,7 +1048,7 @@ def record_wnba_historical_backfill_readiness(*, season: str = "2025") -> dict[s
                         str(blocker.get("source") or "balldontlie_wnba"),
                         str(blocker.get("requirement") or blocker.get("code")),
                         "blocked",
-                        Json(blocker),
+                        Json(to_jsonable(blocker)),
                     ),
                 )
         connection.commit()

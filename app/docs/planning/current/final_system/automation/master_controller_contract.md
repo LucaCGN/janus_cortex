@@ -17,9 +17,11 @@ Use Codex for reasoning, coding, debugging, review, and orchestration. Do not us
 
 ## Activation Gate
 
-The recurring controller must remain paused until the operator manually reconciles today's missing event data in the Codex app and the runtime handoffs are refreshed.
+The recurring controller must remain paused until today's missing event data is reconciled through an explicit Codex/operator reconciliation pass and the runtime handoffs are refreshed.
 
 The controller may still be used manually for docs/source-of-truth cleanup while paused, but it should not run as recurring automation until the reconciliation gate is cleared.
+
+As of the 2026-05-18 bootstrap pass, Codex performed an initial repo-local reconciliation and handoff refresh. The operator should still review the pushed docs and refreshed handoffs before manually enabling the recurring Codex app automation.
 
 ## Control Actors
 
@@ -40,22 +42,24 @@ Every controller pass must read or inspect:
 3. `app/docs/planning/current/final_system/market_scope_registry.md`
 4. `app/docs/planning/current/final_system/premise_decisions_2026-05-17.md`
 5. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
-6. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
-7. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-8. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-9. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-10. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-11. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-12. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-13. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
-14. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
-15. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-16. `local/shared/handoffs/daily-live-validation/status.md`
-17. `local/shared/handoffs/development-agent/status.md`
-18. Latest relevant daily reports.
-19. GitHub issue state once the issue seed is created.
-20. Obsidian index notes once populated.
-21. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+6. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
+7. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+8. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+9. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+10. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+11. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+12. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+13. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+14. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+15. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+16. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+17. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+18. `local/shared/handoffs/daily-live-validation/status.md`
+19. `local/shared/handoffs/development-agent/status.md`
+20. Latest relevant daily reports.
+21. GitHub issue state once the issue seed is created.
+22. Obsidian index notes once populated.
+23. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
 
 ## Axis-First Decision Model
 
@@ -169,10 +173,14 @@ Material changes include:
 
 ## Automation Prompt Contract
 
-The actual recurring automation prompt should be short:
+The full structured prompt lives in:
+
+`app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
+
+The actual recurring Codex app automation prompt should stay short and point to that file:
 
 ```text
-Run one Janus master controller pass from the repo root. Read app/docs/planning/current/final_system/source_of_truth_map.md and app/docs/planning/current/final_system/automation/master_controller_contract.md, then follow the referenced mutable source-of-truth docs. Do not rely on chat memory when repo/runtime/GitHub/Obsidian state is available. Stop after one bounded pass and update the appropriate artifacts, reports, handoffs, issues, or notes only when state materially changes.
+Run one Janus Master Controller pass from C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex. Treat app/docs/planning/current/final_system/automation/master_automation_system_prompt.md as the controlling system instruction and follow the mutable source-of-truth docs it references. Do not rely on chat memory when repo/runtime/GitHub/Obsidian state is available. Do not place, cancel, replace, or submit orders. Stop after one bounded pass and write artifacts, handoffs, issues, repo docs, or Obsidian notes only when state materially changes.
 ```
 
 All detailed behavior belongs in repo docs, not in the immutable automation prompt.

@@ -4,6 +4,7 @@ Status: draft control contract
 Created: 2026-05-18
 GitHub issue: https://github.com/LucaCGN/janus_cortex/issues/35
 Current automation id: `janus-global-portfolio-explorer`
+Prompt file: `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
 
 ## Purpose
 
@@ -58,12 +59,13 @@ Ad hoc use is allowed when the operator asks for help analyzing a specific marke
 1. `app/docs/planning/current/final_system/source_of_truth_map.md`
 2. `app/docs/planning/current/final_system/market_scope_registry.md`
 3. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-4. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-5. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-6. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-7. `00_Janus_Control/Janus Master Index.md` in the Obsidian vault
-8. `00_Janus_Control/Issue Backlog Index.md` in the Obsidian vault
-9. Any existing global-portfolio or profile-study notes in the Obsidian vault
+4. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+5. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+6. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+7. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+8. `00_Janus_Control/Janus Master Index.md` in the Obsidian vault
+9. `00_Janus_Control/Issue Backlog Index.md` in the Obsidian vault
+10. Any existing global-portfolio or profile-study notes in the Obsidian vault
 
 Then inspect read-only account, CLOB, Janus API, or generated portfolio data surfaces if available.
 
@@ -101,7 +103,7 @@ Recommended curated summary path when repeated evidence accumulates:
 ## Daily Automation Prompt
 
 ```text
-Run one read-only Janus global portfolio explorer pass from the repo root. Read app/docs/planning/current/final_system/source_of_truth_map.md and app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md, then follow the referenced mutable repo and Obsidian docs. Inspect only read-only account/CLOB/API/runtime surfaces that are available. Do not place, cancel, or replace orders. Write a dated Obsidian portfolio note with sources, caveats, position groups, stale targets, exit/rebuy questions, concentration risks, and follow-up GitHub issues when needed. Stop after one bounded pass.
+Run one read-only Janus Global Portfolio Explorer pass from C:\Users\lnoni\OneDrive\Documentos\Code-Projects\janus_cortex. Treat app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md and global_portfolio_explorer_contract.md as controlling instructions. Inspect only read-only account/CLOB/API/runtime surfaces that are available. Do not place, cancel, replace, submit, or prepare orders. Write a dated Obsidian portfolio note with sources, caveats, position groups, stale targets, exit/rebuy questions, concentration risks, and follow-up GitHub issues when needed. Stop after one bounded pass.
 ```
 
 ## Ad Hoc Prompt Pattern
