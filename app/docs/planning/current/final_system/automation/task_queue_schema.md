@@ -140,7 +140,7 @@ An issue comment without a blocker change, implementation evidence, validation r
 | `risk-ledger-agent` | Bankroll sleeves, exposure, inventory, lifecycle attribution. |
 | `profile-research-agent` | Winning profile studies and caveated implications. |
 | `future-domain-research-agent` | New market/domain incubation. |
-| `global-portfolio-agent` | Future read-only global Polymarket portfolio review. |
+| `global-portfolio-agent` | Active global portfolio management intent: existing-position target/exit/rebuy decisions, trend-opportunity scouting, and gated execution only through `global_portfolio_manager_contract.md` plus `codex_tooling_contract.md`. |
 
 ## Initial Queue Storage
 
