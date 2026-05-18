@@ -143,6 +143,35 @@ def test_may_9_duplicate_fill_fixture_collapses_to_unique_exposure_pytest() -> N
     assert round(_net_size(lal_raw, market_id=LAL_MARKET_ID, outcome_id=LAL_OUTCOME_ID), 6) == 1263.331647
 
 
+def test_unresolved_resolution_blocker_records_actionable_category_and_sample_pytest() -> None:
+    blockers: dict[str, dict[str, int]] = {}
+    samples: dict[str, list[dict[str, Any]]] = {}
+
+    sync_portfolio._record_resolution_blocker(
+        scope="open_positions",
+        raw={
+            "asset": "token-missing",
+            "eventSlug": "nba-cle-det-2026-05-17",
+            "outcome": "Pistons",
+            "size": "1105.8695",
+        },
+        maps=sync_portfolio._ResolutionMaps(
+            token_to_pair={},
+            condition_to_market={},
+            external_market_to_market={},
+            market_to_first_outcome={},
+        ),
+        blockers=blockers,
+        samples=samples,
+        require_outcome=True,
+    )
+
+    assert blockers == {"open_positions": {"missing_token_catalog_mapping": 1}}
+    assert samples["open_positions"][0]["category"] == "missing_token_catalog_mapping"
+    assert samples["open_positions"][0]["asset"] == "token-missing"
+    assert samples["open_positions"][0]["eventSlug"] == "nba-cle-det-2026-05-17"
+
+
 def test_resolution_blocker_categorizes_missing_token_mapping_pytest() -> None:
     maps = sync_portfolio._ResolutionMaps(
         token_to_pair={},

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 from uuid import UUID, uuid4
 
@@ -59,6 +59,130 @@ def _slug_from_probe(probe: EventProbeConfig) -> str:
     return probe.url.rstrip("/").split("/")[-1]
 
 
+def _event_probe_from_schedule_row(
+    *,
+    slug: str,
+    status_value: int | None,
+    stream_sample_count: int,
+    stream_sample_interval_sec: float,
+    stream_max_outcomes: int,
+) -> EventProbeConfig | None:
+    status_prefix = {
+        3: "finished",
+        2: "live",
+        1: "upcoming",
+    }.get(status_value)
+    if status_prefix is None:
+        return None
+    live = status_value == 2
+    return EventProbeConfig(
+        step_code=f"v0_4_1_session_{status_prefix}_{slug}",
+        url=f"https://polymarket.com/sports/nba/{slug}",
+        event_type_code="sports_nba_game",
+        history_mode="rolling_recent" if live or status_value == 1 else "game_period",
+        history_market_selector="moneyline",
+        history_interval="1m",
+        history_fidelity=10,
+        recent_lookback_days=1 if live else 2,
+        allow_snapshot_fallback=True,
+        stream_enabled=live,
+        stream_sample_count=max(stream_sample_count, 1) if live else 0,
+        stream_sample_interval_sec=max(stream_sample_interval_sec, 0.0),
+        stream_max_outcomes=max(stream_max_outcomes, 1),
+    )
+
+
+def _select_nba_event_probes_from_schedule(
+    connection: PsycopgConnection,
+    *,
+    session_date: date,
+    max_finished: int,
+    max_live: int,
+    max_upcoming: int,
+    include_upcoming: bool,
+    stream_sample_count: int,
+    stream_sample_interval_sec: float,
+    stream_max_outcomes: int,
+) -> list[EventProbeConfig]:
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT game_date, away_team_slug, home_team_slug, game_status, game_start_time, game_id
+            FROM nba.nba_games
+            WHERE game_date = %s
+            ORDER BY game_start_time ASC NULLS LAST, game_id ASC;
+            """,
+            (session_date,),
+        )
+        rows = fetchall_dicts(cursor)
+
+    selected: list[EventProbeConfig] = []
+    counts = {"finished": 0, "live": 0, "upcoming": 0}
+    for row in rows:
+        away = str(row.get("away_team_slug") or "").strip().lower()
+        home = str(row.get("home_team_slug") or "").strip().lower()
+        game_date = row.get("game_date")
+        date_text = game_date.isoformat() if hasattr(game_date, "isoformat") else str(game_date or "")[:10]
+        status_value = int(row["game_status"]) if row.get("game_status") is not None else None
+        if not away or not home or len(date_text) != 10:
+            continue
+        bucket = {3: "finished", 2: "live", 1: "upcoming"}.get(status_value)
+        if bucket is None:
+            continue
+        if bucket == "finished" and counts[bucket] >= max(max_finished, 0):
+            continue
+        if bucket == "live" and counts[bucket] >= max(max_live, 0):
+            continue
+        if bucket == "upcoming":
+            if not include_upcoming or counts[bucket] >= max(max_upcoming, 0):
+                continue
+        slug = f"nba-{away}-{home}-{date_text}"
+        probe = _event_probe_from_schedule_row(
+            slug=slug,
+            status_value=status_value,
+            stream_sample_count=stream_sample_count,
+            stream_sample_interval_sec=stream_sample_interval_sec,
+            stream_max_outcomes=stream_max_outcomes,
+        )
+        if probe is None:
+            continue
+        selected.append(probe)
+        counts[bucket] += 1
+    return selected
+
+
+def _no_polymarket_probe_summary(
+    request: PolymarketSyncRequest,
+    connection: PsycopgConnection,
+) -> dict[str, Any]:
+    schedule_rows = 0
+    if request.session_date is not None and request.probe_set in {"today_nba", "combined"}:
+        with cursor_dict(connection) as cursor:
+            cursor.execute("SELECT count(*) AS count FROM nba.nba_games WHERE game_date = %s;", (request.session_date,))
+            row = fetchone_dict(cursor)
+        schedule_rows = int((row or {}).get("count") or 0)
+    reason_codes: list[str] = []
+    if request.probe_set in {"today_nba", "combined"} and request.session_date is not None and schedule_rows == 0:
+        reason_codes.append("nba_schedule_rows_missing_for_session_date")
+    if request.probe_set == "today_nba" and request.session_date is None:
+        reason_codes.append("today_scoreboard_returned_no_selected_nba_games")
+    if request.steps:
+        reason_codes.append("requested_steps_filtered_all_probes")
+    if not reason_codes:
+        reason_codes.append("no_matching_polymarket_event_probes")
+    return {
+        "blocker_category": "no_polymarket_probes_selected",
+        "reason_codes": reason_codes,
+        "probe_set": request.probe_set,
+        "session_date": request.session_date.isoformat() if request.session_date else None,
+        "schedule_rows_for_session_date": schedule_rows if request.session_date is not None else None,
+        "next_unblock_action": (
+            "Run /v1/sync/nba/schedule with anchor_date=session_date, then rerun Polymarket event/market sync "
+            "with session_date."
+        ),
+    }
+
+
 def _select_polymarket_probes(
     request: PolymarketSyncRequest,
     connection: PsycopgConnection,
@@ -67,16 +191,31 @@ def _select_polymarket_probes(
     if request.probe_set in {"extras", "combined"}:
         selected.extend(DEFAULT_EXTRA_EVENT_PROBES)
     if request.probe_set in {"today_nba", "combined"}:
-        today = build_today_nba_event_probes_from_scoreboard(
-            max_finished=request.max_finished,
-            max_live=request.max_live,
-            max_upcoming=request.max_upcoming,
-            include_upcoming=request.include_upcoming,
-            stream_sample_count=request.stream_sample_count,
-            stream_sample_interval_sec=request.stream_sample_interval_sec,
-            stream_max_outcomes=request.stream_max_outcomes,
-        )
-        selected.extend(today.all)
+        if request.session_date is not None:
+            selected.extend(
+                _select_nba_event_probes_from_schedule(
+                    connection,
+                    session_date=request.session_date,
+                    max_finished=request.max_finished,
+                    max_live=request.max_live,
+                    max_upcoming=request.max_upcoming,
+                    include_upcoming=request.include_upcoming,
+                    stream_sample_count=request.stream_sample_count,
+                    stream_sample_interval_sec=request.stream_sample_interval_sec,
+                    stream_max_outcomes=request.stream_max_outcomes,
+                )
+            )
+        else:
+            today = build_today_nba_event_probes_from_scoreboard(
+                max_finished=request.max_finished,
+                max_live=request.max_live,
+                max_upcoming=request.max_upcoming,
+                include_upcoming=request.include_upcoming,
+                stream_sample_count=request.stream_sample_count,
+                stream_sample_interval_sec=request.stream_sample_interval_sec,
+                stream_max_outcomes=request.stream_max_outcomes,
+            )
+            selected.extend(today.all)
 
     if request.steps:
         wanted = set(request.steps)
@@ -914,7 +1053,12 @@ def sync_polymarket_events(
 ) -> SyncTriggerResponse:
     probes = _select_polymarket_probes(payload, connection)
     if not probes:
-        raise HTTPException(status_code=400, detail="No probes selected.")
+        return SyncTriggerResponse(
+            status="blocked",
+            rows_read=0,
+            rows_written=0,
+            summary=_no_polymarket_probe_summary(payload, connection),
+        )
 
     def _runner() -> dict[str, Any]:
         summary = run_polymarket_event_seed_pack(probes, persist=True)
@@ -945,7 +1089,12 @@ def sync_polymarket_markets(
 ) -> SyncTriggerResponse:
     probes = _select_polymarket_probes(payload, connection)
     if not probes:
-        raise HTTPException(status_code=400, detail="No probes selected.")
+        return SyncTriggerResponse(
+            status="blocked",
+            rows_read=0,
+            rows_written=0,
+            summary=_no_polymarket_probe_summary(payload, connection),
+        )
 
     def _runner() -> dict[str, Any]:
         summary = run_polymarket_event_seed_pack(probes, persist=True)
@@ -977,6 +1126,7 @@ def sync_nba_schedule(
     def _runner() -> dict[str, Any]:
         summary = run_nba_metadata_sync(
             season=payload.season,
+            anchor_date=payload.anchor_date,
             schedule_window_days=payload.schedule_window_days,
             include_live_snapshots=payload.include_live_snapshots,
             include_play_by_play=payload.include_play_by_play,

@@ -61,6 +61,7 @@ The controller should inspect these runtime surfaces when they exist:
 | `local/shared/handoffs/development-agent/master_queue.md` | Local operational queue bridge |
 | `local/shared/artifacts/final-system-controller/` | Controller pass artifacts and lock snapshots |
 | `local/shared/reports/daily-live-validation/` | Dated postgame/development/integrity reports |
+| `python tools/run_janus_startup_reconciliation.py --start-date <YYYY-MM-DD> --days <N>` | Reproducible post-startup data-refresh reconciliation for a fresh/local DB; read/write data only, no live-order actions |
 
 ## Local Runtime Root
 

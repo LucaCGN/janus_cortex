@@ -494,6 +494,7 @@ def _sync_nba_game_live_context(
 def run_nba_metadata_sync(
     *,
     season: str = "2025-26",
+    anchor_date: date | None = None,
     schedule_window_days: int = 2,
     include_play_by_play: bool = True,
     include_live_snapshots: bool = True,
@@ -548,9 +549,9 @@ def run_nba_metadata_sync(
                 payload=scoreboard_games,
             )
 
-            today = datetime.now(timezone.utc).date()
-            start_date = today - timedelta(days=max(schedule_window_days, 0))
-            end_date = today + timedelta(days=max(schedule_window_days, 0))
+            window_anchor = anchor_date or datetime.now(timezone.utc).date()
+            start_date = window_anchor - timedelta(days=max(schedule_window_days, 0))
+            end_date = window_anchor + timedelta(days=max(schedule_window_days, 0))
             team_count, game_count = _upsert_schedule_games(
                 repo=repo,
                 schedule_df=schedule_df,
@@ -748,6 +749,7 @@ def run_nba_live_game_sync(
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run NBA postgres ingestion sync.")
     parser.add_argument("--season", default="2025-26")
+    parser.add_argument("--anchor-date", default=None, help="YYYY-MM-DD date to center the schedule window on.")
     parser.add_argument("--schedule-window-days", type=int, default=2)
     parser.add_argument("--skip-live-snapshots", action="store_true")
     parser.add_argument("--skip-play-by-play", action="store_true")
@@ -761,6 +763,7 @@ def main() -> int:
     args = parser.parse_args()
     summary = run_nba_metadata_sync(
         season=args.season,
+        anchor_date=_safe_date(args.anchor_date),
         schedule_window_days=args.schedule_window_days,
         include_live_snapshots=not args.skip_live_snapshots,
         include_play_by_play=not args.skip_play_by_play,

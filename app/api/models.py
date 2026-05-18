@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
@@ -113,6 +113,7 @@ class PolymarketSyncRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     probe_set: Literal["today_nba", "extras", "combined"] = "today_nba"
+    session_date: date | None = None
     max_finished: int = Field(default=2, ge=0)
     max_live: int = Field(default=2, ge=0)
     max_upcoming: int = Field(default=2, ge=0)
@@ -128,6 +129,7 @@ class NbaScheduleSyncRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     season: str = "2025-26"
+    anchor_date: date | None = None
     schedule_window_days: int = Field(default=2, ge=0)
     include_live_snapshots: bool = True
     include_play_by_play: bool = True
