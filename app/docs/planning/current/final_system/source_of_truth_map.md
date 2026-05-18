@@ -102,15 +102,15 @@ If an Obsidian insight becomes operational behavior, it must be promoted into a 
 
 Every committed change should be pushed to GitHub promptly. GitHub is the operator's current remote interaction surface, so local-only commits are incomplete work unless the operator explicitly asks to keep them local.
 
-## Current Open Follow-Up Issues
+## Current Follow-Up Issues
 
-| Issue | Priority | Scope |
-|---|---|---|
-| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | GitHub issue taxonomy labels created; project hygiene remains. |
-| [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | Runtime handoff refresh after 2026-05-18 event reconciliation. |
-| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | Controller activation gate validation against repo-local runtime root. |
-| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | API-up validation of closed seed foundations. |
-| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | WNBA minimal-readiness dry run without live orders. |
-| [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | Read-only global portfolio explorer automation. |
-| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | Absorbed ML replay branch deleted after operator approval. |
-| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | Fresh-DB NBA probe and account mapping gaps discovered during reconciliation. |
+| Issue | Priority | Status | Scope |
+|---|---|---|---|
+| [#30](https://github.com/LucaCGN/janus_cortex/issues/30) | P0 | open | GitHub issue taxonomy labels created; project hygiene remains. |
+| [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | closed | Runtime handoff refresh after 2026-05-18 event reconciliation. |
+| [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | open | Controller activation gate validation against repo-local runtime root. |
+| [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | open | API-up validation of closed seed foundations. |
+| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | open | WNBA minimal-readiness dry run without live orders. |
+| [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | closed | Read-only global portfolio explorer automation. |
+| [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | closed | Absorbed ML replay branch deleted after operator approval. |
+| [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | open | Fresh-DB NBA probe and account mapping gaps discovered during reconciliation. |
