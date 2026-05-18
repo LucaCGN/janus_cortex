@@ -33,6 +33,7 @@ from codex_tools.polymarket.safety import (
     evaluate_kill_switch,
     evaluate_minimum_order_policy,
     evaluate_risk_budget,
+    evaluate_target_stop_rebuy_policy,
 )
 from codex_tools.polymarket.account import (
     ACCOUNT_SNAPSHOT_SCHEMA_VERSION,
@@ -63,6 +64,7 @@ __all__ = [
     "evaluate_kill_switch",
     "evaluate_minimum_order_policy",
     "evaluate_risk_budget",
+    "evaluate_target_stop_rebuy_policy",
     "read_account_snapshot",
     "write_fallback_decision_ledger",
 ]

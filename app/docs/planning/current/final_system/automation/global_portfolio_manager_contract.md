@@ -110,6 +110,20 @@ If any gate is missing, the pass must fall back to management planning: update t
 
 Current state: base `#53` tooling is preview-first and non-executing. Concrete non-dry-run execution is tracked by `#54`; until that issue passes, direct fallback remains plan-only or dry-run preview-only.
 
+### Concrete `#54` Proof Bundle
+
+For `#54`, boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management preview only when its gate snapshot carries these concrete proof fields:
+
+- `approved_execution_path`: either `janus_portfolio_order_management` or `independent_polymarket_fallback`.
+- `adapter_name`: the exact adapter/tool path being selected, such as `janus_portfolio_manager_order_management_v1`; include `adapter_version` when available.
+- `risk_budget_name`: a named budget separate from NBA/WNBA live testing, with `risk_budget.scope=global-portfolio`, `max_notional_usd`, `used_notional_usd`, and `action_notional_usd`.
+- `minimum_order_proof`: side, order type, price, size, notional, exchange minimum size, and minimum buy notional evidence.
+- `target_stop_rebuy_policy_detail`: `policy_name`, `target_policy`, `target_price` for target/replace actions, `stop_policy`, `rebuy_policy`, and reason.
+- `kill_switch_clearance`: `clear=true`, source, checked timestamp when available, and an empty blocker list.
+- `idempotency_key` and `reconciliation_plan`: the pre-submit ledger identity and the path back into Janus reconciliation after the action.
+
+If any of those concrete proof fields are missing or internally inconsistent, the gate remains `management_plan_only_execution_gate_missing` even if the corresponding boolean flag is `true`. This prevents the automation from repeatedly restating blockers while also preventing vague gate claims from authorizing order preparation.
+
 ## New-Market Learning Rule
 
 When a portfolio-manager trade in a new or uncovered market succeeds, the follow-up is mandatory:

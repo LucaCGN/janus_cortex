@@ -41,11 +41,12 @@ They may place, cancel, replace, close, or open positions only when all gates ar
 2. Janus API/runtime degradation is explicitly recorded, or the portfolio-manager contract explicitly chooses the direct Polymarket path.
 3. A separate global-portfolio or live-monitor risk budget is selected before the action.
 4. Polymarket minimum-size/minimum-notional and market-order exception policy pass.
-5. Kill-switch status is checked and permissive.
-6. A local durable ledger entry with idempotency key is written before submission and finalized after direct CLOB confirmation.
-7. The action records strategy reason, target/stop/rebuy policy, source evidence, order ids, and reconciliation plan.
-8. The action is later reconciled back into Janus DB/API once Janus is healthy.
-9. The tool defaults to preview/dry-run unless an explicit approved execution flag/config is present.
+5. A concrete target/stop/rebuy policy is present for the action, including policy name, target logic or target price when applicable, stop handling, rebuy handling, and strategy reason.
+6. Kill-switch status is checked and permissive.
+7. A local durable ledger entry with idempotency key is written before submission and finalized after direct CLOB confirmation.
+8. The action records strategy reason, target/stop/rebuy policy, source evidence, order ids, and reconciliation plan.
+9. The action is later reconciled back into Janus DB/API once Janus is healthy.
+10. The tool defaults to preview/dry-run unless an explicit approved execution flag/config is present.
 
 If any gate is missing, the tool must return a management plan or blocker and must not prepare, sign, submit, cancel, or replace an order.
 

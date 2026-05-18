@@ -17,6 +17,48 @@ OUTCOME_ID = "11111111-1111-4111-8111-111111111111"
 EVENT_SLUG = "nba-det-cle-2026-05-09"
 
 
+def _global_portfolio_execution_proof_kwargs() -> dict[str, object]:
+    return {
+        "approved_execution_path": "janus_portfolio_order_management",
+        "adapter_name": "janus_portfolio_manager_order_management_v1",
+        "adapter_version": "preview-first",
+        "risk_budget_name": "global-portfolio-existing-position-target-maintenance-v1",
+        "risk_budget": {
+            "name": "global-portfolio-existing-position-target-maintenance-v1",
+            "scope": "global-portfolio",
+            "max_notional_usd": 10.0,
+            "used_notional_usd": 0.0,
+            "action_notional_usd": 1.95,
+        },
+        "minimum_order_proof": {
+            "side": "sell",
+            "order_type": "limit",
+            "price": 0.39,
+            "size": 5.0,
+            "notional_usd": 1.95,
+            "min_size": 5.0,
+            "min_buy_notional_usd": 1.0,
+        },
+        "target_stop_rebuy_policy": True,
+        "target_stop_rebuy_policy_detail": {
+            "policy_name": "existing-position-target-maintenance-v1",
+            "target_policy": "place_or_replace_limit_sell_target_after_review",
+            "target_price": 0.39,
+            "stop_policy": "no autonomous stop; review deterioration manually",
+            "rebuy_policy": "no autonomous rebuy; record rebuy-watch only after exit",
+            "reason": "Existing operator/global position has no matching direct sell target.",
+        },
+        "kill_switch_clearance": {
+            "clear": True,
+            "source": "janus_status_and_live_strategy_worker_status",
+            "checked_at_utc": "2026-05-18T13:20:00Z",
+            "blocked_reasons": [],
+        },
+        "idempotency_key": "unit-test-existing-target-token-demo",
+        "reconciliation_plan": {"target": "Janus portfolio action ledger then order reconciliation"},
+    }
+
+
 def _trade_row(
     trade_id: str,
     *,
@@ -1022,6 +1064,7 @@ def _manager_action_plan_fixture():
         market_title="Global target market",
         market_slug="global-target-market",
         token_id="token-demo",
+        **_global_portfolio_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         portfolio_ledger_path=True,
@@ -1045,6 +1088,7 @@ def _ready_manager_action_plan_fixture():
         market_title="Global target market",
         market_slug="global-target-market",
         token_id="token-demo",
+        **_global_portfolio_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         approved_order_management_path=True,

@@ -18,6 +18,48 @@ from app.modules.agentic.global_portfolio import (
 from tools.build_global_portfolio_watchlist import build_from_source, write_outputs
 
 
+def _execution_proof_kwargs() -> dict[str, object]:
+    return {
+        "approved_execution_path": "janus_portfolio_order_management",
+        "adapter_name": "janus_portfolio_manager_order_management_v1",
+        "adapter_version": "preview-first",
+        "risk_budget_name": "global-portfolio-existing-position-target-maintenance-v1",
+        "risk_budget": {
+            "name": "global-portfolio-existing-position-target-maintenance-v1",
+            "scope": "global-portfolio",
+            "max_notional_usd": 10.0,
+            "used_notional_usd": 0.0,
+            "action_notional_usd": 1.95,
+        },
+        "minimum_order_proof": {
+            "side": "sell",
+            "order_type": "limit",
+            "price": 0.39,
+            "size": 5.0,
+            "notional_usd": 1.95,
+            "min_size": 5.0,
+            "min_buy_notional_usd": 1.0,
+        },
+        "target_stop_rebuy_policy": True,
+        "target_stop_rebuy_policy_detail": {
+            "policy_name": "existing-position-target-maintenance-v1",
+            "target_policy": "place_or_replace_limit_sell_target_after_review",
+            "target_price": 0.39,
+            "stop_policy": "no autonomous stop; review deterioration manually",
+            "rebuy_policy": "no autonomous rebuy; record rebuy-watch only after exit",
+            "reason": "Existing operator/global position has no matching direct sell target.",
+        },
+        "kill_switch_clearance": {
+            "clear": True,
+            "source": "janus_status_and_live_strategy_worker_status",
+            "checked_at_utc": "2026-05-18T13:00:00Z",
+            "blocked_reasons": [],
+        },
+        "idempotency_key": "unit-test-existing-target-token-123",
+        "reconciliation_plan": {"target": "Janus portfolio action ledger then order reconciliation"},
+    }
+
+
 def test_watchlist_entry_rejects_execution_authority_pytest() -> None:
     with pytest.raises(ValueError, match="cannot authorize execution"):
         GlobalPortfolioWatchlistEntry(
@@ -182,6 +224,7 @@ def test_artifact_flags_paired_yes_no_exposure_pytest() -> None:
 def test_execution_gate_snapshot_blocks_missing_portfolio_manager_path_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="existing_position_target",
+        **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         portfolio_ledger_path=True,
@@ -207,6 +250,7 @@ def test_execution_gate_snapshot_blocks_missing_portfolio_manager_path_pytest() 
 def test_execution_gate_snapshot_rejects_non_authoritative_truth_sources_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="trend_entry",
+        **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         approved_order_management_path=True,
@@ -224,9 +268,36 @@ def test_execution_gate_snapshot_rejects_non_authoritative_truth_sources_pytest(
     assert snapshot.rejected_truth_sources == ["screenshot", "stale_mirror"]
 
 
+def test_execution_gate_snapshot_requires_named_adapter_budget_killswitch_and_policy_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        target_stop_rebuy_policy=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+    )
+
+    assert snapshot.result == "management_plan_only_execution_gate_missing"
+    assert snapshot.execution_authorized is False
+    assert snapshot.missing_gates == [
+        "approved_order_management_path",
+        "separate_risk_budget",
+        "minimum_order_compliance",
+        "target_stop_rebuy_policy",
+        "kill_switch_clear",
+    ]
+
+
 def test_execution_gate_snapshot_satisfies_only_when_all_gates_true_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="existing_position_close",
+        **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         approved_order_management_path=True,
@@ -251,6 +322,7 @@ def test_manager_action_plan_records_missing_gates_without_order_preparation_pyt
         market_title="NBA title winner",
         market_slug="nba-title-winner-2026",
         token_id="token-123",
+        **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         portfolio_ledger_path=True,
@@ -292,6 +364,7 @@ def test_manager_action_plan_is_ready_only_after_gate_snapshot_succeeds_pytest()
         market_title="NBA title winner",
         market_slug="nba-title-winner-2026",
         token_id="token-123",
+        **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         approved_order_management_path=True,

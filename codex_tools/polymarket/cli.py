@@ -59,6 +59,7 @@ def _build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--kill-switch-clear", action="store_true")
     preview.add_argument("--kill-switch-source")
     preview.add_argument("--kill-switch-blocked-reason", action="append", default=[])
+    preview.add_argument("--target-stop-rebuy-policy-json")
     preview.add_argument("--janus-degraded-or-direct-path-selected", action="store_true")
     preview.add_argument("--ledger-available", action="store_true")
     preview.add_argument("--reconciliation-plan")
@@ -97,6 +98,7 @@ def _preview_fallback(args: argparse.Namespace, output: TextIO) -> int:
         kill_switch_clear=args.kill_switch_clear,
         kill_switch_source=args.kill_switch_source,
         kill_switch_blocked_reasons=args.kill_switch_blocked_reason,
+        target_stop_rebuy_policy=_read_json_text(args.target_stop_rebuy_policy_json),
         janus_degraded_or_direct_path_selected=args.janus_degraded_or_direct_path_selected,
         ledger_available=args.ledger_available,
         reconciliation_plan=args.reconciliation_plan,
@@ -108,6 +110,15 @@ def _preview_fallback(args: argparse.Namespace, output: TextIO) -> int:
     json.dump(asdict(preview), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
+
+
+def _read_json_text(value: str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    payload = json.loads(value)
+    if not isinstance(payload, dict):
+        raise ValueError("--target-stop-rebuy-policy-json must contain a JSON object")
+    return payload
 
 
 def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int:

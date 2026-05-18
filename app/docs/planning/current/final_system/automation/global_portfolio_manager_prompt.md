@@ -67,6 +67,8 @@ Execution authority gate:
 - You are intended to manage and trade the global portfolio, including placing/cancelling/replacing/closing positions, but only through an explicit approved Janus portfolio order-management path.
 - If Janus API/runtime is degraded, you may use an explicit approved independent Polymarket fallback path only after `codex_tools/polymarket/*` exists, passes `automation/codex_tooling_contract.md`, and all gates below are true.
 - Before any executable action, prove fresh direct CLOB/account truth, resolved market/token/order/position state, separate global-portfolio risk budget, minimum-order compliance, target/stop/rebuy policy, ledger write path, and kill-switch status.
+- For `#54`, boolean gate claims are insufficient. The action plan must include a concrete proof bundle: `approved_execution_path`, `adapter_name`, named `risk_budget_name` with global-portfolio scope and action notional, `minimum_order_proof`, `target_stop_rebuy_policy_detail`, `kill_switch_clearance`, `idempotency_key`, and `reconciliation_plan`.
+- If any proof item is missing, internally inconsistent, stale, or sourced from chat/GitHub/Obsidian/screenshots/stale mirrors instead of direct truth plus Janus/runtime evidence, stop at `management_plan_only_execution_gate_missing`.
 - If any gate is missing, do not prepare, place, cancel, replace, or submit orders. Produce a management plan, update durable memory/backlog, and route the blocker to GitHub.
 
 Existing-position management:

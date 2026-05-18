@@ -38,6 +38,7 @@ ExecutionGateName = Literal[
     "portfolio_ledger_path",
     "separate_risk_budget",
     "minimum_order_compliance",
+    "target_stop_rebuy_policy",
     "kill_switch_clear",
     "non_runtime_truth_rejected",
 ]
@@ -56,6 +57,7 @@ EXECUTION_GATE_ORDER: tuple[ExecutionGateName, ...] = (
     "portfolio_ledger_path",
     "separate_risk_budget",
     "minimum_order_compliance",
+    "target_stop_rebuy_policy",
     "kill_switch_clear",
     "non_runtime_truth_rejected",
 )
@@ -66,6 +68,7 @@ EXECUTION_GATE_LABELS: dict[ExecutionGateName, str] = {
     "portfolio_ledger_path": "portfolio ledger evidence path",
     "separate_risk_budget": "separate global-portfolio risk budget",
     "minimum_order_compliance": "minimum-order/minimum-notional compliance",
+    "target_stop_rebuy_policy": "target/stop/rebuy policy",
     "kill_switch_clear": "kill switch clear",
     "non_runtime_truth_rejected": "screenshots/chat/stale mirrors rejected as execution truth",
 }
@@ -97,8 +100,19 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
     portfolio_ledger_path: bool = False
     separate_risk_budget: bool = False
     minimum_order_compliance: bool = False
+    target_stop_rebuy_policy: bool = False
     kill_switch_clear: bool = False
     non_runtime_truth_rejected: bool = False
+    approved_execution_path: Literal["janus_portfolio_order_management", "independent_polymarket_fallback"] | None = None
+    adapter_name: str | None = None
+    adapter_version: str | None = None
+    risk_budget_name: str | None = None
+    risk_budget: dict[str, Any] = Field(default_factory=dict)
+    minimum_order_proof: dict[str, Any] = Field(default_factory=dict)
+    target_stop_rebuy_policy_detail: dict[str, Any] = Field(default_factory=dict)
+    kill_switch_clearance: dict[str, Any] = Field(default_factory=dict)
+    idempotency_key: str | None = None
+    reconciliation_plan: dict[str, Any] | str | None = None
     truth_sources: list[str] = Field(default_factory=list)
     evidence: dict[str, Any] = Field(default_factory=dict)
     missing_gates: list[ExecutionGateName] = Field(default_factory=list)
@@ -114,6 +128,16 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
         missing: list[ExecutionGateName] = []
         for gate in EXECUTION_GATE_ORDER:
             gate_value = bool(getattr(self, gate))
+            if gate == "approved_order_management_path":
+                gate_value = gate_value and _has_adapter_proof(self)
+            elif gate == "separate_risk_budget":
+                gate_value = gate_value and _has_named_global_portfolio_risk_budget(self)
+            elif gate == "minimum_order_compliance":
+                gate_value = gate_value and _has_minimum_order_proof(self)
+            elif gate == "target_stop_rebuy_policy":
+                gate_value = gate_value and _has_target_stop_rebuy_policy(self)
+            elif gate == "kill_switch_clear":
+                gate_value = gate_value and _has_kill_switch_clearance(self)
             if gate == "non_runtime_truth_rejected":
                 gate_value = gate_value and not rejected_sources
             if not gate_value:
@@ -594,6 +618,16 @@ def _build_manager_action_ledger_record(plan: GlobalPortfolioManagerActionPlan) 
         "market_title": snapshot.market_title,
         "market_slug": snapshot.market_slug,
         "token_id": snapshot.token_id,
+        "approved_execution_path": snapshot.approved_execution_path,
+        "adapter_name": snapshot.adapter_name,
+        "adapter_version": snapshot.adapter_version,
+        "risk_budget_name": snapshot.risk_budget_name,
+        "risk_budget": dict(snapshot.risk_budget),
+        "minimum_order_proof": dict(snapshot.minimum_order_proof),
+        "target_stop_rebuy_policy_detail": dict(snapshot.target_stop_rebuy_policy_detail),
+        "kill_switch_clearance": dict(snapshot.kill_switch_clearance),
+        "idempotency_key": snapshot.idempotency_key,
+        "reconciliation_plan": snapshot.reconciliation_plan,
         "truth_sources": list(snapshot.truth_sources),
         "rejected_truth_sources": list(snapshot.rejected_truth_sources),
         "missing_gates": list(snapshot.missing_gates),
@@ -640,6 +674,92 @@ def _rejected_truth_sources(sources: list[str]) -> list[str]:
         if normalized in _NON_AUTHORITATIVE_TRUTH_SOURCES:
             rejected.append(normalized)
     return sorted(set(rejected))
+
+
+def _has_text(value: Any) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _numeric(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _has_adapter_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    if snapshot.approved_execution_path not in {"janus_portfolio_order_management", "independent_polymarket_fallback"}:
+        return False
+    if not _has_text(snapshot.adapter_name):
+        return False
+    return True
+
+
+def _has_named_global_portfolio_risk_budget(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    budget = dict(snapshot.risk_budget or {})
+    budget_name = str(snapshot.risk_budget_name or budget.get("name") or "").strip()
+    if not budget_name:
+        return False
+    scope = str(budget.get("scope") or budget.get("risk_bucket") or "").strip().lower()
+    if scope and scope != "global-portfolio":
+        return False
+    limit = _numeric(budget.get("max_notional_usd") or budget.get("limit_notional_usd"))
+    used = _numeric(budget.get("used_notional_usd") or 0.0)
+    action_notional = _numeric(
+        budget.get("action_notional_usd")
+        or budget.get("proposed_notional_usd")
+        or snapshot.minimum_order_proof.get("notional_usd")
+    )
+    if limit is None or limit <= 0.0:
+        return False
+    if used is None or used < 0.0:
+        return False
+    if action_notional is None or action_notional < 0.0:
+        return False
+    return action_notional <= max(0.0, limit - used) + 1e-9
+
+
+def _has_minimum_order_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    proof = dict(snapshot.minimum_order_proof or {})
+    side = str(proof.get("side") or "").strip().lower()
+    order_type = str(proof.get("order_type") or "limit").strip().lower()
+    price = _numeric(proof.get("price") or proof.get("limit_price"))
+    size = _numeric(proof.get("size"))
+    min_size = _numeric(proof.get("min_size") or 5.0)
+    min_buy_notional = _numeric(proof.get("min_buy_notional_usd") or 1.0)
+    notional = _numeric(proof.get("notional_usd"))
+    if notional is None and price is not None and size is not None:
+        notional = price * size
+    if side not in {"buy", "sell"}:
+        return False
+    if order_type != "limit":
+        return bool(proof.get("market_order_exception_approved"))
+    if price is None or not 0.0 < price <= 1.0:
+        return False
+    if size is None or min_size is None or size < min_size:
+        return False
+    if side == "buy" and (notional is None or min_buy_notional is None or notional < min_buy_notional):
+        return False
+    return True
+
+
+def _has_target_stop_rebuy_policy(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    policy = dict(snapshot.target_stop_rebuy_policy_detail or {})
+    required = ("policy_name", "target_policy", "stop_policy", "rebuy_policy", "reason")
+    if not all(_has_text(policy.get(key)) for key in required):
+        return False
+    target_price = _numeric(policy.get("target_price") or policy.get("limit_price"))
+    if snapshot.action in {"existing_position_target", "existing_position_replace"}:
+        return target_price is not None and 0.0 < target_price <= 1.0
+    return True
+
+
+def _has_kill_switch_clearance(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    clearance = dict(snapshot.kill_switch_clearance or {})
+    blockers = [item for item in clearance.get("blocked_reasons", []) if str(item).strip()]
+    return bool(clearance.get("clear") is True and _has_text(clearance.get("source")) and not blockers)
 
 
 def _parse_datetime(value: str | datetime | None) -> datetime:

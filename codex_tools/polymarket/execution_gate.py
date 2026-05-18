@@ -21,6 +21,7 @@ REQUIRED_GATE_LABELS = {
     "janus_degraded_or_direct_path_selected": "explicit Janus degradation or direct-path selection",
     "risk_budget_selected": "separate global-portfolio or live-monitor risk budget",
     "minimum_order_policy_passed": "Polymarket minimum-size/minimum-notional policy",
+    "target_stop_rebuy_policy_present": "target/stop/rebuy policy",
     "kill_switch_clear": "kill switch clear",
     "ledger_idempotency_available": "local durable ledger and idempotency key",
     "reconciliation_plan_present": "reconciliation plan back into Janus",
@@ -36,6 +37,7 @@ class PolymarketExecutionGateSnapshot:
     janus_degraded_or_direct_path_selected: bool = False
     risk_budget_selected: bool = False
     minimum_order_policy_passed: bool = False
+    target_stop_rebuy_policy_present: bool = False
     kill_switch_clear: bool = False
     ledger_idempotency_available: bool = False
     reconciliation_plan_present: bool = False

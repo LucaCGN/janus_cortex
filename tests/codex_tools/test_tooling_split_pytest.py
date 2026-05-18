@@ -72,6 +72,7 @@ def _satisfied_gate() -> PolymarketExecutionGateSnapshot:
         janus_degraded_or_direct_path_selected=True,
         risk_budget_selected=True,
         minimum_order_policy_passed=True,
+        target_stop_rebuy_policy_present=True,
         kill_switch_clear=True,
         ledger_idempotency_available=True,
         reconciliation_plan_present=True,
@@ -86,6 +87,17 @@ class _Creds:
         self.wallet_address = wallet_address
         self.funder_address = wallet_address
         self.private_key = private_key
+
+
+def _target_stop_rebuy_policy() -> dict[str, object]:
+    return {
+        "policy_name": "existing-position-target-maintenance-v1",
+        "target_policy": "place_limit_sell_target_after_review",
+        "target_price": 0.6,
+        "stop_policy": "review-only stop; no autonomous stop order",
+        "rebuy_policy": "no autonomous rebuy",
+        "reason": "Unit-test proof for target maintenance.",
+    }
 
 
 def test_janus_client_namespace_preserves_legacy_api_client() -> None:
@@ -1182,6 +1194,28 @@ def test_risk_budget_minimum_order_and_kill_switch_checks_block_missing_inputs()
     assert "kill_switch_not_clear" in kill_switch.blockers
 
 
+def test_direct_fallback_gate_requires_target_stop_rebuy_policy() -> None:
+    intent = _intent(dry_run=True)
+    gate = build_polymarket_safety_gate_snapshot(
+        intent,
+        direct_truth_snapshot=_fresh_snapshot(),
+        now_utc=datetime(2026, 5, 18, 14, 20, 30, tzinfo=UTC),
+        risk_budget_name="global-portfolio-test",
+        risk_budget_max_notional_usd=10.0,
+        kill_switch_clear=True,
+        kill_switch_source="unit-test",
+        janus_degraded_or_direct_path_selected=True,
+        ledger_available=True,
+        reconciliation_plan={"target": "Janus action ledger"},
+        explicit_execution_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+    )
+
+    assert gate.target_stop_rebuy_policy_present is False
+    assert "target_stop_rebuy_policy_present" in gate.missing_gates()
+    assert gate.evidence["target_stop_rebuy_policy"]["passed"] is False
+
+
 def test_safety_gate_snapshot_blocks_without_integrated_gate_inputs() -> None:
     intent = _intent(dry_run=False)
     gate = build_polymarket_safety_gate_snapshot(
@@ -1191,6 +1225,7 @@ def test_safety_gate_snapshot_blocks_without_integrated_gate_inputs() -> None:
         risk_budget_name="global-portfolio-test",
         risk_budget_max_notional_usd=10.0,
         kill_switch_clear=False,
+        target_stop_rebuy_policy=_target_stop_rebuy_policy(),
         janus_degraded_or_direct_path_selected=True,
         ledger_available=False,
         reconciliation_plan="reconcile back to Janus action ledger",
@@ -1226,6 +1261,7 @@ def test_safety_gate_snapshot_can_feed_preview_only_decision_when_all_gates_pass
         risk_budget_max_notional_usd=10.0,
         kill_switch_clear=True,
         kill_switch_source="unit-test",
+        target_stop_rebuy_policy=_target_stop_rebuy_policy(),
         janus_degraded_or_direct_path_selected=True,
         ledger_available=True,
         reconciliation_plan={"target": "Janus action ledger"},
@@ -1254,6 +1290,7 @@ def test_fallback_preview_service_entrypoint_blocks_without_execution() -> None:
         risk_budget_max_notional_usd=10.0,
         kill_switch_clear=True,
         kill_switch_source="unit-test",
+        target_stop_rebuy_policy=_target_stop_rebuy_policy(),
         janus_degraded_or_direct_path_selected=True,
         ledger_available=True,
         reconciliation_plan="reconcile back to Janus action ledger",
@@ -1280,6 +1317,7 @@ def test_fallback_preview_can_write_preview_ledger_without_execution(tmp_path: P
         risk_budget_max_notional_usd=10.0,
         kill_switch_clear=True,
         kill_switch_source="unit-test",
+        target_stop_rebuy_policy=_target_stop_rebuy_policy(),
         janus_degraded_or_direct_path_selected=True,
         ledger_available=True,
         reconciliation_plan={"target": "Janus action ledger"},

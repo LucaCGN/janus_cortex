@@ -250,6 +250,35 @@ def evaluate_kill_switch(
     )
 
 
+def evaluate_target_stop_rebuy_policy(
+    *,
+    policy: dict[str, Any] | str | None = None,
+    action: str | None = None,
+) -> PolymarketSafetyCheck:
+    blockers: list[str] = []
+    resolved_policy = policy if isinstance(policy, dict) else {}
+    required_keys = ("policy_name", "target_policy", "stop_policy", "rebuy_policy", "reason")
+    missing_keys = [key for key in required_keys if not str(resolved_policy.get(key) or "").strip()]
+    blockers.extend(f"target_stop_rebuy_policy_missing_{key}" for key in missing_keys)
+
+    action_text = str(action or "").strip().lower()
+    target_price = _safe_float(resolved_policy.get("target_price") or resolved_policy.get("limit_price"))
+    if action_text in {"existing_position_target", "existing_position_replace", "target", "replace_target"}:
+        if target_price is None or not 0.0 < target_price <= 1.0:
+            blockers.append("target_stop_rebuy_policy_invalid_target_price")
+
+    return PolymarketSafetyCheck(
+        schema_version=SAFETY_SCHEMA_VERSION,
+        name="target_stop_rebuy_policy",
+        passed=not blockers,
+        blockers=blockers,
+        evidence={
+            "policy": resolved_policy,
+            "action": action,
+        },
+    )
+
+
 def build_polymarket_safety_gate_snapshot(
     intent: PolymarketFallbackIntent,
     *,
@@ -265,6 +294,7 @@ def build_polymarket_safety_gate_snapshot(
     kill_switch_clear: bool = False,
     kill_switch_source: str | None = None,
     kill_switch_blocked_reasons: list[str] | None = None,
+    target_stop_rebuy_policy: dict[str, Any] | str | None = None,
     janus_degraded_or_direct_path_selected: bool = False,
     ledger_available: bool = False,
     reconciliation_plan: str | dict[str, Any] | None = None,
@@ -297,6 +327,10 @@ def build_polymarket_safety_gate_snapshot(
         source=kill_switch_source,
         blocked_reasons=kill_switch_blocked_reasons,
     )
+    target_policy = evaluate_target_stop_rebuy_policy(
+        policy=target_stop_rebuy_policy,
+        action=intent.action,
+    )
     idempotency_key = derive_idempotency_key(intent)
     normalized_truth_sources = _normalized_truth_sources(truth_sources)
     rejected_sources = [
@@ -313,6 +347,7 @@ def build_polymarket_safety_gate_snapshot(
         janus_degraded_or_direct_path_selected=janus_degraded_or_direct_path_selected,
         risk_budget_selected=risk_budget.passed,
         minimum_order_policy_passed=minimum_order.passed,
+        target_stop_rebuy_policy_present=target_policy.passed,
         kill_switch_clear=kill_switch.passed,
         ledger_idempotency_available=bool(ledger_available and idempotency_key),
         reconciliation_plan_present=reconciliation_plan_present,
@@ -324,6 +359,7 @@ def build_polymarket_safety_gate_snapshot(
             "direct_truth": asdict(direct_truth),
             "risk_budget": asdict(risk_budget),
             "minimum_order_policy": asdict(minimum_order),
+            "target_stop_rebuy_policy": asdict(target_policy),
             "kill_switch": asdict(kill_switch),
             "ledger_idempotency": {
                 "ledger_available": ledger_available,
@@ -352,4 +388,5 @@ __all__ = [
     "evaluate_kill_switch",
     "evaluate_minimum_order_policy",
     "evaluate_risk_budget",
+    "evaluate_target_stop_rebuy_policy",
 ]
