@@ -1,13 +1,15 @@
 # Janus Global Portfolio Explorer Prompt
 
-Status: draft prompt contract
+Status: legacy read-only discovery prompt
 Created: 2026-05-18
 Automation id: `janus-global-portfolio-explorer`
 GitHub issue: https://github.com/LucaCGN/janus_cortex/issues/35
 
 ## Purpose
 
-This is the structured prompt for the separate read-only global portfolio explorer. It is intentionally separate from the Janus master controller and from NBA/WNBA live execution.
+This is the legacy structured prompt for the separate read-only global portfolio explorer. It is intentionally separate from the Janus master controller and from NBA/WNBA live execution.
+
+For the active `janus-portfolio-manager` automation, use `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`. The manager prompt supersedes this file for existing-position management, trend scouting, and gated execution authority.
 
 The portfolio explorer helps the operator inspect non-Janus/global Polymarket positions, stale targets, exit/rebuy candidates, concentration, risk conflicts, and future-domain ideas.
 

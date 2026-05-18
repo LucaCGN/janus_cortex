@@ -283,6 +283,7 @@ Created on 2026-05-18 after the seed foundation closed.
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Build global portfolio target/rebuy ledger and watchlist schema. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Mirror direct open CLOB orders into portfolio HTTP surfaces. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Run passive WNBA CLOB capture and season-level shadow backtests. |
+| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Define active portfolio-manager execution policy and trend lane. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | Incubate geopolitics, economics, and culture monitoring lanes. |

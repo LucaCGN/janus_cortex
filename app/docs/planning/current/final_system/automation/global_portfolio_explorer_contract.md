@@ -1,6 +1,6 @@
 # Janus Global Portfolio Explorer Contract
 
-Status: draft control contract
+Status: legacy read-only discovery contract
 Created: 2026-05-18
 GitHub issue: https://github.com/LucaCGN/janus_cortex/issues/35
 Current automation id: `janus-global-portfolio-explorer`
@@ -8,7 +8,9 @@ Prompt file: `app/docs/planning/current/final_system/automation/global_portfolio
 
 ## Purpose
 
-Define the separate Codex automation/persona used to inspect the full Polymarket portfolio outside the narrow Janus-controlled event loop.
+Define the legacy read-only Codex automation/persona used to inspect the full Polymarket portfolio outside the narrow Janus-controlled event loop.
+
+For the active `janus-portfolio-manager` automation, use `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`. The manager contract supersedes this file for existing-position management, trend scouting, and gated execution authority.
 
 This automation is not the master controller. It is a read-only portfolio analyst that helps the operator reason about non-Janus positions, stale targets, exit/rebuy candidates, concentration, and future-domain ideas.
 

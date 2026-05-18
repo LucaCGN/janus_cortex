@@ -33,7 +33,7 @@ Obsidian sources:
 
 | Layer | Meaning | Current Use |
 |---|---|---|
-| P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow. | None currently open after `#41` closure; live readiness remains event-specific gated. |
+| P0 activation blockers | Must be resolved before trusting recurring controller/live-readiness flow or active order-path automations. | `#52` for portfolio-manager execution policy; core live readiness remains event-specific gated. |
 | P1 readiness builders | Needed for WNBA/NBA minimum-size testing and reliable reviews. | `#42`, `#43`, `#44`, `#45`, `#50` |
 | P2 research/incubation | Future-domain, profile-study, and strategy-expansion work. | `#46`, `#47`, `#48` |
 | Closed foundations | Implemented bootstrap surfaces that need validation, not reopening. | `#17-#30`, `#31`, `#32`, `#33`, `#34`, `#35`, `#36`, `#37`, `#39`, `#40`, `#41`, `#49` |
@@ -56,6 +56,7 @@ Obsidian sources:
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Readiness builder | P243-P251 | Add analytical chart-equivalent metrics to event review bundle. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Readiness builder | P190-P208, P252-P255 | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Readiness builder | P268-P274 | Build global portfolio target/rebuy ledger and watchlist schema. |
+| [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Active portfolio/order-path policy | P268-P274, operator correction 2026-05-18 | Define active portfolio-manager execution policy and trend lane. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | P268-P274, global portfolio evidence | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Readiness builder | P257-P265 | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Research/incubation | P270-P274 | Turn winning profile studies into benchmark hypotheses. |
@@ -66,7 +67,7 @@ Obsidian sources:
 
 | Idea | Why Deferred | Promotion Trigger |
 |---|---|---|
-| Direct Codex/MCP Polymarket manager | Requires explicit permission model and ngrok/MCP design. | `#45` defines watchlist schema and a separate execution policy is approved. |
+| Direct raw Codex/MCP Polymarket manager bypass | Raw connector execution must not bypass Janus risk, order, ledger, and kill-switch gates. | `#52` proves an approved portfolio order-management path exists and explicitly authorizes any connector role. |
 | Multiple FastAPI apps or Redis-backed workers | Current direction is modular monolith first. | `#40` proves modular monolith cannot meet independence/latency needs. |
 | Fully automated future-domain execution | Basketball and core ledger/risk/review are not stable enough. | `#47` or `#48` reach shadow evidence and min-size-test criteria. |
 | Frontier model as normal live analyst | Cost/return ratio is not justified at current bankroll scale. | `#41` defines budget state and realized returns justify escalation. |
@@ -80,8 +81,9 @@ Obsidian sources:
 5. Completed: run API-up validation `#33`.
 6. Completed: run WNBA dry run `#34`.
 7. Completed: validate direct open CLOB order mirroring through `#49`.
-8. Next: route WNBA passive capture/shadow publication through `#50`, or expand review/risk/execution/portfolio metrics through `#42-#45` when live safety does not preempt.
-9. Use `#46-#48` for future-domain and profile research without live authority.
+8. Next: finish `#52` so `janus-portfolio-manager` has explicit active-management authority, gates, and trend-lane evidence requirements before it can trade.
+9. Route WNBA passive capture/shadow publication through `#50`, or expand review/risk/execution/portfolio metrics through `#42-#45` when live safety does not preempt.
+10. Use `#46-#48` for future-domain and profile research without live authority unless promoted by `#52` evidence and operator-approved gates.
 
 ## Issue Creation Rule Going Forward
 

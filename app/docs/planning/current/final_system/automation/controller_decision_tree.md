@@ -51,7 +51,7 @@ The controller should record:
 | 6 | Development task is claimed or review-ready | `development-agent` or `development-end-phase` |
 | 7 | Backlog/issue taxonomy/queue missing or stale | `issue-backlog-manager` |
 | 8 | Source-of-truth docs or Obsidian indexes stale | `docs-memory-agent` |
-| 9 | Daily/ad hoc read-only global portfolio review is due and no live safety task is active | `global-portfolio-agent` |
+| 9 | Global portfolio management/scouting pass is due and no higher-priority live safety task is active | `global-portfolio-agent` |
 | 10 | New market/domain idea needs classification | `future-domain-research-agent` or `profile-research-agent` |
 | 11 | No material state change | `master-controller` no-op |
 
@@ -76,14 +76,15 @@ The 2026-05-18 bootstrap pass performed the first repo-local reconciliation and 
 
 ## Global Portfolio Rules
 
-Initial global portfolio work is read-only:
+The `janus-portfolio-manager` lane is active-management intent, not a Janus NBA/WNBA trade validator and not merely a read-only explorer:
 
-1. Detect positions not controlled by Janus.
-2. Identify stale targets, exit/rebuy candidates, concentration, and risk conflicts.
-3. Write proposals to issues or operator-review tasks.
-4. Do not execute without a separate approved policy.
+1. Manage existing operator/global positions: verify direct CLOB truth, matching targets, stale/missing targets, exits, rebuy watches, and concentration risk.
+2. Scout uncovered categories for trend-following opportunities where the thesis is trend, market structure, liquidity, and return path rather than direct final-outcome prediction.
+3. Execute only through an approved Janus portfolio order-management path after all gates in `automation/global_portfolio_manager_contract.md` are true.
+4. If execution gates are missing, update watchlists, Obsidian lessons, GitHub blockers, and runtime evidence without preparing or submitting orders.
+5. Successful new-market trades must become backlog tests or Obsidian do/don't lessons before any domain is promoted.
 
-Detailed global-portfolio automation rules live in `automation/global_portfolio_explorer_contract.md`.
+Detailed global-portfolio automation rules live in `automation/global_portfolio_manager_contract.md`. The older explorer contract is retained as read-only discovery context.
 
 ## New Domain Rules
 

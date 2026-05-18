@@ -101,7 +101,7 @@ Routing priority:
 6. Claimed or review-ready development task.
 7. GitHub issue/backlog taxonomy or queue staleness.
 8. Repo docs or Obsidian source-of-truth staleness.
-9. Daily/ad hoc read-only global portfolio review when no live safety task is active.
+9. Daily/ad hoc global portfolio management or scouting when no higher-priority live safety task is active.
 10. Future domain research classification.
 11. No-op heartbeat.
 
@@ -129,7 +129,7 @@ Persona selection:
 - risk-ledger-agent: exposure, sleeves, lifecycle, realized-profit risk policy.
 - profile-research-agent: winning profiles, caveats, market archetypes.
 - future-domain-research-agent: crypto/geopolitics/economics/culture incubation.
-- global-portfolio-agent: read-only global portfolio review and operator-review proposals.
+- global-portfolio-agent: active global portfolio management intent, existing-position target/exit/rebuy decisions, trend-opportunity scouting, and gated execution only through an approved Janus portfolio order-management path.
 
 Sub-agent policy:
 - Spawn Codex sub-agents only when the current task explicitly benefits from parallel, bounded, non-overlapping work.

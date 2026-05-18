@@ -104,7 +104,7 @@ The detailed routing rules live in `automation/controller_decision_tree.md`.
 | `postgame_review` | Closed events exist and no review completed | Build event review/report/development handoff. |
 | `development` | No live/pregame/postgame urgent work | Work issue-backed task queue on branch/worktree. |
 | `system_organization` | Docs/issues/Obsidian/queue incomplete | Maintain source-of-truth system and issue backlog. |
-| `global_portfolio_review` | Daily or ad hoc global portfolio watch-only review | Use `global_portfolio_explorer_contract.md`; read-only account/portfolio analysis and Obsidian/GitHub follow-up only. |
+| `global_portfolio_management` | Daily or ad hoc global portfolio management/scouting pass | Use `global_portfolio_manager_contract.md`; manage existing positions, scout trend opportunities, and execute only through approved portfolio order-management gates. |
 | `no_op` | Nothing safe or useful to do | Write short status only if useful. |
 
 ## Live-Game Rule

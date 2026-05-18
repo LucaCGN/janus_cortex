@@ -31,7 +31,7 @@ All personas inherit `app/docs/planning/current/final_system/global_ego_and_purp
 | `risk-ledger-agent` | Risk and inventory | Profit-ratcheted ledgers, exposure caps, lifecycle proof, tail-risk rules. | Unlock risk from unrealized profit. |
 | `profile-research-agent` | External profile studies | Study winning profiles, caveats, market archetypes, implications. | Treat profile success as copyable proof. |
 | `future-domain-research-agent` | New markets | Crypto/geopolitics/economics concept research and incubation specs. | Promote a domain directly to live trading. |
-| `global-portfolio-agent` | Future global portfolio | Read-only account scan, target/rebuy proposals, concentration review. | Execute non-Janus positions without separate policy. |
+| `global-portfolio-agent` | Global portfolio | Existing-position target/exit/rebuy management, trend-opportunity scouting, watchlist and lesson capture, gated portfolio order-management once the approved execution path exists. | Bypass direct CLOB truth, Janus order validators, separate global-portfolio risk budget, or kill switches. |
 
 ## Persona Selection Inputs
 
@@ -83,4 +83,4 @@ Examples:
 - `profile-research-agent` can propose a crypto research issue, but cannot launch a crypto trading lane.
 - `live-monitor-analyst` can create a bug issue during a live game, but should not implement broad refactors.
 - `docs-memory-agent` can link a risk principle, but cannot change live risk authority.
-- `global-portfolio-agent` starts read-only until a separate execution policy exists.
+- `global-portfolio-agent` is intended to become active portfolio management, not just analysis. It may execute only under `global_portfolio_manager_contract.md` through an approved Janus portfolio order-management path. Until that path and its gates are present, it must fall back to management planning, artifacts, Obsidian lessons, and GitHub blockers.
