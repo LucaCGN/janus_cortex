@@ -125,7 +125,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#31](https://github.com/LucaCGN/janus_cortex/issues/31) | P0 | closed | Runtime handoff refresh after 2026-05-18 event reconciliation. |
 | [#32](https://github.com/LucaCGN/janus_cortex/issues/32) | P0 | closed | Repo-local runtime-root activation gate validation completed; live readiness remains event-gated. |
 | [#33](https://github.com/LucaCGN/janus_cortex/issues/33) | P1 | closed | API-up validation of closed seed foundations completed against the running non-live API. |
-| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | open | WNBA minimal-readiness dry run without live orders. |
+| [#34](https://github.com/LucaCGN/janus_cortex/issues/34) | P1 | closed | WNBA minimal-readiness dry run completed; WNBA remains passive/shadow only. |
 | [#35](https://github.com/LucaCGN/janus_cortex/issues/35) | P1 | closed | Read-only global portfolio explorer automation. |
 | [#36](https://github.com/LucaCGN/janus_cortex/issues/36) | P2 | closed | Absorbed ML replay branch deleted after operator approval. |
 | [#37](https://github.com/LucaCGN/janus_cortex/issues/37) | P0 | closed | Fresh-DB NBA probe and account mapping gaps repaired and HTTP-path validated. |
@@ -138,6 +138,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | open | Build global portfolio target/rebuy ledger and watchlist schema. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | open | Mirror direct open CLOB orders into portfolio HTTP surfaces. |
+| [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | open | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |
