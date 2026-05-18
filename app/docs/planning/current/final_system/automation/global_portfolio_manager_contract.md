@@ -19,6 +19,8 @@ This automation is not a validator for NBA/WNBA Janus trades and is not merely a
 
 It inherits `app/docs/planning/current/final_system/global_ego_and_purpose.md`: Janus should trade trends, liquidity, market structure, and return paths, not pretend it can predict final outcomes directly.
 
+The business purpose is to produce auditable return receipts that justify future Janus credits/token spend on new systems. The first portfolio proof thresholds are realized-return milestones of `1,000`, `10,000`, and `100,000`.
+
 ## Authority Stack
 
 Use the normal Janus authority stack:
@@ -35,13 +37,12 @@ Obsidian, GitHub issue text, screenshots, chat memory, stale mirrors, and trend 
 
 ## Model and Cost Safety
 
-Until the prior LLM token-spend bug is proven contained with durable runtime evidence, the `janus-portfolio-manager` automation must run on a mini/nano budget posture, not frontier reasoning.
+Until the prior LLM token-spend bug is proven contained with durable runtime evidence, Janus-owned/internal LLM calls made by this lane must stay on a mini/nano budget posture.
 
-- Default Codex app model: `gpt-5.4-mini`.
-- Default reasoning effort: `low`.
+- This restriction applies to Janus internal model/tool routing and Janus-owned token spend, not to the Codex app automation runner model selected by the operator.
 - Nano-class routing should be preferred inside app-owned LLM calls when that surface exists and the task is summarization, classification, checklisting, or watchlist maintenance.
-- Frontier models, including `gpt-5.5`, are blocked for this automation unless a separate issue-backed cost/readiness review proves budget controls, caps, telemetry, and shutdown behavior are safe.
-- If a requested portfolio action appears to require frontier reasoning, the automation must stop at a written management plan and route the escalation as a GitHub issue instead of spending frontier tokens.
+- Janus internal frontier escalation is blocked unless a separate issue-backed cost/readiness review proves budget controls, caps, telemetry, and shutdown behavior are safe.
+- If a requested portfolio action appears to require unsafe Janus-internal frontier spend, the automation must stop at a written management plan and route the escalation as a GitHub issue instead of spending those tokens.
 
 ## Operating Lanes
 
@@ -94,6 +95,7 @@ When a portfolio-manager trade in a new or uncovered market succeeds, the follow
 
 - create or update a GitHub issue for a replay/backtest/domain-lane test if the setup appears repeatable
 - update Obsidian with the trade thesis, why it worked, what not to overgeneralize, and what future test would validate it
+- record the realized/unrealized return contribution against the `1,000`, `10,000`, and `100,000` proof thresholds when available
 - record whether the insight belongs in a future domain lane, a profile-study lesson, or a one-off operator/manual case
 
 A single winning trade is evidence for a test, not authority to scale the domain.
