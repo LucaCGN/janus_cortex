@@ -34,6 +34,19 @@ from codex_tools.janus.ops import (
     run_ops_cycle,
 )
 from codex_tools.janus.status import STATUS_PATH, get_status, main_for_status
+from codex_tools.janus.worker import (
+    LIVE_STRATEGY_WORKER_START_PATH,
+    LIVE_STRATEGY_WORKER_STATUS_PATH,
+    LIVE_STRATEGY_WORKER_STOP_PATH,
+    build_live_strategy_worker_start_parser,
+    build_live_strategy_worker_start_payload,
+    get_live_strategy_worker_status,
+    main_for_live_strategy_worker_start,
+    main_for_live_strategy_worker_status,
+    main_for_live_strategy_worker_stop,
+    start_live_strategy_worker,
+    stop_live_strategy_worker,
+)
 
 __all__ = [
     "DEFAULT_API_ROOT",
@@ -71,4 +84,15 @@ __all__ = [
     "STATUS_PATH",
     "get_status",
     "main_for_status",
+    "LIVE_STRATEGY_WORKER_START_PATH",
+    "LIVE_STRATEGY_WORKER_STATUS_PATH",
+    "LIVE_STRATEGY_WORKER_STOP_PATH",
+    "build_live_strategy_worker_start_parser",
+    "build_live_strategy_worker_start_payload",
+    "get_live_strategy_worker_status",
+    "main_for_live_strategy_worker_start",
+    "main_for_live_strategy_worker_status",
+    "main_for_live_strategy_worker_stop",
+    "start_live_strategy_worker",
+    "stop_live_strategy_worker",
 ]
