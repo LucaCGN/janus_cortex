@@ -12,6 +12,9 @@ import codex_tool.export_event_review_bundle as legacy_review_cli
 import codex_tool.evaluate_strategy_plan as legacy_evaluate_cli
 import codex_tool.janus_status as legacy_status_cli
 import codex_tool.live_strategy_worker_status as legacy_worker_status_cli
+import codex_tool.record_market_trade as legacy_market_trade_cli
+import codex_tool.record_orderbook_tick as legacy_orderbook_tick_cli
+import codex_tool.start_watch_session as legacy_watch_session_cli
 import codex_tool.start_live_strategy_worker as legacy_worker_start_cli
 import codex_tool.stop_live_strategy_worker as legacy_worker_stop_cli
 import codex_tool.submit_pregame_research as legacy_pregame_cli
@@ -23,6 +26,7 @@ from codex_tools.janus import events as janus_events
 from codex_tools.janus import ops as janus_ops
 from codex_tools.janus import status as janus_status
 from codex_tools.janus import strategy as janus_strategy
+from codex_tools.janus import watchlists as janus_watchlists
 from codex_tools.janus import worker as janus_worker
 from codex_tools.polymarket import (
     PREVIEW_SCHEMA_VERSION,
@@ -487,6 +491,135 @@ def test_legacy_event_review_clis_delegate_to_target_namespace() -> None:
     assert legacy_replay_cli.main_for_replay_from_watch_session is janus_events.main_for_replay_from_watch_session
     assert legacy_watch_cli.WATCHLIST_EVENTS_PATH == janus_events.WATCHLIST_EVENTS_PATH
     assert legacy_watch_cli.main_for_watch_market is janus_events.main_for_watch_market
+
+
+def test_janus_watchlists_namespace_wraps_session_ticks_and_trades(monkeypatch) -> None:
+    calls: list[tuple[str, str, str, dict[str, object]]] = []
+
+    def _api_json(api_root: str, method: str, path: str, payload: dict[str, object]) -> dict[str, object]:
+        calls.append((api_root, method, path, payload))
+        return {"ok": True, "path": path}
+
+    monkeypatch.setattr(janus_watchlists, "api_json", _api_json)
+
+    session = janus_watchlists.start_watch_session(
+        "http://janus.local",
+        {"event_key": "event-key-1", "passive_only": True},
+    )
+    ticks = janus_watchlists.record_orderbook_ticks(
+        "http://janus.local",
+        {"source": "pytest", "ticks": [{"event_key": "event-key-1"}]},
+    )
+    trades = janus_watchlists.record_market_trades(
+        "http://janus.local",
+        {"source": "pytest", "trades": [{"event_key": "event-key-1"}]},
+    )
+
+    assert session == {"ok": True, "path": "/v1/watchlists/sessions"}
+    assert ticks == {"ok": True, "path": "/v1/watchlists/orderbook-ticks"}
+    assert trades == {"ok": True, "path": "/v1/watchlists/trades"}
+    assert calls == [
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/watchlists/sessions",
+            {"event_key": "event-key-1", "passive_only": True},
+        ),
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/watchlists/orderbook-ticks",
+            {"source": "pytest", "ticks": [{"event_key": "event-key-1"}]},
+        ),
+        (
+            "http://janus.local",
+            "POST",
+            "/v1/watchlists/trades",
+            {"source": "pytest", "trades": [{"event_key": "event-key-1"}]},
+        ),
+    ]
+
+
+def test_janus_watchlists_namespace_preserves_legacy_payload_shapes() -> None:
+    session_args = janus_watchlists.build_watch_session_parser("session").parse_args(
+        [
+            "--event-key",
+            "event-key-1",
+            "--category",
+            "geopolitics",
+            "--active-trading",
+            "--metadata-json",
+            '{"source":"unit-test"}',
+        ]
+    )
+    tick_args = janus_watchlists.build_orderbook_tick_parser("tick").parse_args(
+        [
+            "--event-key",
+            "event-key-1",
+            "--best-bid",
+            "0.41",
+            "--best-ask",
+            "0.43",
+            "--source",
+            "pytest",
+        ]
+    )
+    trade_args = janus_watchlists.build_market_trade_parser("trade").parse_args(
+        [
+            "--trades-json",
+            '{"event_key":"event-key-1","price":0.42}',
+            "--source",
+            "pytest",
+        ]
+    )
+
+    assert janus_watchlists.build_watch_session_payload(session_args) == {
+        "watch_session_id": None,
+        "event_key": "event-key-1",
+        "category": "geopolitics",
+        "passive_only": False,
+        "cadence_ms": None,
+        "reason": None,
+        "metadata": {"source": "unit-test"},
+    }
+    assert janus_watchlists.build_orderbook_tick_payload(tick_args) == {
+        "source": "pytest",
+        "ticks": [
+            {
+                "event_key": "event-key-1",
+                "market_id": None,
+                "outcome_id": None,
+                "token_id": None,
+                "best_bid": 0.41,
+                "best_ask": 0.43,
+                "spread": 0.02,
+                "mid_price": 0.42,
+                "bid_depth": None,
+                "ask_depth": None,
+                "source_latency_ms": None,
+                "ingest_latency_ms": None,
+            }
+        ],
+    }
+    assert janus_watchlists.build_market_trade_payload(trade_args) == {
+        "source": "pytest",
+        "trades": [{"event_key": "event-key-1", "price": 0.42}],
+    }
+
+
+def test_legacy_watchlist_capture_clis_delegate_to_target_namespace() -> None:
+    assert legacy_watch_session_cli.WATCHLIST_SESSIONS_PATH == janus_watchlists.WATCHLIST_SESSIONS_PATH
+    assert legacy_watch_session_cli.build_watch_session_payload is janus_watchlists.build_watch_session_payload
+    assert legacy_watch_session_cli.start_watch_session is janus_watchlists.start_watch_session
+    assert legacy_watch_session_cli.main_for_watch_session is janus_watchlists.main_for_watch_session
+    assert legacy_orderbook_tick_cli.WATCHLIST_ORDERBOOK_TICKS_PATH == janus_watchlists.WATCHLIST_ORDERBOOK_TICKS_PATH
+    assert legacy_orderbook_tick_cli.build_orderbook_tick_payload is janus_watchlists.build_orderbook_tick_payload
+    assert legacy_orderbook_tick_cli.record_orderbook_ticks is janus_watchlists.record_orderbook_ticks
+    assert legacy_orderbook_tick_cli.main_for_orderbook_tick_record is janus_watchlists.main_for_orderbook_tick_record
+    assert legacy_market_trade_cli.WATCHLIST_TRADES_PATH == janus_watchlists.WATCHLIST_TRADES_PATH
+    assert legacy_market_trade_cli.build_market_trade_payload is janus_watchlists.build_market_trade_payload
+    assert legacy_market_trade_cli.record_market_trades is janus_watchlists.record_market_trades
+    assert legacy_market_trade_cli.main_for_market_trade_record is janus_watchlists.main_for_market_trade_record
 
 
 def test_polymarket_fallback_blocks_when_gates_are_missing() -> None:
