@@ -1600,6 +1600,71 @@ def _build_event_review_runtime_evidence(
             """,
             (event_id,),
         ),
+        "play_by_play_context": (
+            """
+            WITH event_identity AS (
+                SELECT
+                    %s::text AS event_key,
+                    (
+                        SELECT market_event_id::text
+                        FROM agentic.market_events
+                        WHERE event_key = %s
+                        LIMIT 1
+                    ) AS agentic_market_event_id
+            )
+            SELECT *
+            FROM (
+                SELECT
+                    'nba' AS league,
+                    p.game_id,
+                    p.event_index,
+                    p.action_id,
+                    NULL::bigint AS action_number,
+                    NULL::timestamptz AS time_actual,
+                    p.period,
+                    p.clock,
+                    NULL::text AS action_type,
+                    NULL::text AS sub_type,
+                    p.description,
+                    p.home_score,
+                    p.away_score,
+                    p.is_score_change,
+                    p.payload_json
+                FROM event_identity e
+                JOIN nba.nba_game_event_links l ON l.event_id::text = e.event_key
+                JOIN nba.nba_play_by_play p ON p.game_id = l.game_id
+
+                UNION ALL
+
+                SELECT
+                    'wnba' AS league,
+                    p.game_id,
+                    p.event_index,
+                    p.action_id,
+                    p.action_number,
+                    p.time_actual,
+                    p.period,
+                    p.clock,
+                    p.action_type,
+                    p.sub_type,
+                    p.description,
+                    p.home_score,
+                    p.away_score,
+                    p.is_score_change,
+                    p.raw_payload_json AS payload_json
+                FROM event_identity e
+                JOIN wnba.wnba_game_event_links l ON (
+                    l.agentic_event_key = e.event_key
+                    OR l.agentic_market_event_id::text = e.agentic_market_event_id
+                    OR l.catalog_event_id::text = e.event_key
+                )
+                JOIN wnba.wnba_play_by_play p ON p.game_id = l.game_id
+            ) rows
+            ORDER BY game_id, event_index DESC
+            LIMIT 160;
+            """,
+            (event_id, event_id),
+        ),
         "market_trades": (
             """
             SELECT market_trade_id::text AS market_trade_id, market_id, outcome_id, token_id, external_trade_id,
@@ -1948,9 +2013,15 @@ def _build_event_review_token_cost_timeline(llm_runtime_status: dict[str, Any]) 
 
 def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any]) -> dict[str, Any]:
     ticks = runtime_evidence.get("orderbook_ticks") if isinstance(runtime_evidence.get("orderbook_ticks"), list) else []
+    play_by_play_rows = (
+        runtime_evidence.get("play_by_play_context")
+        if isinstance(runtime_evidence.get("play_by_play_context"), list)
+        else []
+    )
     mids = [_safe_float(row.get("mid_price")) for row in ticks if isinstance(row, dict)]
     mids = [item for item in mids if item is not None]
     prices_by_outcome: dict[str, list[dict[str, Any]]] = {}
+    pbp_aligned_tick_count = 0
     for row in ticks:
         if not isinstance(row, dict):
             continue
@@ -1958,7 +2029,9 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
         value = _safe_float(row.get("mid_price"))
         if value is None:
             continue
-        context = _microstructure_tick_context(row)
+        context = _microstructure_tick_context(row, play_by_play_rows=play_by_play_rows)
+        if str(context.get("context_source") or "").startswith("play_by_play_context"):
+            pbp_aligned_tick_count += 1
         prices_by_outcome.setdefault(outcome_id, []).append(
             {
                 "captured_at": row.get("captured_at") or row.get("captured_at_utc") or row.get("source_timestamp"),
@@ -2008,6 +2081,12 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
         else "not_recorded",
         "period_summary_count": len(period_summaries),
         "period_summaries": period_summaries,
+        "play_by_play_context_status": "recorded" if play_by_play_rows else "not_recorded",
+        "play_by_play_event_count": len(play_by_play_rows),
+        "pbp_aligned_tick_count": pbp_aligned_tick_count,
+        "pbp_alignment_status": "recorded"
+        if pbp_aligned_tick_count
+        else ("available_without_timestamp_match" if play_by_play_rows else "not_recorded"),
         "orderbook_window_summary": runtime_evidence.get("orderbook_window_summary") or {},
         "metric_definitions": {
             "price_inversion_point_count": "paired sampled ticks where one outcome is below 50c and the other is above 50c",
@@ -2016,7 +2095,8 @@ def _build_event_review_microstructure_summary(runtime_evidence: dict[str, Any])
             "grid_opportunity_count": "adjacent sampled mid-price moves of at least 2c",
             "spike_count": "adjacent sampled mid-price moves of at least 3c",
             "trend_smoothness_score": "absolute net move divided by total absolute move; lower means more jagged",
-            "period_summaries": "same metrics grouped by period/clock context when orderbook tick evidence carries it",
+            "period_summaries": "same metrics grouped by period/clock context from tick evidence or nearest persisted play-by-play rows",
+            "pbp_aligned_tick_count": "ticks whose period/clock context was filled from nearest persisted play-by-play evidence",
         },
     }
 
@@ -2107,7 +2187,11 @@ def _microstructure_period_summary(key: str, rows: list[dict[str, Any]]) -> dict
     }
 
 
-def _microstructure_tick_context(row: dict[str, Any]) -> dict[str, Any]:
+def _microstructure_tick_context(
+    row: dict[str, Any],
+    *,
+    play_by_play_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     candidates = _microstructure_context_candidates(row)
     period: int | None = None
     clock: Any = None
@@ -2133,6 +2217,27 @@ def _microstructure_tick_context(row: dict[str, Any]) -> dict[str, Any]:
             source = source_name
         if period is not None and (clock is not None or clock_seconds is not None):
             break
+    if (period is None or period <= 0 or (clock is None and clock_seconds is None)) and play_by_play_rows:
+        pbp_context = _nearest_play_by_play_context(row, play_by_play_rows)
+        if pbp_context:
+            if period is None or period <= 0:
+                period = _microstructure_period(pbp_context)
+            if clock is None:
+                clock = _first_present(pbp_context, ("clock", "game_clock", "period_clock", "time_remaining"))
+            if clock_seconds is None:
+                clock_seconds = _first_safe_float(
+                    pbp_context,
+                    (
+                        "clock_seconds_remaining",
+                        "game_clock_seconds_remaining",
+                        "clock_remaining_seconds",
+                        "seconds_remaining",
+                        "period_seconds_remaining",
+                    ),
+                )
+            if source is None and (period is not None or clock is not None or clock_seconds is not None):
+                league = str(pbp_context.get("league") or "").strip()
+                source = f"play_by_play_context.{league}" if league else "play_by_play_context"
     return {
         "period": period,
         "clock": clock,
@@ -2167,6 +2272,46 @@ def _microstructure_context_candidates(row: dict[str, Any]) -> list[tuple[str, d
             if isinstance(nested, dict):
                 candidates.append((f"{parent_name}.{key}", nested))
     return candidates
+
+
+def _nearest_play_by_play_context(
+    row: dict[str, Any],
+    play_by_play_rows: list[dict[str, Any]],
+    *,
+    max_delta_seconds: float = 180.0,
+) -> dict[str, Any] | None:
+    tick_time = _parse_datetime(row.get("captured_at") or row.get("captured_at_utc") or row.get("source_timestamp"))
+    if tick_time is None:
+        return None
+    nearest: tuple[float, dict[str, Any]] | None = None
+    for item in play_by_play_rows:
+        if not isinstance(item, dict):
+            continue
+        pbp_time = _play_by_play_timestamp(item)
+        if pbp_time is None:
+            continue
+        delta = abs((tick_time - pbp_time).total_seconds())
+        if delta > max_delta_seconds:
+            continue
+        if nearest is None or delta < nearest[0]:
+            nearest = (delta, item)
+    if nearest is None:
+        return None
+    delta, item = nearest
+    return {**item, "pbp_alignment_delta_seconds": round(delta, 3)}
+
+
+def _play_by_play_timestamp(row: dict[str, Any]) -> datetime | None:
+    for key in ("time_actual", "captured_at", "observed_at", "event_time", "timestamp"):
+        parsed = _parse_datetime(row.get(key))
+        if parsed is not None:
+            return parsed
+    payload = row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {}
+    for key in ("timeActual", "time_actual", "wallClock", "wall_clock", "eventTime", "timestamp"):
+        parsed = _parse_datetime(payload.get(key))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def _microstructure_period(candidate: dict[str, Any]) -> int | None:

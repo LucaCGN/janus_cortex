@@ -1178,6 +1178,61 @@ def test_event_review_microstructure_classifies_smooth_and_noisy_profiles_pytest
     assert noisy["period_summaries"]["period_4"]["oscillation_band_count"] >= 6
 
 
+def test_event_review_microstructure_aligns_ticks_to_persisted_pbp_context_pytest() -> None:
+    summary = ops_router._build_event_review_microstructure_summary(
+        {
+            "orderbook_ticks": [
+                {
+                    "captured_at": "2026-05-18T20:02:00+00:00",
+                    "outcome_id": "favorite",
+                    "spread": 0.01,
+                    "mid_price": 0.58,
+                    "raw_json": {},
+                },
+                {
+                    "captured_at": "2026-05-18T20:03:00+00:00",
+                    "outcome_id": "favorite",
+                    "spread": 0.01,
+                    "mid_price": 0.62,
+                    "raw_json": {},
+                },
+            ],
+            "play_by_play_context": [
+                {
+                    "league": "wnba",
+                    "game_id": "1022600029",
+                    "event_index": 42,
+                    "time_actual": "2026-05-18T20:02:20+00:00",
+                    "period": 3,
+                    "clock": "06:44",
+                    "description": "made jump shot",
+                },
+                {
+                    "league": "wnba",
+                    "game_id": "1022600029",
+                    "event_index": 43,
+                    "time_actual": "2026-05-18T20:02:50+00:00",
+                    "period": 3,
+                    "clock": "06:14",
+                    "description": "defensive rebound",
+                },
+            ],
+            "orderbook_window_summary": {},
+        }
+    )
+
+    assert summary["play_by_play_context_status"] == "recorded"
+    assert summary["play_by_play_event_count"] == 2
+    assert summary["pbp_alignment_status"] == "recorded"
+    assert summary["pbp_aligned_tick_count"] == 2
+    assert summary["period_context_status"] == "recorded"
+    period_summary = summary["period_summaries"]["period_3"]
+    assert period_summary["context_sources"] == ["play_by_play_context.wnba"]
+    assert period_summary["first_clock"] == "06:44"
+    assert period_summary["last_clock"] == "06:14"
+    assert period_summary["grid_opportunity_count"] == 1
+
+
 def test_manual_order_assistant_endpoint_records_preview_and_never_raw_exchange_pytest(monkeypatch) -> None:
     monkeypatch.setattr(
         ops_router,
