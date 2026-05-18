@@ -351,6 +351,16 @@ class PortfolioDirectTradeBackfillRequest(BaseModel):
     reason: str | None = None
 
 
+class PortfolioManagerActionLedgerRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action_plan: dict[str, Any]
+    account_id: UUID | None = None
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
 class ManualOrderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

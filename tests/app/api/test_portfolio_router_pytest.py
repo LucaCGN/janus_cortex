@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_db_connection
 from app.api.main import create_app
 from app.api.routers import portfolio as portfolio_router
+from app.modules.agentic.global_portfolio import build_execution_gate_snapshot, build_manager_action_plan
 
 
 ACCOUNT_ID = "56964015-5935-5035-bdab-b056c9277146"
@@ -1013,6 +1014,147 @@ def test_apply_direct_open_order_mirror_actions_persists_order_and_event_pytest(
     ]
     assert any("INSERT INTO portfolio.orders" in query for query, _ in connection.executed)
     assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
+
+
+def _manager_action_plan_fixture():
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id="token-demo",
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api"],
+        evidence={"direct_open_order_count": 1},
+    )
+    return build_manager_action_plan(
+        gate_snapshot=snapshot,
+        proposed_action={"target_state": "target_missing", "desired_state": "record_target_plan_only"},
+        generated_at_utc="2026-05-18T13:18:00Z",
+    )
+
+
+def test_portfolio_manager_action_ledger_endpoint_dry_run_records_no_order_side_effects_pytest() -> None:
+    class FakeConnection:
+        pass
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    plan = _manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/action-ledger",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "dry_run": True,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["dry_run"] is True
+    assert payload["status"] == "planned"
+    assert payload["ledger_write_only"] is True
+    assert payload["no_order_side_effects"]["orders_placed"] is False
+    assert payload["no_order_side_effects"]["orders_prepared"] is False
+    ledger = payload["manager_action_ledger"]
+    assert ledger["schema_version"] == "global_portfolio_manager_action_ledger_v1"
+    assert ledger["status"] == "management_plan_only_execution_gate_missing"
+    assert ledger["missing_gates"] == ["approved_order_management_path"]
+    assert ledger["order_management_call_required"] is True
+    assert ledger["side_effects"]["orders_submitted"] is False
+    assert payload["applied"] == []
+
+
+def test_portfolio_manager_action_ledger_apply_requires_review_metadata_pytest() -> None:
+    class FakeConnection:
+        pass
+
+    def fake_db_connection():
+        yield FakeConnection()
+
+    plan = _manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/action-ledger",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "dry_run": False,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert response.json()["error"]["message"] == "reviewed_by and reason are required when dry_run=false"
+
+
+def test_apply_portfolio_manager_action_ledger_persists_ledger_only_pytest() -> None:
+    class FakeCursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.connection.executed.append((query, params))
+            if "INSERT INTO portfolio.manager_action_ledger" in query:
+                self.row = (params[0],)
+            else:
+                self.row = None
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        def cursor(self, *_, **__):
+            return FakeCursor(self)
+
+    connection = FakeConnection()
+    plan = _manager_action_plan_fixture()
+    preview = portfolio_router.build_portfolio_manager_action_ledger_preview(
+        action_plan=plan.model_dump(mode="json"),
+        account_id=ACCOUNT_ID,
+    )
+
+    applied = portfolio_router.apply_portfolio_manager_action_ledger(
+        connection,
+        preview=preview,
+        reviewed_by="controller",
+        reason="record manager action plan without order side effects",
+    )
+
+    assert applied["ledger_id"] == preview["ledger_id"]
+    assert applied["applied"] is True
+    assert applied["ledger_write_only"] is True
+    assert applied["orders_placed"] is False
+    assert applied["orders_prepared"] is False
+    assert any("INSERT INTO portfolio.manager_action_ledger" in query for query, _ in connection.executed)
+    assert not any("place_new_order" in query for query, _ in connection.executed)
 
 
 def test_apply_direct_trade_backfill_actions_persists_trade_and_event_pytest() -> None:

@@ -9,6 +9,8 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from psycopg2.extensions import connection as PsycopgConnection
+from psycopg2.extras import Json
+from pydantic import ValidationError
 
 from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.api.dependencies import get_db_connection
@@ -22,12 +24,14 @@ from app.api.models import (
     ManualOrderCreateRequest,
     ManualOrderResponse,
     PortfolioDirectTradeBackfillRequest,
+    PortfolioManagerActionLedgerRequest,
     PortfolioOrderStatusBackfillRequest,
     PortfolioPositionHistoryQuery,
     PortfolioPositionsQuery,
     PortfolioSummaryQuery,
     TradingAccountCreateRequest,
 )
+from app.modules.agentic.global_portfolio import GlobalPortfolioManagerActionPlan
 from app.data.databases.repositories import JanusUpsertRepository
 from app.data.nodes.polymarket.blockchain.manage_portfolio import (
     OrderSide,
@@ -560,6 +564,151 @@ def apply_direct_open_order_mirror_actions(
             }
         )
     return applied
+
+
+def build_portfolio_manager_action_ledger_preview(
+    *,
+    action_plan: dict[str, Any],
+    account_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        plan = GlobalPortfolioManagerActionPlan.model_validate(action_plan)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=to_jsonable(exc.errors())) from exc
+
+    source_plan = plan.model_dump(mode="json")
+    ledger_record = to_jsonable(plan.ledger_record)
+    ledger_id = _portfolio_sync_uuid_for(
+        "portfolio_manager_action_ledger",
+        str(account_id or ""),
+        str(ledger_record.get("issue") or plan.issue),
+        str(ledger_record.get("generated_at_utc") or source_plan.get("generated_at_utc") or ""),
+        str(ledger_record.get("action") or plan.action),
+        str(ledger_record.get("market_slug") or ""),
+        str(ledger_record.get("token_id") or ""),
+        str(ledger_record.get("status") or plan.status),
+    )
+    return {
+        "ledger_id": ledger_id,
+        "account_id": str(account_id) if account_id is not None else None,
+        "issue": plan.issue,
+        "schema_version": str(ledger_record.get("schema_version") or "global_portfolio_manager_action_ledger_v1"),
+        "action": plan.action,
+        "status": plan.status,
+        "result": plan.gate_snapshot.result,
+        "market_title": plan.gate_snapshot.market_title,
+        "market_slug": plan.gate_snapshot.market_slug,
+        "token_id": plan.gate_snapshot.token_id,
+        "execution_authorized": plan.execution_authorized,
+        "order_preparation_authorized": plan.order_preparation_authorized,
+        "live_order_impact": plan.live_order_impact,
+        "missing_gates": list(plan.gate_snapshot.missing_gates),
+        "rejected_truth_sources": list(plan.gate_snapshot.rejected_truth_sources),
+        "ledger_record": ledger_record,
+        "source_plan": to_jsonable(source_plan),
+        "ledger_write_only": True,
+        "order_management_call_required": True,
+        "no_execution_statement": plan.no_execution_statement,
+        "side_effects": {
+            "orders_placed": False,
+            "orders_cancelled": False,
+            "orders_replaced": False,
+            "orders_submitted": False,
+            "orders_prepared": False,
+            "live_worker_started": False,
+        },
+    }
+
+
+def apply_portfolio_manager_action_ledger(
+    connection: PsycopgConnection,
+    *,
+    preview: dict[str, Any],
+    reviewed_by: str | None,
+    reason: str | None,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO portfolio.manager_action_ledger (
+                ledger_id,
+                account_id,
+                issue,
+                schema_version,
+                action,
+                status,
+                result,
+                market_title,
+                market_slug,
+                token_id,
+                execution_authorized,
+                order_preparation_authorized,
+                live_order_impact,
+                missing_gates,
+                rejected_truth_sources,
+                ledger_record,
+                source_plan,
+                reviewed_by,
+                reason,
+                dry_run,
+                created_at,
+                updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (ledger_id)
+            DO UPDATE SET
+                account_id = EXCLUDED.account_id,
+                status = EXCLUDED.status,
+                result = EXCLUDED.result,
+                execution_authorized = EXCLUDED.execution_authorized,
+                order_preparation_authorized = EXCLUDED.order_preparation_authorized,
+                live_order_impact = EXCLUDED.live_order_impact,
+                missing_gates = EXCLUDED.missing_gates,
+                rejected_truth_sources = EXCLUDED.rejected_truth_sources,
+                ledger_record = EXCLUDED.ledger_record,
+                source_plan = EXCLUDED.source_plan,
+                reviewed_by = EXCLUDED.reviewed_by,
+                reason = EXCLUDED.reason,
+                dry_run = EXCLUDED.dry_run,
+                updated_at = EXCLUDED.updated_at
+            RETURNING ledger_id;
+            """,
+            (
+                preview["ledger_id"],
+                preview.get("account_id"),
+                preview["issue"],
+                preview["schema_version"],
+                preview["action"],
+                preview["status"],
+                preview["result"],
+                preview.get("market_title"),
+                preview.get("market_slug"),
+                preview.get("token_id"),
+                bool(preview["execution_authorized"]),
+                bool(preview["order_preparation_authorized"]),
+                preview["live_order_impact"],
+                list(preview["missing_gates"]),
+                list(preview["rejected_truth_sources"]),
+                Json(to_jsonable(preview["ledger_record"])),
+                Json(to_jsonable(preview["source_plan"])),
+                reviewed_by,
+                reason,
+                False,
+                now,
+                now,
+            ),
+        )
+        row = cursor.fetchone()
+    return {
+        "ledger_id": str(row[0] if isinstance(row, tuple) else row["ledger_id"]),
+        "applied": True,
+        "ledger_write_only": True,
+        "orders_placed": False,
+        "orders_cancelled": False,
+        "orders_replaced": False,
+        "orders_submitted": False,
+        "orders_prepared": False,
+    }
 
 
 def _credentials_for_account(account: dict[str, Any]) -> PolymarketCredentials:
@@ -2390,6 +2539,112 @@ def mirror_direct_open_portfolio_orders(
         "direct_evidence": to_jsonable(direct_evidence_summary),
         "direct_open_order_mirror": to_jsonable(plan),
         "applied": to_jsonable(applied),
+    }
+
+
+@router.post("/manager/action-ledger")
+def record_portfolio_manager_action_ledger(
+    payload: PortfolioManagerActionLedgerRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    preview = build_portfolio_manager_action_ledger_preview(
+        action_plan=payload.action_plan,
+        account_id=str(payload.account_id) if payload.account_id is not None else None,
+    )
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied.append(
+            apply_portfolio_manager_action_ledger(
+                connection,
+                preview=preview,
+                reviewed_by=reviewer,
+                reason=review_reason,
+            )
+        )
+
+    return {
+        "dry_run": payload.dry_run,
+        "status": "planned" if payload.dry_run else "applied",
+        "live_order_impact": "read-only",
+        "ledger_write_only": True,
+        "no_order_side_effects": preview["side_effects"],
+        "manager_action_ledger": to_jsonable(preview),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/action-ledger")
+def list_portfolio_manager_action_ledger(
+    account_id: UUID | None = Query(default=None),
+    issue: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if account_id is not None:
+        conditions.append("account_id = %s")
+        params.append(str(account_id))
+    if issue:
+        conditions.append("issue = %s")
+        params.append(issue)
+    if status_filter:
+        conditions.append("status = %s")
+        params.append(status_filter)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                ledger_id,
+                account_id,
+                issue,
+                schema_version,
+                action,
+                status,
+                result,
+                market_title,
+                market_slug,
+                token_id,
+                execution_authorized,
+                order_preparation_authorized,
+                live_order_impact,
+                missing_gates,
+                rejected_truth_sources,
+                ledger_record,
+                source_plan,
+                reviewed_by,
+                reason,
+                dry_run,
+                created_at,
+                updated_at
+            FROM portfolio.manager_action_ledger
+            {where_sql}
+            ORDER BY created_at DESC, ledger_id DESC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {
+        "filters": {
+            "account_id": str(account_id) if account_id is not None else None,
+            "issue": issue,
+            "status": status_filter,
+            "limit": limit,
+            "offset": offset,
+        },
+        "items": to_jsonable(rows),
+        "count": len(rows),
     }
 
 
