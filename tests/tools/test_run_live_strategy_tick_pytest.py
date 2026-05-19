@@ -1720,6 +1720,131 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
     assert portfolio_state["direct_clob_global_open_orders"] == 1
 
 
+def test_event_tick_documents_resolved_residual_without_open_exposure_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+    plan = {
+        "market_id": "market-sas-okc",
+        "context_summary": {"event_slug": "nba-sas-okc-2026-05-18"},
+        "active_strategies": [
+            {
+                "strategy_id": "thunder-postgame-monitor",
+                "side": "Thunder",
+                "entry_rules": {
+                    "outcome_id": "outcome-thunder",
+                    "token_id": "token-thunder",
+                    "side": "buy",
+                    "price": 0.02,
+                    "size": 5,
+                },
+            }
+        ],
+    }
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/events/nba-sas-okc-2026-05-18/agent-context":
+            return {
+                "ok": True,
+                "current_strategy_plan": plan,
+                "direct_open_order_count": 0,
+                "direct_open_position_count": 1,
+            }
+        if path == "/v1/nba/games":
+            return {"ok": True, "items": []}
+        if path == "/v1/sync/polymarket/orderbook":
+            return {"ok": True}
+        if path == "/v1/outcomes/outcome-thunder/orderbook/latest":
+            return {
+                "ok": True,
+                "snapshot": {
+                    "best_bid": None,
+                    "best_ask": None,
+                    "captured_at": "2026-05-19T10:43:00+00:00",
+                },
+            }
+        if path == "/v1/portfolio/orders":
+            return {"ok": True, "items": []}
+        if path == "/v1/portfolio/orders/direct-open-mirror":
+            return {"ok": True, "status": "applied", "direct_open_order_mirror": {"direct_order_count": 0}}
+        if path == "/v1/watchlists/sessions":
+            return {"ok": True, "db_persistence": {"watch_session_id": "watch-session-uuid"}}
+        if path == "/v1/watchlists/orderbook-ticks":
+            return {"ok": True, "tick_count": len(payload["ticks"]), "db_persistence": {"ok": True}}
+        if path == "/v1/events/nba-sas-okc-2026-05-18/strategy-plan/evaluate":
+            return {"ok": True, "intent_count": 0, "blocked_count": 0, "sleeve_states": []}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._run_event_tick(
+        api_root="http://test",
+        session_date="2026-05-18",
+        event_id="nba-sas-okc-2026-05-18",
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+        max_intents=2,
+        orderbook_sample_count=1,
+        orderbook_sample_interval_sec=0.0,
+        integrity_ready=True,
+        integrity_snapshot={
+            "direct_clob": {
+                "open_order_count": 0,
+                "open_orders": {"orders": []},
+                "open_positions": {
+                    "positions": [
+                        {
+                            "asset": "token-thunder",
+                            "condition_id": "condition-sas-okc",
+                            "event_slug": "nba-sas-okc-2026-05-18",
+                            "outcome": "Thunder",
+                            "size": "338.4702",
+                            "avg_price": "0.0236",
+                            "current_value": "0",
+                            "settlement_residual": {
+                                "resolved_market": {
+                                    "resolved": True,
+                                    "condition_id": "condition-sas-okc",
+                                    "market_slug": "nba-sas-okc-2026-05-18",
+                                    "payouts": {"token-thunder": "0"},
+                                },
+                                "issue_link": "https://github.com/LucaCGN/janus_cortex/issues/58",
+                                "post_redeem_recheck_plan": "post-redeem direct account recheck before clearing",
+                            },
+                        }
+                    ]
+                },
+                "current_token_trades": {"trades": [], "trade_count": 0},
+            }
+        },
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        share_precision=3,
+        auto_protect_manual_positions=True,
+        manual_target_delta_cents=5.0,
+    )
+
+    evaluate_calls = [
+        call for call in calls if call["path"] == "/v1/events/nba-sas-okc-2026-05-18/strategy-plan/evaluate"
+    ]
+    portfolio_state = result["portfolio_state"]
+    proof = portfolio_state["current_event_inventory_proof"]
+    assert portfolio_state["open_positions"] == 0
+    assert portfolio_state["raw_event_open_position_count"] == 1
+    assert portfolio_state["documented_residual_position_count"] == 1
+    assert portfolio_state["blocked_residual_classification_count"] == 0
+    assert proof["open_position_count"] == 0
+    assert proof["active_open_position_count"] == 0
+    assert proof["raw_open_position_count"] == 1
+    assert proof["documented_residual_position_count"] == 1
+    assert proof["unresolved_inventory_present"] is False
+    assert result["operator_reaction"]["position_reactions"] == []
+    evaluate_portfolio = evaluate_calls[0]["payload"]["portfolio_state"]
+    assert evaluate_portfolio["open_positions"] == 0
+    assert evaluate_portfolio["current_event_inventory_proof"]["documented_residual_position_count"] == 1
+
+
 def test_player_status_shocks_from_live_state_tags_ejection_and_conflict_pytest() -> None:
     shocks = live_tick._player_status_shocks_from_live_state(
         {
