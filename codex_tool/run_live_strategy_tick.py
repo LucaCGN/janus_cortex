@@ -420,6 +420,8 @@ def _run_event_tick(
     portfolio_state["pending_intents_side"] = "buy"
     portfolio_state["pending_intent_orders"] = pending_intents["orders"]
     portfolio_state["pending_intent_source"] = pending_intents["source"]
+    portfolio_state["event_start_expired_order_count"] = pending_intents.get("event_start_expired_order_count", 0)
+    portfolio_state["event_start_expired_orders"] = pending_intents.get("event_start_expired_orders", [])
     if not pending_intents["ok"]:
         portfolio_state["pending_intents_unavailable"] = True
         portfolio_state["pending_intents_error"] = pending_intents.get("error")
@@ -678,7 +680,7 @@ def _operator_reaction_revision_events(operator_reaction: dict[str, Any]) -> lis
     for key in ("position_reactions", "order_reactions", "trade_reactions"):
         value = operator_reaction.get(key)
         if isinstance(value, list):
-            rows.extend(dict(item) for item in value if isinstance(item, dict))
+            rows.extend(dict(item) for item in value if isinstance(item, dict) and not item.get("skip_llm_revision_trigger"))
     return rows
 
 
@@ -847,6 +849,7 @@ def _auto_protect_direct_positions(
 
     positions = ((direct_clob.get("open_positions") or {}).get("positions") or [])
     open_orders = ((direct_clob.get("open_orders") or {}).get("orders") or [])
+    direct_open_order_ids = _direct_open_order_external_ids({"open_orders": {"orders": open_orders}})
     direct_trades = _direct_trade_rows(direct_clob, include_market_observations=False)
     reaction["direct_trade_count"] = len(direct_trades)
     plan_outcomes = _plan_outcome_lookup(plan)
@@ -885,6 +888,15 @@ def _auto_protect_direct_positions(
         position_size = _float(position.get("size")) or 0.0
         open_sell_size = _open_sell_size_for_token(open_orders, token_id)
         uncovered_size = max(0.0, position_size - open_sell_size)
+        missing_plan_target_ids = _missing_plan_target_order_ids(
+            plan=plan,
+            token_id=token_id,
+            direct_open_order_ids=direct_open_order_ids,
+        )
+        event_start_order_expiry = _event_start_order_expiry_active(plan)
+        deterministic_target_replacement = bool(
+            event_start_order_expiry and missing_plan_target_ids and uncovered_size >= min_size and open_sell_size <= 1e-9
+        )
         outcome_ref = plan_outcomes.get(token_id)
         avg_price = _position_avg_price(position, position_size)
         outcome_state = (outcome_states or {}).get(str(outcome_ref["outcome_id"])) if outcome_ref is not None else {}
@@ -943,22 +955,25 @@ def _auto_protect_direct_positions(
             )
             continue
         position_reaction = {
-            "action": "adopt_operator_position",
+            "action": "replace_event_start_expired_target_order" if deterministic_target_replacement else "adopt_operator_position",
             "token_id": token_id,
             "outcome_label": position.get("outcome"),
             "position_size": position_size,
             "open_sell_size": open_sell_size,
             "uncovered_size": uncovered_size,
             "no_new_entry": True,
-            "requires_strategy_plan_revision": True,
+            "requires_strategy_plan_revision": not deterministic_target_replacement,
+            "skip_llm_revision_trigger": deterministic_target_replacement,
             "revision_request": {
-                "reason": "operator_intervention_detected",
+                "reason": "event_start_target_order_expired" if deterministic_target_replacement else "operator_intervention_detected",
                 "event_id": event_id,
                 "token_id": token_id,
                 "outcome_label": position.get("outcome"),
                 "matched_strategy_id": matched_strategy.get("strategy_id") if matched_strategy else None,
                 "matched_strategy_family": matched_strategy.get("family") if matched_strategy else None,
                 "position_management_only": True,
+                "deterministic_target_replacement": deterministic_target_replacement,
+                "missing_plan_target_order_ids": missing_plan_target_ids,
                 "disable_new_entries": True,
                 "required_context": [
                     "direct_clob_truth",
@@ -981,7 +996,8 @@ def _auto_protect_direct_positions(
             position_reaction["revision_request"]["sleeve"] = dict(sleeve)
             position_reaction["revision_request"].update(sleeve)
         reaction["position_reactions"].append(position_reaction)
-        reaction["revision_requests"].append(position_reaction["revision_request"])
+        if not position_reaction["skip_llm_revision_trigger"]:
+            reaction["revision_requests"].append(position_reaction["revision_request"])
         if uncovered_size < min_size:
             reaction["recommended_orders"].append(
                 {
@@ -1034,6 +1050,8 @@ def _auto_protect_direct_positions(
                 "reason": "automatic target for uncovered direct CLOB position",
                 "reaction_type": "operator_intervention_target",
                 "reaction_owner": "janus_internal_reactor_v0",
+                "event_start_order_expiry": deterministic_target_replacement,
+                "missing_plan_target_order_ids": missing_plan_target_ids,
                 "outcome_label": position.get("outcome"),
                 "entry_avg_price": avg_price,
                 "target_delta_cents": target_resolution.get("target_delta_cents"),
@@ -2048,12 +2066,16 @@ def _pending_intent_summary(
             "pending_intent_count": 0,
             "pending_buy_intent_count": 0,
             "orders": [],
+            "event_start_expired_order_count": 0,
+            "event_start_expired_orders": [],
             "error": payload.get("error") or payload.get("status_code") or "portfolio_order_query_failed",
         }
 
     direct_open_order_ids = _direct_open_order_external_ids(direct_clob)
     direct_filled_order_ids = _direct_filled_order_external_ids(direct_clob)
     pending_orders: list[dict[str, Any]] = []
+    event_start_expired_orders: list[dict[str, Any]] = []
+    event_start_order_expiry = _event_start_order_expiry_active(plan)
     for item in payload.get("items") or []:
         if not isinstance(item, dict):
             continue
@@ -2072,23 +2094,34 @@ def _pending_intent_summary(
         if external_order_id and external_order_id.lower() in direct_open_order_ids:
             continue
         metadata = item.get("metadata_json") if isinstance(item.get("metadata_json"), dict) else {}
+        order_summary = {
+            "order_id": item.get("order_id"),
+            "external_order_id": external_order_id or None,
+            "client_order_id": item.get("client_order_id"),
+            "event_slug": event_slug or None,
+            "market_id": item.get("market_id"),
+            "outcome_id": item.get("outcome_id"),
+            "side": side,
+            "status": status,
+            "size": item.get("size"),
+            "limit_price": item.get("limit_price"),
+            "strategy_id": metadata.get("strategy_id"),
+            "strategy_family": metadata.get("strategy_family"),
+            "signal_id": metadata.get("signal_id"),
+            "source": "portfolio.orders",
+        }
+        if event_start_order_expiry and external_order_id:
+            event_start_expired_orders.append(
+                {
+                    **order_summary,
+                    "event_start_utc": event_start_order_expiry["event_start_utc"],
+                    "detected_at_utc": event_start_order_expiry["detected_at_utc"],
+                    "reason": "direct_clob_missing_after_event_start",
+                }
+            )
+            continue
         pending_orders.append(
-            {
-                "order_id": item.get("order_id"),
-                "external_order_id": external_order_id or None,
-                "client_order_id": item.get("client_order_id"),
-                "event_slug": event_slug or None,
-                "market_id": item.get("market_id"),
-                "outcome_id": item.get("outcome_id"),
-                "side": side,
-                "status": status,
-                "size": item.get("size"),
-                "limit_price": item.get("limit_price"),
-                "strategy_id": metadata.get("strategy_id"),
-                "strategy_family": metadata.get("strategy_family"),
-                "signal_id": metadata.get("signal_id"),
-                "source": "portfolio.orders",
-            }
+            order_summary
         )
     return {
         "ok": True,
@@ -2096,6 +2129,8 @@ def _pending_intent_summary(
         "pending_intent_count": len(pending_orders),
         "pending_buy_intent_count": len(pending_orders),
         "orders": pending_orders,
+        "event_start_expired_order_count": len(event_start_expired_orders),
+        "event_start_expired_orders": event_start_expired_orders,
     }
 
 
@@ -2362,6 +2397,57 @@ def _plan_known_external_order_ids(plan: dict[str, Any]) -> set[str]:
     for section_name in ("active_strategies", "trigger_conditions", "portfolio_reconciliation"):
         _collect_plan_external_order_ids(plan.get(section_name), ids)
     return ids
+
+
+def _event_start_utc(plan: dict[str, Any]) -> datetime | None:
+    context = plan.get("context_summary") if isinstance(plan.get("context_summary"), dict) else {}
+    for value in (
+        context.get("game_start_utc"),
+        context.get("event_start_utc"),
+        plan.get("game_start_utc"),
+        plan.get("event_start_utc"),
+    ):
+        parsed = _parse_dt(value)
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _event_start_order_expiry_active(plan: dict[str, Any], *, now: datetime | None = None) -> dict[str, str] | None:
+    event_start = _event_start_utc(plan)
+    if event_start is None:
+        return None
+    detected_at = now or datetime.now(timezone.utc)
+    if detected_at < event_start:
+        return None
+    return {
+        "event_start_utc": event_start.isoformat().replace("+00:00", "Z"),
+        "detected_at_utc": detected_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def _missing_plan_target_order_ids(
+    *,
+    plan: dict[str, Any],
+    token_id: str,
+    direct_open_order_ids: set[str],
+) -> list[str]:
+    missing: list[str] = []
+    for item in plan.get("portfolio_reconciliation") or []:
+        if not isinstance(item, dict):
+            continue
+        action = str(item.get("action") or "").strip().lower()
+        side = str(item.get("side") or "").strip().lower()
+        policy = str(item.get("policy") or "").strip().lower()
+        item_token = str(item.get("token_id") or item.get("asset") or "").strip()
+        if item_token and item_token != token_id:
+            continue
+        if "target" not in action and side != "sell" and "target" not in policy:
+            continue
+        external_order_id = str(item.get("external_order_id") or item.get("target_order_external_id") or "").strip().lower()
+        if external_order_id and external_order_id not in direct_open_order_ids:
+            missing.append(external_order_id)
+    return sorted(set(missing))
 
 
 def _plan_token_ids(plan: dict[str, Any]) -> set[str]:

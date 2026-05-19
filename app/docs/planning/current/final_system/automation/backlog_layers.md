@@ -82,6 +82,7 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Planned/sprint | Implement approved global portfolio execution gate proof and concrete order adapter. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Planned/sprint | Run passive WNBA CLOB capture and season-level shadow backtests. |
+| [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | Research backlog | Compare NBA pregame, immediate-live, post-Q1, and post-Q1-stability entry timing with fillability and event-start cancellation effects. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Planned backlog | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | Idea/planned backlog | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | Idea/planned backlog | Incubate geopolitics, economics, and culture monitoring lanes. |

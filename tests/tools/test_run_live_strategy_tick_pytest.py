@@ -433,6 +433,73 @@ def test_auto_protect_direct_position_treats_slug_alias_dust_target_as_covered_p
     ]
 
 
+def test_auto_protect_direct_position_replaces_event_start_expired_target_without_llm_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "event_id": "8da3c71c-1926-5f97-8473-7c742c7156b8",
+            "context_summary": {
+                "event_slug": "nba-sas-okc-2026-05-18",
+                "game_start_utc": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+            },
+            "active_strategies": [
+                {
+                    "strategy_id": "sas-live-post-order-monitor",
+                    "family": "operator_order_management",
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                    "exit_rules": {"target_policy": "micro_grid_scaled", "target_cents": 5},
+                }
+            ],
+            "portfolio_reconciliation": [
+                {"action": "monitor_live_target_sell_order", "external_order_id": "0xsell", "token_id": "token-sas"}
+            ],
+        },
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {
+                        "asset": "token-sas",
+                        "avg_price": 0.3099,
+                        "event_slug": "nba-sas-okc-2026-05-18",
+                        "outcome": "Spurs",
+                        "size": 32.258,
+                    }
+                ]
+            },
+            "open_orders": {"orders": []},
+        },
+        execute=False,
+        live_money=False,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+        known_external_order_ids={"0xsell"},
+    )
+
+    assert calls == []
+    assert result["recommended_orders"][0]["side"] == "sell"
+    assert result["recommended_orders"][0]["size"] == 32.258
+    assert result["position_reactions"][0]["action"] == "replace_event_start_expired_target_order"
+    assert result["position_reactions"][0]["skip_llm_revision_trigger"] is True
+    assert result["position_reactions"][0]["revision_request"]["reason"] == "event_start_target_order_expired"
+    assert result["position_reactions"][0]["revision_request"]["missing_plan_target_order_ids"] == ["0xsell"]
+    assert result["revision_requests"] == []
+    assert result["candidate_strategy_plan_required"] is False
+
+
 def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 
@@ -1095,6 +1162,51 @@ def test_pending_intent_summary_ignores_local_order_filled_in_direct_clob_pytest
     assert summary["pending_intent_count"] == 0
     assert summary["pending_buy_intent_count"] == 0
     assert summary["orders"] == []
+
+
+def test_pending_intent_summary_marks_missing_submitted_order_expired_after_event_start_pytest(monkeypatch) -> None:
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        assert path == "/v1/portfolio/orders"
+        return {
+            "ok": True,
+            "items": [
+                {
+                    "order_id": "local-order-1",
+                    "external_order_id": "0xsubmitted",
+                    "event_slug": "nba-sas-okc-2026-05-18",
+                    "market_id": "market-1",
+                    "outcome_id": "outcome-sas",
+                    "side": "buy",
+                    "status": "submitted",
+                    "size": 5.0,
+                    "limit_price": 0.30,
+                    "metadata_json": {"strategy_id": "sas-live"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    summary = live_tick._pending_intent_summary(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "context_summary": {
+                "event_slug": "nba-sas-okc-2026-05-18",
+                "game_start_utc": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+            },
+        },
+        direct_clob={"open_orders": {"orders": []}, "current_token_trades": {"trades": []}},
+    )
+
+    assert summary["pending_intent_count"] == 0
+    assert summary["pending_buy_intent_count"] == 0
+    assert summary["orders"] == []
+    assert summary["event_start_expired_order_count"] == 1
+    assert summary["event_start_expired_orders"][0]["external_order_id"] == "0xsubmitted"
+    assert summary["event_start_expired_orders"][0]["reason"] == "direct_clob_missing_after_event_start"
 
 
 def test_known_portfolio_order_ids_include_current_strategy_plan_ids_pytest(monkeypatch) -> None:

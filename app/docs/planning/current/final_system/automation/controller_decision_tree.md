@@ -82,7 +82,8 @@ On an NBA/WNBA test day, repeated passive capture is not enough when the blocker
 2. A WNBA passive capture with `orders_allowed=false` is valid WNBA shadow evidence, but it does not satisfy NBA live-worker readiness or prove a covered-market order path.
 3. Minimum-size live tests require explicit operator approval, direct CLOB/account truth, an active current StrategyPlanJSON, orderbook freshness, Janus integrity readiness, disabled raw exchange bypass, and Janus StrategyPlan/evaluate/execute authority.
 4. After a minimum-size live order is submitted, immediately revise the current StrategyPlanJSON into post-order monitor-only mode with `shadow_only=true`, `entry_disabled=true`, and the live external order id. The next controller pass should monitor order status, live game state, target/stop/rebuy policy, and reconciliation evidence; it must not duplicate the buy.
-5. UUID catalog event ids must resolve through the catalog-linked NBA game id before live monitoring is considered complete. A live tick that reports `event_id_not_parseable` for a UUID covered event is a tooling blocker, not a trading signal.
+5. At event start, Polymarket may clear/cancel resting orders. After start time, local submitted/open rows are advisory only: the controller must re-prove direct CLOB open orders or fills before treating a pregame buy or target as live. Missing direct CLOB orders after start should be classified as event-start expiry, not as pending exposure.
+6. UUID catalog event ids must resolve through the catalog-linked NBA game id before live monitoring is considered complete. A live tick that reports `event_id_not_parseable` for a UUID covered event is a tooling blocker, not a trading signal.
 
 ## Global Portfolio Rules
 
