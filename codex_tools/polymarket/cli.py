@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Sequence, TextIO
 
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
+from codex_tools.polymarket.grid_service import build_grid_service_preview
 from codex_tools.polymarket.preview import build_fallback_preview
 
 
@@ -68,6 +69,18 @@ def _build_parser() -> argparse.ArgumentParser:
     preview.add_argument("--write-ledger", action="store_true")
     preview.add_argument("--ledger-root", type=Path)
     preview.set_defaults(func=_preview_fallback)
+
+    grid = subparsers.add_parser(
+        "preview-grid-service",
+        help="Build a non-executing 1c grid service preview from a direct account snapshot.",
+    )
+    grid.add_argument("--direct-truth-json", required=True, type=Path)
+    grid.add_argument("--now-utc")
+    grid.add_argument("--min-abs-pnl-percent", default="5")
+    grid.add_argument("--grid-step-cents", type=int, default=1)
+    grid.add_argument("--include-other-basketball", action="store_true", default=True)
+    grid.add_argument("--include-covered-basketball", action="store_true")
+    grid.set_defaults(func=_preview_grid_service)
     return parser
 
 
@@ -118,6 +131,27 @@ def _read_json_text(value: str | None) -> dict[str, Any] | None:
     payload = json.loads(value)
     if not isinstance(payload, dict):
         raise ValueError("--target-stop-rebuy-policy-json must contain a JSON object")
+    return payload
+
+
+def _preview_grid_service(args: argparse.Namespace, output: TextIO) -> int:
+    preview = build_grid_service_preview(
+        _read_required_json_file(args.direct_truth_json),
+        now_utc=args.now_utc,
+        min_abs_pnl_percent=args.min_abs_pnl_percent,
+        grid_step_cents=args.grid_step_cents,
+        include_other_basketball=args.include_other_basketball,
+        include_covered_basketball=args.include_covered_basketball,
+    )
+    json.dump(asdict(preview), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _read_required_json_file(path: Path) -> dict[str, Any]:
+    payload = _read_json_file(path)
+    if payload is None:
+        raise ValueError("--direct-truth-json is required")
     return payload
 
 

@@ -36,10 +36,12 @@ from codex_tools.janus import strategy as janus_strategy
 from codex_tools.janus import watchlists as janus_watchlists
 from codex_tools.janus import worker as janus_worker
 from codex_tools.polymarket import (
+    GRID_SERVICE_SCHEMA_VERSION,
     PREVIEW_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
     build_fallback_preview,
+    build_grid_service_preview,
     build_polymarket_safety_gate_snapshot,
     evaluate_direct_truth_freshness,
     evaluate_kill_switch,
@@ -1366,5 +1368,93 @@ def test_polymarket_cli_preview_fallback_outputs_blocked_json(capsys) -> None:
     assert payload["decision"]["status"] == "blocked_missing_execution_gates"
     assert payload["decision"]["order_preparation_attempted"] is False
     assert payload["decision"]["order_submission_attempted"] is False
+    assert payload["order_preparation_attempted"] is False
+    assert payload["order_submission_attempted"] is False
+
+
+def test_polymarket_grid_service_preview_finds_global_and_other_basketball_candidates() -> None:
+    preview = build_grid_service_preview(
+        {
+            "status": "read_only_snapshot",
+            "open_positions": [
+                {
+                    "title": "Will aliens be confirmed in 2026?",
+                    "market_slug": "aliens-confirmed-2026",
+                    "token_id": "alien-yes",
+                    "size": "76.93",
+                    "average_price": "0.10",
+                    "current_price": "0.15",
+                },
+                {
+                    "title": "EuroLeague: Madrid vs Olympiacos",
+                    "market_slug": "euroleague-madrid-oly-2026-05-20",
+                    "token_id": "euro-underdog",
+                    "size": "12",
+                    "average_price": "0.42",
+                    "current_price": "0.39",
+                },
+                {
+                    "title": "Spurs vs. Thunder",
+                    "market_slug": "nba-sas-okc-2026-05-18",
+                    "token_id": "covered-nba",
+                    "size": "20",
+                    "average_price": "0.30",
+                    "current_price": "0.43",
+                },
+            ],
+            "open_orders": [{"token_id": "alien-yes", "price": "0.16"}],
+        },
+        now_utc=datetime(2026, 5, 19, 4, 0, 0, tzinfo=UTC),
+        min_abs_pnl_percent="5",
+    )
+
+    assert preview.schema_version == GRID_SERVICE_SCHEMA_VERSION
+    assert preview.status == "candidate_review_required"
+    assert preview.service_spawn_authorized is False
+    assert preview.order_preparation_attempted is False
+    assert preview.order_submission_attempted is False
+    assert {candidate["category"] for candidate in preview.candidates} == {"science_aliens", "other_basketball"}
+    assert [candidate["token_id"] for candidate in preview.candidates] == ["alien-yes", "euro-underdog"]
+    assert preview.candidates[0]["existing_open_order_count"] == 1
+    assert any(item["reason"] == "covered_basketball_managed_by_janus" for item in preview.skipped)
+
+
+def test_polymarket_cli_preview_grid_service_outputs_inert_plan(tmp_path, capsys) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(
+        json.dumps(
+            {
+                "status": "read_only_snapshot",
+                "open_positions": [
+                    {
+                        "title": "Will an AI model pass benchmark X?",
+                        "market_slug": "ai-model-benchmark-x",
+                        "token_id": "ai-yes",
+                        "size": "10",
+                        "average_price": "0.40",
+                        "current_price": "0.43",
+                    }
+                ],
+                "open_orders": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = polymarket_cli_main(
+        [
+            "preview-grid-service",
+            "--direct-truth-json",
+            str(snapshot_path),
+            "--now-utc",
+            "2026-05-19T04:00:00Z",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == GRID_SERVICE_SCHEMA_VERSION
+    assert payload["status"] == "candidate_review_required"
+    assert payload["service_spawn_authorized"] is False
     assert payload["order_preparation_attempted"] is False
     assert payload["order_submission_attempted"] is False

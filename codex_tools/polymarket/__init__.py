@@ -40,12 +40,19 @@ from codex_tools.polymarket.account import (
     PolymarketAccountReadSnapshot,
     read_account_snapshot,
 )
+from codex_tools.polymarket.grid_service import (
+    GRID_SERVICE_SCHEMA_VERSION,
+    PolymarketGridCandidate,
+    PolymarketGridServicePreview,
+    build_grid_service_preview,
+)
 
 __all__ = [
     "ACCOUNT_SNAPSHOT_SCHEMA_VERSION",
     "DEFAULT_DIRECT_TRUTH_MAX_AGE_SECONDS",
     "DEFAULT_MIN_BUY_NOTIONAL_USD",
     "DEFAULT_MIN_ORDER_SIZE",
+    "GRID_SERVICE_SCHEMA_VERSION",
     "PREVIEW_SCHEMA_VERSION",
     "PolymarketAccountReadSnapshot",
     "PolymarketExecutionGateSnapshot",
@@ -53,9 +60,12 @@ __all__ = [
     "PolymarketFallbackIntent",
     "PolymarketFallbackLedgerWrite",
     "PolymarketFallbackPreview",
+    "PolymarketGridCandidate",
+    "PolymarketGridServicePreview",
     "PolymarketSafetyCheck",
     "build_fallback_decision",
     "build_fallback_preview",
+    "build_grid_service_preview",
     "build_ledger_entry",
     "build_polymarket_safety_gate_snapshot",
     "default_fallback_ledger_root",
