@@ -100,7 +100,12 @@ class InMemoryRateLimiter:
 _ORDER_RATE_LIMITER = InMemoryRateLimiter()
 
 
-def enforce_order_rate_limit(*, account_id: UUID, action: str, max_ops_per_minute: int) -> None:
+def enforce_order_rate_limit(
+    *,
+    account_id: UUID,
+    action: str,
+    max_ops_per_minute: int,
+) -> dict[str, Any]:
     key = f"{account_id}:{action}"
     verdict = _ORDER_RATE_LIMITER.check(key=key, max_ops=max_ops_per_minute, window_sec=60)
     if not bool(verdict["allowed"]):
@@ -111,3 +116,4 @@ def enforce_order_rate_limit(*, account_id: UUID, action: str, max_ops_per_minut
                 f"max_ops_per_minute={max_ops_per_minute}"
             ),
         )
+    return verdict

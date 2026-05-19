@@ -1489,6 +1489,7 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     assert response.status_code == 200
     payload = response.json()
     execution = payload["order_management_execution"]
+    runtime_evidence = execution["execution_payload"]["runtime_risk_rate_evidence"]
     assert payload["dry_run"] is False
     assert payload["live_order_impact"] == "order-path"
     assert execution["status"] == "submitted"
@@ -1496,6 +1497,17 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     assert execution["side_effects"]["orders_prepared"] is True
     assert execution["side_effects"]["orders_submitted"] is True
     assert execution["side_effects"]["orders_placed"] is True
+    assert runtime_evidence["schema_version"] == "portfolio_manager_runtime_risk_rate_evidence_v1"
+    assert runtime_evidence["risk_limits_source"] == "app.api.guards.load_order_risk_limits"
+    assert runtime_evidence["risk_checks"] == {
+        "size_within_limit": True,
+        "limit_price_within_bounds": True,
+        "notional_within_limit": True,
+        "limit_order_only": True,
+    }
+    assert runtime_evidence["rate_limit"]["action"] == "portfolio_manager_place_order"
+    assert runtime_evidence["rate_limit"]["allowed"] is True
+    assert runtime_evidence["requested_order"]["notional_usd"] == 1.95
     assert placed["request"].token_id == "token-demo"
     assert placed["request"].side.value == "SELL"
     assert placed["request"].price == 0.39

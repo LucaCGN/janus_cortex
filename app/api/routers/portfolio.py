@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from app.api.db import cursor_dict, fetchall_dicts, fetchone_dict, to_jsonable
 from app.api.dependencies import get_db_connection
 from app.api.guards import (
+    OrderRiskLimits,
     enforce_order_rate_limit,
     enforce_order_risk_limits,
     load_order_risk_limits,
@@ -861,6 +862,52 @@ def _fetch_portfolio_manager_order_by_id(
         return fetchone_dict(cursor)
 
 
+def _build_portfolio_manager_runtime_risk_rate_evidence(
+    *,
+    normalized_order: dict[str, Any],
+    limits: OrderRiskLimits,
+    rate_limit_action: str,
+    rate_limit_verdict: dict[str, Any],
+) -> dict[str, Any]:
+    size = _decimal_or_zero(normalized_order.get("size"))
+    limit_price = _decimal_or_zero(normalized_order.get("limit_price"))
+    notional = _decimal_or_zero(normalized_order.get("notional_usd"))
+    return {
+        "schema_version": "portfolio_manager_runtime_risk_rate_evidence_v1",
+        "risk_limits_source": "app.api.guards.load_order_risk_limits",
+        "risk_limits": {
+            "max_order_size": limits.max_order_size,
+            "min_limit_price": limits.min_limit_price,
+            "max_limit_price": limits.max_limit_price,
+            "max_notional": limits.max_notional,
+            "max_ops_per_minute": limits.max_ops_per_minute,
+        },
+        "requested_order": {
+            "side": normalized_order.get("side"),
+            "order_type": normalized_order.get("order_type"),
+            "time_in_force": normalized_order.get("time_in_force"),
+            "limit_price": float(limit_price),
+            "size": float(size),
+            "notional_usd": float(notional),
+        },
+        "risk_checks": {
+            "size_within_limit": float(size) <= float(limits.max_order_size),
+            "limit_price_within_bounds": (
+                float(limits.min_limit_price) <= float(limit_price) <= float(limits.max_limit_price)
+            ),
+            "notional_within_limit": float(notional) <= float(limits.max_notional),
+            "limit_order_only": normalized_order.get("order_type") == "limit",
+        },
+        "rate_limit": {
+            "action": rate_limit_action,
+            "allowed": bool(rate_limit_verdict.get("allowed")),
+            "count_in_window": int(rate_limit_verdict.get("count_in_window", 0)),
+            "window_sec": int(rate_limit_verdict.get("window_sec", 60)),
+            "max_ops": int(rate_limit_verdict.get("max_ops", limits.max_ops_per_minute)),
+        },
+    }
+
+
 def apply_portfolio_manager_order_management_order(
     connection: PsycopgConnection,
     *,
@@ -919,10 +966,17 @@ def apply_portfolio_manager_order_management_order(
         order_type=normalized_order["order_type"],
         limits=limits,
     )
-    enforce_order_rate_limit(
+    rate_limit_action = "portfolio_manager_place_order"
+    rate_limit_verdict = enforce_order_rate_limit(
         account_id=UUID(account_id),
-        action="portfolio_manager_place_order",
+        action=rate_limit_action,
         max_ops_per_minute=limits.max_ops_per_minute,
+    )
+    runtime_risk_rate_evidence = _build_portfolio_manager_runtime_risk_rate_evidence(
+        normalized_order=normalized_order,
+        limits=limits,
+        rate_limit_action=rate_limit_action,
+        rate_limit_verdict=rate_limit_verdict,
     )
 
     _ensure_market_exists(connection, market_id=normalized_order["market_id"])
@@ -985,6 +1039,7 @@ def apply_portfolio_manager_order_management_order(
             "kill_switch_clearance": to_jsonable(plan.gate_snapshot.kill_switch_clearance),
             "reconciliation_plan": to_jsonable(plan.gate_snapshot.reconciliation_plan),
         },
+        "runtime_risk_rate_evidence": runtime_risk_rate_evidence,
         "manager_action_ledger_id": ledger_applied.get("ledger_id"),
     }
 
