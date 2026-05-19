@@ -2613,7 +2613,7 @@ def _mark_triggers_reviewed_by_current_plan(
         return triggers
     reviewed: list[LLMRuntimeTrigger] = []
     for trigger in triggers:
-        evidence_time = _evidence_time_utc(trigger.evidence)
+        evidence_time = _evidence_time_utc(trigger.evidence) or trigger.detected_at_utc.astimezone(timezone.utc)
         quarter_end_reviewed_at = _reviewed_quarter_end_at(trigger, quarter_end_reviews)
         if trigger.requires_revision and quarter_end_reviewed_at is not None:
             reviewed.append(

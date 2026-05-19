@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.modules.agentic.contracts import LLMRevisionRequest, LLMRuntimeTrigger
@@ -16,6 +17,7 @@ from app.modules.agentic.llm_runtime import (
     load_latest_llm_runtime_status,
     process_llm_runtime_trace,
     route_llm_model,
+    _mark_triggers_reviewed_by_current_plan,
 )
 
 
@@ -354,6 +356,29 @@ def test_order_submitted_and_fill_emit_lifecycle_triggers_pytest() -> None:
     )
 
     assert [trigger.trigger_type for trigger in triggers] == ["janus_order_submitted", "order_fill"]
+
+
+def test_plan_generated_after_order_trigger_reviews_lifecycle_trigger_pytest() -> None:
+    trigger = LLMRuntimeTrigger(
+        trigger_id="order-trigger-1",
+        event_id="nba-det-cle-2026-05-11",
+        trigger_type="janus_order_submitted",
+        source="pytest",
+        reason="Order lifecycle event requires review.",
+        detected_at_utc=datetime(2026, 5, 19, 2, 30, tzinfo=timezone.utc),
+        current_plan_stale_reason="app_owned_live_revision_trigger_detected",
+        evidence={"external_order_id": "0xabc", "status": "open"},
+    )
+
+    reviewed = _mark_triggers_reviewed_by_current_plan(
+        [trigger],
+        {"generated_at_utc": "2026-05-19T02:31:00Z"},
+    )
+
+    assert reviewed[0].requires_revision is False
+    assert reviewed[0].current_plan_stale_reason is None
+    assert reviewed[0].evidence["reviewed_by_current_plan"] is True
+    assert reviewed[0].evidence["trigger_evidence_time_utc"] == "2026-05-19T02:30:00Z"
 
 
 def test_target_lifecycle_events_emit_specific_runtime_triggers_pytest() -> None:
