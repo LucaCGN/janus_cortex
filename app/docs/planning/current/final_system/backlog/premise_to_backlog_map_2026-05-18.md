@@ -58,7 +58,8 @@ Obsidian sources:
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Closed foundation | P268-P274 | Global portfolio target/rebuy ledger and watchlist schema implemented. |
 | [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Closed foundation | P268-P274, operator correction 2026-05-18 | Active Codex global portfolio-manager policy, prompt, ledger, and preview surfaces implemented. |
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | P268-P274, NP005-NP006, operator correction 2026-05-18 | Codex tooling split and preview-first Polymarket fallback base implemented. |
-| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Active portfolio/order-path implementation | P268-P274, operator correction 2026-05-18 | Implement approved global portfolio execution gate proof and concrete order adapter. |
+| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Closed foundation | P268-P274, operator correction 2026-05-18 | Approved global portfolio execution gate proof, concrete Janus order-management adapter, runtime activation guard, risk/rate evidence, ledger finalization, confirmation-id handling, and idempotency replay hardening implemented. |
+| [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | Active portfolio/order-path activation proof | P268-P274, operator correction 2026-05-18 | Prove portfolio-manager real-call reconciliation before operational activation. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | P268-P274, global portfolio evidence | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Readiness builder | P257-P265 | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Research/incubation | P270-P274 | Turn winning profile studies into benchmark hypotheses. |
@@ -69,7 +70,7 @@ Obsidian sources:
 
 | Idea | Why Deferred | Promotion Trigger |
 |---|---|---|
-| Direct raw Codex/MCP Polymarket manager bypass | Raw connector execution must not bypass direct CLOB truth, risk, order, ledger, idempotency, reconciliation, and kill-switch gates. | `#54` implements the first concrete approved execution gate proof after `#52/#53` base policy/tooling acceptance. |
+| Direct raw Codex/MCP Polymarket manager bypass | Raw connector execution must not bypass direct CLOB truth, risk, order, ledger, idempotency, reconciliation, and kill-switch gates. | `#54` implemented the first concrete approved execution gate proof after `#52/#53` base policy/tooling acceptance; `#59` owns real-call activation and reconciliation proof. |
 | Multiple FastAPI apps or Redis-backed workers | Current direction is modular monolith first. | `#40` proves modular monolith cannot meet independence/latency needs. |
 | Fully automated future-domain execution | Basketball and core ledger/risk/review are not stable enough. | `#47` or `#48` reach shadow evidence and min-size-test criteria. |
 | Frontier model as normal live analyst | Cost/return ratio is not justified at current bankroll scale. | `#41` defines budget state and realized returns justify escalation. |
@@ -85,9 +86,9 @@ Obsidian sources:
 7. Completed: validate direct open CLOB order mirroring through `#49`.
 8. Completed: close `#52` after active Codex global portfolio-manager authority, gates, trend-lane evidence requirements, action ledger, and order-management preview were implemented.
 9. Completed: close `#53` after base `codex_tools/janus` and `codex_tools/polymarket` split, preview-first fallback gates, ledger, account reads, CLI, and compatibility wrappers were implemented.
-10. Next portfolio execution work is `#54`, but it must not preempt NBA/WNBA readiness unless direct live-money safety is unclear.
+10. Next portfolio execution work is `#59`, but it must not preempt NBA/WNBA readiness unless direct live-money safety is unclear.
 11. Route WNBA passive capture/shadow publication through `#50`, and expand sports readiness through `#42` and `#44` when live safety does not preempt.
-12. Use `#46-#48` for future-domain and profile research without live authority unless promoted by `#54` execution-gate evidence and operator-approved gates.
+12. Use `#46-#48` for future-domain and profile research without live authority unless promoted by `#54` execution-gate implementation, `#59` activation evidence, and operator-approved gates.
 
 ## Issue Creation Rule Going Forward
 

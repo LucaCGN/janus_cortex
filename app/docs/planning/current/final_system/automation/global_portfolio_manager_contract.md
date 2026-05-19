@@ -28,7 +28,7 @@ The portfolio manager must also route through the correct Codex tool surface:
 - Janus-facing work uses Janus API/runtime wrappers, currently `codex_tool/*` and target `codex_tools/janus/*`.
 - Direct Polymarket fallback work uses target `codex_tools/polymarket/*`, not Janus API, when Janus is degraded and the independent execution gate is implemented and approved.
 - The target split is governed by `automation/codex_tooling_contract.md` and GitHub issue `#53`.
-- Concrete non-dry-run portfolio execution beyond preview/ledger planning is tracked separately in GitHub issue `#54`.
+- Concrete Janus portfolio order-management adapter implementation was completed in GitHub issue `#54`; real-call activation and post-confirmation direct-CLOB reconciliation proof are tracked separately in GitHub issue `#59`.
 - Resolved-market redemption and unredeemed residual tolerance are tracked separately in GitHub issue `#58`.
 
 ## Scope Boundary
@@ -130,13 +130,13 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
-Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but a live call still requires the full proof bundle below, `execution_approved=true`, reviewer metadata, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, and runtime activation of the latest API code through `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`. Direct fallback remains plan-only until separately approved.
+Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but operational activation remains blocked on `#59` until a reviewed real-call proof shows complete dry-run readiness, explicit runtime activation, direct CLOB/account truth, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, external order id confirmation, and post-confirmation direct-CLOB reconciliation. Direct fallback remains plan-only until separately approved.
 
 Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 
-### Concrete `#54` Proof Bundle
+### Concrete `#54`/`#59` Proof Bundle
 
-For `#54`, boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management call only when its gate snapshot carries these concrete proof fields:
+For `#54` implementation and `#59` activation proof, boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management call only when its gate snapshot carries these concrete proof fields:
 
 - `approved_execution_path`: either `janus_portfolio_order_management` or `independent_polymarket_fallback`.
 - `adapter_name`: the exact adapter/tool path being selected, such as `janus_portfolio_manager_order_management_v1`; include `adapter_version` when available.
@@ -150,7 +150,7 @@ If any of those concrete proof fields are missing or internally inconsistent, th
 
 Even when the action-plan proof bundle is complete, non-dry-run order management must fail closed unless the running API process has `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`; request-level `execution_approved=true` and reviewer metadata are necessary but not sufficient runtime activation.
 
-For grid services, the `#54` proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, service heartbeat path, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only.
+For grid services, the same proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, service heartbeat path, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only.
 
 ## New-Market Learning Rule
 

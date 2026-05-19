@@ -79,7 +79,8 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Closed foundation | Global portfolio target/rebuy ledger and watchlist schema implemented. |
 | [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Closed foundation | Active Codex global portfolio-manager execution policy and trend lane defined with ledger/preview surfaces. |
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | Codex tooling split and preview-first Polymarket fallback base implemented. |
-| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Planned/sprint | Implement approved global portfolio execution gate proof and concrete order adapter. |
+| [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Closed foundation | Approved global portfolio execution gate proof, concrete Janus order-management adapter, runtime activation guard, risk/rate evidence, ledger finalization, confirmation-id handling, and idempotency replay hardening implemented. |
+| [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | Planned/sprint | Prove portfolio-manager real-call reconciliation before operational activation. |
 | [#57](https://github.com/LucaCGN/janus_cortex/issues/57) | P0 | Planned/sprint | Reconcile Spurs/Thunder final settlement and residual Thunder direct-CLOB exposure before new NBA live execution. |
 | [#58](https://github.com/LucaCGN/janus_cortex/issues/58) | P0 | Planned/sprint | Add resolved-market redeem workflow and unredeemed residual tolerance so settled positions do not block new live readiness after direct-truth classification. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
