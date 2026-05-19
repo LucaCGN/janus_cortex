@@ -62,9 +62,11 @@ from codex_tools.polymarket.settlement import (
     build_post_redeem_reconciliation,
     build_redeem_preview,
     build_settlement_ledger_entry,
+    classify_documented_residual_positions,
     classify_resolved_market_residual,
     default_settlement_ledger_root,
     derive_redeem_idempotency_key,
+    extract_settlement_residual_metadata,
     write_settlement_ledger_prewrite,
 )
 
@@ -104,6 +106,7 @@ __all__ = [
     "build_post_redeem_reconciliation",
     "build_redeem_preview",
     "build_settlement_ledger_entry",
+    "classify_documented_residual_positions",
     "classify_resolved_market_residual",
     "default_fallback_ledger_root",
     "default_settlement_ledger_root",
@@ -114,6 +117,7 @@ __all__ = [
     "evaluate_minimum_order_policy",
     "evaluate_risk_budget",
     "evaluate_target_stop_rebuy_policy",
+    "extract_settlement_residual_metadata",
     "read_account_snapshot",
     "write_fallback_decision_ledger",
     "write_settlement_ledger_prewrite",

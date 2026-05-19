@@ -51,6 +51,7 @@ from codex_tools.polymarket import (
     build_grid_service_preview,
     build_polymarket_safety_gate_snapshot,
     build_redeem_preview,
+    classify_documented_residual_positions,
     classify_resolved_market_residual,
     evaluate_direct_truth_freshness,
     evaluate_kill_switch,
@@ -1450,6 +1451,38 @@ def test_resolved_losing_position_classifies_as_zero_value_residual() -> None:
     assert classification.order_submission_attempted is False
     assert classification.redemption_preparation_attempted is False
     assert classification.redemption_submission_attempted is False
+
+
+def test_documented_residual_position_review_splits_active_and_documented_rows() -> None:
+    residual_position = {
+        **_losing_residual_position(),
+        "settlement_residual": {
+            "market_resolved": True,
+            "payout_per_share": "0",
+            "issue_link": "https://github.com/LucaCGN/janus_cortex/issues/58",
+            "post_redeem_recheck_plan": "Recheck direct account and Janus settlement ledger before closure.",
+        },
+    }
+    active_position = {
+        "market_slug": "nba-nyk-cle-2026-05-19",
+        "condition_id": "condition-cle",
+        "token_id": "token-cavs",
+        "size": "5",
+        "current_value": "2.50",
+    }
+
+    review = classify_documented_residual_positions(
+        open_orders=[],
+        open_positions=[residual_position, active_position],
+    )
+
+    assert review["active_open_positions"] == [active_position]
+    assert review["blocked_residual_classifications"] == []
+    assert len(review["documented_residual_positions"]) == 1
+    documented = review["documented_residual_positions"][0]
+    assert documented["position"] == residual_position
+    assert documented["classification"]["residual_type"] == "zero_value_residual"
+    assert documented["classification"]["live_readiness_blocker"] is False
 
 
 def test_resolved_residual_blocks_when_event_open_order_remains() -> None:

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import math
 import sys
-from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -17,7 +16,7 @@ from app.modules.agentic.llm_runtime import (
     build_llm_runtime_trace,
     process_llm_runtime_trace,
 )
-from codex_tools.polymarket.settlement import classify_resolved_market_residual
+from codex_tools.polymarket.settlement import classify_documented_residual_positions
 
 try:
     from codex_tools.janus.live_strategy_tick import main_for_live_strategy_tick
@@ -2651,7 +2650,7 @@ def _event_scoped_direct_clob(direct_clob: dict[str, Any], plan: dict[str, Any])
     scoped_positions = [position for position in raw_positions if matches(position, _direct_position_token_id(position))]
     scoped_account_trades = [trade for trade in raw_account_trades if matches(trade, _direct_trade_token_id(trade))]
     scoped_market_trades = [trade for trade in raw_market_trades if matches(trade, _direct_trade_token_id(trade))]
-    residual_review = _classify_documented_residual_positions(
+    residual_review = classify_documented_residual_positions(
         open_orders=scoped_orders,
         open_positions=scoped_positions,
     )
@@ -2730,112 +2729,6 @@ def _annotate_current_event_inventory_proof_with_residuals(
     )
     proof["documented_residual_position_count"] = direct_clob.get("documented_residual_position_count", 0)
     proof["blocked_residual_classification_count"] = direct_clob.get("blocked_residual_classification_count", 0)
-
-
-def _classify_documented_residual_positions(
-    *,
-    open_orders: list[dict[str, Any]],
-    open_positions: list[dict[str, Any]],
-) -> dict[str, Any]:
-    direct_truth_snapshot = {
-        "status": "read_only_snapshot",
-        "section_status": {"open_orders": "ok", "open_positions": "ok"},
-        "open_orders": open_orders,
-        "open_positions": open_positions,
-    }
-    active_open_positions: list[dict[str, Any]] = []
-    documented_residual_positions: list[dict[str, Any]] = []
-    blocked_residual_classifications: list[dict[str, Any]] = []
-    for position in open_positions:
-        residual_metadata = _settlement_residual_metadata(position)
-        if not residual_metadata:
-            active_open_positions.append(position)
-            continue
-        classification = classify_resolved_market_residual(
-            position,
-            residual_metadata["resolved_market"],
-            direct_truth_snapshot,
-            issue_link=residual_metadata.get("issue_link"),
-            ledger_link=residual_metadata.get("ledger_link"),
-            post_redeem_recheck_plan=residual_metadata.get("post_redeem_recheck_plan"),
-        )
-        classification_payload = asdict(classification)
-        if classification.live_readiness_blocker:
-            blocked_residual_classifications.append({"position": position, "classification": classification_payload})
-            active_open_positions.append(position)
-        else:
-            documented_residual_positions.append({"position": position, "classification": classification_payload})
-    return {
-        "active_open_positions": active_open_positions,
-        "documented_residual_positions": documented_residual_positions,
-        "blocked_residual_classifications": blocked_residual_classifications,
-    }
-
-
-def _settlement_residual_metadata(position: dict[str, Any]) -> dict[str, Any] | None:
-    residual = position.get("settlement_residual")
-    residual_metadata = residual if isinstance(residual, dict) else {}
-    resolved_market = residual_metadata.get("resolved_market")
-    if not isinstance(resolved_market, dict):
-        resolved_market = position.get("resolved_market")
-    if not isinstance(resolved_market, dict):
-        resolved_market = _resolved_market_from_position(position, residual_metadata)
-    if not isinstance(resolved_market, dict):
-        return None
-
-    issue_link = (
-        residual_metadata.get("issue_link")
-        or residual_metadata.get("github_issue")
-        or position.get("settlement_issue_link")
-        or position.get("issue_link")
-    )
-    ledger_link = (
-        residual_metadata.get("ledger_link")
-        or residual_metadata.get("settlement_ledger_link")
-        or position.get("settlement_ledger_link")
-        or position.get("ledger_link")
-    )
-    post_redeem_recheck_plan = (
-        residual_metadata.get("post_redeem_recheck_plan")
-        or residual_metadata.get("recheck_plan")
-        or position.get("post_redeem_recheck_plan")
-        or position.get("settlement_recheck_plan")
-    )
-    return {
-        "resolved_market": resolved_market,
-        "issue_link": issue_link,
-        "ledger_link": ledger_link,
-        "post_redeem_recheck_plan": post_redeem_recheck_plan,
-    }
-
-
-def _resolved_market_from_position(position: dict[str, Any], residual_metadata: dict[str, Any]) -> dict[str, Any] | None:
-    if not bool(
-        residual_metadata.get("market_resolved")
-        or residual_metadata.get("resolved")
-        or position.get("market_resolved")
-        or position.get("resolved")
-    ):
-        return None
-    token_id = str(position.get("token_id") or position.get("asset_id") or position.get("asset") or "").strip()
-    payout = residual_metadata.get("payout_per_share")
-    if payout is None:
-        payout = position.get("payout_per_share")
-    payouts = residual_metadata.get("payouts") or position.get("payouts")
-    if not isinstance(payouts, dict) and token_id and payout is not None:
-        payouts = {token_id: payout}
-    resolved_market = {
-        "resolved": True,
-        "condition_id": residual_metadata.get("condition_id") or position.get("condition_id") or position.get("market"),
-        "market_slug": residual_metadata.get("market_slug") or position.get("market_slug") or position.get("event_slug"),
-        "winning_token_id": residual_metadata.get("winning_token_id") or position.get("winning_token_id"),
-    }
-    if isinstance(payouts, dict):
-        resolved_market["payouts"] = payouts
-    expected_payout = residual_metadata.get("expected_payout_usd") or position.get("expected_payout_usd")
-    if expected_payout is not None:
-        resolved_market["expected_payout_usd"] = expected_payout
-    return resolved_market
 
 
 def _plan_outcome_lookup(plan: dict[str, Any]) -> dict[str, dict[str, str]]:
