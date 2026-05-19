@@ -358,15 +358,62 @@ def test_live_monitor_endpoint_exposes_current_event_inventory_pytest(tmp_path, 
                 "open_orders": {
                     "ok": True,
                     "orders": [
-                        {"id": "0xevent", "token_id": "token-1", "side": "BUY", "price": 0.28, "size": 20},
-                        {"id": "0xother", "token_id": "token-other", "side": "BUY", "price": 0.2, "size": 20},
+                        {
+                            "id": "0xevent",
+                            "market": "condition-123",
+                            "token_id": "token-1",
+                            "side": "BUY",
+                            "price": 0.28,
+                            "size": 20,
+                        },
+                        {
+                            "id": "0xsibling",
+                            "market": "condition-123",
+                            "token_id": "token-sibling",
+                            "side": "SELL",
+                            "price": 0.33,
+                            "size": 27.27,
+                        },
+                        {
+                            "id": "0xother",
+                            "market": "condition-other",
+                            "token_id": "token-other",
+                            "side": "BUY",
+                            "price": 0.2,
+                            "size": 20,
+                        },
                     ],
                 },
-                "open_positions": {"ok": True, "positions": []},
+                "open_positions": {
+                    "ok": True,
+                    "positions": [
+                        {
+                            "asset": "token-sibling",
+                            "condition_id": "condition-123",
+                            "event_slug": "event-123-slug",
+                            "outcome": "Other side",
+                            "size": 27.2744,
+                        },
+                        {
+                            "asset": "token-other",
+                            "condition_id": "condition-other",
+                            "event_slug": "other-event",
+                            "outcome": "Other event",
+                            "size": 5,
+                        },
+                    ],
+                },
                 "current_token_trades": {
                     "ok": True,
                     "trades": [
-                        {"id": "trade-1", "asset_id": "token-1", "side": "BUY", "price": 0.31, "size": 32.25}
+                        {
+                            "id": "trade-1",
+                            "asset_id": "token-1",
+                            "market": "condition-123",
+                            "side": "BUY",
+                            "price": 0.31,
+                            "size": 32.25,
+                        }
                     ],
                 },
             },
@@ -376,6 +423,7 @@ def test_live_monitor_endpoint_exposes_current_event_inventory_pytest(tmp_path, 
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = fake_db_connection
     plan_payload = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+    plan_payload["context_summary"]["event_slug"] = "event-123-slug"
 
     try:
         submit_response = client.post(
@@ -398,14 +446,17 @@ def test_live_monitor_endpoint_exposes_current_event_inventory_pytest(tmp_path, 
     assert response.status_code == 202
     inventory = response.json()["current_event_inventory"]
     assert inventory["schema_version"] == "live_monitor_current_event_inventory_v1"
-    assert inventory["open_order_count"] == 1
-    assert inventory["open_position_count"] == 0
+    assert inventory["open_order_count"] == 2
+    assert inventory["open_position_count"] == 1
     assert inventory["trade_count"] == 1
     assert inventory["unresolved_inventory_present"] is True
     item = inventory["items"][0]
     assert item["event_id"] == "event-123"
     assert item["token_ids"] == ["token-1"]
-    assert item["open_orders"][0]["id"] == "0xevent"
+    assert item["condition_ids"] == ["condition-123"]
+    assert item["event_slugs"] == ["event-123-slug"]
+    assert [order["id"] for order in item["open_orders"]] == ["0xevent", "0xsibling"]
+    assert item["open_positions"][0]["asset"] == "token-sibling"
     assert item["trades"][0]["id"] == "trade-1"
 
 

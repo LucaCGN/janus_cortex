@@ -2922,9 +2922,31 @@ def _build_live_monitor_current_event_inventory(
             )
             continue
         token_ids = set(_strategy_plan_token_ids(plan))
-        open_orders = [to_jsonable(order) for order in raw_orders if _direct_item_token_id(order) in token_ids]
-        open_positions = [to_jsonable(position) for position in raw_positions if _direct_item_token_id(position) in token_ids]
-        trades = [to_jsonable(trade) for trade in raw_trades if _direct_item_token_id(trade) in token_ids]
+        event_slugs = set(_strategy_plan_event_slugs(plan))
+        condition_ids = _direct_condition_ids_for_event_scope(
+            raw_orders=raw_orders,
+            raw_positions=raw_positions,
+            raw_trades=raw_trades,
+            token_ids=token_ids,
+            event_slugs=event_slugs,
+        )
+        open_orders = [
+            to_jsonable(order)
+            for order in raw_orders
+            if _direct_item_matches_current_event(order, token_ids=token_ids, condition_ids=condition_ids, event_slugs=event_slugs)
+        ]
+        open_positions = [
+            to_jsonable(position)
+            for position in raw_positions
+            if _direct_item_matches_current_event(
+                position, token_ids=token_ids, condition_ids=condition_ids, event_slugs=event_slugs
+            )
+        ]
+        trades = [
+            to_jsonable(trade)
+            for trade in raw_trades
+            if _direct_item_matches_current_event(trade, token_ids=token_ids, condition_ids=condition_ids, event_slugs=event_slugs)
+        ]
         open_order_count = len(open_orders)
         open_position_count = len(open_positions)
         trade_count = len(trades)
@@ -2937,6 +2959,8 @@ def _build_live_monitor_current_event_inventory(
                 "plan_event_id": plan_event_id,
                 "status": "recorded",
                 "token_ids": sorted(token_ids),
+                "condition_ids": sorted(condition_ids),
+                "event_slugs": sorted(event_slugs),
                 "open_order_count": open_order_count,
                 "open_position_count": open_position_count,
                 "trade_count": trade_count,
@@ -2981,6 +3005,49 @@ def _strategy_plan_token_ids(plan: dict[str, Any]) -> list[str]:
     return token_ids
 
 
+def _strategy_plan_event_slugs(plan: dict[str, Any]) -> list[str]:
+    context = plan.get("context_summary") if isinstance(plan.get("context_summary"), dict) else {}
+    raw_values = [context.get("event_slug"), plan.get("event_slug")]
+    return _normalized_unique_values([str(value) for value in raw_values if value])
+
+
+def _direct_condition_ids_for_event_scope(
+    *,
+    raw_orders: list[Any],
+    raw_positions: list[Any],
+    raw_trades: list[Any],
+    token_ids: set[str],
+    event_slugs: set[str],
+) -> set[str]:
+    condition_ids: set[str] = set()
+    for item in [*raw_orders, *raw_positions, *raw_trades]:
+        token_id = _direct_item_token_id(item)
+        event_slug = _direct_item_event_slug(item)
+        if token_id not in token_ids and (not event_slug or event_slug not in event_slugs):
+            continue
+        condition_id = _direct_item_condition_id(item)
+        if condition_id:
+            condition_ids.add(condition_id)
+    return condition_ids
+
+
+def _direct_item_matches_current_event(
+    item: Any,
+    *,
+    token_ids: set[str],
+    condition_ids: set[str],
+    event_slugs: set[str],
+) -> bool:
+    token_id = _direct_item_token_id(item)
+    if token_id and token_id in token_ids:
+        return True
+    condition_id = _direct_item_condition_id(item)
+    if condition_id and condition_id in condition_ids:
+        return True
+    event_slug = _direct_item_event_slug(item)
+    return bool(event_slug and event_slug in event_slugs)
+
+
 def _direct_item_token_id(item: Any) -> str:
     if not isinstance(item, dict):
         item = getattr(item, "__dict__", {}) or {}
@@ -2988,6 +3055,25 @@ def _direct_item_token_id(item: Any) -> str:
         value = item.get(key)
         if value is not None and str(value).strip():
             return str(value).strip()
+    return ""
+
+
+def _direct_item_condition_id(item: Any) -> str:
+    if not isinstance(item, dict):
+        item = getattr(item, "__dict__", {}) or {}
+    for key in ("condition_id", "conditionId", "market"):
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _direct_item_event_slug(item: Any) -> str:
+    if not isinstance(item, dict):
+        item = getattr(item, "__dict__", {}) or {}
+    value = item.get("event_slug")
+    if value is not None and str(value).strip():
+        return str(value).strip()
     return ""
 
 
