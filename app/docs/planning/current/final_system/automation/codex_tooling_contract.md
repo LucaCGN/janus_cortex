@@ -50,6 +50,25 @@ They may place, cancel, replace, close, or open positions only when all gates ar
 
 If any gate is missing, the tool must return a management plan or blocker and must not prepare, sign, submit, cancel, or replace an order.
 
+## Resolved-Market Redemption Gate
+
+Resolved-market redemption is separate from the CLOB order path. It claims collateral from a resolved conditional-token market; it is not a market buy, sell, close, cancel, or replace action.
+
+`codex_tools/polymarket/` may add a redeem preview and, later, a gated execution path only under [#58](https://github.com/LucaCGN/janus_cortex/issues/58). Until that implementation is complete, tools must treat redemption as preview/blocker state only.
+
+A non-dry-run redeem path must require all of these gates:
+
+1. Fresh direct account truth proves the position still exists and is not a stale mirror.
+2. Direct market/token truth resolves condition id, token id, outcome index, resolved outcome, payout status, expected proceeds, and zero-value losing cases.
+3. Direct open-order truth proves there are no event-scoped open orders or fill ambiguities for the same market.
+4. Wallet, chain, signer, gas/fee, and collateral readiness are explicitly checked.
+5. Kill-switch status is checked and permissive.
+6. A local durable settlement ledger row is prewritten with an idempotency key, expected payout, source evidence, and post-redeem reconciliation plan.
+7. Explicit Janus+Codex operator approval config is true for redemption. This approval is a system gate, not an ad hoc human chat instruction.
+8. Post-redeem direct account/CLOB reconciliation updates Janus and the local ledger before the residual is treated as cleared.
+
+If any gate is missing, the tool must return a redeem preview or blocker and must not prepare, sign, submit, or broadcast a redemption transaction.
+
 ## Grid-Service Preview Tools
 
 The first approved grid surface is `codex_tools/polymarket preview-grid-service`. It reads a direct account snapshot and produces inert candidates for one-cent sell/rebuy grids on ongoing positions that have meaningful movement, including global categories and basketball markets outside the covered NBA/WNBA Janus modules.

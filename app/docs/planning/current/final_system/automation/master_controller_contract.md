@@ -105,6 +105,8 @@ During an active covered NBA/WNBA live game, the controller is also a game/marke
 
 After a covered NBA/WNBA game reaches final or settlement, unresolved event-scoped direct CLOB orders, positions, fills, or valuation mismatches are live-readiness blockers for the next event. They must route to a settlement/reconciliation issue before any new worker enablement or new live-order test. The 2026-05-18 Spurs/Thunder residual Thunder order/position is owned by [#57](https://github.com/LucaCGN/janus_cortex/issues/57), while [#50](https://github.com/LucaCGN/janus_cortex/issues/50) remains scoped to WNBA passive capture and shadow backtests.
 
+Resolved-market `Redeem` is a settlement capability, not a normal close/sell order. The controller must not execute redemption itself. It may route implementation to [#58](https://github.com/LucaCGN/janus_cortex/issues/58), record a documented residual classification, or require a redeem preview. A documented residual requires fresh direct account/CLOB truth, resolved market/token/outcome state, expected payout/current value, no event-scoped open orders, ledger or issue linkage, and a post-redeem/recheck plan. Once those gates prove a zero-value losing residual or redeemable settlement row is not active exposure, Janus should keep operating with the unredeemed row rather than blocking unrelated new-game readiness. Non-dry-run redemption requires explicit Janus+Codex operator approval gates and must never be inferred from screenshots, chat memory, Obsidian, or stale mirrors.
+
 ## Operating Modes
 
 | Mode | Trigger | Allowed Work |

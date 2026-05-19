@@ -29,6 +29,7 @@ The portfolio manager must also route through the correct Codex tool surface:
 - Direct Polymarket fallback work uses target `codex_tools/polymarket/*`, not Janus API, when Janus is degraded and the independent execution gate is implemented and approved.
 - The target split is governed by `automation/codex_tooling_contract.md` and GitHub issue `#53`.
 - Concrete non-dry-run portfolio execution beyond preview/ledger planning is tracked separately in GitHub issue `#54`.
+- Resolved-market redemption and unredeemed residual tolerance are tracked separately in GitHub issue `#58`.
 
 ## Scope Boundary
 
@@ -75,6 +76,8 @@ For positions that already exist in direct CLOB/account truth, the portfolio man
 - preserve a ledger trail for why a target was placed, cancelled, replaced, or left unchanged
 
 The default action for unmatched open positions is to produce a target-policy decision, not to blindly trade.
+
+Resolved positions require a separate settlement classification. If a direct account row is only an unredeemed resolved-market residual, the manager should classify it as `redeemable_residual`, `zero_value_residual`, or `unknown_settlement_state` instead of treating it as a normal open trading position. `zero_value_residual` and `redeemable_residual` may remain held while the app continues unrelated work only when direct account/CLOB truth, resolved market/token/outcome state, expected payout/current value, no direct open orders, and ledger or GitHub issue linkage are recorded. Non-dry-run redemption belongs to the [#58](https://github.com/LucaCGN/janus_cortex/issues/58) gate and requires Janus+Codex approval, not chat-memory approval.
 
 ### Trend-Opportunity Scouting
 
@@ -128,6 +131,8 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
 Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but a live call still requires the full proof bundle below, `execution_approved=true`, reviewer metadata, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, and runtime activation of the latest API code. Direct fallback remains plan-only until separately approved.
+
+Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 
 ### Concrete `#54` Proof Bundle
 
