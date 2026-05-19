@@ -1329,6 +1329,58 @@ def test_portfolio_manager_order_management_ready_plan_stays_preview_only_pytest
     assert preview["side_effects"]["orders_prepared"] is False
 
 
+def test_portfolio_manager_order_management_preview_reports_runtime_activation_gate_pytest(monkeypatch) -> None:
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+    monkeypatch.delenv(portfolio_router._PORTFOLIO_MANAGER_RUNTIME_FLAG, raising=False)
+
+    try:
+        disabled_response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+                "dry_run": True,
+            },
+        )
+        monkeypatch.setenv(portfolio_router._PORTFOLIO_MANAGER_RUNTIME_FLAG, "true")
+        enabled_response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+                "dry_run": True,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert disabled_response.status_code == 200
+    disabled_runtime = disabled_response.json()["order_management_preview"]["runtime_activation"]
+    assert disabled_runtime == {
+        "schema_version": "portfolio_manager_runtime_activation_v1",
+        "runtime_flag": "JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED",
+        "enabled": False,
+        "required_value": "true",
+        "required_for_non_dry_run": True,
+        "request_execution_approval_bypasses_runtime_flag": False,
+        "dry_run_only_when_disabled": True,
+        "order_preparation_attempted": False,
+        "order_submission_attempted": False,
+    }
+    assert disabled_response.json()["order_management_preview"]["order_management_call_accepted"] is True
+
+    assert enabled_response.status_code == 200
+    enabled_runtime = enabled_response.json()["order_management_preview"]["runtime_activation"]
+    assert enabled_runtime["enabled"] is True
+    assert enabled_runtime["dry_run_only_when_disabled"] is False
+    assert enabled_runtime["request_execution_approval_bypasses_runtime_flag"] is False
+    assert enabled_response.json()["order_management_preview"]["side_effects"]["orders_prepared"] is False
+
+
 def test_portfolio_manager_order_management_rejects_non_dry_run_pytest() -> None:
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())

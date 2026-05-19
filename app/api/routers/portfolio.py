@@ -73,6 +73,21 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _portfolio_manager_runtime_activation_state() -> dict[str, Any]:
+    enabled = _env_bool(_PORTFOLIO_MANAGER_RUNTIME_FLAG, False)
+    return {
+        "schema_version": "portfolio_manager_runtime_activation_v1",
+        "runtime_flag": _PORTFOLIO_MANAGER_RUNTIME_FLAG,
+        "enabled": enabled,
+        "required_value": "true",
+        "required_for_non_dry_run": True,
+        "request_execution_approval_bypasses_runtime_flag": False,
+        "dry_run_only_when_disabled": not enabled,
+        "order_preparation_attempted": False,
+        "order_submission_attempted": False,
+    }
+
+
 def _portfolio_manager_order_management_enabled_or_raise() -> None:
     if not _env_bool(_PORTFOLIO_MANAGER_RUNTIME_FLAG, False):
         raise HTTPException(
@@ -671,6 +686,7 @@ def build_portfolio_manager_order_management_preview(
         "issue": plan.issue,
         "action": plan.action,
         "status": status_value,
+        "runtime_activation": _portfolio_manager_runtime_activation_state(),
         "approved_order_management_call_available": True,
         "order_management_call_accepted": gate_ready,
         "concrete_adapter_proof": {
