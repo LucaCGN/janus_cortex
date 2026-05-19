@@ -93,6 +93,22 @@ If the command returns `blocked_stale_lock`, a stale claim exists. The controlle
 
 If the command returns `blocked_dirty_worktree`, the shared worktree is dirty before ownership is established. The controller must stop or switch to review-only unless the dirty paths are explicitly owned by the active claim.
 
+## Dirty Worktree Cleanup Rule
+
+Dirty tracked files are a queue state, not background noise.
+
+When `git status --short` shows tracked modifications and `python tools/controller_queue.py status` shows no active owning lock:
+
+1. Classify the pass as `YELLOW` process drift unless an urgent live-safety issue outranks it.
+2. Do not claim unrelated development work.
+3. Map every dirty path to the issue/persona that produced or should own it.
+4. If the paths are coherent and validated, commit and push them before continuing.
+5. If the paths are mixed but entangled at file level, create one explicit stabilization commit that names all covered issue scopes and records why finer splitting would misrepresent the state.
+6. If ownership is unclear or user edits may be present, stop and request operator review instead of committing.
+7. Add no repeated GitHub comments or handoff blocks for unrelated open issues until the dirty state is resolved.
+
+An active lock may own dirty paths only when the lock scope names the files/modules/issues and carries a next validation/commit command. Released locks must not leave tracked dirty files behind.
+
 When work finishes, release the lock:
 
 ```powershell
@@ -114,7 +130,7 @@ Every issue-backed development pass should end in one of these states:
 | Outcome | Meaning |
 |---|---|
 | `implemented` | Code/docs/tests changed, validation passed, commit pushed, issue updated. |
-| `implemented_partial` | A named sub-slice was completed with commit, validation, and remaining scope. |
+| `implemented_partial` | A named sub-slice was completed with commit, validation, pushed evidence, and remaining scope. |
 | `blocked_once` | Exact blocker and next unblock action were recorded; repeat unchanged blockers should no-op. |
 | `handoff_ready` | File scope, next command, tests, and acceptance target are ready for the next development-agent pass. |
 | `no_material_change` | State unchanged; no new issue comment or full handoff should be written. |

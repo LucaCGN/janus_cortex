@@ -101,6 +101,8 @@ For NBA/WNBA test days, the controller must distinguish passive shadow capture f
 
 After an explicit operator-approved minimum-size covered-market order has been submitted through the Janus StrategyPlan execute path, the controller must preserve the current plan for monitoring but disable duplicate entries by revising the sleeve to post-order monitor-only (`shadow_only=true`, `entry_disabled=true`, live external order id recorded). The next pass should verify direct CLOB order/fill state, live game state, target/stop/rebuy policy, and reconciliation evidence before any new entry or worker start.
 
+During an active covered NBA/WNBA live game, the controller is also a game/market analyst for Janus infrastructure. It must keep the newest machine-readable live checkpoint fresh enough for the current phase and summarize score/clock/period, market movement, direct CLOB current-event inventory, pending intents, LLM/runtime triggers, and blockers. No-change compression must not suppress this checkpoint when the prior artifact is stale, lacks direct current-event inventory, or conflicts with fresher evidence.
+
 ## Operating Modes
 
 | Mode | Trigger | Allowed Work |
@@ -119,11 +121,14 @@ After an explicit operator-approved minimum-size covered-market order has been s
 During active games, no backlog development should run. Only these are allowed:
 
 - Live safety inspection.
+- Game/market analyst summaries that use Janus runtime, scoreboard, orderbook, and direct CLOB evidence.
 - Direct CLOB reconciliation.
 - Critical runtime patching.
 - StrategyPlanJSON revision or Codex fallback strategy work.
 - Event inventory adoption.
 - Issue creation for non-urgent defects.
+
+The live-monitor pass must prefer fresh runtime artifacts over automation memory. If the newest `live-monitor_*.json` lacks current-event inventory or shows only `live_strategy_worker_not_ready`, the controller should run or request a bounded dry live-strategy checkpoint so direct open orders, fills, and positions are visible before it reports inventory state.
 
 ## Internal LLM Failure Rule
 
@@ -165,6 +170,20 @@ python tools/controller_queue.py release --lock-id <lock_id> --outcome implement
 
 After any commit, the acting persona must pull/rebase or fast-forward if needed and push the branch to GitHub. GitHub is the operator's current remote interaction surface.
 
+## Dirty Worktree Completion Gate
+
+The shared repo must not accumulate uncommitted issue-backed work across released locks.
+
+At the beginning and end of every controller pass, inspect tracked git status and queue locks:
+
+- If tracked files are dirty before a new claim and no active lock owns those paths, do not start unrelated implementation. Route to `development-end-phase` or `master-controller` cleanup.
+- If dirty paths span multiple issues or personas, classify the pass as `YELLOW` process drift, map paths to issue scope, and run validation for the smallest coherent slice.
+- If validation passes and ownership is clear, commit and push the coherent slice. If ownership is unclear or the slice includes operator/user edits that cannot be safely attributed, stop and request operator review.
+- Do not keep adding GitHub comments, handoff blocks, or runtime artifacts for unrelated issues while dirty mixed-scope work is unresolved.
+- Live safety still outranks cleanup, but only for the narrow live intervention. After the live fix, cleanup becomes the next required action.
+
+A development slice is not complete merely because tests passed. It is complete only when pushed, or when any remaining dirty files are explicitly owned by an active lock with a documented next validation/commit command.
+
 ## Issue Progress Discipline
 
 The controller must not confuse issue commentary with issue progress.
@@ -205,6 +224,10 @@ If the previous pass already recorded the same mode, API/service state, queue de
 - Return a quiet heartbeat summary instead.
 - Optionally append a compact pass-ledger entry with `tools/controller_queue.py ledger` when the no-op state matters for later review.
 - Only write files when there is a material change, a missing required artifact, a scheduled health checkpoint, or a transition toward live/pregame/postgame/development mode.
+
+During active covered live games, scoreboard phase changes, meaningful orderbook movement, direct CLOB order/fill/position changes, LLM/runtime triggers, and stale or incomplete live artifacts are material. A quiet no-op is valid only after the latest live checkpoint is fresh and includes current-event inventory.
+
+Dirty tracked files without an active owning lock are also material. No-change compression cannot hide a dirty mixed-scope worktree.
 
 Material changes include:
 

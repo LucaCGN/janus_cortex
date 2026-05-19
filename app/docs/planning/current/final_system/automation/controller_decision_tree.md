@@ -44,16 +44,17 @@ The controller should record:
 | Rank | Condition | Persona |
 |---:|---|---|
 | 1 | Direct CLOB/current-event inventory unsafe, cost runaway, stale live worker, or unclear live-money state | `live-monitor-analyst` or `pregame-integrity` |
-| 2 | Active Janus-controlled live event | `live-monitor-analyst` |
-| 3 | Closed event lacks postgame review or reconciliation | `postgame-reviewer` |
-| 4 | Upcoming event lacks integrity gate | `pregame-integrity` |
-| 5 | Upcoming event passed integrity but lacks plan/watchpoints | `pregame-planner` |
-| 6 | Development task is claimed or review-ready | `development-agent` or `development-end-phase` |
-| 7 | Backlog/issue taxonomy/queue missing or stale | `issue-backlog-manager` |
-| 8 | Source-of-truth docs or Obsidian indexes stale | `docs-memory-agent` |
-| 9 | Codex global portfolio management/scouting pass is due and no higher-priority live safety or NBA/WNBA readiness task is active | `codex-global-portfolio-agent` / `global-portfolio-agent` alias |
-| 10 | New market/domain idea needs classification | `future-domain-research-agent` or `profile-research-agent` |
-| 11 | No material state change | `master-controller` no-op |
+| 2 | Active Janus-controlled live event, including stale or incomplete live evidence | `live-monitor-analyst` |
+| 3 | Dirty tracked worktree exists without an active owning lock and no live safety issue outranks it | `development-end-phase` or `master-controller` cleanup |
+| 4 | Closed event lacks postgame review or reconciliation | `postgame-reviewer` |
+| 5 | Upcoming event lacks integrity gate | `pregame-integrity` |
+| 6 | Upcoming event passed integrity but lacks plan/watchpoints | `pregame-planner` |
+| 7 | Development task is claimed or review-ready | `development-agent` or `development-end-phase` |
+| 8 | Backlog/issue taxonomy/queue missing or stale | `issue-backlog-manager` |
+| 9 | Source-of-truth docs or Obsidian indexes stale | `docs-memory-agent` |
+| 10 | Codex global portfolio management/scouting pass is due and no higher-priority live safety or NBA/WNBA readiness task is active | `codex-global-portfolio-agent` / `global-portfolio-agent` alias |
+| 11 | New market/domain idea needs classification | `future-domain-research-agent` or `profile-research-agent` |
+| 12 | No material state change | `master-controller` no-op |
 
 Safety and live event state override backlog progress.
 
@@ -69,10 +70,20 @@ The 2026-05-18 bootstrap pass performed the first repo-local reconciliation and 
 
 | Lifecycle | Rule |
 |---|---|
-| `live` | No broad development. Monitor, reconcile, issue-create, or patch only critical failures. |
+| `live` | No broad development. Monitor, reconcile, issue-create, run bounded game/market analysis for Janus infrastructure, or patch only critical failures. |
 | `pregame` | Integrity precedes planning. Planning does not place orders. |
 | `postgame` | Review/reconciliation precedes development planning unless a P0 safety bug blocks all work. |
 | `settlement` | Direct CLOB/account truth must be reconciled before performance claims. |
+
+## Active Live-Game Analyst Rules
+
+When a covered NBA/WNBA game is live, the controller should not behave like a generic no-op scheduler. It should route to `live-monitor-analyst` and produce or inspect a fresh checkpoint that can support Janus decisions:
+
+1. Freshness: prefer the newest machine-readable runtime artifact under `local/shared/artifacts/ops/<session_date>/`, plus the newest LLM-runtime artifact for the event. If the latest artifact predates the current phase, lacks direct current-event inventory, or conflicts with newer handoff evidence, run a bounded dry live-monitor/live-strategy checkpoint before reporting state.
+2. Required live checkpoint fields: game status, period, clock, score, sampled orderbook bid/ask/spread, direct CLOB current-event open orders, open positions, recent fills/trades, pending intents, StrategyPlan gate, worker state, LLM/runtime trigger state, and live blockers.
+3. Analyst output: summarize what changed in the game and market, what that implies for current Janus posture, whether any safety/strategy bug blocks monitoring, and the next safe action. This is allowed even when no orders are authorized.
+4. No stale-flat summaries: do not say the event inventory is flat from memory or an older artifact if a newer direct-CLOB artifact shows open orders, fills, or positions. Direct CLOB evidence in the newest relevant artifact wins over automation memory, handoffs, GitHub comments, or screenshots.
+5. If a live bug prevents fresh evidence generation, route to a critical live bug patch with the smallest file scope and focused tests. Do not defer to broad backlog development until live evidence is trustworthy.
 
 ## Sports Readiness Live-Test Rules
 
@@ -84,6 +95,7 @@ On an NBA/WNBA test day, repeated passive capture is not enough when the blocker
 4. After a minimum-size live order is submitted, immediately revise the current StrategyPlanJSON into post-order monitor-only mode with `shadow_only=true`, `entry_disabled=true`, and the live external order id. The next controller pass should monitor order status, live game state, target/stop/rebuy policy, and reconciliation evidence; it must not duplicate the buy.
 5. At event start, Polymarket may clear/cancel resting orders. After start time, local submitted/open rows are advisory only: the controller must re-prove direct CLOB open orders or fills before treating a pregame buy or target as live. Missing direct CLOB orders after start should be classified as event-start expiry, not as pending exposure.
 6. UUID catalog event ids must resolve through the catalog-linked NBA game id before live monitoring is considered complete. A live tick that reports `event_id_not_parseable` for a UUID covered event is a tooling blocker, not a trading signal.
+7. Live-monitor artifacts must expose current-event inventory, not only worker readiness. If `live_execution_evidence.items` is empty because the worker is stopped, the controller still needs direct CLOB event inventory from the monitor artifact or a bounded dry live-strategy tick.
 
 ## Global Portfolio Rules
 
@@ -128,11 +140,13 @@ Development may proceed only when:
 - no live event requires attention
 - no postgame/reconciliation blocker is pending
 - task is issue-backed or explicitly docs/bootstrap scoped
-- write locks are clear
+- write locks are clear and tracked dirty paths are either absent or explicitly owned by the active lock
 - tests/validation expectations are known
 - live-order impact is explicit
 
 Write locks are clear only when `python tools/controller_queue.py claim` succeeds for the selected issue and write scope. Duplicate active locks block the pass. Stale active locks are review blockers, not permission to overwrite. A dirty shared worktree before the claim blocks implementation unless the dirty files are already owned by the active claim.
+
+If a controller pass observes dirty tracked files after a lock was released or with no active lock, the next action is cleanup, not new feature work. The cleanup pass must map files to issues, run relevant validation, and either commit/push coherent slices or record a concrete operator-review blocker. Repeated issue comments while such a dirty mixed scope exists are `YELLOW` process drift.
 
 ## Issue Progress Rules
 
@@ -160,3 +174,7 @@ The controller should no-op when:
 No-op is a valid successful controller pass.
 
 For reviewability without noise, use `python tools/controller_queue.py ledger --outcome no_material_change` when the no-op explains why a high-priority issue was not advanced.
+
+Live-game exception: a live window is not a no-op merely because inventory did not change. If the game clock, period, score, orderbook, fills, LLM trigger state, or runtime evidence freshness changed, that is material live-monitor state. If none changed but the last checkpoint is stale or missing direct current-event inventory, generate a fresh checkpoint before no-op compression.
+
+Dirty-worktree exception: a pass with dirty tracked files and no active owning lock is not a no-op. It must route to cleanup/review unless an urgent live safety issue requires a narrower intervention first.

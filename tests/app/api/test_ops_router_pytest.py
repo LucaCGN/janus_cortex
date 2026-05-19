@@ -338,6 +338,77 @@ def test_live_monitor_endpoint_passes_current_plan_tokens_to_integrity_pytest(tm
     ]
 
 
+def test_live_monitor_endpoint_exposes_current_event_inventory_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    fake_connection = object()
+
+    def fake_db_connection():
+        yield fake_connection
+
+    monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
+    monkeypatch.setattr(
+        ops_router,
+        "build_integrity_snapshot",
+        lambda connection, *, account_id=None, direct_trade_token_ids=None: {
+            "ready_for_live_minimum_orders": True,
+            "direct_clob": {
+                "ok": True,
+                "open_order_count": 2,
+                "open_orders": {
+                    "ok": True,
+                    "orders": [
+                        {"id": "0xevent", "token_id": "token-1", "side": "BUY", "price": 0.28, "size": 20},
+                        {"id": "0xother", "token_id": "token-other", "side": "BUY", "price": 0.2, "size": 20},
+                    ],
+                },
+                "open_positions": {"ok": True, "positions": []},
+                "current_token_trades": {
+                    "ok": True,
+                    "trades": [
+                        {"id": "trade-1", "asset_id": "token-1", "side": "BUY", "price": 0.31, "size": 32.25}
+                    ],
+                },
+            },
+        },
+    )
+
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+    plan_payload = _strategy_plan_payload(event_id="event-123", market_id="market-123")
+
+    try:
+        submit_response = client.post(
+            "/v1/ops/pregame-plan",
+            json={
+                "session_date": "2026-05-11",
+                "event_ids": ["event-123"],
+                "source": "pytest",
+                "strategy_plans": [plan_payload],
+            },
+        )
+        response = client.post(
+            "/v1/ops/live-monitor",
+            json={"session_date": "2026-05-11", "event_ids": ["event-123"], "account_id": "account-123", "source": "pytest"},
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert submit_response.status_code == 202
+    assert response.status_code == 202
+    inventory = response.json()["current_event_inventory"]
+    assert inventory["schema_version"] == "live_monitor_current_event_inventory_v1"
+    assert inventory["open_order_count"] == 1
+    assert inventory["open_position_count"] == 0
+    assert inventory["trade_count"] == 1
+    assert inventory["unresolved_inventory_present"] is True
+    item = inventory["items"][0]
+    assert item["event_id"] == "event-123"
+    assert item["token_ids"] == ["token-1"]
+    assert item["open_orders"][0]["id"] == "0xevent"
+    assert item["trades"][0]["id"] == "trade-1"
+
+
 def test_live_monitor_endpoint_returns_compact_microstructure_context_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

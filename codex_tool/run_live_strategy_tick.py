@@ -402,6 +402,15 @@ def _run_event_tick(
             len(((event_direct_clob_state.get("open_positions") or {}).get("positions") or [])),
         )
 
+    direct_open_order_mirror = _mirror_direct_open_orders_for_tick(
+        api_root=api_root,
+        account_id=account_id,
+        source=source,
+    )
+    portfolio_state["direct_open_order_mirror"] = direct_open_order_mirror
+    if direct_open_order_mirror.get("ok") is False:
+        portfolio_state["direct_open_order_mirror_failed"] = True
+
     pending_intents = _pending_intent_summary(
         api_root=api_root,
         account_id=account_id,
@@ -2174,6 +2183,49 @@ def _known_portfolio_order_external_ids(
         if external_order_id:
             ids.add(external_order_id)
     return {"ok": True, "source": f"{source}+current_strategy_plan", "external_order_ids": sorted(ids), "known_order_count": len(ids)}
+
+
+def _mirror_direct_open_orders_for_tick(
+    *,
+    api_root: str,
+    account_id: str,
+    source: str,
+) -> dict[str, Any]:
+    result = api_json(
+        api_root,
+        "POST",
+        "/v1/portfolio/orders/direct-open-mirror",
+        query={
+            "account_id": account_id,
+            "dry_run": "false",
+            "reviewed_by": "codex-live-monitor",
+            "reason": f"{source} pre-classification direct CLOB open-order mirror",
+        },
+        timeout=60,
+    )
+    if result.get("ok") is False:
+        return {
+            "ok": False,
+            "status": "failed",
+            "source": "/v1/portfolio/orders/direct-open-mirror",
+            "error": result.get("error") or result.get("status_code") or result,
+        }
+    mirror = result.get("direct_open_order_mirror") if isinstance(result.get("direct_open_order_mirror"), dict) else {}
+    applied = result.get("applied") if isinstance(result.get("applied"), list) else []
+    return {
+        "ok": True,
+        "status": result.get("status") or "applied",
+        "source": "/v1/portfolio/orders/direct-open-mirror",
+        "direct_order_count": mirror.get("direct_order_count"),
+        "eligible_upsert_count": mirror.get("eligible_upsert_count"),
+        "review_required_count": mirror.get("review_required_count"),
+        "applied_count": len(applied),
+        "applied_external_order_ids": sorted(
+            str(item.get("external_order_id") or "").strip().lower()
+            for item in applied
+            if isinstance(item, dict) and str(item.get("external_order_id") or "").strip()
+        ),
+    }
 
 
 def _direct_open_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:

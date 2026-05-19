@@ -51,6 +51,8 @@ router = APIRouter(prefix="/v1/portfolio", tags=["portfolio"])
 
 _PROVIDER_NAMESPACE = uuid.UUID("41395777-ed5f-474f-a5b7-c97567f5ca56")
 _PORTFOLIO_SYNC_NAMESPACE = uuid.UUID("44ecb08d-f092-4a67-b542-c944bcf1c352")
+_PORTFOLIO_MANAGER_APPROVED_EXECUTION_PATH = "janus_portfolio_order_management"
+_PORTFOLIO_MANAGER_ADAPTER_NAME = "janus_portfolio_manager_order_management_v1"
 
 
 def _provider_uuid_for(code: str) -> str:
@@ -469,7 +471,7 @@ def build_direct_open_order_mirror_plan(
         size = _decimal_or_zero(_direct_order_value(item, "size", "original_size"))
         filled_size = _decimal_or_zero(_direct_order_value(item, "filled_size", "filledSize", "size_matched"))
         placed_at = _direct_order_timestamp(_direct_order_value(item, "created_at", "timestamp", "createdAt"), default=now)
-        updated_at = _direct_order_timestamp(_direct_order_value(item, "updated_at", "updatedAt"), default=now)
+        updated_at = _direct_order_timestamp(_direct_order_value(item, "updated_at", "updatedAt"), default=placed_at)
         order_id = _portfolio_sync_uuid_for("direct_open_order", account_id, external_order_id)
         actions.append(
             {
@@ -682,6 +684,349 @@ def build_portfolio_manager_order_management_preview(
             "orders_replaced": False,
             "orders_submitted": False,
             "orders_prepared": False,
+            "live_worker_started": False,
+        },
+    }
+
+
+def _portfolio_manager_gate_ready_or_raise(plan: GlobalPortfolioManagerActionPlan) -> None:
+    gate = plan.gate_snapshot
+    if (
+        plan.status != "ready_for_approved_order_management_call"
+        or not plan.execution_authorized
+        or not plan.order_preparation_authorized
+        or not gate.execution_authorized
+    ):
+        missing = list(gate.missing_gates)
+        detail = "portfolio-manager execution gates are not satisfied"
+        if missing:
+            detail = f"{detail}: {', '.join(missing)}"
+        raise HTTPException(status_code=422, detail=detail)
+    if gate.approved_execution_path != _PORTFOLIO_MANAGER_APPROVED_EXECUTION_PATH:
+        raise HTTPException(status_code=422, detail="approved_execution_path is not the Janus portfolio order-management path")
+    if gate.adapter_name != _PORTFOLIO_MANAGER_ADAPTER_NAME:
+        raise HTTPException(status_code=422, detail="adapter_name is not the approved portfolio-manager adapter")
+
+
+def _required_uuid_text(value: Any, field_name: str) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise HTTPException(status_code=422, detail=f"{field_name} is required")
+    try:
+        return str(UUID(raw))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=f"{field_name} must be a UUID") from exc
+
+
+def _required_decimal(value: Any, field_name: str) -> Decimal:
+    if value is None:
+        raise HTTPException(status_code=422, detail=f"{field_name} is required")
+    try:
+        decimal_value = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=f"{field_name} must be numeric") from exc
+    if not decimal_value.is_finite():
+        raise HTTPException(status_code=422, detail=f"{field_name} must be finite")
+    return decimal_value
+
+
+def _optional_proof_decimal(proof: dict[str, Any], *keys: str) -> Decimal | None:
+    for key in keys:
+        if proof.get(key) is not None:
+            return _required_decimal(proof.get(key), f"minimum_order_proof.{key}")
+    return None
+
+
+def _assert_requested_decimal_matches_proof(
+    *,
+    field_name: str,
+    requested_value: Decimal,
+    proof_value: Decimal | None,
+) -> None:
+    if proof_value is None:
+        return
+    if requested_value.quantize(Decimal("0.000001")) != proof_value.quantize(Decimal("0.000001")):
+        raise HTTPException(status_code=422, detail=f"requested_order.{field_name} does not match minimum_order_proof")
+
+
+def _normalize_portfolio_manager_requested_order(
+    *,
+    plan: GlobalPortfolioManagerActionPlan,
+    account_id: str | None,
+    requested_order: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if account_id is None:
+        raise HTTPException(status_code=422, detail="account_id is required when dry_run=false")
+
+    payload = dict(requested_order or {})
+    proof = dict(plan.gate_snapshot.minimum_order_proof or {})
+    side = str(payload.get("side") or proof.get("side") or "").strip().lower()
+    if side not in {"buy", "sell"}:
+        raise HTTPException(status_code=422, detail="requested_order.side must be buy or sell")
+    proof_side = str(proof.get("side") or "").strip().lower()
+    if proof_side and side != proof_side:
+        raise HTTPException(status_code=422, detail="requested_order.side does not match minimum_order_proof")
+
+    order_type = str(payload.get("order_type") or proof.get("order_type") or "limit").strip().lower()
+    if order_type != "limit":
+        raise HTTPException(status_code=422, detail="portfolio-manager live execution only supports limit orders")
+    proof_order_type = str(proof.get("order_type") or "").strip().lower()
+    if proof_order_type and proof_order_type != "limit":
+        raise HTTPException(status_code=422, detail="minimum_order_proof.order_type must be limit")
+
+    limit_price = _required_decimal(payload.get("limit_price", payload.get("price", proof.get("limit_price", proof.get("price")))), "requested_order.limit_price")
+    if limit_price <= 0 or limit_price > 1:
+        raise HTTPException(status_code=422, detail="requested_order.limit_price must be greater than 0 and at most 1")
+    size = _required_decimal(payload.get("size", proof.get("size")), "requested_order.size")
+    if size <= 0:
+        raise HTTPException(status_code=422, detail="requested_order.size must be greater than 0")
+
+    _assert_requested_decimal_matches_proof(
+        field_name="limit_price",
+        requested_value=limit_price,
+        proof_value=_optional_proof_decimal(proof, "limit_price", "price"),
+    )
+    _assert_requested_decimal_matches_proof(
+        field_name="size",
+        requested_value=size,
+        proof_value=_optional_proof_decimal(proof, "size"),
+    )
+    proof_notional = _optional_proof_decimal(proof, "notional_usd", "notional")
+    requested_notional = (limit_price * size).quantize(Decimal("0.000001"))
+    _assert_requested_decimal_matches_proof(
+        field_name="notional_usd",
+        requested_value=requested_notional,
+        proof_value=proof_notional,
+    )
+
+    token_id = str(payload.get("token_id") or plan.gate_snapshot.token_id or "").strip()
+    if not token_id:
+        raise HTTPException(status_code=422, detail="requested_order.token_id is required")
+    gate_token_id = str(plan.gate_snapshot.token_id or "").strip()
+    if gate_token_id and token_id != gate_token_id:
+        raise HTTPException(status_code=422, detail="requested_order.token_id does not match gate_snapshot.token_id")
+
+    market_id = _required_uuid_text(payload.get("market_id"), "requested_order.market_id")
+    outcome_id = None
+    if payload.get("outcome_id") is not None:
+        outcome_id = _required_uuid_text(payload.get("outcome_id"), "requested_order.outcome_id")
+    time_in_force = str(payload.get("time_in_force") or "gtc").strip().lower() or "gtc"
+
+    return {
+        "account_id": account_id,
+        "market_id": market_id,
+        "outcome_id": outcome_id,
+        "token_id": token_id,
+        "side": side,
+        "order_type": order_type,
+        "time_in_force": time_in_force,
+        "limit_price": limit_price,
+        "size": size,
+        "notional_usd": requested_notional,
+    }
+
+
+def _fetch_portfolio_manager_order_by_id(
+    connection: PsycopgConnection,
+    *,
+    order_id: str,
+) -> dict[str, Any] | None:
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            SELECT order_id, external_order_id, status, metadata_json
+            FROM portfolio.orders
+            WHERE order_id = %s
+            LIMIT 1;
+            """,
+            (order_id,),
+        )
+        return fetchone_dict(cursor)
+
+
+def apply_portfolio_manager_order_management_order(
+    connection: PsycopgConnection,
+    *,
+    action_plan: dict[str, Any],
+    account_id: str,
+    requested_order: dict[str, Any] | None,
+    reviewed_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    try:
+        plan = GlobalPortfolioManagerActionPlan.model_validate(action_plan)
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=to_jsonable(exc.errors())) from exc
+
+    _portfolio_manager_gate_ready_or_raise(plan)
+    normalized_order = _normalize_portfolio_manager_requested_order(
+        plan=plan,
+        account_id=account_id,
+        requested_order=requested_order,
+    )
+
+    idempotency_key = str(plan.gate_snapshot.idempotency_key or "").strip()
+    if not idempotency_key:
+        raise HTTPException(status_code=422, detail="gate_snapshot.idempotency_key is required")
+    order_id = _portfolio_sync_uuid_for("portfolio_manager_order", account_id, idempotency_key)
+
+    existing_order = _fetch_portfolio_manager_order_by_id(connection, order_id=order_id)
+    if existing_order is not None:
+        return {
+            "schema_version": "portfolio_manager_order_management_execution_v1",
+            "status": "idempotency_replayed",
+            "dry_run": False,
+            "order_id": str(existing_order["order_id"]),
+            "external_order_id": existing_order.get("external_order_id"),
+            "event_type": "portfolio_manager_place_idempotency_replayed",
+            "ledger_applied": False,
+            "execution_payload": {
+                "idempotency_key": idempotency_key,
+                "existing_order_status": existing_order.get("status"),
+            },
+            "side_effects": {
+                "orders_placed": False,
+                "orders_cancelled": False,
+                "orders_replaced": False,
+                "orders_submitted": False,
+                "orders_prepared": False,
+                "live_worker_started": False,
+            },
+        }
+
+    limits = load_order_risk_limits()
+    enforce_order_risk_limits(
+        size=float(normalized_order["size"]),
+        limit_price=float(normalized_order["limit_price"]),
+        order_type=normalized_order["order_type"],
+        limits=limits,
+    )
+    enforce_order_rate_limit(
+        account_id=UUID(account_id),
+        action="portfolio_manager_place_order",
+        max_ops_per_minute=limits.max_ops_per_minute,
+    )
+
+    _ensure_market_exists(connection, market_id=normalized_order["market_id"])
+    resolved_outcome_id = _validate_market_outcome_relation(
+        connection,
+        market_id=normalized_order["market_id"],
+        outcome_id=normalized_order["outcome_id"],
+    )
+    if resolved_outcome_id is None:
+        raise HTTPException(status_code=422, detail="requested_order.outcome_id is required when dry_run=false")
+
+    account = _fetch_account_wallet(connection, account_id=account_id)
+    ledger_preview = build_portfolio_manager_action_ledger_preview(
+        action_plan=action_plan,
+        account_id=account_id,
+    )
+    ledger_applied = apply_portfolio_manager_action_ledger(
+        connection,
+        preview=ledger_preview,
+        reviewed_by=reviewed_by,
+        reason=reason,
+    )
+
+    repo = JanusUpsertRepository(connection)
+    now = datetime.now(timezone.utc)
+    creds = PolymarketCredentials.from_env()
+    wallet = str(account.get("wallet_address") or "").strip()
+    proxy_wallet = str(account.get("proxy_wallet_address") or "").strip()
+    if wallet:
+        creds.wallet_address = wallet
+    if proxy_wallet:
+        creds.funder_address = proxy_wallet
+    elif wallet:
+        creds.funder_address = wallet
+
+    request = PlaceOrderRequest(
+        market_id=normalized_order["market_id"],
+        token_id=normalized_order["token_id"],
+        side=OrderSide.BUY if normalized_order["side"] == "buy" else OrderSide.SELL,
+        size=float(normalized_order["size"]),
+        price=float(normalized_order["limit_price"]),
+        order_type=OrderType.LIMIT,
+    )
+    execution_payload: dict[str, Any] = {
+        "dry_run": False,
+        "adapter_name": _PORTFOLIO_MANAGER_ADAPTER_NAME,
+        "approved_execution_path": _PORTFOLIO_MANAGER_APPROVED_EXECUTION_PATH,
+        "idempotency_key": idempotency_key,
+        "reviewed_by": reviewed_by,
+        "reason": reason,
+        "requested_order": to_jsonable(normalized_order),
+        "concrete_adapter_proof": {
+            "approved_execution_path": plan.gate_snapshot.approved_execution_path,
+            "adapter_name": plan.gate_snapshot.adapter_name,
+            "adapter_version": plan.gate_snapshot.adapter_version,
+            "risk_budget_name": plan.gate_snapshot.risk_budget_name,
+            "risk_budget": to_jsonable(plan.gate_snapshot.risk_budget),
+            "minimum_order_proof": to_jsonable(plan.gate_snapshot.minimum_order_proof),
+            "target_stop_rebuy_policy_detail": to_jsonable(plan.gate_snapshot.target_stop_rebuy_policy_detail),
+            "kill_switch_clearance": to_jsonable(plan.gate_snapshot.kill_switch_clearance),
+            "reconciliation_plan": to_jsonable(plan.gate_snapshot.reconciliation_plan),
+        },
+        "manager_action_ledger_id": ledger_applied.get("ledger_id"),
+    }
+
+    place_result = place_new_order(creds, request)
+    execution_payload["clob_response"] = to_jsonable(place_result.raw)
+    external_order_id = _extract_external_order_id(place_result.raw)
+    if place_result.success:
+        order_status = "submitted"
+        event_type = "portfolio_manager_place_submitted"
+    else:
+        order_status = "submit_error"
+        event_type = "portfolio_manager_place_failed"
+
+    repo.upsert_order(
+        order_id=order_id,
+        account_id=account_id,
+        market_id=normalized_order["market_id"],
+        outcome_id=resolved_outcome_id,
+        side=normalized_order["side"],
+        order_type=normalized_order["order_type"],
+        status=order_status,
+        placed_at=now,
+        updated_at=now,
+        external_order_id=external_order_id,
+        client_order_id=idempotency_key,
+        time_in_force=normalized_order["time_in_force"],
+        limit_price=float(normalized_order["limit_price"]),
+        size=float(normalized_order["size"]),
+        metadata_json={
+            "portfolio_manager_idempotency_key": idempotency_key,
+            "action_plan": to_jsonable(action_plan),
+            "execution": execution_payload,
+        },
+    )
+    repo.insert_order_event(
+        order_event_id=str(uuid4()),
+        order_id=order_id,
+        event_time=now,
+        event_type=event_type,
+        filled_size_delta=None,
+        filled_notional_delta=None,
+        raw_json=execution_payload,
+        ignore_duplicates=True,
+    )
+
+    return {
+        "schema_version": "portfolio_manager_order_management_execution_v1",
+        "status": order_status,
+        "dry_run": False,
+        "order_id": order_id,
+        "external_order_id": external_order_id,
+        "event_type": event_type,
+        "ledger_applied": ledger_applied,
+        "execution_payload": execution_payload,
+        "side_effects": {
+            "orders_placed": bool(place_result.success),
+            "orders_cancelled": False,
+            "orders_replaced": False,
+            "orders_submitted": True,
+            "orders_prepared": True,
             "live_worker_started": False,
         },
     }
@@ -1274,7 +1619,11 @@ def build_portfolio_pnl_attribution_report(
     }
 
 
-def _order_status_backfill_action(item: dict[str, Any]) -> dict[str, Any]:
+def _order_status_backfill_action(
+    item: dict[str, Any],
+    *,
+    expire_direct_flat_open_orders: bool = False,
+) -> dict[str, Any]:
     old_status = str(item.get("status") or "").strip().lower()
     lifecycle_status = str(item.get("lifecycle_status") or "").strip().lower()
     effective_fill_size = _decimal_or_zero(item.get("effective_fill_size"))
@@ -1327,6 +1676,17 @@ def _order_status_backfill_action(item: dict[str, Any]) -> dict[str, Any]:
             "reason": "partial_fill_final_status_requires_manual_review",
         }
     if lifecycle_status in _UNKNOWN_LIFECYCLE_STATUSES:
+        if (
+            expire_direct_flat_open_orders
+            and lifecycle_status == "direct_flat_status_unknown"
+            and old_status in _OPEN_ORDER_STATUSES
+        ):
+            return {
+                **base,
+                "action": "update_status",
+                "target_status": "expired",
+                "reason": "reviewed_direct_flat_open_order_expiry",
+            }
         return {
             **base,
             "action": "review_required",
@@ -1340,8 +1700,18 @@ def _order_status_backfill_action(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_order_status_backfill_plan(report: dict[str, Any]) -> dict[str, Any]:
-    actions = [_order_status_backfill_action(item) for item in report.get("items", [])]
+def build_order_status_backfill_plan(
+    report: dict[str, Any],
+    *,
+    expire_direct_flat_open_orders: bool = False,
+) -> dict[str, Any]:
+    actions = [
+        _order_status_backfill_action(
+            item,
+            expire_direct_flat_open_orders=expire_direct_flat_open_orders,
+        )
+        for item in report.get("items", [])
+    ]
     action_counts: dict[str, int] = {}
     for action in actions:
         action_name = str(action.get("action") or "unknown")
@@ -2466,7 +2836,10 @@ def backfill_portfolio_order_statuses(
         direct_open_position_count=direct_context["direct_open_position_count"],
         direct_trade_rows=direct_context["direct_trade_rows"],
     )
-    plan = build_order_status_backfill_plan(report)
+    plan = build_order_status_backfill_plan(
+        report,
+        expire_direct_flat_open_orders=payload.expire_direct_flat_open_orders,
+    )
     applied: list[dict[str, Any]] = []
     if not payload.dry_run:
         applied = apply_order_status_backfill_actions(
@@ -2488,6 +2861,7 @@ def backfill_portfolio_order_statuses(
             "start_time": payload.start_time,
             "end_time": payload.end_time,
             "include_direct_clob_evidence": payload.include_direct_clob_evidence,
+            "expire_direct_flat_open_orders": payload.expire_direct_flat_open_orders,
             "limit": payload.limit,
         },
         "direct_evidence": to_jsonable(direct_evidence_summary),
@@ -2648,24 +3022,47 @@ def record_portfolio_manager_action_ledger(
 @router.post("/manager/order-management")
 def preview_portfolio_manager_order_management(
     payload: PortfolioManagerOrderManagementRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
 ) -> dict[str, Any]:
-    if not payload.dry_run:
+    if payload.dry_run:
+        preview = build_portfolio_manager_order_management_preview(
+            action_plan=payload.action_plan,
+            account_id=str(payload.account_id) if payload.account_id is not None else None,
+            requested_order=payload.requested_order,
+        )
+        return {
+            "dry_run": True,
+            "status": preview["status"],
+            "live_order_impact": "read-only",
+            "no_order_side_effects": preview["side_effects"],
+            "order_management_preview": to_jsonable(preview),
+        }
+
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not reviewer or not review_reason:
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+    if not payload.execution_approved:
         raise HTTPException(
             status_code=403,
-            detail="portfolio-manager order-management execution is disabled; use dry_run preview only",
+            detail="execution_approved=true is required when dry_run=false",
         )
+    if payload.account_id is None:
+        raise HTTPException(status_code=422, detail="account_id is required when dry_run=false")
 
-    preview = build_portfolio_manager_order_management_preview(
+    execution = apply_portfolio_manager_order_management_order(
+        connection,
         action_plan=payload.action_plan,
-        account_id=str(payload.account_id) if payload.account_id is not None else None,
+        account_id=str(payload.account_id),
         requested_order=payload.requested_order,
+        reviewed_by=reviewer,
+        reason=review_reason,
     )
     return {
-        "dry_run": True,
-        "status": preview["status"],
-        "live_order_impact": "read-only",
-        "no_order_side_effects": preview["side_effects"],
-        "order_management_preview": to_jsonable(preview),
+        "dry_run": False,
+        "status": execution["status"],
+        "live_order_impact": "order-path",
+        "order_management_execution": to_jsonable(execution),
     }
 
 

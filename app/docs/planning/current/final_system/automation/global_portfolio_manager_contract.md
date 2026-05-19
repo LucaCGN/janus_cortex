@@ -78,10 +78,13 @@ The default action for unmatched open positions is to produce a target-policy de
 
 For markets where Janus has no current position, the portfolio manager should proactively scout uncovered categories such as geopolitics, economics, culture, crypto, sports futures, and other prediction-market domains when higher-priority safety and NBA/WNBA readiness work is not active.
 
+Execution blockers suppress order preparation and submission, but they should not suppress research. After any urgent safety check and existing-position scan, each bounded pass should maintain at least one uncovered-category candidate or explicitly record why no candidate was worth carrying forward. This keeps the opportunity pipeline alive while preserving execution authority.
+
 The premise is trend trading, not final-outcome prediction. A candidate must record:
 
 - category and market
 - catalyst or trend path
+- resolution-source threshold math when the market resolves on a measurable statistic
 - current price path and microstructure
 - liquidity, spread, depth, and minimum-order feasibility
 - expected return path and target/stop structure
@@ -108,11 +111,11 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
-Current state: base `#53` tooling is preview-first and non-executing. Concrete non-dry-run execution is tracked by `#54`; until that issue passes, direct fallback remains plan-only or dry-run preview-only.
+Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but a live call still requires the full proof bundle below, `execution_approved=true`, reviewer metadata, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, and runtime activation of the latest API code. Direct fallback remains plan-only until separately approved.
 
 ### Concrete `#54` Proof Bundle
 
-For `#54`, boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management preview only when its gate snapshot carries these concrete proof fields:
+For `#54`, boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management call only when its gate snapshot carries these concrete proof fields:
 
 - `approved_execution_path`: either `janus_portfolio_order_management` or `independent_polymarket_fallback`.
 - `adapter_name`: the exact adapter/tool path being selected, such as `janus_portfolio_manager_order_management_v1`; include `adapter_version` when available.

@@ -1082,6 +1082,7 @@ def _model_tier_policy() -> dict[str, Any]:
                 "event_budget_warning_or_exceeded",
                 "openai_budget_unavailable_or_too_low",
                 "minimum_size_testing_low_exposure",
+                "operator_minimum_order_testing",
             ],
             "default_allowed": False,
         },
@@ -1139,6 +1140,14 @@ def _frontier_routing_blockers(
         or str(bankroll.get("maturity_stage") or "").strip().lower() in {"min-size-test", "minimum-size-testing"}
         or str(bankroll.get("testing_mode") or "").strip().lower() in {"min-size", "minimum-size", "minimum_size"}
     )
+    operator_policy = portfolio.get("operator_sizing_policy") if isinstance(portfolio.get("operator_sizing_policy"), dict) else {}
+    operator_minimum_order_mode = str(operator_policy.get("mode") or "").strip().lower() in {
+        "operator_minimum_order",
+        "operator_minimum_size",
+        "minimum_size_testing",
+    }
+    if operator_minimum_order_mode and not _truthy(bankroll.get("allow_frontier_minimum_order_testing")):
+        blockers.append("frontier_downgraded_operator_minimum_order_policy")
     if (
         minimum_size_mode
         and exposure_usd is not None

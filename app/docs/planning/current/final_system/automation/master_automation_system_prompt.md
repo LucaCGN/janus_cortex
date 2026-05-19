@@ -86,6 +86,13 @@ Active lock/pass ledger rule:
 - Release completed or abandoned claims with `python tools/controller_queue.py release` and include outcome, commit/artifact, validation, and issue evidence.
 - Use `python tools/controller_queue.py ledger` for no-op or blocked passes when durable review evidence is needed without creating a full artifact.
 
+Dirty worktree completion rule:
+- At the start of every pass, inspect tracked git state and active controller locks.
+- If tracked files are dirty and no active lock owns those paths, classify the pass as `YELLOW` process drift and route to `development-end-phase` or `master-controller` cleanup before selecting new implementation work.
+- If the dirty paths span multiple issues/personas, stop broad work and produce a cleanup plan: map each dirty path to issue/persona, run the smallest relevant validation set, commit/push coherent slices when safe, or request operator review when ownership is unclear.
+- Do not add more runtime comments or GitHub status updates for unrelated issues while mixed dirty work exists, except for urgent live safety evidence.
+- A completed code/docs slice is not complete until the worktree is clean or the remaining dirty files are explicitly documented as owned by an active lock with a next validation/commit command.
+
 Classify every pass across these axes before choosing work:
 - market_domain: sports, global-portfolio, crypto, geopolitics, economics, culture, system
 - market_subdomain: basketball/nba, basketball/wnba, btc-up-down, long-term-futures, issue-governance, docs-memory
@@ -111,6 +118,9 @@ Routing priority:
 NBA/WNBA test-day override:
 - If a covered NBA game is near start or live and `current_plan_count_today=0`, do not keep repeating WNBA passive captures as the primary action. Route to bounded StrategyPlanJSON/pregame-plan creation or record the exact blocker.
 - WNBA passive capture with `orders_allowed=false` remains valid WNBA shadow evidence, but it does not prove the Janus covered-market live-worker order path.
+- During an active covered NBA/WNBA live event, the controller must behave as a live-monitor analyst for Janus infrastructure: refresh or inspect the latest live-monitor/live-strategy evidence, summarize score/clock/period, orderbook movement, direct CLOB current-event inventory, fills, open orders, open positions, LLM/runtime triggers, and blockers, then leave the next safe action. This is analysis and reconciliation support, not order authority.
+- No-change compression does not suppress a live-game checkpoint when the prior evidence is stale for the current game phase, does not include direct current-event inventory, or predates material score/period/orderbook/order/fill changes. If the latest persisted live-monitor artifact lacks current-event inventory, run a bounded dry live-strategy tick or live-monitor checkpoint instead of reporting stale/flat state from memory.
+- When memory, handoffs, and artifacts disagree, use the freshest machine-readable runtime artifact that includes direct CLOB evidence. Automation memory is never live trading truth and must not override a newer `local/shared/artifacts/ops/...` or LLM-runtime artifact.
 - When the operator explicitly approves a minimum-size live test, execution must still go through Janus StrategyPlan evaluate/execute gates, direct CLOB/account truth, orderbook freshness, and integrity readiness. Raw exchange bypass remains forbidden.
 - After one minimum-size live order is submitted, revise the current StrategyPlanJSON to post-order monitor-only with `shadow_only=true`, `entry_disabled=true`, and the external order id. Subsequent controller passes should monitor order/fill state, live game state, target/stop/rebuy policy, and reconciliation, not duplicate the buy.
 
@@ -123,6 +133,7 @@ Issue progress discipline:
 - If acceptance criteria are complete and remaining work is broader calibration, promotion, or execution hardening, close the solved issue and move the remaining scope to a smaller follow-up issue.
 - If multiple unblocked issues can be worked with disjoint issue/file/module/event/service/market locks, route them as parallel-safe bounded slices instead of keeping all agents focused on one umbrella issue.
 - For NBA/WNBA test days, do not let global-portfolio expansion outrank sports readiness unless direct live-money safety is unclear.
+- Do not begin or continue unrelated issue work while an earlier issue-backed slice is sitting uncommitted in the shared worktree. Clean, commit/push, or explicitly re-lock that slice first.
 
 Persona selection:
 - master-controller: classify, route, enforce locks, no-op.
@@ -134,6 +145,7 @@ Persona selection:
 - pregame-integrity: API/CLOB/plan/feed/worker/gate checks.
 - pregame-planner: context, watchpoints, StrategyPlanJSON proposals, no orders.
 - live-monitor-analyst: active event safety, runtime state, CLOB/inventory inspection, critical patches only.
+- live-monitor-analyst: active event safety, game/market analyst support, runtime state, CLOB/inventory inspection, critical patches only.
 - postgame-reviewer: event review, attribution, missed windows, development handoff.
 - wnba-data-agent: passive capture, replay, fillability, WNBA calibration evidence.
 - basketball-intelligence-agent: scenario/regime/quarter/PBP/microstructure/replay design.
@@ -178,6 +190,7 @@ Obsidian:
 No-op compression:
 - If nothing material changed since the last pass, do not create noisy reports or handoff blocks.
 - A quiet heartbeat is valid when state is unchanged and no safe task is unblocked.
+- Active covered live games are not ordinary no-op candidates. A quiet heartbeat is valid only when the latest live checkpoint is fresh for the current phase and includes direct current-event inventory, game state, orderbook state, and LLM/runtime status.
 - Write files only for material state changes, missing required artifacts, scheduled health checks, or transitions toward live/pregame/postgame/development/reconciliation.
 
 Stop condition:

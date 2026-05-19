@@ -363,6 +363,37 @@ def test_order_status_backfill_plan_updates_only_full_fill_evidence_pytest() -> 
     assert by_order["manual-protect"]["reason"] == "missing_direct_fill_or_terminal_status_evidence"
 
 
+def test_order_status_backfill_plan_can_expire_reviewed_direct_flat_open_rows_pytest() -> None:
+    report = portfolio_router.build_order_lifecycle_reconciliation_report(
+        [
+            _order_row(
+                "janus-buy",
+                external_order_id="0xbuy",
+                side="buy",
+                status="submitted",
+                size="5",
+                limit_price="0.30",
+                metadata_json={"run_id": "live-2026-05-18"},
+            ),
+        ],
+        direct_open_order_external_ids=[],
+        direct_open_order_count=0,
+        direct_open_position_count=0,
+    )
+
+    default_plan = portfolio_router.build_order_status_backfill_plan(report)
+    expiry_plan = portfolio_router.build_order_status_backfill_plan(
+        report,
+        expire_direct_flat_open_orders=True,
+    )
+
+    assert default_plan["actions"][0]["action"] == "review_required"
+    assert expiry_plan["action_counts"] == {"update_status": 1}
+    assert expiry_plan["eligible_update_count"] == 1
+    assert expiry_plan["actions"][0]["target_status"] == "expired"
+    assert expiry_plan["actions"][0]["reason"] == "reviewed_direct_flat_open_order_expiry"
+
+
 def test_order_lifecycle_reconciliation_endpoint_returns_direct_flat_unknown_pytest(monkeypatch) -> None:
     rows = [
         _order_row(
@@ -913,6 +944,7 @@ def test_direct_open_order_mirror_plan_maps_token_and_flags_missing_catalog_pyte
     assert upsert["outcome_id"] == OUTCOME_ID
     assert upsert["side"] == "sell"
     assert upsert["status"] == "open"
+    assert upsert["updated_at"] == upsert["placed_at"]
     assert upsert["filled_notional"] == Decimal("0.78")
     assert plan["actions"][1]["reason"] == "missing_token_catalog_mapping"
 
@@ -1108,6 +1140,14 @@ def _ready_manager_action_plan_fixture():
     )
 
 
+class _UnusedFakeConnection:
+    pass
+
+
+def _unused_fake_db_connection():
+    yield _UnusedFakeConnection()
+
+
 def test_portfolio_manager_action_ledger_endpoint_dry_run_records_no_order_side_effects_pytest() -> None:
     class FakeConnection:
         pass
@@ -1229,16 +1269,20 @@ def test_apply_portfolio_manager_action_ledger_persists_ledger_only_pytest() -> 
 def test_portfolio_manager_order_management_blocks_missing_gates_pytest() -> None:
     plan = _manager_action_plan_fixture()
     client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
 
-    response = client.post(
-        "/v1/portfolio/manager/order-management",
-        json={
-            "account_id": ACCOUNT_ID,
-            "action_plan": plan.model_dump(mode="json"),
-            "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
-            "dry_run": True,
-        },
-    )
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+                "dry_run": True,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
 
     assert response.status_code == 200
     payload = response.json()
@@ -1256,16 +1300,20 @@ def test_portfolio_manager_order_management_blocks_missing_gates_pytest() -> Non
 def test_portfolio_manager_order_management_ready_plan_stays_preview_only_pytest() -> None:
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
 
-    response = client.post(
-        "/v1/portfolio/manager/order-management",
-        json={
-            "account_id": ACCOUNT_ID,
-            "action_plan": plan.model_dump(mode="json"),
-            "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
-            "dry_run": True,
-        },
-    )
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+                "dry_run": True,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
 
     assert response.status_code == 200
     payload = response.json()
@@ -1284,21 +1332,172 @@ def test_portfolio_manager_order_management_ready_plan_stays_preview_only_pytest
 def test_portfolio_manager_order_management_rejects_non_dry_run_pytest() -> None:
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
 
-    response = client.post(
-        "/v1/portfolio/manager/order-management",
-        json={
-            "account_id": ACCOUNT_ID,
-            "action_plan": plan.model_dump(mode="json"),
-            "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
-            "dry_run": False,
-            "reviewed_by": "controller",
-            "reason": "attempt non-dry portfolio management",
-        },
-    )
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+                "dry_run": False,
+                "reviewed_by": "controller",
+                "reason": "attempt non-dry portfolio management",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
 
     assert response.status_code == 403
-    assert "dry_run preview only" in response.json()["error"]["message"]
+    assert "execution_approved=true" in response.json()["error"]["message"]
+
+
+def test_portfolio_manager_order_management_live_path_places_order_when_gate_proven_pytest(monkeypatch) -> None:
+    class FakeCursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.connection.executed.append((query, params))
+            if "INSERT INTO portfolio.manager_action_ledger" in query:
+                self.row = (params[0],)
+            elif "INSERT INTO portfolio.orders" in query:
+                self.row = (params[0],)
+            elif "INSERT INTO portfolio.order_events" in query:
+                self.row = (params[0],)
+            else:
+                self.row = None
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        def cursor(self, *_, **__):
+            return FakeCursor(self)
+
+    class FakePlaceResult:
+        success = True
+        raw = {"orderID": "0xpmorder", "status": "live"}
+
+    connection = FakeConnection()
+    placed = {}
+
+    def fake_db_connection():
+        yield connection
+
+    def fake_place_new_order(creds, request):
+        placed["creds"] = creds
+        placed["request"] = request
+        return FakePlaceResult()
+
+    monkeypatch.setattr(portfolio_router, "_fetch_portfolio_manager_order_by_id", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(portfolio_router, "_ensure_market_exists", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        portfolio_router,
+        "_validate_market_outcome_relation",
+        lambda *_args, **_kwargs: OUTCOME_ID,
+    )
+    monkeypatch.setattr(
+        portfolio_router,
+        "_fetch_account_wallet",
+        lambda *_args, **_kwargs: {
+            "account_id": ACCOUNT_ID,
+            "wallet_address": "0x0000000000000000000000000000000000000001",
+            "proxy_wallet_address": "0x0000000000000000000000000000000000000002",
+            "account_label": "unit-test",
+            "is_active": True,
+        },
+    )
+    monkeypatch.setattr(portfolio_router, "place_new_order", fake_place_new_order)
+
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {
+                    "market_id": MARKET_ID,
+                    "outcome_id": OUTCOME_ID,
+                    "token_id": "token-demo",
+                    "side": "sell",
+                    "order_type": "limit",
+                    "limit_price": 0.39,
+                    "size": 5,
+                },
+                "dry_run": False,
+                "execution_approved": True,
+                "reviewed_by": "controller",
+                "reason": "unit-test approved portfolio manager placement",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    execution = payload["order_management_execution"]
+    assert payload["dry_run"] is False
+    assert payload["live_order_impact"] == "order-path"
+    assert execution["status"] == "submitted"
+    assert execution["external_order_id"] == "0xpmorder"
+    assert execution["side_effects"]["orders_prepared"] is True
+    assert execution["side_effects"]["orders_submitted"] is True
+    assert execution["side_effects"]["orders_placed"] is True
+    assert placed["request"].token_id == "token-demo"
+    assert placed["request"].side.value == "SELL"
+    assert placed["request"].price == 0.39
+    assert any("INSERT INTO portfolio.manager_action_ledger" in query for query, _ in connection.executed)
+    assert any("INSERT INTO portfolio.orders" in query for query, _ in connection.executed)
+    assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
+
+
+def test_portfolio_manager_order_management_live_path_rejects_order_proof_mismatch_pytest() -> None:
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {
+                    "market_id": MARKET_ID,
+                    "outcome_id": OUTCOME_ID,
+                    "token_id": "token-demo",
+                    "side": "sell",
+                    "order_type": "limit",
+                    "limit_price": 0.4,
+                    "size": 5,
+                },
+                "dry_run": False,
+                "execution_approved": True,
+                "reviewed_by": "controller",
+                "reason": "unit-test mismatch",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 422
+    assert "does not match minimum_order_proof" in response.json()["error"]["message"]
 
 
 def test_apply_direct_trade_backfill_actions_persists_trade_and_event_pytest() -> None:

@@ -326,6 +326,7 @@ class PortfolioOrderStatusBackfillRequest(BaseModel):
     direct_open_order_count: int | None = Field(default=None, ge=0)
     direct_open_position_count: int | None = Field(default=None, ge=0)
     include_direct_clob_evidence: bool = True
+    expire_direct_flat_open_orders: bool = False
     limit: int = Field(default=5000, ge=1, le=20000)
     dry_run: bool = True
     reviewed_by: str | None = None
@@ -368,6 +369,7 @@ class PortfolioManagerOrderManagementRequest(BaseModel):
     account_id: UUID | None = None
     requested_order: dict[str, Any] = Field(default_factory=dict)
     dry_run: bool = True
+    execution_approved: bool = False
     reviewed_by: str | None = None
     reason: str | None = None
 

@@ -1114,6 +1114,51 @@ def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest
     assert portfolio_state["current_event_inventory_proof"]["pending_intent_count"] == 1
 
 
+def test_mirror_direct_open_orders_for_tick_posts_reviewed_capture_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"api_root": api_root, "method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        return {
+            "ok": True,
+            "status": "applied",
+            "direct_open_order_mirror": {
+                "direct_order_count": 1,
+                "eligible_upsert_count": 1,
+                "review_required_count": 0,
+            },
+            "applied": [{"external_order_id": "0xopen"}],
+        }
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._mirror_direct_open_orders_for_tick(
+        api_root="http://test",
+        account_id="account-1",
+        source="pytest-user-order-capture",
+    )
+
+    assert result["ok"] is True
+    assert result["applied_external_order_ids"] == ["0xopen"]
+    assert calls == [
+        {
+            "api_root": "http://test",
+            "method": "POST",
+            "path": "/v1/portfolio/orders/direct-open-mirror",
+            "payload": None,
+            "kwargs": {
+                "query": {
+                    "account_id": "account-1",
+                    "dry_run": "false",
+                    "reviewed_by": "codex-live-monitor",
+                    "reason": "pytest-user-order-capture pre-classification direct CLOB open-order mirror",
+                },
+                "timeout": 60,
+            },
+        }
+    ]
+
+
 def test_pending_intent_summary_ignores_local_order_filled_in_direct_clob_pytest(monkeypatch) -> None:
     def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
         assert path == "/v1/portfolio/orders"
@@ -1726,10 +1771,11 @@ def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(mo
     ]
     assert result["market_state"]["llm_runtime_trigger_count"] == 1
     assert result["market_state"]["llm_runtime_triggers"][0]["trigger_type"] == "player_status_shock"
-    assert result["market_state"]["llm_runtime_triggers"][0]["selected_model"] == "gpt-5.5"
+    assert result["market_state"]["llm_runtime_triggers"][0]["selected_model"] == "gpt-5.4-mini"
     assert result["llm_runtime_trace"]["trigger_count"] == 1
     assert result["llm_runtime_trace"]["triggers"][0]["trigger_type"] == "player_status_shock"
-    assert result["llm_runtime_trace"]["model_routing"]["selected_model"] == "gpt-5.5"
+    assert result["llm_runtime_trace"]["model_routing"]["selected_model"] == "gpt-5.4-mini"
+    assert "frontier_downgraded_operator_minimum_order_policy" in result["llm_runtime_trace"]["model_routing"]["critical_reasons"]
     assert result["llm_runtime_trace"]["status"] == "skipped_unavailable"
     assert result["llm_runtime_trace"]["revision_response"]["status"] == "skipped_unavailable"
     assert result["llm_runtime_trace"]["revision_response"]["skipped_reason"] == "dispatch_disabled"

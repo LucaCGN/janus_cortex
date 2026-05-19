@@ -77,6 +77,8 @@ If the queue helper is unavailable or returns a duplicate, stale, or dirty-workt
 
 Sub-agents that produce committed repo changes must not leave those changes local-only. The parent controller or `development-end-phase` owns pull/push reconciliation before the work is considered complete.
 
+If any sub-agent leaves tracked dirty files after its lock is released, the next controller pass must prioritize cleanup/review over new parallel work. Mixed dirty scope must be mapped to issue/file ownership and either committed/pushed as a coherent validated slice or escalated for operator review.
+
 ## Live Event Rule
 
 During live events, parallelism is read-mostly and event-scoped.

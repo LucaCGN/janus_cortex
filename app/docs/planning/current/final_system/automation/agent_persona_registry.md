@@ -23,7 +23,7 @@ All personas inherit `app/docs/planning/current/final_system/global_ego_and_purp
 | `development-end-phase` | Reconciliation/readiness | Test, reconcile branch/main state, update readiness handoffs. | Start broad new features during readiness pass. |
 | `pregame-integrity` | Event readiness | Check API, CLOB, plans, data freshness, worker readiness, gates. | Research narrative strategy before integrity status. |
 | `pregame-planner` | Event planning | Build context, watchpoints, candidate StrategyPlanJSON, no orders. | Define arbitrary sizing or bypass gates. |
-| `live-monitor-analyst` | Active events | Monitor runtime, CLOB truth, inventory, worker behavior, urgent patches, and approved independent Polymarket protect/close/cancel/replace fallback when Janus runtime breaks and `codex_tooling_contract.md` gates pass. | Broad backlog development during live event or direct orders without the independent execution gate. |
+| `live-monitor-analyst` | Active events | Monitor runtime, scoreboard/clock/period, market/orderbook movement, CLOB truth, current-event inventory, worker behavior, urgent patches, and approved independent Polymarket protect/close/cancel/replace fallback when Janus runtime breaks and `codex_tooling_contract.md` gates pass. | Broad backlog development during live event or direct orders without the independent execution gate. |
 | `postgame-reviewer` | Closed events | Build review, attribution, missed windows, development handoff. | Claim profitability without direct CLOB/ledger evidence. |
 | `wnba-data-agent` | WNBA portability | Passive capture, replay, fillability, calibration, minimal readiness evidence. | Treat NBA thresholds as automatically valid for WNBA. |
 | `basketball-intelligence-agent` | Basketball models | Scenario/regime logic, PBP/quarter features, microstructure, replay ideas. | Own global portfolio or crypto logic. |
@@ -84,6 +84,7 @@ Examples:
 
 - `profile-research-agent` can propose a crypto research issue, but cannot launch a crypto trading lane.
 - `live-monitor-analyst` can create a bug issue during a live game, but should not implement broad refactors.
+- `live-monitor-analyst` should act as a Janus infrastructure game analyst during live games: refresh or inspect fresh runtime evidence, explain game/market movement, identify blockers, and recommend the next safe action without gaining order authority.
 - `docs-memory-agent` can link a risk principle, but cannot change live risk authority.
 - `janus-covered-market-portfolio-agent` owns internal Janus portfolio/inventory behavior for covered markets. For now this primarily means NBA/WNBA state produced or consumed by the Python trading system, not operator/global opportunistic positions.
 - `codex-global-portfolio-agent` is intended to become active portfolio management, not just analysis, for the operator/global book and uncovered categories. It may execute only under `global_portfolio_manager_contract.md` through an approved Janus portfolio order-management path or under `codex_tooling_contract.md` through an approved independent Polymarket fallback path. Until a path and its gates are present, it must fall back to management planning, artifacts, Obsidian lessons, and GitHub blockers.

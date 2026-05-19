@@ -178,6 +178,39 @@ def test_critical_trigger_downgrades_frontier_when_budget_or_min_size_context_bl
     assert "frontier_downgraded_min_size_low_exposure" in decision.critical_reasons
 
 
+def test_operator_minimum_order_policy_downgrades_frontier_pytest() -> None:
+    triggers = detect_llm_runtime_triggers(
+        event_id="nba-sas-okc-2026-05-18",
+        routine_live_review=True,
+        portfolio_state={
+            "open_orders": 2,
+            "operator_sizing_policy": {
+                "mode": "operator_minimum_order",
+                "min_size": 5,
+                "min_buy_notional_usd": 1,
+            },
+        },
+    )
+
+    decision = route_llm_model(
+        triggers,
+        portfolio_state={
+            "open_orders": 2,
+            "operator_sizing_policy": {
+                "mode": "operator_minimum_order",
+                "min_size": 5,
+                "min_buy_notional_usd": 1,
+            },
+        },
+    )
+
+    assert decision.selected_model == MINI_MODEL
+    assert decision.selected_tier == "mini"
+    assert decision.fallback_alias == FRONTIER_MODEL
+    assert "open_exposure" in decision.critical_reasons
+    assert "frontier_downgraded_operator_minimum_order_policy" in decision.critical_reasons
+
+
 def test_position_adverse_move_routes_to_frontier_pytest() -> None:
     triggers = detect_llm_runtime_triggers(
         event_id="nba-okc-lal-2026-05-11",

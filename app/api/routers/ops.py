@@ -183,6 +183,11 @@ def run_ops_live_monitor(
         connection,
         event_ids=live_monitor_event_ids,
     )
+    current_event_inventory = _build_live_monitor_current_event_inventory(
+        integrity=integrity,
+        event_ids=live_monitor_event_ids,
+        day=payload.session_date,
+    )
     live_monitor_readiness = _build_live_monitor_readiness(
         integrity=integrity,
         strategy_plan_gate=strategy_plan_gate,
@@ -202,6 +207,7 @@ def run_ops_live_monitor(
             "live_strategy_worker_status": live_strategy_worker_status,
             "live_execution_evidence": live_execution_evidence,
             "live_microstructure_context": live_microstructure_context,
+            "current_event_inventory": current_event_inventory,
             "live_monitor_readiness": live_monitor_readiness,
         },
         day=payload.session_date,
@@ -217,6 +223,7 @@ def run_ops_live_monitor(
         "live_strategy_worker_status": live_strategy_worker_status,
         "live_execution_evidence": live_execution_evidence,
         "live_microstructure_context": live_microstructure_context,
+        "current_event_inventory": current_event_inventory,
         "live_monitor_readiness": live_monitor_readiness,
     }
 
@@ -2871,6 +2878,117 @@ def _direct_trade_token_ids_for_events(event_ids: list[str], *, day: str | None)
                 token_ids.append(token_id)
                 seen.add(token_id)
     return token_ids
+
+
+def _build_live_monitor_current_event_inventory(
+    *,
+    integrity: dict[str, Any],
+    event_ids: list[str],
+    day: str | None,
+) -> dict[str, Any]:
+    direct_clob = integrity.get("direct_clob") if isinstance(integrity.get("direct_clob"), dict) else {}
+    if not direct_clob:
+        return {
+            "schema_version": "live_monitor_current_event_inventory_v1",
+            "status": "direct_clob_unavailable",
+            "event_count": len(event_ids),
+            "items": [],
+            "open_order_count": 0,
+            "open_position_count": 0,
+            "trade_count": 0,
+            "unresolved_inventory_present": False,
+        }
+    raw_orders = (direct_clob.get("open_orders") or {}).get("orders") or []
+    raw_positions = (direct_clob.get("open_positions") or {}).get("positions") or []
+    raw_trades = (direct_clob.get("current_token_trades") or {}).get("trades") or []
+    items: list[dict[str, Any]] = []
+    total_open_orders = 0
+    total_open_positions = 0
+    total_trades = 0
+    for event_id in _normalized_unique_values(event_ids):
+        plan, plan_event_id, lookup_event_ids = load_current_strategy_plan_for_event(event_id, day=day)
+        if not isinstance(plan, dict):
+            items.append(
+                {
+                    "event_id": event_id,
+                    "status": "missing_current_strategy_plan",
+                    "lookup_event_ids": lookup_event_ids,
+                    "token_ids": [],
+                    "open_order_count": 0,
+                    "open_position_count": 0,
+                    "trade_count": 0,
+                    "unresolved_inventory_present": False,
+                }
+            )
+            continue
+        token_ids = set(_strategy_plan_token_ids(plan))
+        open_orders = [to_jsonable(order) for order in raw_orders if _direct_item_token_id(order) in token_ids]
+        open_positions = [to_jsonable(position) for position in raw_positions if _direct_item_token_id(position) in token_ids]
+        trades = [to_jsonable(trade) for trade in raw_trades if _direct_item_token_id(trade) in token_ids]
+        open_order_count = len(open_orders)
+        open_position_count = len(open_positions)
+        trade_count = len(trades)
+        total_open_orders += open_order_count
+        total_open_positions += open_position_count
+        total_trades += trade_count
+        items.append(
+            {
+                "event_id": event_id,
+                "plan_event_id": plan_event_id,
+                "status": "recorded",
+                "token_ids": sorted(token_ids),
+                "open_order_count": open_order_count,
+                "open_position_count": open_position_count,
+                "trade_count": trade_count,
+                "unresolved_inventory_present": bool(open_order_count or open_position_count),
+                "open_orders": open_orders,
+                "open_positions": open_positions,
+                "trades": trades,
+            }
+        )
+    return {
+        "schema_version": "live_monitor_current_event_inventory_v1",
+        "status": "recorded",
+        "event_count": len(items),
+        "items": items,
+        "open_order_count": total_open_orders,
+        "open_position_count": total_open_positions,
+        "trade_count": total_trades,
+        "unresolved_inventory_present": bool(total_open_orders or total_open_positions),
+        "direct_global_open_order_count": direct_clob.get("open_order_count"),
+        "direct_global_open_position_count": len(raw_positions),
+    }
+
+
+def _strategy_plan_token_ids(plan: dict[str, Any]) -> list[str]:
+    token_ids: list[str] = []
+    seen: set[str] = set()
+    for strategy in plan.get("active_strategies") or []:
+        if not isinstance(strategy, dict):
+            continue
+        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+        token_id = str(entry_rules.get("token_id") or "").strip()
+        if token_id and token_id not in seen:
+            token_ids.append(token_id)
+            seen.add(token_id)
+    for item in plan.get("portfolio_reconciliation") or []:
+        if not isinstance(item, dict):
+            continue
+        token_id = str(item.get("token_id") or "").strip()
+        if token_id and token_id not in seen:
+            token_ids.append(token_id)
+            seen.add(token_id)
+    return token_ids
+
+
+def _direct_item_token_id(item: Any) -> str:
+    if not isinstance(item, dict):
+        item = getattr(item, "__dict__", {}) or {}
+    for key in ("token_id", "asset_id", "asset", "outcomeTokenId", "clobTokenId"):
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
 
 
 def _resolve_llm_revision_response(

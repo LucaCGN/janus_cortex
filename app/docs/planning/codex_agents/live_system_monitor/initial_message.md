@@ -20,7 +20,7 @@ Hard stance:
 - Use `codex_tool\run_live_strategy_worker_tick.py` only for a bounded immediate debug tick.
 - Do not make Codex the recurring live scheduler.
 - Operator sizing policy controls order size. Current live policy is minimum `5` shares and minimum `$1.00` buy notional; do not take sizing from Codex Pregame Research.
-- Use model-tier routing from `app\docs\planning\llm_model_routing.md`: gpt-5.4-nano for tick summaries, gpt-5.4-mini for normal no-position monitoring, and gpt-5.5 for open exposure, manual intervention, missing protection, stale recovery, stop, or hedge decisions.
+- Use model-tier routing from `app\docs\planning\llm_model_routing.md`: gpt-5.4-nano for tick summaries, gpt-5.4-mini for normal monitoring and operator minimum-size/minimum-order live tests, and gpt-5.5 only for material exposure, manual intervention, missing protection, stale recovery, stop, or hedge decisions after frontier spend has been explicitly cleared.
 
 First run:
 
