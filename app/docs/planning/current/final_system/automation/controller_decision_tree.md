@@ -49,7 +49,7 @@ The controller should record:
 | 4 | Closed event lacks postgame review or reconciliation | `postgame-reviewer` |
 | 5 | Upcoming event lacks integrity gate | `pregame-integrity` |
 | 6 | Upcoming event passed integrity but lacks plan/watchpoints | `pregame-planner` |
-| 7 | Development task is claimed or review-ready | `development-agent` or `development-end-phase` |
+| 7 | Open unblocked sprint implementation issue exists and no live/pregame/postgame safety route outranks it | `development-agent` or `development-end-phase` |
 | 8 | Backlog/issue taxonomy/queue missing or stale | `issue-backlog-manager` |
 | 9 | Source-of-truth docs or Obsidian indexes stale | `docs-memory-agent` |
 | 10 | Codex global portfolio management/scouting pass is due and no higher-priority live safety or NBA/WNBA readiness task is active | `codex-global-portfolio-agent` / `global-portfolio-agent` alias |
@@ -57,6 +57,8 @@ The controller should record:
 | 12 | No material state change | `master-controller` no-op |
 
 Safety and live event state override backlog progress.
+
+No-op is allowed only after open sprint issues have been checked for an actionable bounded slice. A clean worktree, clear queue, and unchanged runtime artifacts are not enough to no-op when an open P0/P1 implementation issue is unblocked.
 
 ## Recurring Automation Gate
 
@@ -80,6 +82,8 @@ Postgame direct-CLOB truth must be event-scoped before it is used for PnL attrib
 If a completed Janus-covered NBA/WNBA event still has event-scoped direct CLOB open orders, open positions, valuation mismatches, or unresolved lifecycle state, route to the settlement/reconciliation issue for that event before enabling new live execution. For the 2026-05-18 Spurs/Thunder test, that issue is [#57](https://github.com/LucaCGN/janus_cortex/issues/57). Keep WNBA passive/shadow work in [#50](https://github.com/LucaCGN/janus_cortex/issues/50); do not use #50 as the NBA settlement bucket.
 
 Resolved-market redemption is a settlement workflow, not CLOB order authority. A prior-event unredeemed position may be classified as a documented residual instead of live exposure only after fresh direct CLOB/account truth proves no event-scoped open orders, market resolution/payout state is known, expected residual value is recorded, and a ledger/follow-up issue owns the redeem or residual state. The app must continue to hold and operate with documented unredeemed residual positions, including zero-valued losing tokens, without treating them as active risk for unrelated new games. Non-dry-run redemption requires the gated Janus+Codex approval workflow in [#58](https://github.com/LucaCGN/janus_cortex/issues/58); never redeem from stale mirrors, screenshots, chat memory, or Obsidian notes.
+
+After [#57](https://github.com/LucaCGN/janus_cortex/issues/57) is closed flat, [#58](https://github.com/LucaCGN/janus_cortex/issues/58) is an implementation issue, not a passive settlement-watch issue. If no active/near-term covered NBA/WNBA live-readiness route outranks development, the controller should claim one bounded #58 slice, starting with dry-run residual classification and redeem-preview tests. It should not wait for fresh Spurs/Thunder evidence or repeatedly compress as no-change solely because the old event remains flat.
 
 ## Active Live-Game Analyst Rules
 

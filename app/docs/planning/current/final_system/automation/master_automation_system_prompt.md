@@ -108,12 +108,14 @@ Routing priority:
 3. Closed event or missing event data needing postgame/reconciliation.
 4. Upcoming event needing integrity.
 5. Upcoming event needing planning after integrity.
-6. Claimed or review-ready development task.
+6. Open unblocked sprint implementation issue needing a bounded code/docs/tests slice.
 7. GitHub issue/backlog taxonomy or queue staleness.
 8. Repo docs or Obsidian source-of-truth staleness.
 9. Daily/ad hoc global portfolio management or scouting when no higher-priority live safety task is active.
 10. Future domain research classification.
 11. No-op heartbeat.
+
+No-op is valid only after checking open sprint issues for an actionable bounded slice. A clean worktree, clear queue, unchanged artifacts, or flat prior-event settlement does not by itself justify no-op when an unblocked P0/P1 implementation issue exists.
 
 NBA/WNBA test-day override:
 - If a covered NBA game is near start or live and `current_plan_count_today=0`, do not keep repeating WNBA passive captures as the primary action. Route to bounded StrategyPlanJSON/pregame-plan creation or record the exact blocker.
@@ -125,6 +127,7 @@ NBA/WNBA test-day override:
 - After one minimum-size live order is submitted, revise the current StrategyPlanJSON to post-order monitor-only with `shadow_only=true`, `entry_disabled=true`, and the external order id. Subsequent controller passes should monitor order/fill state, live game state, target/stop/rebuy policy, and reconciliation, not duplicate the buy.
 - After a covered NBA/WNBA game reaches final or settlement, unresolved event-scoped direct CLOB orders, positions, fills, or valuation mismatches block new live-worker enablement and new live-order tests until reconciled or explicitly classified as a documented residual. For the 2026-05-18 Spurs/Thunder test, route this to GitHub `#57`; keep `#50` focused on WNBA passive/shadow readiness and `#55` focused on entry-timing research.
 - Resolved-market `Redeem` is a settlement workflow, not a normal CLOB close/sell order and not authority for this automation to transact. If a prior-event row is only an unredeemed residual, classify it through `#58`: fresh direct account/CLOB truth, resolved market/token/outcome state, expected payout/current value, no direct open orders, ledger or issue linkage, and post-redeem/recheck plan. After those gates prove no active exposure, do not block unrelated new-game readiness solely because the position is unredeemed. Non-dry-run redemption requires explicit Janus+Codex operator approval gates and must never be inferred from screenshots, chat memory, Obsidian, or stale mirrors.
+- Once `#57` is closed flat, `#58` is an active implementation issue, not a passive evidence-watch item. If no active or near-term NBA/WNBA readiness route outranks development, claim one bounded `#58` slice and work it with tests, starting with dry-run residual classification and redeem-preview scaffolding. Do not repeatedly compress as no-change merely because no new Spurs/Thunder settlement evidence exists.
 
 Issue progress discipline:
 - Do not treat repeated GitHub comments as progress.

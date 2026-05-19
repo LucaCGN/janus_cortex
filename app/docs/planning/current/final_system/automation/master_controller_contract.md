@@ -94,6 +94,7 @@ The controller should derive America/Sao_Paulo time and evaluate:
 5. Is a development task already in progress or blocked?
 6. Are there unresolved safety issues that block live testing?
 7. Are repo docs, Obsidian, or GitHub issue state stale enough to need housekeeping?
+8. Are there open unblocked sprint implementation issues that should be claimed before no-op?
 
 The detailed routing rules live in `automation/controller_decision_tree.md`.
 
@@ -107,6 +108,8 @@ After a covered NBA/WNBA game reaches final or settlement, unresolved event-scop
 
 Resolved-market `Redeem` is a settlement capability, not a normal close/sell order. The controller must not execute redemption itself. It may route implementation to [#58](https://github.com/LucaCGN/janus_cortex/issues/58), record a documented residual classification, or require a redeem preview. A documented residual requires fresh direct account/CLOB truth, resolved market/token/outcome state, expected payout/current value, no event-scoped open orders, ledger or issue linkage, and a post-redeem/recheck plan. Once those gates prove a zero-value losing residual or redeemable settlement row is not active exposure, Janus should keep operating with the unredeemed row rather than blocking unrelated new-game readiness. Non-dry-run redemption requires explicit Janus+Codex operator approval gates and must never be inferred from screenshots, chat memory, Obsidian, or stale mirrors.
 
+After [#57](https://github.com/LucaCGN/janus_cortex/issues/57) is closed with flat direct event inventory, [#58](https://github.com/LucaCGN/janus_cortex/issues/58) remains an active implementation task. The controller must not treat #58 as a passive watch item that requires new settlement evidence. In a no-live/no-pregame window with a clean worktree and clear locks, the expected route is `development` with a bounded #58 slice, such as residual-classification tests or redeem-preview dry-run scaffolding. If it cannot claim or work #58, it must record the concrete blocker once.
+
 ## Operating Modes
 
 | Mode | Trigger | Allowed Work |
@@ -119,6 +122,8 @@ Resolved-market `Redeem` is a settlement capability, not a normal close/sell ord
 | `system_organization` | Docs/issues/Obsidian/queue incomplete | Maintain source-of-truth system and issue backlog. |
 | `global_portfolio_management` | Daily or ad hoc Codex global portfolio management/scouting pass | Use `global_portfolio_manager_contract.md` and `codex_tooling_contract.md`; manage existing operator/global positions, scout uncovered trend opportunities, and execute only through approved portfolio order-management or independent Polymarket fallback gates. This is not the internal Janus covered-market portfolio/inventory agent for NBA/WNBA. |
 | `no_op` | Nothing safe or useful to do | Write short status only if useful. |
+
+`no_op` is not valid while an open unblocked P0/P1 implementation issue has a bounded next slice and no higher-priority live/pregame/postgame route is active.
 
 ## Live-Game Rule
 
