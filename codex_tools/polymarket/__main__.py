@@ -1,4 +1,4 @@
-"""Run the gated Polymarket portfolio planning CLI."""
+"""Run the gated Polymarket portfolio management CLI."""
 
 from __future__ import annotations
 

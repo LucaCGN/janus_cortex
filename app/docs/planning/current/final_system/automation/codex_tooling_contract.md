@@ -27,7 +27,7 @@ The target package namespace is `codex_tools/`, with two primary subpackages:
 | Package | Role | Order Authority |
 |---|---|---|
 | `codex_tools/janus/` | Janus-facing status, data refresh, integrity, live monitor, StrategyPlanJSON, worker, ledger, and reconciliation wrappers. | Uses Janus API/order-manager gates only. |
-| `codex_tools/polymarket/` | Direct Polymarket account, CLOB, orderbook, positions, orders, fills, one-shot execution, and emergency service loops for portfolio-manager/live-monitor fallback. | May execute only under the independent Polymarket execution gate below. |
+| `codex_tools/polymarket/` | Direct Polymarket account, CLOB, orderbook, positions, orders, fills, Janus-mediated one-shot portfolio orders, and emergency service loops for portfolio-manager/live-monitor fallback. | One-shot portfolio orders route through the approved Janus order-management endpoint; independent direct execution may execute only under the independent Polymarket execution gate below. |
 
 `codex_tool/` may remain as a compatibility shim that imports from `codex_tools/janus/` after migration.
 
@@ -80,6 +80,8 @@ The approved active-manager planning surface is `codex_tools/polymarket plan-man
 - record the exact blocker that prevented a required action
 
 The action planner is not an order endpoint. It must return `order_preparation_attempted=false` and `order_submission_attempted=false`; it exists so the automation cannot hide behind passive monitoring when an action candidate exists.
+
+The approved one-shot portfolio order surface is `codex_tools/polymarket portfolio-manager-order`. It calls Janus `POST /v1/portfolio/manager/order-management` with an action plan, requested order, account id, and optional non-dry-run execution approval. Dry-run mode is the default. With `--execute --execution-approved --reviewed-by <persona> --reason <reason>`, the tool may place a limit buy/sell only if the running Janus API accepts every server-side gate: runtime flag, kill switch, concrete proof bundle, risk/rate limits, DB market/outcome mapping, ledger/idempotency, and post-call reconciliation. This is the normal path for one-shot open/close/target/rebuy portfolio-manager actions.
 
 The approved service-spawn proof surface is `codex_tools/polymarket plan-grid-service-spawn`. It may return `service_spawn_authorized=true` only when an explicit non-dry-run service-spawn intent and all service gates are present. Starting a service is still not order authority; every service leg must separately prove the independent execution gate before any order preparation or submission.
 

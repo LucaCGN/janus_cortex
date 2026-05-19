@@ -87,7 +87,7 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Closed foundation | WNBA passive/shadow baseline and blocker report published. Remaining active-window WNBA capture/audit work split to #60. |
 | [#60](https://github.com/LucaCGN/janus_cortex/issues/60) | P1 | Planned/sprint | Run sustained WNBA active-window passive CLOB capture and integrate tick/trade evidence into WNBA analysis audit. |
 | [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | Research backlog | Compare NBA pregame, immediate-live, post-Q1, and post-Q1-stability entry timing with fillability and event-start cancellation effects. |
-| [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | Planned/sprint | Build active portfolio-manager action planning, frontend/profile discovery enforcement, approved global portfolio 1c grid service spawn proof, and cross-league basketball scanner. |
+| [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | Planned/sprint | Build active portfolio-manager action planning, frontend/profile discovery enforcement, one-shot portfolio order routing, approved global portfolio 1c grid service spawn proof, and cross-league basketball scanner. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Planned backlog | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | Idea/planned backlog | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | Idea/planned backlog | Incubate geopolitics, economics, and culture monitoring lanes. |

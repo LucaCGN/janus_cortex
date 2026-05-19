@@ -60,7 +60,7 @@ Obsidian sources:
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | P268-P274, NP005-NP006, operator correction 2026-05-18 | Codex tooling split and preview-first Polymarket fallback base implemented. |
 | [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Closed foundation | P268-P274, operator correction 2026-05-18 | Approved global portfolio execution gate proof, concrete Janus order-management adapter, runtime activation guard, risk/rate evidence, ledger finalization, confirmation-id handling, and idempotency replay hardening implemented. |
 | [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | Active portfolio/order-path activation proof | P268-P274, operator correction 2026-05-18 | Prove portfolio-manager real-call reconciliation before operational activation. |
-| [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | Portfolio/scanner readiness builder | P268-P274, operator correction 2026-05-19 | Build required portfolio-manager action planning, frontend/profile discovery enforcement, approved 1c grid-service spawn proof, and cross-league basketball scanner. |
+| [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | Portfolio/scanner readiness builder | P268-P274, operator correction 2026-05-19 | Build required portfolio-manager action planning, frontend/profile discovery enforcement, one-shot portfolio order routing, approved 1c grid-service spawn proof, and cross-league basketball scanner. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | P268-P274, global portfolio evidence | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Readiness builder | P257-P265 | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Research/incubation | P270-P274 | Turn winning profile studies into benchmark hypotheses. |
@@ -87,7 +87,7 @@ Obsidian sources:
 7. Completed: validate direct open CLOB order mirroring through `#49`.
 8. Completed: close `#52` after active Codex global portfolio-manager authority, gates, trend-lane evidence requirements, action ledger, and order-management preview were implemented.
 9. Completed: close `#53` after base `codex_tools/janus` and `codex_tools/polymarket` split, preview-first fallback gates, ledger, account reads, CLI, and compatibility wrappers were implemented.
-10. Portfolio-manager readiness now splits between `#59` for real-call activation/reconciliation proof and `#56` for active action selection, frontend/profile discovery, grid-service spawn proof, and cross-league basketball scanning. Neither should preempt NBA/WNBA readiness unless direct live-money safety is unclear.
+10. Portfolio-manager readiness now splits between `#59` for real-call activation/reconciliation proof and `#56` for active action selection, frontend/profile discovery, one-shot portfolio order routing, grid-service spawn proof, and cross-league basketball scanning. Neither should preempt NBA/WNBA readiness unless direct live-money safety is unclear.
 11. Route WNBA passive capture/shadow publication through `#50`, and expand sports readiness through `#42` and `#44` when live safety does not preempt.
 12. Use `#46-#48` for future-domain and profile research without live authority unless promoted by `#54` execution-gate implementation, `#59` activation evidence, and operator-approved gates.
 

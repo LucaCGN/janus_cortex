@@ -39,6 +39,8 @@ from codex_tools.polymarket import (
     GRID_SERVICE_SCHEMA_VERSION,
     GRID_SERVICE_SPAWN_SCHEMA_VERSION,
     PORTFOLIO_MANAGER_ACTION_SCHEMA_VERSION,
+    PORTFOLIO_MANAGER_DIRECT_ORDER_SCHEMA_VERSION,
+    PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENDPOINT,
     POST_REDEEM_RECONCILIATION_SCHEMA_VERSION,
     PREVIEW_SCHEMA_VERSION,
     REDEEM_PREVIEW_SCHEMA_VERSION,
@@ -55,6 +57,7 @@ from codex_tools.polymarket import (
     build_grid_service_spawn_plan,
     build_polymarket_safety_gate_snapshot,
     build_portfolio_manager_action_plan,
+    call_portfolio_manager_order_management,
     build_redeem_preview,
     build_settlement_readiness_report,
     classify_documented_residual_positions,
@@ -68,6 +71,7 @@ from codex_tools.polymarket import (
     write_fallback_decision_ledger,
     write_settlement_ledger_prewrite,
 )
+import codex_tools.polymarket.direct_order as polymarket_direct_order
 from codex_tools.polymarket.cli import main as polymarket_cli_main
 
 
@@ -2392,3 +2396,128 @@ def test_polymarket_cli_plan_manager_action_selects_new_catalog_action(tmp_path,
     assert payload["selected_action"]["proposed_micro_action"]["action"] == "open_new_micro_position_via_approved_path"
     assert payload["order_preparation_attempted"] is False
     assert payload["order_submission_attempted"] is False
+
+
+def test_polymarket_portfolio_manager_order_calls_janus_order_path(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _api_json(
+        api_root: str,
+        method: str,
+        path: str,
+        payload: dict[str, object],
+        *,
+        timeout: int,
+    ) -> dict[str, object]:
+        calls.append(
+            {
+                "api_root": api_root,
+                "method": method,
+                "path": path,
+                "payload": payload,
+                "timeout": timeout,
+            }
+        )
+        return {"ok": True, "status": "dry_run_order_management_preview"}
+
+    monkeypatch.setattr(polymarket_direct_order.janus_client, "api_json", _api_json)
+
+    result = call_portfolio_manager_order_management(
+        action_plan={"schema_version": "global_portfolio_manager_action_plan_v1"},
+        account_id="56964015-5935-5035-bdab-b056c9277146",
+        requested_order={"side": "buy", "limit_price": 0.2, "size": 5},
+        api_root="http://janus.local",
+    )
+
+    assert result.schema_version == PORTFOLIO_MANAGER_DIRECT_ORDER_SCHEMA_VERSION
+    assert result.endpoint == PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENDPOINT
+    assert result.dry_run is True
+    assert result.live_order_impact == "read-only"
+    assert result.order_management_call_attempted is True
+    assert result.order_submission_attempted is False
+    assert calls == [
+        {
+            "api_root": "http://janus.local",
+            "method": "POST",
+            "path": PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENDPOINT,
+            "payload": {
+                "account_id": "56964015-5935-5035-bdab-b056c9277146",
+                "action_plan": {"schema_version": "global_portfolio_manager_action_plan_v1"},
+                "requested_order": {"side": "buy", "limit_price": 0.2, "size": 5},
+                "dry_run": True,
+                "execution_approved": False,
+                "reviewed_by": None,
+                "reason": None,
+            },
+            "timeout": 120,
+        }
+    ]
+
+
+def test_polymarket_cli_portfolio_manager_order_can_request_execute(
+    monkeypatch,
+    tmp_path,
+    capsys,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    def _api_json(
+        api_root: str,
+        method: str,
+        path: str,
+        payload: dict[str, object],
+        *,
+        timeout: int,
+    ) -> dict[str, object]:
+        calls.append({"api_root": api_root, "method": method, "path": path, "payload": payload, "timeout": timeout})
+        return {
+            "ok": True,
+            "dry_run": False,
+            "status": "submitted",
+            "live_order_impact": "order-path",
+            "order_management_execution": {"external_order_id": "0xunit"},
+        }
+
+    monkeypatch.setattr(polymarket_direct_order.janus_client, "api_json", _api_json)
+    action_plan_path = tmp_path / "action_plan.json"
+    order_path = tmp_path / "requested_order.json"
+    action_plan_path.write_text(
+        json.dumps({"schema_version": "global_portfolio_manager_action_plan_v1"}),
+        encoding="utf-8",
+    )
+    order_path.write_text(
+        json.dumps({"market_id": "2ec1fbfd-2903-574e-82f9-a1d4b684ef44", "side": "buy", "limit_price": 0.2, "size": 5}),
+        encoding="utf-8",
+    )
+
+    exit_code = polymarket_cli_main(
+        [
+            "portfolio-manager-order",
+            "--api-root",
+            "http://janus.local",
+            "--action-plan-json",
+            str(action_plan_path),
+            "--requested-order-json",
+            str(order_path),
+            "--account-id",
+            "56964015-5935-5035-bdab-b056c9277146",
+            "--execute",
+            "--execution-approved",
+            "--reviewed-by",
+            "codex-global-portfolio-agent",
+            "--reason",
+            "unit-test approved micro-position",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == PORTFOLIO_MANAGER_DIRECT_ORDER_SCHEMA_VERSION
+    assert payload["dry_run"] is False
+    assert payload["execution_approved"] is True
+    assert payload["order_preparation_attempted"] is True
+    assert payload["order_submission_attempted"] is True
+    assert payload["response"]["status"] == "submitted"
+    assert calls[0]["path"] == PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENDPOINT
+    assert calls[0]["payload"]["dry_run"] is False
+    assert calls[0]["payload"]["execution_approved"] is True

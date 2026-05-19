@@ -1,8 +1,9 @@
-"""Direct Polymarket fallback planning surface.
+"""Direct Polymarket and Janus-mediated portfolio management surfaces.
 
-This package is intentionally non-executing in its first slice. It can build
-gate decisions and deterministic ledger records, but it does not submit,
-cancel, replace, or prepare orders.
+This package defaults to dry-run/planning behavior. The concrete one-shot
+order call exposed here is routed through Janus' approved portfolio-manager
+order-management endpoint, where server-side gates decide whether execution is
+allowed.
 """
 
 from codex_tools.polymarket.execution_gate import (
@@ -22,6 +23,13 @@ from codex_tools.polymarket.preview import (
     PREVIEW_SCHEMA_VERSION,
     PolymarketFallbackPreview,
     build_fallback_preview,
+)
+from codex_tools.polymarket.direct_order import (
+    PORTFOLIO_MANAGER_DIRECT_ORDER_SCHEMA_VERSION,
+    PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENDPOINT,
+    PortfolioManagerDirectOrderCall,
+    build_portfolio_manager_order_management_payload,
+    call_portfolio_manager_order_management,
 )
 from codex_tools.polymarket.safety import (
     DEFAULT_DIRECT_TRUTH_MAX_AGE_SECONDS,
@@ -93,6 +101,8 @@ __all__ = [
     "GRID_SERVICE_SPAWN_SCHEMA_VERSION",
     "NO_REDEMPTION_STATEMENT",
     "PORTFOLIO_MANAGER_ACTION_SCHEMA_VERSION",
+    "PORTFOLIO_MANAGER_DIRECT_ORDER_SCHEMA_VERSION",
+    "PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENDPOINT",
     "POST_REDEEM_RECONCILIATION_SCHEMA_VERSION",
     "PREVIEW_SCHEMA_VERSION",
     "REDEEM_PREVIEW_SCHEMA_VERSION",
@@ -109,6 +119,7 @@ __all__ = [
     "PolymarketFallbackIntent",
     "PolymarketFallbackLedgerWrite",
     "PolymarketFallbackPreview",
+    "PortfolioManagerDirectOrderCall",
     "PolymarketGridCandidate",
     "PolymarketGridServicePreview",
     "PolymarketGridServiceSpawnPlan",
@@ -128,12 +139,14 @@ __all__ = [
     "build_ledger_entry",
     "build_polymarket_safety_gate_snapshot",
     "build_portfolio_manager_action_plan",
+    "build_portfolio_manager_order_management_payload",
     "build_post_redeem_reconciliation",
     "build_redeem_preview",
     "build_settlement_ledger_entry",
     "build_settlement_readiness_report",
     "classify_documented_residual_positions",
     "classify_resolved_market_residual",
+    "call_portfolio_manager_order_management",
     "default_fallback_ledger_root",
     "default_settlement_ledger_root",
     "derive_idempotency_key",

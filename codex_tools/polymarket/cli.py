@@ -1,4 +1,4 @@
-"""Command line entrypoints for gated Polymarket portfolio planning."""
+"""Command line entrypoints for gated Polymarket portfolio management."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from typing import Any, Sequence, TextIO
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
 from codex_tools.polymarket.grid_service import build_grid_service_preview, build_grid_service_spawn_plan
 from codex_tools.polymarket.manager import build_portfolio_manager_action_plan
+from codex_tools.polymarket.direct_order import call_portfolio_manager_order_management
 from codex_tools.polymarket.preview import build_fallback_preview
 from codex_tools.polymarket.settlement import (
     build_post_redeem_reconciliation,
@@ -117,6 +118,25 @@ def _build_parser() -> argparse.ArgumentParser:
     manager_plan.add_argument("--oscillation-grid-threshold-percent", default="3")
     manager_plan.add_argument("--action-optional", action="store_true")
     manager_plan.set_defaults(func=_plan_manager_action)
+
+    manager_order = subparsers.add_parser(
+        "portfolio-manager-order",
+        help="Call the approved Janus portfolio-manager order path for a one-shot buy/sell.",
+    )
+    manager_order.add_argument("--api-root", default="http://127.0.0.1:8010")
+    manager_order.add_argument("--action-plan-json", required=True, type=Path)
+    manager_order.add_argument("--requested-order-json", required=True, type=Path)
+    manager_order.add_argument("--account-id")
+    manager_order.add_argument(
+        "--execute",
+        action="store_true",
+        help="Set dry_run=false. This can place an order if all Janus server-side gates pass.",
+    )
+    manager_order.add_argument("--execution-approved", action="store_true")
+    manager_order.add_argument("--reviewed-by")
+    manager_order.add_argument("--reason")
+    manager_order.add_argument("--timeout", type=int, default=120)
+    manager_order.set_defaults(func=_portfolio_manager_order)
 
     redeem = subparsers.add_parser(
         "preview-redeem",
@@ -270,6 +290,23 @@ def _plan_manager_action(args: argparse.Namespace, output: TextIO) -> int:
         oscillation_grid_threshold_percent=args.oscillation_grid_threshold_percent,
     )
     json.dump(asdict(plan), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _portfolio_manager_order(args: argparse.Namespace, output: TextIO) -> int:
+    result = call_portfolio_manager_order_management(
+        action_plan=_read_required_json_file(args.action_plan_json),
+        account_id=args.account_id,
+        requested_order=_read_required_json_file(args.requested_order_json),
+        api_root=args.api_root,
+        execute=args.execute,
+        execution_approved=args.execution_approved,
+        reviewed_by=args.reviewed_by,
+        reason=args.reason,
+        timeout=args.timeout,
+    )
+    json.dump(asdict(result), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
 
