@@ -460,6 +460,73 @@ def test_live_monitor_endpoint_exposes_current_event_inventory_pytest(tmp_path, 
     assert item["trades"][0]["id"] == "trade-1"
 
 
+def test_live_monitor_inventory_documents_resolved_residual_without_blocking_pytest(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ops_router,
+        "load_current_strategy_plan_for_event",
+        lambda event_id, *, day=None: (
+            {
+                "context_summary": {"event_slug": "nba-sas-okc-2026-05-18"},
+                "active_strategies": [{"entry_rules": {"token_id": "token-spurs"}}],
+                "portfolio_reconciliation": [{"token_id": "token-thunder"}],
+            },
+            event_id,
+            [event_id],
+        ),
+    )
+
+    inventory = ops_router._build_live_monitor_current_event_inventory(
+        integrity={
+            "direct_clob": {
+                "ok": True,
+                "open_order_count": 0,
+                "open_orders": {"ok": True, "orders": []},
+                "open_positions": {
+                    "ok": True,
+                    "positions": [
+                        {
+                            "asset": "token-thunder",
+                            "condition_id": "condition-okc",
+                            "event_slug": "nba-sas-okc-2026-05-18",
+                            "outcome": "Thunder",
+                            "size": "338.4702",
+                            "current_value": "0",
+                            "settlement_residual": {
+                                "resolved_market": {
+                                    "resolved": True,
+                                    "condition_id": "condition-okc",
+                                    "market_slug": "nba-sas-okc-2026-05-18",
+                                    "winning_token_id": "token-spurs",
+                                    "payouts": {"token-spurs": "1", "token-thunder": "0"},
+                                },
+                                "issue_link": "https://github.com/LucaCGN/janus_cortex/issues/58",
+                                "post_redeem_recheck_plan": "Recheck direct account and Janus settlement ledger before closure.",
+                            },
+                        }
+                    ],
+                },
+                "current_token_trades": {"ok": True, "trades": []},
+            }
+        },
+        event_ids=["nba-sas-okc-2026-05-18"],
+        day="2026-05-18",
+    )
+
+    assert inventory["open_position_count"] == 1
+    assert inventory["active_open_position_count"] == 0
+    assert inventory["documented_residual_position_count"] == 1
+    assert inventory["unresolved_inventory_present"] is False
+    item = inventory["items"][0]
+    assert item["open_position_count"] == 1
+    assert item["active_open_position_count"] == 0
+    assert item["documented_residual_position_count"] == 1
+    assert item["unresolved_inventory_present"] is False
+    residual = item["documented_residual_positions"][0]
+    assert residual["classification"]["residual_type"] == "zero_value_residual"
+    assert residual["classification"]["live_readiness_blocker"] is False
+    assert item["blocked_residual_classifications"] == []
+
+
 def test_live_monitor_endpoint_returns_compact_microstructure_context_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

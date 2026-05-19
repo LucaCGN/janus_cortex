@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,7 @@ from app.modules.agentic.store import (
     write_strategy_plan,
 )
 from app.modules.nba.execution.adapter import create_live_order, resolve_trading_account
+from codex_tools.polymarket.settlement import classify_resolved_market_residual
 
 
 router = APIRouter(prefix="/v1", tags=["ops"])
@@ -3025,6 +3027,8 @@ def _build_live_monitor_current_event_inventory(
             "items": [],
             "open_order_count": 0,
             "open_position_count": 0,
+            "active_open_position_count": 0,
+            "documented_residual_position_count": 0,
             "trade_count": 0,
             "unresolved_inventory_present": False,
         }
@@ -3034,6 +3038,8 @@ def _build_live_monitor_current_event_inventory(
     items: list[dict[str, Any]] = []
     total_open_orders = 0
     total_open_positions = 0
+    total_active_open_positions = 0
+    total_documented_residual_positions = 0
     total_trades = 0
     for event_id in _normalized_unique_values(event_ids):
         plan, plan_event_id, lookup_event_ids = load_current_strategy_plan_for_event(event_id, day=day)
@@ -3046,6 +3052,8 @@ def _build_live_monitor_current_event_inventory(
                     "token_ids": [],
                     "open_order_count": 0,
                     "open_position_count": 0,
+                    "active_open_position_count": 0,
+                    "documented_residual_position_count": 0,
                     "trade_count": 0,
                     "unresolved_inventory_present": False,
                 }
@@ -3080,8 +3088,18 @@ def _build_live_monitor_current_event_inventory(
         open_order_count = len(open_orders)
         open_position_count = len(open_positions)
         trade_count = len(trades)
+        residual_review = _classify_documented_residual_positions(
+            open_orders=open_orders,
+            open_positions=open_positions,
+        )
+        active_open_positions = residual_review["active_open_positions"]
+        documented_residual_positions = residual_review["documented_residual_positions"]
+        blocked_residual_classifications = residual_review["blocked_residual_classifications"]
+        active_open_position_count = len(active_open_positions)
         total_open_orders += open_order_count
         total_open_positions += open_position_count
+        total_active_open_positions += active_open_position_count
+        total_documented_residual_positions += len(documented_residual_positions)
         total_trades += trade_count
         items.append(
             {
@@ -3093,10 +3111,15 @@ def _build_live_monitor_current_event_inventory(
                 "event_slugs": sorted(event_slugs),
                 "open_order_count": open_order_count,
                 "open_position_count": open_position_count,
+                "active_open_position_count": active_open_position_count,
+                "documented_residual_position_count": len(documented_residual_positions),
                 "trade_count": trade_count,
-                "unresolved_inventory_present": bool(open_order_count or open_position_count),
+                "unresolved_inventory_present": bool(open_order_count or active_open_position_count),
                 "open_orders": open_orders,
                 "open_positions": open_positions,
+                "active_open_positions": active_open_positions,
+                "documented_residual_positions": documented_residual_positions,
+                "blocked_residual_classifications": blocked_residual_classifications,
                 "trades": trades,
             }
         )
@@ -3107,11 +3130,123 @@ def _build_live_monitor_current_event_inventory(
         "items": items,
         "open_order_count": total_open_orders,
         "open_position_count": total_open_positions,
+        "active_open_position_count": total_active_open_positions,
+        "documented_residual_position_count": total_documented_residual_positions,
         "trade_count": total_trades,
-        "unresolved_inventory_present": bool(total_open_orders or total_open_positions),
+        "unresolved_inventory_present": bool(total_open_orders or total_active_open_positions),
         "direct_global_open_order_count": direct_clob.get("open_order_count"),
         "direct_global_open_position_count": len(raw_positions),
     }
+
+
+def _classify_documented_residual_positions(
+    *,
+    open_orders: list[dict[str, Any]],
+    open_positions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    direct_truth_snapshot = {
+        "status": "read_only_snapshot",
+        "section_status": {"open_orders": "ok", "open_positions": "ok"},
+        "open_orders": open_orders,
+        "open_positions": open_positions,
+    }
+    active_open_positions: list[dict[str, Any]] = []
+    documented_residual_positions: list[dict[str, Any]] = []
+    blocked_residual_classifications: list[dict[str, Any]] = []
+    for position in open_positions:
+        residual_metadata = _settlement_residual_metadata(position)
+        if not residual_metadata:
+            active_open_positions.append(position)
+            continue
+        classification = classify_resolved_market_residual(
+            position,
+            residual_metadata["resolved_market"],
+            direct_truth_snapshot,
+            issue_link=residual_metadata.get("issue_link"),
+            ledger_link=residual_metadata.get("ledger_link"),
+            post_redeem_recheck_plan=residual_metadata.get("post_redeem_recheck_plan"),
+        )
+        classification_payload = asdict(classification)
+        if classification.live_readiness_blocker:
+            blocked_residual_classifications.append(
+                {"position": position, "classification": classification_payload}
+            )
+            active_open_positions.append(position)
+        else:
+            documented_residual_positions.append(
+                {"position": position, "classification": classification_payload}
+            )
+    return {
+        "active_open_positions": active_open_positions,
+        "documented_residual_positions": documented_residual_positions,
+        "blocked_residual_classifications": blocked_residual_classifications,
+    }
+
+
+def _settlement_residual_metadata(position: dict[str, Any]) -> dict[str, Any] | None:
+    residual = position.get("settlement_residual")
+    residual_metadata = residual if isinstance(residual, dict) else {}
+    resolved_market = residual_metadata.get("resolved_market")
+    if not isinstance(resolved_market, dict):
+        resolved_market = position.get("resolved_market")
+    if not isinstance(resolved_market, dict):
+        resolved_market = _resolved_market_from_position(position, residual_metadata)
+    if not isinstance(resolved_market, dict):
+        return None
+
+    issue_link = (
+        residual_metadata.get("issue_link")
+        or residual_metadata.get("github_issue")
+        or position.get("settlement_issue_link")
+        or position.get("issue_link")
+    )
+    ledger_link = (
+        residual_metadata.get("ledger_link")
+        or residual_metadata.get("settlement_ledger_link")
+        or position.get("settlement_ledger_link")
+        or position.get("ledger_link")
+    )
+    post_redeem_recheck_plan = (
+        residual_metadata.get("post_redeem_recheck_plan")
+        or residual_metadata.get("recheck_plan")
+        or position.get("post_redeem_recheck_plan")
+        or position.get("settlement_recheck_plan")
+    )
+    return {
+        "resolved_market": resolved_market,
+        "issue_link": issue_link,
+        "ledger_link": ledger_link,
+        "post_redeem_recheck_plan": post_redeem_recheck_plan,
+    }
+
+
+def _resolved_market_from_position(position: dict[str, Any], residual_metadata: dict[str, Any]) -> dict[str, Any] | None:
+    if not bool(
+        residual_metadata.get("market_resolved")
+        or residual_metadata.get("resolved")
+        or position.get("market_resolved")
+        or position.get("resolved")
+    ):
+        return None
+    token_id = str(position.get("token_id") or position.get("asset_id") or position.get("asset") or "").strip()
+    payout = residual_metadata.get("payout_per_share")
+    if payout is None:
+        payout = position.get("payout_per_share")
+    payouts = residual_metadata.get("payouts") or position.get("payouts")
+    if not isinstance(payouts, dict) and token_id and payout is not None:
+        payouts = {token_id: payout}
+    resolved_market = {
+        "resolved": True,
+        "condition_id": residual_metadata.get("condition_id") or position.get("condition_id") or position.get("market"),
+        "market_slug": residual_metadata.get("market_slug") or position.get("market_slug") or position.get("event_slug"),
+        "winning_token_id": residual_metadata.get("winning_token_id") or position.get("winning_token_id"),
+    }
+    if isinstance(payouts, dict):
+        resolved_market["payouts"] = payouts
+    expected_payout = residual_metadata.get("expected_payout_usd") or position.get("expected_payout_usd")
+    if expected_payout is not None:
+        resolved_market["expected_payout_usd"] = expected_payout
+    return resolved_market
 
 
 def _strategy_plan_token_ids(plan: dict[str, Any]) -> list[str]:
