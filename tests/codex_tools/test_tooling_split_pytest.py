@@ -1391,7 +1391,7 @@ def test_polymarket_grid_service_preview_finds_global_and_other_basketball_candi
                     "token_id": "euro-underdog",
                     "size": "12",
                     "average_price": "0.42",
-                    "current_price": "0.39",
+                    "current_value": "4.68",
                 },
                 {
                     "title": "Spurs vs. Thunder",
@@ -1416,6 +1416,7 @@ def test_polymarket_grid_service_preview_finds_global_and_other_basketball_candi
     assert {candidate["category"] for candidate in preview.candidates} == {"science_aliens", "other_basketball"}
     assert [candidate["token_id"] for candidate in preview.candidates] == ["alien-yes", "euro-underdog"]
     assert preview.candidates[0]["existing_open_order_count"] == 1
+    assert preview.candidates[1]["current_price"] == "0.39"
     assert any(item["reason"] == "covered_basketball_managed_by_janus" for item in preview.skipped)
 
 

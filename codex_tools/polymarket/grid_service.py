@@ -164,10 +164,21 @@ def _pnl_percent(position: dict[str, Any]) -> Decimal | None:
     if explicit is not None:
         return explicit
     average_price = _first_decimal(position, ("average_price", "avg_price", "avgPrice", "entry_price"))
-    current_price = _first_decimal(position, ("current_price", "cur_price", "curPrice", "market_price", "price"))
+    current_price = _current_price(position)
     if average_price is None or current_price is None or average_price == 0:
         return None
     return ((current_price - average_price) / average_price) * Decimal("100")
+
+
+def _current_price(position: dict[str, Any]) -> Decimal | None:
+    explicit = _first_decimal(position, ("current_price", "cur_price", "curPrice", "market_price", "price"))
+    if explicit is not None:
+        return explicit
+    current_value = _first_decimal(position, ("current_value", "currentValue", "value"))
+    size = _first_decimal(position, ("size", "quantity", "shares", "balance"))
+    if current_value is None or size is None or size == 0:
+        return None
+    return current_value / size
 
 
 def _open_orders_for_token(open_orders: list[dict[str, Any]], token_id: str) -> list[dict[str, Any]]:
@@ -265,7 +276,7 @@ def build_grid_service_preview(
 
         matching_orders = _open_orders_for_token(open_orders, token_id)
         average_price = _first_decimal(position, ("average_price", "avg_price", "avgPrice", "entry_price"))
-        current_price = _first_decimal(position, ("current_price", "cur_price", "curPrice", "market_price", "price"))
+        current_price = _current_price(position)
         candidates.append(
             PolymarketGridCandidate(
                 status="review_required",
