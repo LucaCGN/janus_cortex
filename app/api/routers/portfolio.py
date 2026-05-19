@@ -908,6 +908,51 @@ def _build_portfolio_manager_runtime_risk_rate_evidence(
     }
 
 
+def _build_portfolio_manager_order_ledger_finalization(
+    *,
+    execution_status: str,
+    order_id: str,
+    external_order_id: str | None,
+    event_type: str,
+    execution_payload: dict[str, Any],
+    side_effects: dict[str, Any],
+) -> dict[str, Any]:
+    result = (
+        "execution_performed_via_approved_portfolio_manager_path"
+        if execution_status == "submitted"
+        else "approved_portfolio_manager_path_submission_failed"
+    )
+    proof = dict(execution_payload.get("concrete_adapter_proof") or {})
+    return {
+        "schema_version": "portfolio_manager_order_management_ledger_finalization_v1",
+        "status": execution_status,
+        "result": result,
+        "order_id": order_id,
+        "external_order_id": external_order_id,
+        "event_type": event_type,
+        "adapter_name": execution_payload.get("adapter_name"),
+        "approved_execution_path": execution_payload.get("approved_execution_path"),
+        "idempotency_key": execution_payload.get("idempotency_key"),
+        "runtime_risk_rate_evidence": to_jsonable(execution_payload.get("runtime_risk_rate_evidence") or {}),
+        "clob_response": to_jsonable(execution_payload.get("clob_response") or {}),
+        "side_effects": to_jsonable(side_effects),
+        "post_confirmation_reconciliation": {
+            "required": True,
+            "plan": to_jsonable(proof.get("reconciliation_plan")),
+            "expected_external_order_id": external_order_id,
+            "next_checks": [
+                "direct_clob_open_order_or_fill_confirmation",
+                "portfolio_order_lifecycle_reconciliation",
+                "manager_action_ledger_status_review",
+            ],
+        },
+        "transaction_preparation_attempted": False,
+        "transaction_signing_attempted": False,
+        "transaction_submission_attempted": False,
+        "transaction_broadcast_attempted": False,
+    }
+
+
 def apply_portfolio_manager_order_management_order(
     connection: PsycopgConnection,
     *,
@@ -1052,6 +1097,23 @@ def apply_portfolio_manager_order_management_order(
     else:
         order_status = "submit_error"
         event_type = "portfolio_manager_place_failed"
+    side_effects = {
+        "orders_placed": bool(place_result.success),
+        "orders_cancelled": False,
+        "orders_replaced": False,
+        "orders_submitted": True,
+        "orders_prepared": True,
+        "live_worker_started": False,
+    }
+    ledger_finalization = _build_portfolio_manager_order_ledger_finalization(
+        execution_status=order_status,
+        order_id=order_id,
+        external_order_id=external_order_id,
+        event_type=event_type,
+        execution_payload=execution_payload,
+        side_effects=side_effects,
+    )
+    execution_payload["manager_action_ledger_finalization"] = ledger_finalization
 
     repo.upsert_order(
         order_id=order_id,
@@ -1084,6 +1146,11 @@ def apply_portfolio_manager_order_management_order(
         raw_json=execution_payload,
         ignore_duplicates=True,
     )
+    ledger_finalized = finalize_portfolio_manager_action_ledger_execution(
+        connection,
+        ledger_id=str(ledger_applied.get("ledger_id") or ""),
+        finalization=ledger_finalization,
+    )
 
     return {
         "schema_version": "portfolio_manager_order_management_execution_v1",
@@ -1093,15 +1160,9 @@ def apply_portfolio_manager_order_management_order(
         "external_order_id": external_order_id,
         "event_type": event_type,
         "ledger_applied": ledger_applied,
+        "ledger_finalized": ledger_finalized,
         "execution_payload": execution_payload,
-        "side_effects": {
-            "orders_placed": bool(place_result.success),
-            "orders_cancelled": False,
-            "orders_replaced": False,
-            "orders_submitted": True,
-            "orders_prepared": True,
-            "live_worker_started": False,
-        },
+        "side_effects": side_effects,
     }
 
 
@@ -1193,6 +1254,60 @@ def apply_portfolio_manager_action_ledger(
         "orders_replaced": False,
         "orders_submitted": False,
         "orders_prepared": False,
+    }
+
+
+def finalize_portfolio_manager_action_ledger_execution(
+    connection: PsycopgConnection,
+    *,
+    ledger_id: str,
+    finalization: dict[str, Any],
+) -> dict[str, Any]:
+    normalized_ledger_id = str(ledger_id or "").strip()
+    if not normalized_ledger_id:
+        return {"ledger_id": None, "applied": False, "reason": "missing_ledger_id"}
+
+    status_value = str(finalization.get("status") or "").strip() or "unknown"
+    result_value = str(finalization.get("result") or "").strip() or "unknown"
+    now = datetime.now(timezone.utc)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE portfolio.manager_action_ledger
+            SET
+                status = %s,
+                result = %s,
+                live_order_impact = %s,
+                ledger_record = jsonb_set(
+                    ledger_record,
+                    '{execution_confirmation}',
+                    %s::jsonb,
+                    true
+                ),
+                updated_at = %s
+            WHERE ledger_id = %s
+            RETURNING ledger_id;
+            """,
+            (
+                status_value,
+                result_value,
+                "order-path",
+                Json(to_jsonable(finalization)),
+                now,
+                normalized_ledger_id,
+            ),
+        )
+        row = cursor.fetchone()
+    if row is None:
+        return {"ledger_id": normalized_ledger_id, "applied": False, "reason": "ledger_row_not_found"}
+    return {
+        "ledger_id": str(row[0] if isinstance(row, tuple) else row["ledger_id"]),
+        "applied": True,
+        "status": status_value,
+        "result": result_value,
+        "orders_placed": bool((finalization.get("side_effects") or {}).get("orders_placed")),
+        "orders_submitted": bool((finalization.get("side_effects") or {}).get("orders_submitted")),
+        "orders_prepared": bool((finalization.get("side_effects") or {}).get("orders_prepared")),
     }
 
 

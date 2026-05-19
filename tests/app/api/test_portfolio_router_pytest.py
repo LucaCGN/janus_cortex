@@ -1405,6 +1405,8 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
             self.connection.executed.append((query, params))
             if "INSERT INTO portfolio.manager_action_ledger" in query:
                 self.row = (params[0],)
+            elif "UPDATE portfolio.manager_action_ledger" in query:
+                self.row = (params[-1],)
             elif "INSERT INTO portfolio.orders" in query:
                 self.row = (params[0],)
             elif "INSERT INTO portfolio.order_events" in query:
@@ -1490,13 +1492,22 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     payload = response.json()
     execution = payload["order_management_execution"]
     runtime_evidence = execution["execution_payload"]["runtime_risk_rate_evidence"]
+    ledger_finalization = execution["execution_payload"]["manager_action_ledger_finalization"]
     assert payload["dry_run"] is False
     assert payload["live_order_impact"] == "order-path"
     assert execution["status"] == "submitted"
     assert execution["external_order_id"] == "0xpmorder"
+    assert execution["ledger_finalized"]["applied"] is True
+    assert execution["ledger_finalized"]["result"] == "execution_performed_via_approved_portfolio_manager_path"
     assert execution["side_effects"]["orders_prepared"] is True
     assert execution["side_effects"]["orders_submitted"] is True
     assert execution["side_effects"]["orders_placed"] is True
+    assert ledger_finalization["schema_version"] == "portfolio_manager_order_management_ledger_finalization_v1"
+    assert ledger_finalization["status"] == "submitted"
+    assert ledger_finalization["result"] == "execution_performed_via_approved_portfolio_manager_path"
+    assert ledger_finalization["external_order_id"] == "0xpmorder"
+    assert ledger_finalization["post_confirmation_reconciliation"]["required"] is True
+    assert ledger_finalization["transaction_broadcast_attempted"] is False
     assert runtime_evidence["schema_version"] == "portfolio_manager_runtime_risk_rate_evidence_v1"
     assert runtime_evidence["risk_limits_source"] == "app.api.guards.load_order_risk_limits"
     assert runtime_evidence["risk_checks"] == {
@@ -1512,6 +1523,7 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     assert placed["request"].side.value == "SELL"
     assert placed["request"].price == 0.39
     assert any("INSERT INTO portfolio.manager_action_ledger" in query for query, _ in connection.executed)
+    assert any("UPDATE portfolio.manager_action_ledger" in query for query, _ in connection.executed)
     assert any("INSERT INTO portfolio.orders" in query for query, _ in connection.executed)
     assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
 
