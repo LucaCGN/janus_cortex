@@ -12,6 +12,7 @@ from typing import Any, Sequence, TextIO
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
 from codex_tools.polymarket.grid_service import build_grid_service_preview
 from codex_tools.polymarket.preview import build_fallback_preview
+from codex_tools.polymarket.settlement import build_redeem_preview
 
 
 def _read_json_file(path: Path | None) -> dict[str, Any] | None:
@@ -81,6 +82,36 @@ def _build_parser() -> argparse.ArgumentParser:
     grid.add_argument("--include-other-basketball", action="store_true", default=True)
     grid.add_argument("--include-covered-basketball", action="store_true")
     grid.set_defaults(func=_preview_grid_service)
+
+    redeem = subparsers.add_parser(
+        "preview-redeem",
+        help="Build a non-executing resolved-market redemption preview.",
+    )
+    redeem.add_argument("--direct-truth-json", required=True, type=Path)
+    redeem.add_argument("--position-token-id", required=True)
+    redeem.add_argument("--market-resolved", action="store_true")
+    redeem.add_argument("--condition-id", required=True)
+    redeem.add_argument("--market-slug", required=True)
+    redeem.add_argument("--winning-token-id")
+    redeem.add_argument("--expected-payout-usd")
+    redeem.add_argument("--issue-link")
+    redeem.add_argument("--ledger-link")
+    redeem.add_argument("--post-redeem-recheck-plan")
+    redeem.add_argument(
+        "--non-dry-run-intent",
+        action="store_true",
+        help="Preview a non-dry-run redemption intent without preparing, signing, or submitting.",
+    )
+    redeem.add_argument("--wallet-ready", action="store_true")
+    redeem.add_argument("--chain-ready", action="store_true")
+    redeem.add_argument("--signer-ready", action="store_true")
+    redeem.add_argument("--gas-fee-ready", action="store_true")
+    redeem.add_argument("--kill-switch-clear", action="store_true")
+    redeem.add_argument("--ledger-available", action="store_true")
+    redeem.add_argument("--janus-codex-approval", action="store_true")
+    redeem.add_argument("--truth-source", action="append", default=[])
+    redeem.add_argument("--now-utc")
+    redeem.set_defaults(func=_preview_redeem)
     return parser
 
 
@@ -148,11 +179,59 @@ def _preview_grid_service(args: argparse.Namespace, output: TextIO) -> int:
     return 0
 
 
+def _preview_redeem(args: argparse.Namespace, output: TextIO) -> int:
+    direct_truth = _read_required_json_file(args.direct_truth_json)
+    position = _select_position(direct_truth, token_id=args.position_token_id)
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": args.market_resolved,
+            "condition_id": args.condition_id,
+            "market_slug": args.market_slug,
+            "winning_token_id": args.winning_token_id,
+            "expected_payout_usd": args.expected_payout_usd,
+        },
+        direct_truth,
+        dry_run=not args.non_dry_run_intent,
+        issue_link=args.issue_link,
+        ledger_link=args.ledger_link,
+        post_redeem_recheck_plan=args.post_redeem_recheck_plan,
+        wallet_ready=args.wallet_ready,
+        chain_ready=args.chain_ready,
+        signer_ready=args.signer_ready,
+        gas_fee_ready=args.gas_fee_ready,
+        kill_switch_clear=args.kill_switch_clear,
+        ledger_available=args.ledger_available,
+        janus_codex_approval=args.janus_codex_approval,
+        truth_sources=args.truth_source,
+        now_utc=args.now_utc,
+    )
+    json.dump(asdict(preview), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
 def _read_required_json_file(path: Path) -> dict[str, Any]:
     payload = _read_json_file(path)
     if payload is None:
         raise ValueError("--direct-truth-json is required")
     return payload
+
+
+def _select_position(direct_truth: dict[str, Any], *, token_id: str) -> dict[str, Any]:
+    for position in direct_truth.get("open_positions") or []:
+        if not isinstance(position, dict):
+            continue
+        candidates = (
+            position.get("token_id"),
+            position.get("asset_id"),
+            position.get("asset"),
+            position.get("outcomeTokenId"),
+            position.get("clobTokenId"),
+        )
+        if any(str(candidate or "").strip() == token_id for candidate in candidates):
+            return position
+    raise ValueError(f"position token not found in direct truth snapshot: {token_id}")
 
 
 def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int:

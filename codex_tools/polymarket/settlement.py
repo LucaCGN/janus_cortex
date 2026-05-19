@@ -1,0 +1,471 @@
+"""Resolved-market residual classification and redeem previews.
+
+This module is deliberately inert. It classifies resolved-market account rows
+and builds redemption gate previews, but it never prepares, signs, submits, or
+broadcasts transactions and never places CLOB orders.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Any
+
+from codex_tools.polymarket.execution_gate import NO_EXECUTION_STATEMENT
+from codex_tools.polymarket.safety import NON_AUTHORITATIVE_TRUTH_SOURCES
+
+RESIDUAL_CLASSIFICATION_SCHEMA_VERSION = "polymarket_residual_classification_v1"
+REDEEM_PREVIEW_SCHEMA_VERSION = "polymarket_redeem_preview_v1"
+NO_REDEMPTION_STATEMENT = (
+    "No redemption transaction was prepared, signed, submitted, or broadcast. "
+    + NO_EXECUTION_STATEMENT
+)
+
+REQUIRED_REDEEM_GATE_LABELS = {
+    "residual_classified": "documented residual classification from direct truth",
+    "fresh_direct_truth": "fresh direct account/CLOB truth",
+    "market_resolution_proven": "resolved market, token, outcome, and payout proof",
+    "no_event_scoped_open_orders": "no event-scoped open orders or fill ambiguity",
+    "wallet_chain_signer_ready": "wallet, chain, signer, gas, and fee readiness",
+    "kill_switch_clear": "kill switch clear",
+    "ledger_idempotency_available": "settlement ledger idempotency key available",
+    "janus_codex_approval": "explicit Janus+Codex redemption approval gate",
+    "post_redeem_recheck_plan_present": "post-redeem direct-truth reconciliation plan",
+    "non_authoritative_truth_rejected": "screenshots/chat/Obsidian/GitHub/stale mirrors rejected as truth",
+}
+
+
+@dataclass(frozen=True)
+class PolymarketResidualClassification:
+    schema_version: str
+    status: str
+    residual_type: str
+    live_readiness_blocker: bool
+    token_id: str
+    condition_id: str
+    market_slug: str
+    size: str | None
+    current_value_usd: str | None
+    expected_payout_usd: str | None
+    matching_open_order_count: int
+    blockers: list[str]
+    evidence: dict[str, Any]
+    order_preparation_attempted: bool
+    order_submission_attempted: bool
+    redemption_preparation_attempted: bool
+    redemption_submission_attempted: bool
+    no_execution_statement: str
+
+
+@dataclass(frozen=True)
+class PolymarketRedeemPreview:
+    schema_version: str
+    status: str
+    dry_run: bool
+    redemption_authorized: bool
+    residual_classification: dict[str, Any]
+    missing_gates: list[str]
+    required_gates: dict[str, str]
+    expected_payout_usd: str | None
+    idempotency_key: str
+    ledger_write_required_before_submission: bool
+    transaction_preparation_attempted: bool
+    transaction_signing_attempted: bool
+    transaction_submission_attempted: bool
+    transaction_broadcast_attempted: bool
+    order_preparation_attempted: bool
+    order_submission_attempted: bool
+    gate_snapshot: dict[str, Any]
+    no_execution_statement: str
+
+
+def _decimal(value: Any) -> Decimal | None:
+    if value is None or value == "":
+        return None
+    try:
+        result = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return None
+    if not result.is_finite():
+        return None
+    return result
+
+
+def _text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _first_text(item: dict[str, Any], keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = _text(item.get(key))
+        if value:
+            return value
+    return ""
+
+
+def _token_id(item: dict[str, Any]) -> str:
+    return _first_text(item, ("token_id", "asset_id", "asset", "outcomeTokenId", "clobTokenId"))
+
+
+def _condition_id(item: dict[str, Any]) -> str:
+    return _first_text(item, ("condition_id", "conditionId", "condition", "market_condition_id"))
+
+
+def _market_slug(item: dict[str, Any]) -> str:
+    return _first_text(item, ("market_slug", "event_slug", "slug", "market"))
+
+
+def _position_size(position: dict[str, Any]) -> Decimal | None:
+    for key in ("size", "quantity", "shares", "balance"):
+        value = _decimal(position.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _current_value(position: dict[str, Any]) -> Decimal | None:
+    explicit = _decimal(position.get("current_value") or position.get("currentValue") or position.get("value"))
+    if explicit is not None:
+        return explicit
+    current_price = _decimal(position.get("current_price") or position.get("cur_price") or position.get("price"))
+    size = _position_size(position)
+    if current_price is None or size is None:
+        return None
+    return current_price * size
+
+
+def _resolution_payout_per_share(resolution: dict[str, Any], token_id: str) -> Decimal | None:
+    explicit = _decimal(resolution.get("payout_per_share") or resolution.get("payout"))
+    if explicit is not None:
+        return explicit
+    payouts = resolution.get("payouts") or resolution.get("token_payouts") or {}
+    if isinstance(payouts, dict):
+        return _decimal(payouts.get(token_id))
+    return None
+
+
+def _expected_payout(position: dict[str, Any], resolution: dict[str, Any], token_id: str) -> Decimal | None:
+    explicit = _decimal(
+        resolution.get("expected_payout_usd")
+        or resolution.get("expected_proceeds_usd")
+        or position.get("expected_payout_usd")
+        or position.get("expected_proceeds_usd")
+    )
+    if explicit is not None:
+        return max(Decimal("0"), explicit)
+    size = _position_size(position)
+    payout_per_share = _resolution_payout_per_share(resolution, token_id)
+    if size is None or payout_per_share is None:
+        return None
+    return max(Decimal("0"), size * payout_per_share)
+
+
+def _format_decimal(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.normalize()
+    return format(normalized, "f")
+
+
+def _open_orders(snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(snapshot, dict):
+        return []
+    return [item for item in (snapshot.get("open_orders") or []) if isinstance(item, dict)]
+
+
+def _matching_open_orders(
+    snapshot: dict[str, Any] | None,
+    *,
+    token_id: str,
+    condition_id: str,
+    market_slug: str,
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for order in _open_orders(snapshot):
+        order_token = _token_id(order)
+        order_condition = _condition_id(order)
+        order_market = _market_slug(order)
+        if token_id and order_token == token_id:
+            matches.append(order)
+        elif condition_id and order_condition == condition_id:
+            matches.append(order)
+        elif market_slug and order_market == market_slug:
+            matches.append(order)
+    return matches
+
+
+def _snapshot_status(snapshot: dict[str, Any] | None) -> str:
+    if not isinstance(snapshot, dict):
+        return ""
+    return _text(snapshot.get("status"))
+
+
+def _section_status(snapshot: dict[str, Any] | None, section: str) -> str:
+    if not isinstance(snapshot, dict):
+        return ""
+    section_status = snapshot.get("section_status") or {}
+    if not isinstance(section_status, dict):
+        return ""
+    return _text(section_status.get(section))
+
+
+def _has_documented_owner(
+    *,
+    issue_link: str | None,
+    ledger_link: str | None,
+    post_redeem_recheck_plan: str | dict[str, Any] | None,
+) -> bool:
+    return bool((_text(issue_link) or _text(ledger_link)) and post_redeem_recheck_plan)
+
+
+def _truth_sources_ok(truth_sources: list[str] | None) -> tuple[bool, list[str]]:
+    normalized = sorted({source.strip().lower() for source in truth_sources or [] if source.strip()})
+    rejected = [source for source in normalized if source in NON_AUTHORITATIVE_TRUTH_SOURCES]
+    return not rejected, rejected
+
+
+def classify_resolved_market_residual(
+    position: dict[str, Any],
+    resolved_market: dict[str, Any],
+    direct_truth_snapshot: dict[str, Any] | None,
+    *,
+    issue_link: str | None = None,
+    ledger_link: str | None = None,
+    post_redeem_recheck_plan: str | dict[str, Any] | None = None,
+) -> PolymarketResidualClassification:
+    """Classify a resolved-market row without treating it as active exposure."""
+
+    blockers: list[str] = []
+    token_id = _token_id(position)
+    condition_id = _condition_id(resolved_market) or _condition_id(position)
+    market_slug = _market_slug(resolved_market) or _market_slug(position)
+    size = _position_size(position)
+    current_value = _current_value(position)
+    expected_payout = _expected_payout(position, resolved_market, token_id)
+
+    if not token_id:
+        blockers.append("token_id_missing")
+    if not condition_id:
+        blockers.append("condition_id_missing")
+    if not bool(resolved_market.get("resolved")):
+        blockers.append("market_resolution_not_proven")
+    if _snapshot_status(direct_truth_snapshot) != "read_only_snapshot":
+        blockers.append("direct_truth_snapshot_not_complete")
+    if _section_status(direct_truth_snapshot, "open_positions") != "ok":
+        blockers.append("direct_open_position_truth_unavailable")
+    if _section_status(direct_truth_snapshot, "open_orders") != "ok":
+        blockers.append("direct_open_order_truth_unavailable")
+    matching_open_orders = _matching_open_orders(
+        direct_truth_snapshot,
+        token_id=token_id,
+        condition_id=condition_id,
+        market_slug=market_slug,
+    )
+    if matching_open_orders:
+        blockers.append("event_scoped_open_orders_present")
+    if expected_payout is None:
+        blockers.append("expected_payout_missing")
+    if not _has_documented_owner(
+        issue_link=issue_link,
+        ledger_link=ledger_link,
+        post_redeem_recheck_plan=post_redeem_recheck_plan,
+    ):
+        blockers.append("residual_issue_or_ledger_link_and_recheck_plan_missing")
+
+    if blockers:
+        residual_type = "unknown_settlement_state"
+        status = "blocked_residual_classification"
+        live_readiness_blocker = True
+    elif expected_payout == 0 and (current_value is None or current_value == 0):
+        residual_type = "zero_value_residual"
+        status = "documented_zero_value_residual"
+        live_readiness_blocker = False
+    elif expected_payout > 0:
+        residual_type = "redeemable_residual"
+        status = "documented_redeemable_residual"
+        live_readiness_blocker = False
+    else:
+        residual_type = "unknown_settlement_state"
+        status = "blocked_residual_classification"
+        live_readiness_blocker = True
+        blockers.append("residual_value_not_classifiable")
+
+    return PolymarketResidualClassification(
+        schema_version=RESIDUAL_CLASSIFICATION_SCHEMA_VERSION,
+        status=status,
+        residual_type=residual_type,
+        live_readiness_blocker=live_readiness_blocker,
+        token_id=token_id,
+        condition_id=condition_id,
+        market_slug=market_slug,
+        size=_format_decimal(size),
+        current_value_usd=_format_decimal(current_value),
+        expected_payout_usd=_format_decimal(expected_payout),
+        matching_open_order_count=len(matching_open_orders),
+        blockers=blockers,
+        evidence={
+            "issue_link": issue_link,
+            "ledger_link": ledger_link,
+            "post_redeem_recheck_plan_present": bool(post_redeem_recheck_plan),
+            "direct_truth_status": _snapshot_status(direct_truth_snapshot),
+            "direct_open_position_section_status": _section_status(direct_truth_snapshot, "open_positions"),
+            "direct_open_order_section_status": _section_status(direct_truth_snapshot, "open_orders"),
+            "matching_open_order_ids": [
+                _first_text(order, ("id", "order_id", "external_order_id", "hash"))
+                for order in matching_open_orders
+            ],
+            "resolved_market": dict(resolved_market),
+        },
+        order_preparation_attempted=False,
+        order_submission_attempted=False,
+        redemption_preparation_attempted=False,
+        redemption_submission_attempted=False,
+        no_execution_statement=NO_REDEMPTION_STATEMENT,
+    )
+
+
+def derive_redeem_idempotency_key(classification: PolymarketResidualClassification) -> str:
+    canonical = json.dumps(
+        {
+            "condition_id": classification.condition_id,
+            "expected_payout_usd": classification.expected_payout_usd,
+            "market_slug": classification.market_slug,
+            "residual_type": classification.residual_type,
+            "size": classification.size,
+            "token_id": classification.token_id,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return "redeem-" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:32]
+
+
+def build_redeem_preview(
+    position: dict[str, Any],
+    resolved_market: dict[str, Any],
+    direct_truth_snapshot: dict[str, Any] | None,
+    *,
+    dry_run: bool = True,
+    issue_link: str | None = None,
+    ledger_link: str | None = None,
+    post_redeem_recheck_plan: str | dict[str, Any] | None = None,
+    wallet_ready: bool = False,
+    chain_ready: bool = False,
+    signer_ready: bool = False,
+    gas_fee_ready: bool = False,
+    kill_switch_clear: bool = False,
+    ledger_available: bool = False,
+    janus_codex_approval: bool = False,
+    truth_sources: list[str] | None = None,
+    now_utc: datetime | str | None = None,
+) -> PolymarketRedeemPreview:
+    """Build a non-executing redemption preview and gate snapshot."""
+
+    classification = classify_resolved_market_residual(
+        position,
+        resolved_market,
+        direct_truth_snapshot,
+        issue_link=issue_link,
+        ledger_link=ledger_link,
+        post_redeem_recheck_plan=post_redeem_recheck_plan,
+    )
+    truth_sources_clean, rejected_truth_sources = _truth_sources_ok(truth_sources)
+    wallet_chain_ready = bool(wallet_ready and chain_ready and signer_ready and gas_fee_ready)
+    idempotency_key = derive_redeem_idempotency_key(classification)
+    now_text = _coerce_utc(now_utc).isoformat().replace("+00:00", "Z")
+
+    gate_snapshot = {
+        "generated_at_utc": now_text,
+        "residual_classified": classification.live_readiness_blocker is False,
+        "fresh_direct_truth": _snapshot_status(direct_truth_snapshot) == "read_only_snapshot",
+        "market_resolution_proven": bool(resolved_market.get("resolved")),
+        "no_event_scoped_open_orders": classification.matching_open_order_count == 0,
+        "wallet_chain_signer_ready": wallet_chain_ready,
+        "kill_switch_clear": bool(kill_switch_clear),
+        "ledger_idempotency_available": bool(ledger_available and idempotency_key),
+        "janus_codex_approval": bool(janus_codex_approval),
+        "post_redeem_recheck_plan_present": bool(post_redeem_recheck_plan),
+        "non_authoritative_truth_rejected": truth_sources_clean,
+        "wallet_ready": bool(wallet_ready),
+        "chain_ready": bool(chain_ready),
+        "signer_ready": bool(signer_ready),
+        "gas_fee_ready": bool(gas_fee_ready),
+        "truth_sources": sorted({source.strip().lower() for source in truth_sources or [] if source.strip()}),
+        "rejected_truth_sources": rejected_truth_sources,
+        "transaction_preparation_attempted": False,
+        "transaction_signing_attempted": False,
+        "transaction_submission_attempted": False,
+        "transaction_broadcast_attempted": False,
+        "order_preparation_attempted": False,
+        "order_submission_attempted": False,
+        "no_execution_statement": NO_REDEMPTION_STATEMENT,
+    }
+    missing_gates = [
+        name for name in REQUIRED_REDEEM_GATE_LABELS if not bool(gate_snapshot.get(name))
+    ]
+
+    if classification.status == "blocked_residual_classification":
+        status = "blocked_residual_classification"
+        redemption_authorized = False
+    elif classification.residual_type == "zero_value_residual":
+        status = "no_redeem_needed_zero_value_residual"
+        redemption_authorized = False
+        missing_gates = []
+    elif missing_gates:
+        status = "blocked_missing_redemption_gates"
+        redemption_authorized = False
+    elif dry_run:
+        status = "dry_run_redeem_preview_only"
+        redemption_authorized = False
+    else:
+        status = "ready_for_approved_redemption_path"
+        redemption_authorized = True
+
+    return PolymarketRedeemPreview(
+        schema_version=REDEEM_PREVIEW_SCHEMA_VERSION,
+        status=status,
+        dry_run=dry_run,
+        redemption_authorized=redemption_authorized,
+        residual_classification=asdict(classification),
+        missing_gates=missing_gates,
+        required_gates=REQUIRED_REDEEM_GATE_LABELS.copy(),
+        expected_payout_usd=classification.expected_payout_usd,
+        idempotency_key=idempotency_key,
+        ledger_write_required_before_submission=True,
+        transaction_preparation_attempted=False,
+        transaction_signing_attempted=False,
+        transaction_submission_attempted=False,
+        transaction_broadcast_attempted=False,
+        order_preparation_attempted=False,
+        order_submission_attempted=False,
+        gate_snapshot=gate_snapshot,
+        no_execution_statement=NO_REDEMPTION_STATEMENT,
+    )
+
+
+def _coerce_utc(value: datetime | str | None) -> datetime:
+    if value is None:
+        return datetime.now(UTC)
+    if isinstance(value, str):
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    else:
+        parsed = value
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+__all__ = [
+    "NO_REDEMPTION_STATEMENT",
+    "REDEEM_PREVIEW_SCHEMA_VERSION",
+    "REQUIRED_REDEEM_GATE_LABELS",
+    "RESIDUAL_CLASSIFICATION_SCHEMA_VERSION",
+    "PolymarketRedeemPreview",
+    "PolymarketResidualClassification",
+    "build_redeem_preview",
+    "classify_resolved_market_residual",
+    "derive_redeem_idempotency_key",
+]

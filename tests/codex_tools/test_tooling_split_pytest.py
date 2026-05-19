@@ -38,11 +38,15 @@ from codex_tools.janus import worker as janus_worker
 from codex_tools.polymarket import (
     GRID_SERVICE_SCHEMA_VERSION,
     PREVIEW_SCHEMA_VERSION,
+    REDEEM_PREVIEW_SCHEMA_VERSION,
+    RESIDUAL_CLASSIFICATION_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
     build_fallback_preview,
     build_grid_service_preview,
     build_polymarket_safety_gate_snapshot,
+    build_redeem_preview,
+    classify_resolved_market_residual,
     evaluate_direct_truth_freshness,
     evaluate_kill_switch,
     evaluate_minimum_order_policy,
@@ -1148,6 +1152,38 @@ def _fresh_snapshot() -> dict[str, object]:
     }
 
 
+def _settlement_snapshot(
+    *,
+    open_positions: list[dict[str, object]] | None = None,
+    open_orders: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    return {
+        "status": "read_only_snapshot",
+        "read_at_utc": "2026-05-19T12:00:00Z",
+        "section_status": {
+            "open_positions": "ok",
+            "open_orders": "ok",
+            "trades": "ok",
+        },
+        "open_positions": open_positions or [],
+        "open_orders": open_orders or [],
+        "trades": [],
+        "open_order_count": len(open_orders or []),
+        "open_position_count": len(open_positions or []),
+        "trade_count": 0,
+    }
+
+
+def _losing_residual_position() -> dict[str, object]:
+    return {
+        "market_slug": "nba-sas-okc-2026-05-18",
+        "condition_id": "condition-okc",
+        "token_id": "token-thunder",
+        "size": "338.4702",
+        "current_value": "0",
+    }
+
+
 def test_direct_truth_freshness_requires_complete_recent_snapshot() -> None:
     stale = evaluate_direct_truth_freshness(
         _fresh_snapshot(),
@@ -1370,6 +1406,191 @@ def test_polymarket_cli_preview_fallback_outputs_blocked_json(capsys) -> None:
     assert payload["decision"]["order_submission_attempted"] is False
     assert payload["order_preparation_attempted"] is False
     assert payload["order_submission_attempted"] is False
+
+
+def test_resolved_losing_position_classifies_as_zero_value_residual() -> None:
+    position = _losing_residual_position()
+    classification = classify_resolved_market_residual(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-thunder": "0", "token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus settlement ledger after operator review.",
+    )
+
+    assert classification.schema_version == RESIDUAL_CLASSIFICATION_SCHEMA_VERSION
+    assert classification.status == "documented_zero_value_residual"
+    assert classification.residual_type == "zero_value_residual"
+    assert classification.live_readiness_blocker is False
+    assert classification.expected_payout_usd == "0"
+    assert classification.matching_open_order_count == 0
+    assert classification.order_preparation_attempted is False
+    assert classification.order_submission_attempted is False
+    assert classification.redemption_preparation_attempted is False
+    assert classification.redemption_submission_attempted is False
+
+
+def test_resolved_residual_blocks_when_event_open_order_remains() -> None:
+    position = _losing_residual_position()
+    classification = classify_resolved_market_residual(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "payouts": {"token-thunder": "0"},
+        },
+        _settlement_snapshot(
+            open_positions=[position],
+            open_orders=[
+                {
+                    "id": "0xopen",
+                    "condition_id": "condition-okc",
+                    "token_id": "token-thunder",
+                    "side": "SELL",
+                }
+            ],
+        ),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck after the open order is reconciled.",
+    )
+
+    assert classification.status == "blocked_residual_classification"
+    assert classification.residual_type == "unknown_settlement_state"
+    assert classification.live_readiness_blocker is True
+    assert classification.matching_open_order_count == 1
+    assert "event_scoped_open_orders_present" in classification.blockers
+
+
+def test_redeem_preview_blocks_missing_gates_without_transaction_attempts() -> None:
+    position = {
+        "market_slug": "nba-sas-okc-2026-05-18",
+        "condition_id": "condition-okc",
+        "token_id": "token-spurs",
+        "size": "7.5",
+        "current_value": "7.5",
+    }
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus ledger after redeem.",
+        truth_sources=["direct_clob", "github"],
+        now_utc=datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC),
+    )
+
+    assert preview.schema_version == REDEEM_PREVIEW_SCHEMA_VERSION
+    assert preview.status == "blocked_missing_redemption_gates"
+    assert preview.redemption_authorized is False
+    assert "wallet_chain_signer_ready" in preview.missing_gates
+    assert "kill_switch_clear" in preview.missing_gates
+    assert "ledger_idempotency_available" in preview.missing_gates
+    assert "janus_codex_approval" in preview.missing_gates
+    assert "non_authoritative_truth_rejected" in preview.missing_gates
+    assert preview.transaction_preparation_attempted is False
+    assert preview.transaction_signing_attempted is False
+    assert preview.transaction_submission_attempted is False
+    assert preview.transaction_broadcast_attempted is False
+    assert preview.order_preparation_attempted is False
+    assert preview.order_submission_attempted is False
+
+
+def test_redeem_preview_all_gates_stays_dry_run_without_broadcast() -> None:
+    position = {
+        "market_slug": "nba-sas-okc-2026-05-18",
+        "condition_id": "condition-okc",
+        "token_id": "token-spurs",
+        "size": "7.5",
+        "current_value": "7.5",
+    }
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus ledger after redeem.",
+        wallet_ready=True,
+        chain_ready=True,
+        signer_ready=True,
+        gas_fee_ready=True,
+        kill_switch_clear=True,
+        ledger_available=True,
+        janus_codex_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+        now_utc=datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC),
+    )
+
+    assert preview.status == "dry_run_redeem_preview_only"
+    assert preview.redemption_authorized is False
+    assert preview.missing_gates == []
+    assert preview.expected_payout_usd == "7.5"
+    assert preview.idempotency_key.startswith("redeem-")
+    assert preview.transaction_preparation_attempted is False
+    assert preview.transaction_signing_attempted is False
+    assert preview.transaction_submission_attempted is False
+    assert preview.transaction_broadcast_attempted is False
+
+
+def test_polymarket_cli_preview_redeem_outputs_zero_value_residual(capsys, tmp_path: Path) -> None:
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(
+        json.dumps(_settlement_snapshot(open_positions=[_losing_residual_position()])),
+        encoding="utf-8",
+    )
+
+    exit_code = polymarket_cli_main(
+        [
+            "preview-redeem",
+            "--direct-truth-json",
+            str(snapshot_path),
+            "--position-token-id",
+            "token-thunder",
+            "--market-resolved",
+            "--condition-id",
+            "condition-okc",
+            "--market-slug",
+            "nba-sas-okc-2026-05-18",
+            "--winning-token-id",
+            "token-spurs",
+            "--expected-payout-usd",
+            "0",
+            "--issue-link",
+            "https://github.com/LucaCGN/janus_cortex/issues/58",
+            "--post-redeem-recheck-plan",
+            "Keep linked under issue #58 and recheck before settlement closure.",
+            "--now-utc",
+            "2026-05-19T12:00:00Z",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == REDEEM_PREVIEW_SCHEMA_VERSION
+    assert payload["status"] == "no_redeem_needed_zero_value_residual"
+    assert payload["residual_classification"]["residual_type"] == "zero_value_residual"
+    assert payload["transaction_preparation_attempted"] is False
+    assert payload["transaction_signing_attempted"] is False
+    assert payload["transaction_submission_attempted"] is False
+    assert payload["transaction_broadcast_attempted"] is False
 
 
 def test_polymarket_grid_service_preview_finds_global_and_other_basketball_candidates() -> None:
