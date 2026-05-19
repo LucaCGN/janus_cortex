@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -57,6 +58,31 @@ def _global_portfolio_execution_proof_kwargs() -> dict[str, object]:
         "idempotency_key": "unit-test-existing-target-token-demo",
         "reconciliation_plan": {"target": "Janus portfolio action ledger then order reconciliation"},
     }
+
+
+def _runtime_kill_switch_clearance() -> dict[str, object]:
+    return {
+        "schema_version": "global_portfolio_kill_switch_clearance_v1",
+        "scope": "global-portfolio",
+        "clear": True,
+        "configured_clear": True,
+        "source": "unit-test-runtime-kill-switch",
+        "checked_at_utc": "2026-05-18T13:20:00Z",
+        "source_updated_at_utc": "2026-05-18T13:19:00Z",
+        "blocked_reasons": [],
+        "required_for_non_dry_run": True,
+        "runtime_state_path": "unit-test",
+        "order_preparation_attempted": False,
+        "order_submission_attempted": False,
+    }
+
+
+def _mock_clear_runtime_kill_switch(monkeypatch) -> None:
+    monkeypatch.setattr(
+        portfolio_router,
+        "load_global_portfolio_kill_switch_clearance",
+        lambda: _runtime_kill_switch_clearance(),
+    )
 
 
 def _trade_row(
@@ -1389,6 +1415,111 @@ def test_portfolio_manager_order_management_preview_reports_runtime_activation_g
     assert enabled_response.json()["order_management_preview"]["side_effects"]["orders_prepared"] is False
 
 
+def test_portfolio_manager_kill_switch_endpoint_reports_missing_file_pytest(monkeypatch, tmp_path) -> None:
+    missing_path = tmp_path / "missing-kill-switch.json"
+    monkeypatch.setenv("JANUS_GLOBAL_PORTFOLIO_KILL_SWITCH_FILE", str(missing_path))
+
+    client = TestClient(create_app())
+    response = client.get("/v1/portfolio/manager/kill-switch")
+
+    assert response.status_code == 200
+    payload = response.json()
+    clearance = payload["kill_switch_clearance"]
+    assert payload["status"] == "blocked"
+    assert clearance["schema_version"] == "global_portfolio_kill_switch_clearance_v1"
+    assert clearance["clear"] is False
+    assert clearance["runtime_state_path"] == str(missing_path)
+    assert "global_portfolio_kill_switch_file_missing" in clearance["blocked_reasons"]
+    assert payload["side_effects"]["orders_prepared"] is False
+    assert payload["side_effects"]["orders_submitted"] is False
+
+
+def test_portfolio_manager_order_management_preview_reports_runtime_kill_switch_pytest(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    kill_switch_path = tmp_path / "kill-switch.json"
+    kill_switch_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "global_portfolio_kill_switch_clearance_v1",
+                "scope": "global-portfolio",
+                "clear": True,
+                "source": "unit-test-runtime-file",
+                "updated_at_utc": "2026-05-18T13:19:00Z",
+                "blocked_reasons": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("JANUS_GLOBAL_PORTFOLIO_KILL_SWITCH_FILE", str(kill_switch_path))
+
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {"side": "sell", "limit_price": 0.39, "size": 5},
+                "dry_run": True,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    preview = response.json()["order_management_preview"]
+    runtime_clearance = preview["runtime_kill_switch_clearance"]
+    assert runtime_clearance["clear"] is True
+    assert runtime_clearance["source"] == "unit-test-runtime-file"
+    assert runtime_clearance["runtime_state_path"] == str(kill_switch_path)
+    assert runtime_clearance["order_preparation_attempted"] is False
+    assert runtime_clearance["order_submission_attempted"] is False
+
+
+def test_portfolio_manager_order_management_live_path_requires_runtime_kill_switch_pytest(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+    monkeypatch.setenv("JANUS_GLOBAL_PORTFOLIO_KILL_SWITCH_FILE", str(tmp_path / "missing-kill-switch.json"))
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {
+                    "market_id": MARKET_ID,
+                    "outcome_id": OUTCOME_ID,
+                    "token_id": "token-demo",
+                    "side": "sell",
+                    "order_type": "limit",
+                    "limit_price": 0.39,
+                    "size": 5,
+                },
+                "dry_run": False,
+                "execution_approved": True,
+                "reviewed_by": "controller",
+                "reason": "unit-test approved portfolio manager placement",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert "global portfolio kill switch is not clear" in response.json()["error"]["message"]
+    assert "global_portfolio_kill_switch_file_missing" in response.json()["error"]["message"]
+
+
 def test_portfolio_manager_order_management_rejects_non_dry_run_pytest() -> None:
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())
@@ -1491,6 +1622,7 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     connection = FakeConnection()
     placed = {}
     monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+    _mock_clear_runtime_kill_switch(monkeypatch)
 
     def fake_db_connection():
         yield connection
@@ -1629,6 +1761,7 @@ def test_portfolio_manager_order_management_requires_external_order_id_confirmat
 
     connection = FakeConnection()
     monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+    _mock_clear_runtime_kill_switch(monkeypatch)
 
     def fake_db_connection():
         yield connection
@@ -1703,6 +1836,7 @@ def test_portfolio_manager_order_management_idempotency_replay_requires_external
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+    _mock_clear_runtime_kill_switch(monkeypatch)
 
     monkeypatch.setattr(
         portfolio_router,
@@ -1768,6 +1902,7 @@ def test_portfolio_manager_order_management_idempotency_replay_requires_external
 
 def test_portfolio_manager_order_management_live_path_rejects_order_proof_mismatch_pytest(monkeypatch) -> None:
     monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+    _mock_clear_runtime_kill_switch(monkeypatch)
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection

@@ -148,6 +148,12 @@ For `#54` implementation and `#59` activation proof, boolean gate claims are not
 
 If any of those concrete proof fields are missing or internally inconsistent, the gate remains `management_plan_only_execution_gate_missing` even if the corresponding boolean flag is `true`. This prevents the automation from repeatedly restating blockers while also preventing vague gate claims from authorizing order preparation.
 
+The authoritative runtime source for the global-portfolio kill-switch clearance is:
+
+`local/shared/handoffs/global-portfolio-manager/kill_switch.json`
+
+The file uses schema `global_portfolio_kill_switch_clearance_v1` and must contain `scope=global-portfolio`, `clear=true`, a non-empty `source`, and an empty `blocked_reasons` list before a proof bundle may set `kill_switch_clear=true`. Missing, unreadable, non-object, scope-mismatched, not-clear, or blocked files fail closed. The portfolio API exposes the current source through `GET /v1/portfolio/manager/kill-switch` and includes the same runtime state in dry-run `/v1/portfolio/manager/order-management` previews. Non-dry-run order-management calls must also re-check this runtime source after the server-side runtime activation flag passes; a stale action-plan claim cannot bypass the current runtime kill switch.
+
 Even when the action-plan proof bundle is complete, non-dry-run order management must fail closed unless the running API process has `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`; request-level `execution_approved=true` and reviewer metadata are necessary but not sufficient runtime activation.
 
 For grid services, the same proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, service heartbeat path, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only.

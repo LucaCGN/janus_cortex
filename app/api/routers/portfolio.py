@@ -35,6 +35,7 @@ from app.api.models import (
     TradingAccountCreateRequest,
 )
 from app.modules.agentic.global_portfolio import GlobalPortfolioManagerActionPlan
+from app.modules.agentic.global_portfolio_kill_switch import load_global_portfolio_kill_switch_clearance
 from app.data.databases.repositories import JanusUpsertRepository
 from app.data.nodes.polymarket.blockchain.manage_portfolio import (
     OrderSide,
@@ -94,6 +95,17 @@ def _portfolio_manager_order_management_enabled_or_raise() -> None:
             status_code=403,
             detail=f"{_PORTFOLIO_MANAGER_RUNTIME_FLAG}=true is required when dry_run=false",
         )
+
+
+def _portfolio_manager_kill_switch_clearance_or_raise() -> dict[str, Any]:
+    clearance = load_global_portfolio_kill_switch_clearance()
+    if not bool(clearance.get("clear")):
+        blockers = [str(item) for item in clearance.get("blocked_reasons", []) if str(item).strip()]
+        detail = "global portfolio kill switch is not clear"
+        if blockers:
+            detail = f"{detail}: {', '.join(blockers)}"
+        raise HTTPException(status_code=403, detail=detail)
+    return clearance
 
 
 def _resolve_provider_id(
@@ -687,6 +699,7 @@ def build_portfolio_manager_order_management_preview(
         "action": plan.action,
         "status": status_value,
         "runtime_activation": _portfolio_manager_runtime_activation_state(),
+        "runtime_kill_switch_clearance": load_global_portfolio_kill_switch_clearance(),
         "approved_order_management_call_available": True,
         "order_management_call_accepted": gate_ready,
         "concrete_adapter_proof": {
@@ -986,6 +999,7 @@ def apply_portfolio_manager_order_management_order(
         raise HTTPException(status_code=422, detail=to_jsonable(exc.errors())) from exc
 
     _portfolio_manager_order_management_enabled_or_raise()
+    runtime_kill_switch_clearance = _portfolio_manager_kill_switch_clearance_or_raise()
     _portfolio_manager_gate_ready_or_raise(plan)
     normalized_order = _normalize_portfolio_manager_requested_order(
         plan=plan,
@@ -1136,6 +1150,7 @@ def apply_portfolio_manager_order_management_order(
             "kill_switch_clearance": to_jsonable(plan.gate_snapshot.kill_switch_clearance),
             "reconciliation_plan": to_jsonable(plan.gate_snapshot.reconciliation_plan),
         },
+        "runtime_kill_switch_clearance": to_jsonable(runtime_kill_switch_clearance),
         "runtime_risk_rate_evidence": runtime_risk_rate_evidence,
         "manager_action_ledger_id": ledger_applied.get("ledger_id"),
     }
@@ -3263,6 +3278,23 @@ def record_portfolio_manager_action_ledger(
         "no_order_side_effects": preview["side_effects"],
         "manager_action_ledger": to_jsonable(preview),
         "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/kill-switch")
+def get_portfolio_manager_kill_switch() -> dict[str, Any]:
+    clearance = load_global_portfolio_kill_switch_clearance()
+    return {
+        "status": "ok" if bool(clearance.get("clear")) else "blocked",
+        "kill_switch_clearance": to_jsonable(clearance),
+        "side_effects": {
+            "orders_placed": False,
+            "orders_cancelled": False,
+            "orders_replaced": False,
+            "orders_submitted": False,
+            "orders_prepared": False,
+            "live_worker_started": False,
+        },
     }
 
 
