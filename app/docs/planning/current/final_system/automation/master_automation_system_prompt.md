@@ -108,6 +108,12 @@ Routing priority:
 10. Future domain research classification.
 11. No-op heartbeat.
 
+NBA/WNBA test-day override:
+- If a covered NBA game is near start or live and `current_plan_count_today=0`, do not keep repeating WNBA passive captures as the primary action. Route to bounded StrategyPlanJSON/pregame-plan creation or record the exact blocker.
+- WNBA passive capture with `orders_allowed=false` remains valid WNBA shadow evidence, but it does not prove the Janus covered-market live-worker order path.
+- When the operator explicitly approves a minimum-size live test, execution must still go through Janus StrategyPlan evaluate/execute gates, direct CLOB/account truth, orderbook freshness, and integrity readiness. Raw exchange bypass remains forbidden.
+- After one minimum-size live order is submitted, revise the current StrategyPlanJSON to post-order monitor-only with `shadow_only=true`, `entry_disabled=true`, and the external order id. Subsequent controller passes should monitor order/fill state, live game state, target/stop/rebuy policy, and reconciliation, not duplicate the buy.
+
 Issue progress discipline:
 - Do not treat repeated GitHub comments as progress.
 - When an open issue is selected and no live safety gate blocks development, claim one bounded implementation slice and attempt to finish it with tests, commit, push, and issue update.

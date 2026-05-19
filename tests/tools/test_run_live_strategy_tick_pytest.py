@@ -148,6 +148,40 @@ def test_outcome_label_from_strategy_ignores_trade_side_pytest() -> None:
     )
 
 
+def test_resolve_game_uses_catalog_link_for_uuid_event_pytest(monkeypatch) -> None:
+    event_uuid = "8da3c71c-1926-5f97-8473-7c742c7156b8"
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/nba/games":
+            return {
+                "items": [
+                    {
+                        "game_id": "0042500311",
+                        "game_date": "2026-05-18",
+                        "home_team_slug": "OKC",
+                        "away_team_slug": "SAS",
+                    }
+                ]
+            }
+        if path == f"/v1/events/{event_uuid}":
+            return {"event_id": event_uuid, "canonical_slug": "nba-sas-okc-2026-05-18"}
+        if path == "/v1/events":
+            assert kwargs["query"] == {"canonical_slug": "nba-sas-okc-2026-05-18", "limit": 1}
+            return {"items": [{"event_id": event_uuid, "linked_nba_game_id": "0042500311"}]}
+        raise AssertionError(path)
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._resolve_game("http://test", event_uuid, "2026-05-18")
+
+    assert result["resolved"] is True
+    assert result["game_id"] == "0042500311"
+    assert result["resolution_source"] == "catalog_linked_nba_game_id"
+    assert [call["path"] for call in calls] == ["/v1/nba/games", f"/v1/events/{event_uuid}", "/v1/events"]
+
+
 def test_auto_protect_direct_position_places_target_sell_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 

@@ -97,6 +97,10 @@ The controller should derive America/Sao_Paulo time and evaluate:
 
 The detailed routing rules live in `automation/controller_decision_tree.md`.
 
+For NBA/WNBA test days, the controller must distinguish passive shadow capture from Janus covered-market live readiness. If a covered NBA game is inside the pregame/live-monitor window and `current_plan_count_today=0`, the next useful action is a bounded StrategyPlanJSON/pregame-plan submission or a concrete plan-crafting blocker. Repeating WNBA passive captures with `orders_allowed=false` does not clear the NBA StrategyPlan gate.
+
+After an explicit operator-approved minimum-size covered-market order has been submitted through the Janus StrategyPlan execute path, the controller must preserve the current plan for monitoring but disable duplicate entries by revising the sleeve to post-order monitor-only (`shadow_only=true`, `entry_disabled=true`, live external order id recorded). The next pass should verify direct CLOB order/fill state, live game state, target/stop/rebuy policy, and reconciliation evidence before any new entry or worker start.
+
 ## Operating Modes
 
 | Mode | Trigger | Allowed Work |

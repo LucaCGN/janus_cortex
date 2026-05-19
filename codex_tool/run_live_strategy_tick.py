@@ -2795,17 +2795,52 @@ def _resolve_game(api_root: str, event_id: str, session_date: str) -> dict[str, 
     games = api_json(api_root, "GET", "/v1/nba/games", query={"limit": 1000})
     items = games.get("items") or []
     parsed = _parse_event_id(event_id)
-    if not parsed:
-        return {"event_id": event_id, "resolved": False, "reason": "event_id_not_parseable"}
-    team_a, team_b, date = parsed
-    for item in items:
-        expected_date = date or session_date
-        if item.get("game_date") != expected_date:
-            continue
-        slugs = {str(item.get("home_team_slug") or "").lower(), str(item.get("away_team_slug") or "").lower()}
-        if {team_a, team_b} == slugs:
-            return {**item, "resolved": True}
-    return {"event_id": event_id, "resolved": False, "reason": "game_not_found", "parsed": parsed}
+    if parsed:
+        team_a, team_b, date = parsed
+        for item in items:
+            expected_date = date or session_date
+            if item.get("game_date") != expected_date:
+                continue
+            slugs = {str(item.get("home_team_slug") or "").lower(), str(item.get("away_team_slug") or "").lower()}
+            if {team_a, team_b} == slugs:
+                return {**item, "resolved": True, "resolution_source": "event_slug"}
+        return {"event_id": event_id, "resolved": False, "reason": "game_not_found", "parsed": parsed}
+
+    linked_game_id = _resolve_catalog_linked_nba_game_id(api_root, event_id)
+    if linked_game_id:
+        for item in items:
+            if str(item.get("game_id") or "") == linked_game_id:
+                return {**item, "resolved": True, "resolution_source": "catalog_linked_nba_game_id"}
+        return {
+            "event_id": event_id,
+            "resolved": False,
+            "reason": "linked_game_not_found",
+            "linked_nba_game_id": linked_game_id,
+        }
+
+    return {"event_id": event_id, "resolved": False, "reason": "event_id_not_parseable"}
+
+
+def _resolve_catalog_linked_nba_game_id(api_root: str, event_id: str) -> str | None:
+    try:
+        event = api_json(api_root, "GET", f"/v1/events/{event_id}")
+    except Exception:
+        return None
+    linked_game_id = str(event.get("linked_nba_game_id") or "").strip()
+    if linked_game_id:
+        return linked_game_id
+    canonical_slug = str(event.get("canonical_slug") or "").strip()
+    if not canonical_slug:
+        return None
+    try:
+        events = api_json(api_root, "GET", "/v1/events", query={"canonical_slug": canonical_slug, "limit": 1})
+    except Exception:
+        return None
+    for item in events.get("items") or []:
+        linked_game_id = str((item or {}).get("linked_nba_game_id") or "").strip()
+        if linked_game_id:
+            return linked_game_id
+    return None
 
 
 def _parse_event_id(event_id: str) -> tuple[str, str, str] | None:
