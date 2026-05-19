@@ -37,6 +37,7 @@ from codex_tools.janus import watchlists as janus_watchlists
 from codex_tools.janus import worker as janus_worker
 from codex_tools.polymarket import (
     GRID_SERVICE_SCHEMA_VERSION,
+    POST_REDEEM_RECONCILIATION_SCHEMA_VERSION,
     PREVIEW_SCHEMA_VERSION,
     REDEEM_PREVIEW_SCHEMA_VERSION,
     RESIDUAL_CLASSIFICATION_SCHEMA_VERSION,
@@ -44,6 +45,7 @@ from codex_tools.polymarket import (
     SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
+    build_post_redeem_reconciliation,
     build_settlement_ledger_entry,
     build_fallback_preview,
     build_grid_service_preview,
@@ -1188,6 +1190,16 @@ def _losing_residual_position() -> dict[str, object]:
     }
 
 
+def _redeemable_residual_position() -> dict[str, object]:
+    return {
+        "market_slug": "nba-sas-okc-2026-05-18",
+        "condition_id": "condition-okc",
+        "token_id": "token-spurs",
+        "size": "7.5",
+        "current_value": "7.5",
+    }
+
+
 def test_direct_truth_freshness_requires_complete_recent_snapshot() -> None:
     stale = evaluate_direct_truth_freshness(
         _fresh_snapshot(),
@@ -1625,6 +1637,115 @@ def test_settlement_ledger_prewrite_records_redeem_preview_without_execution(tmp
     assert ledger_payload["redeem_preview"]["transaction_broadcast_attempted"] is False
 
 
+def test_post_redeem_reconciliation_marks_flat_only_with_ledger_and_redeem_evidence(tmp_path: Path) -> None:
+    position = _redeemable_residual_position()
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus ledger after redeem.",
+        wallet_ready=True,
+        chain_ready=True,
+        signer_ready=True,
+        gas_fee_ready=True,
+        kill_switch_clear=True,
+        ledger_available=True,
+        janus_codex_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+        now_utc=datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC),
+    )
+    ledger_write = write_settlement_ledger_prewrite(
+        preview,
+        ledger_root=tmp_path,
+        written_at_utc=datetime(2026, 5, 19, 12, 1, 0, tzinfo=UTC),
+    )
+
+    reconciliation = build_post_redeem_reconciliation(
+        preview,
+        _settlement_snapshot(open_positions=[]),
+        settlement_ledger_write=ledger_write,
+        redemption_evidence={
+            "transaction_hash": "0xredeem",
+            "source": "operator-approved-janus-path",
+        },
+        now_utc=datetime(2026, 5, 19, 12, 5, 0, tzinfo=UTC),
+    )
+    missing_evidence = build_post_redeem_reconciliation(
+        preview,
+        _settlement_snapshot(open_positions=[]),
+        settlement_ledger_write=ledger_write,
+        now_utc=datetime(2026, 5, 19, 12, 6, 0, tzinfo=UTC),
+    )
+
+    assert reconciliation.schema_version == POST_REDEEM_RECONCILIATION_SCHEMA_VERSION
+    assert reconciliation.status == "post_redeem_reconciled_flat"
+    assert reconciliation.residual_cleared is True
+    assert reconciliation.live_readiness_blocker is False
+    assert reconciliation.matching_open_position_count == 0
+    assert reconciliation.matching_open_order_count == 0
+    assert reconciliation.transaction_preparation_attempted is False
+    assert reconciliation.transaction_signing_attempted is False
+    assert reconciliation.transaction_submission_attempted is False
+    assert reconciliation.transaction_broadcast_attempted is False
+    assert reconciliation.order_submission_attempted is False
+    assert missing_evidence.status == "blocked_post_redeem_reconciliation"
+    assert missing_evidence.residual_cleared is False
+    assert "redemption_execution_evidence_missing" in missing_evidence.blockers
+
+
+def test_post_redeem_reconciliation_blocks_when_redeemed_position_remains(tmp_path: Path) -> None:
+    position = _redeemable_residual_position()
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus ledger after redeem.",
+        wallet_ready=True,
+        chain_ready=True,
+        signer_ready=True,
+        gas_fee_ready=True,
+        kill_switch_clear=True,
+        ledger_available=True,
+        janus_codex_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+        now_utc=datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC),
+    )
+    ledger_write = write_settlement_ledger_prewrite(
+        preview,
+        ledger_root=tmp_path,
+        written_at_utc=datetime(2026, 5, 19, 12, 1, 0, tzinfo=UTC),
+    )
+    reconciliation = build_post_redeem_reconciliation(
+        preview,
+        _settlement_snapshot(open_positions=[position]),
+        settlement_ledger_write=ledger_write,
+        redemption_evidence={"transaction_hash": "0xredeem"},
+        now_utc=datetime(2026, 5, 19, 12, 5, 0, tzinfo=UTC),
+    )
+
+    assert reconciliation.status == "post_redeem_recheck_position_still_present"
+    assert reconciliation.live_readiness_blocker is True
+    assert reconciliation.residual_cleared is False
+    assert reconciliation.matching_open_position_count == 1
+    assert "redeemed_position_still_present" in reconciliation.blockers
+    assert reconciliation.transaction_submission_attempted is False
+    assert reconciliation.order_submission_attempted is False
+
+
 def test_polymarket_cli_preview_redeem_outputs_zero_value_residual(capsys, tmp_path: Path) -> None:
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(
@@ -1729,6 +1850,71 @@ def test_polymarket_cli_preview_redeem_can_write_settlement_ledger(capsys, tmp_p
     assert Path(payload["settlement_ledger_write"]["ledger_path"]).exists()
     assert payload["settlement_ledger_write"]["transaction_preparation_attempted"] is False
     assert payload["settlement_ledger_write"]["transaction_submission_attempted"] is False
+    assert payload["transaction_broadcast_attempted"] is False
+    assert payload["order_submission_attempted"] is False
+
+
+def test_polymarket_cli_reconcile_redeem_reports_flat_without_execution(capsys, tmp_path: Path) -> None:
+    position = _redeemable_residual_position()
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus ledger after redeem.",
+        wallet_ready=True,
+        chain_ready=True,
+        signer_ready=True,
+        gas_fee_ready=True,
+        kill_switch_clear=True,
+        ledger_available=True,
+        janus_codex_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+        now_utc=datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC),
+    )
+    ledger_write = write_settlement_ledger_prewrite(
+        preview,
+        ledger_root=tmp_path / "settlement-ledger",
+        written_at_utc=datetime(2026, 5, 19, 12, 1, 0, tzinfo=UTC),
+    )
+    preview_path = tmp_path / "preview.json"
+    direct_truth_path = tmp_path / "direct-truth.json"
+    ledger_write_path = tmp_path / "ledger-write.json"
+    preview_path.write_text(json.dumps(asdict(preview)), encoding="utf-8")
+    direct_truth_path.write_text(json.dumps(_settlement_snapshot(open_positions=[])), encoding="utf-8")
+    ledger_write_path.write_text(json.dumps(asdict(ledger_write)), encoding="utf-8")
+
+    exit_code = polymarket_cli_main(
+        [
+            "reconcile-redeem",
+            "--redeem-preview-json",
+            str(preview_path),
+            "--direct-truth-json",
+            str(direct_truth_path),
+            "--settlement-ledger-write-json",
+            str(ledger_write_path),
+            "--redemption-tx-hash",
+            "0xredeem",
+            "--redemption-source",
+            "operator-approved-janus-path",
+            "--now-utc",
+            "2026-05-19T12:05:00Z",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == POST_REDEEM_RECONCILIATION_SCHEMA_VERSION
+    assert payload["status"] == "post_redeem_reconciled_flat"
+    assert payload["residual_cleared"] is True
+    assert payload["live_readiness_blocker"] is False
+    assert payload["transaction_preparation_attempted"] is False
     assert payload["transaction_broadcast_attempted"] is False
     assert payload["order_submission_attempted"] is False
 

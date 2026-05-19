@@ -12,7 +12,11 @@ from typing import Any, Sequence, TextIO
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
 from codex_tools.polymarket.grid_service import build_grid_service_preview
 from codex_tools.polymarket.preview import build_fallback_preview
-from codex_tools.polymarket.settlement import build_redeem_preview, write_settlement_ledger_prewrite
+from codex_tools.polymarket.settlement import (
+    build_post_redeem_reconciliation,
+    build_redeem_preview,
+    write_settlement_ledger_prewrite,
+)
 
 
 def _read_json_file(path: Path | None) -> dict[str, Any] | None:
@@ -114,6 +118,18 @@ def _build_parser() -> argparse.ArgumentParser:
     redeem.add_argument("--write-settlement-ledger", action="store_true")
     redeem.add_argument("--settlement-ledger-root", type=Path)
     redeem.set_defaults(func=_preview_redeem)
+
+    reconcile_redeem = subparsers.add_parser(
+        "reconcile-redeem",
+        help="Build a non-executing post-redeem direct-truth reconciliation report.",
+    )
+    reconcile_redeem.add_argument("--redeem-preview-json", required=True, type=Path)
+    reconcile_redeem.add_argument("--direct-truth-json", required=True, type=Path)
+    reconcile_redeem.add_argument("--settlement-ledger-write-json", type=Path)
+    reconcile_redeem.add_argument("--redemption-tx-hash")
+    reconcile_redeem.add_argument("--redemption-source")
+    reconcile_redeem.add_argument("--now-utc")
+    reconcile_redeem.set_defaults(func=_reconcile_redeem)
     return parser
 
 
@@ -219,6 +235,25 @@ def _preview_redeem(args: argparse.Namespace, output: TextIO) -> int:
     else:
         payload["settlement_ledger_write"] = None
     json.dump(payload, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _reconcile_redeem(args: argparse.Namespace, output: TextIO) -> int:
+    redemption_evidence = None
+    if args.redemption_tx_hash or args.redemption_source:
+        redemption_evidence = {
+            "transaction_hash": args.redemption_tx_hash,
+            "source": args.redemption_source,
+        }
+    reconciliation = build_post_redeem_reconciliation(
+        _read_required_json_file(args.redeem_preview_json),
+        _read_required_json_file(args.direct_truth_json),
+        settlement_ledger_write=_read_json_file(args.settlement_ledger_write_json),
+        redemption_evidence=redemption_evidence,
+        now_utc=args.now_utc,
+    )
+    json.dump(asdict(reconciliation), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
 

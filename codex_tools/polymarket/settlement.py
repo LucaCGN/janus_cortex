@@ -21,6 +21,7 @@ from codex_tools.polymarket.safety import NON_AUTHORITATIVE_TRUTH_SOURCES
 
 RESIDUAL_CLASSIFICATION_SCHEMA_VERSION = "polymarket_residual_classification_v1"
 REDEEM_PREVIEW_SCHEMA_VERSION = "polymarket_redeem_preview_v1"
+POST_REDEEM_RECONCILIATION_SCHEMA_VERSION = "polymarket_post_redeem_reconciliation_v1"
 SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION = "polymarket_settlement_ledger_entry_v1"
 SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION = "polymarket_settlement_ledger_write_v1"
 SETTLEMENT_LEDGER_FILE_NAME = "settlement_ledger.jsonl"
@@ -95,6 +96,28 @@ class PolymarketSettlementLedgerWrite:
     ledger_id: str
     idempotency_key: str
     created: bool
+    transaction_preparation_attempted: bool
+    transaction_signing_attempted: bool
+    transaction_submission_attempted: bool
+    transaction_broadcast_attempted: bool
+    order_preparation_attempted: bool
+    order_submission_attempted: bool
+    no_execution_statement: str
+
+
+@dataclass(frozen=True)
+class PolymarketPostRedeemReconciliation:
+    schema_version: str
+    status: str
+    residual_cleared: bool
+    live_readiness_blocker: bool
+    token_id: str
+    condition_id: str
+    market_slug: str
+    matching_open_order_count: int
+    matching_open_position_count: int
+    blockers: list[str]
+    evidence: dict[str, Any]
     transaction_preparation_attempted: bool
     transaction_signing_attempted: bool
     transaction_submission_attempted: bool
@@ -198,6 +221,12 @@ def _open_orders(snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
     return [item for item in (snapshot.get("open_orders") or []) if isinstance(item, dict)]
 
 
+def _open_positions(snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(snapshot, dict):
+        return []
+    return [item for item in (snapshot.get("open_positions") or []) if isinstance(item, dict)]
+
+
 def _matching_open_orders(
     snapshot: dict[str, Any] | None,
     *,
@@ -216,6 +245,27 @@ def _matching_open_orders(
             matches.append(order)
         elif market_slug and order_market == market_slug:
             matches.append(order)
+    return matches
+
+
+def _matching_open_positions(
+    snapshot: dict[str, Any] | None,
+    *,
+    token_id: str,
+    condition_id: str,
+    market_slug: str,
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for position in _open_positions(snapshot):
+        position_token = _token_id(position)
+        position_condition = _condition_id(position)
+        position_market = _market_slug(position)
+        if token_id and position_token == token_id:
+            matches.append(position)
+        elif condition_id and position_condition == condition_id:
+            matches.append(position)
+        elif market_slug and position_market == market_slug:
+            matches.append(position)
     return matches
 
 
@@ -478,6 +528,154 @@ def build_redeem_preview(
     )
 
 
+def _dataclass_or_mapping(value: Any) -> dict[str, Any]:
+    if hasattr(value, "__dataclass_fields__"):
+        return asdict(value)
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _redemption_evidence_id(redemption_evidence: dict[str, Any] | None) -> str:
+    if not isinstance(redemption_evidence, dict):
+        return ""
+    return _first_text(
+        redemption_evidence,
+        (
+            "transaction_hash",
+            "tx_hash",
+            "redeem_transaction_hash",
+            "external_redeem_id",
+            "settlement_tx_hash",
+        ),
+    )
+
+
+def build_post_redeem_reconciliation(
+    redeem_preview: PolymarketRedeemPreview | dict[str, Any],
+    direct_truth_snapshot: dict[str, Any] | None,
+    *,
+    settlement_ledger_write: PolymarketSettlementLedgerWrite | dict[str, Any] | None = None,
+    redemption_evidence: dict[str, Any] | None = None,
+    now_utc: datetime | str | None = None,
+) -> PolymarketPostRedeemReconciliation:
+    """Evaluate post-redeem direct-truth state without doing redemption work."""
+
+    preview = _dataclass_or_mapping(redeem_preview)
+    ledger_write = _dataclass_or_mapping(settlement_ledger_write)
+    classification = preview.get("residual_classification")
+    if not isinstance(classification, dict):
+        classification = {}
+
+    token_id = _text(classification.get("token_id"))
+    condition_id = _text(classification.get("condition_id"))
+    market_slug = _text(classification.get("market_slug"))
+    idempotency_key = _text(preview.get("idempotency_key"))
+    expected_ledger_id = f"settlement-{idempotency_key}" if idempotency_key else ""
+    matching_open_orders = _matching_open_orders(
+        direct_truth_snapshot,
+        token_id=token_id,
+        condition_id=condition_id,
+        market_slug=market_slug,
+    )
+    matching_open_positions = _matching_open_positions(
+        direct_truth_snapshot,
+        token_id=token_id,
+        condition_id=condition_id,
+        market_slug=market_slug,
+    )
+
+    blockers: list[str] = []
+    if classification.get("status") == "blocked_residual_classification":
+        blockers.append("redeem_preview_residual_classification_blocked")
+    if classification.get("residual_type") != "redeemable_residual":
+        blockers.append("redeem_preview_not_redeemable_residual")
+    if bool(preview.get("missing_gates")):
+        blockers.append("redeem_preview_missing_gates")
+    if not idempotency_key:
+        blockers.append("redeem_preview_idempotency_key_missing")
+    if _snapshot_status(direct_truth_snapshot) != "read_only_snapshot":
+        blockers.append("direct_truth_snapshot_not_complete")
+    if _section_status(direct_truth_snapshot, "open_positions") != "ok":
+        blockers.append("direct_open_position_truth_unavailable")
+    if _section_status(direct_truth_snapshot, "open_orders") != "ok":
+        blockers.append("direct_open_order_truth_unavailable")
+    if matching_open_orders:
+        blockers.append("event_scoped_open_orders_present")
+    if matching_open_positions:
+        blockers.append("redeemed_position_still_present")
+    if not ledger_write:
+        blockers.append("settlement_ledger_prewrite_missing")
+    else:
+        ledger_status = _text(ledger_write.get("status"))
+        ledger_id = _text(ledger_write.get("ledger_id"))
+        ledger_idempotency_key = _text(ledger_write.get("idempotency_key"))
+        if ledger_status not in {"written", "already_recorded"}:
+            blockers.append("settlement_ledger_prewrite_not_recorded")
+        if expected_ledger_id and ledger_id != expected_ledger_id:
+            blockers.append("settlement_ledger_id_mismatch")
+        if idempotency_key and ledger_idempotency_key != idempotency_key:
+            blockers.append("settlement_ledger_idempotency_key_mismatch")
+    if not _redemption_evidence_id(redemption_evidence):
+        blockers.append("redemption_execution_evidence_missing")
+
+    if not blockers:
+        status = "post_redeem_reconciled_flat"
+        residual_cleared = True
+        live_readiness_blocker = False
+    elif "redeemed_position_still_present" in blockers:
+        status = "post_redeem_recheck_position_still_present"
+        residual_cleared = False
+        live_readiness_blocker = True
+    elif "event_scoped_open_orders_present" in blockers:
+        status = "post_redeem_recheck_open_order_present"
+        residual_cleared = False
+        live_readiness_blocker = True
+    else:
+        status = "blocked_post_redeem_reconciliation"
+        residual_cleared = False
+        live_readiness_blocker = True
+
+    return PolymarketPostRedeemReconciliation(
+        schema_version=POST_REDEEM_RECONCILIATION_SCHEMA_VERSION,
+        status=status,
+        residual_cleared=residual_cleared,
+        live_readiness_blocker=live_readiness_blocker,
+        token_id=token_id,
+        condition_id=condition_id,
+        market_slug=market_slug,
+        matching_open_order_count=len(matching_open_orders),
+        matching_open_position_count=len(matching_open_positions),
+        blockers=blockers,
+        evidence={
+            "checked_at_utc": _coerce_utc(now_utc).isoformat().replace("+00:00", "Z"),
+            "redeem_preview_status": preview.get("status"),
+            "redeem_preview_idempotency_key": idempotency_key,
+            "settlement_ledger_id": ledger_write.get("ledger_id") if ledger_write else None,
+            "redemption_evidence_present": bool(_redemption_evidence_id(redemption_evidence)),
+            "redemption_evidence": dict(redemption_evidence or {}),
+            "direct_truth_status": _snapshot_status(direct_truth_snapshot),
+            "direct_open_position_section_status": _section_status(direct_truth_snapshot, "open_positions"),
+            "direct_open_order_section_status": _section_status(direct_truth_snapshot, "open_orders"),
+            "matching_open_order_ids": [
+                _first_text(order, ("id", "order_id", "external_order_id", "hash"))
+                for order in matching_open_orders
+            ],
+            "matching_open_position_ids": [
+                _first_text(position, ("id", "position_id", "token_id", "asset_id", "asset"))
+                for position in matching_open_positions
+            ],
+        },
+        transaction_preparation_attempted=False,
+        transaction_signing_attempted=False,
+        transaction_submission_attempted=False,
+        transaction_broadcast_attempted=False,
+        order_preparation_attempted=False,
+        order_submission_attempted=False,
+        no_execution_statement=NO_REDEMPTION_STATEMENT,
+    )
+
+
 def _settlement_ledger_id(preview: PolymarketRedeemPreview) -> str:
     return "settlement-" + preview.idempotency_key
 
@@ -610,15 +808,18 @@ def _coerce_utc(value: datetime | str | None) -> datetime:
 
 __all__ = [
     "NO_REDEMPTION_STATEMENT",
+    "POST_REDEEM_RECONCILIATION_SCHEMA_VERSION",
     "REDEEM_PREVIEW_SCHEMA_VERSION",
     "REQUIRED_REDEEM_GATE_LABELS",
     "RESIDUAL_CLASSIFICATION_SCHEMA_VERSION",
     "SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION",
     "SETTLEMENT_LEDGER_FILE_NAME",
     "SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION",
+    "PolymarketPostRedeemReconciliation",
     "PolymarketRedeemPreview",
     "PolymarketResidualClassification",
     "PolymarketSettlementLedgerWrite",
+    "build_post_redeem_reconciliation",
     "build_settlement_ledger_entry",
     "build_redeem_preview",
     "classify_resolved_market_residual",
