@@ -963,8 +963,20 @@ def _auto_protect_direct_positions(
                 }
             )
             continue
+        matched_strategy_family = str((matched_strategy or {}).get("family") or "").strip()
+        strategy_owned_position = bool(
+            matched_strategy
+            and not deterministic_target_replacement
+            and matched_strategy_family not in {"operator_position_management", "operator_order_management"}
+        )
         position_reaction = {
-            "action": "replace_event_start_expired_target_order" if deterministic_target_replacement else "adopt_operator_position",
+            "action": (
+                "replace_event_start_expired_target_order"
+                if deterministic_target_replacement
+                else "strategy_owned_position_target_review_required"
+                if strategy_owned_position
+                else "adopt_operator_position"
+            ),
             "token_id": token_id,
             "outcome_label": position.get("outcome"),
             "position_size": position_size,
@@ -974,7 +986,13 @@ def _auto_protect_direct_positions(
             "requires_strategy_plan_revision": not deterministic_target_replacement,
             "skip_llm_revision_trigger": deterministic_target_replacement,
             "revision_request": {
-                "reason": "event_start_target_order_expired" if deterministic_target_replacement else "operator_intervention_detected",
+                "reason": (
+                    "event_start_target_order_expired"
+                    if deterministic_target_replacement
+                    else "strategy_owned_position_target_review_required"
+                    if strategy_owned_position
+                    else "operator_intervention_detected"
+                ),
                 "event_id": event_id,
                 "token_id": token_id,
                 "outcome_label": position.get("outcome"),
@@ -1032,6 +1050,20 @@ def _auto_protect_direct_positions(
                     "reason": "position_price_missing",
                     "token_id": token_id,
                     "uncovered_size": uncovered_size,
+                }
+            )
+            continue
+        if strategy_owned_position:
+            reaction["recommended_orders"].append(
+                {
+                    "reason": "strategy_owned_position_requires_plan_target_review",
+                    "token_id": token_id,
+                    "outcome_label": position.get("outcome"),
+                    "position_size": position_size,
+                    "open_sell_size": open_sell_size,
+                    "uncovered_size": uncovered_size,
+                    "matched_strategy_id": matched_strategy.get("strategy_id"),
+                    "matched_strategy_family": matched_strategy.get("family"),
                 }
             )
             continue
@@ -2514,6 +2546,12 @@ def _plan_token_ids(plan: dict[str, Any]) -> set[str]:
     return token_ids
 
 
+def _plan_event_slugs(plan: dict[str, Any]) -> set[str]:
+    context = plan.get("context_summary") if isinstance(plan.get("context_summary"), dict) else {}
+    values = [context.get("event_slug"), plan.get("event_slug")]
+    return {str(value).strip() for value in values if str(value or "").strip()}
+
+
 def _direct_order_token_id(order: dict[str, Any]) -> str | None:
     for field in _DIRECT_ORDER_TOKEN_FIELDS:
         value = str(order.get(field) or "").strip()
@@ -2530,36 +2568,75 @@ def _direct_position_token_id(position: dict[str, Any]) -> str | None:
     return None
 
 
+def _direct_item_condition_id(item: dict[str, Any]) -> str | None:
+    for field in ("condition_id", "conditionId", "market"):
+        value = str(item.get(field) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def _direct_item_event_slug(item: dict[str, Any]) -> str | None:
+    value = str(item.get("event_slug") or "").strip()
+    return value or None
+
+
 def _event_scoped_direct_clob(direct_clob: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
-    """Return direct CLOB truth filtered to the current event's plan tokens.
+    """Return direct CLOB truth filtered to the current event.
 
     Integrity checks are account-scoped, but a live event tick must not let an
-    unrelated open futures position suppress a current-game strategy.
+    unrelated open futures position suppress a current-game strategy. The scope
+    must still include sibling outcome tokens for the same condition/event.
     """
     token_ids = _plan_token_ids(plan)
     if not token_ids:
         return dict(direct_clob)
+    event_slugs = _plan_event_slugs(plan)
 
     open_orders_section = direct_clob.get("open_orders") if isinstance(direct_clob.get("open_orders"), dict) else {}
     raw_orders = [item for item in (open_orders_section.get("orders") or []) if isinstance(item, dict)]
-    scoped_orders = [order for order in raw_orders if _direct_order_token_id(order) in token_ids]
 
     open_positions_section = (
         direct_clob.get("open_positions") if isinstance(direct_clob.get("open_positions"), dict) else {}
     )
     raw_positions = [item for item in (open_positions_section.get("positions") or []) if isinstance(item, dict)]
-    scoped_positions = [position for position in raw_positions if _direct_position_token_id(position) in token_ids]
+    raw_account_trades = _direct_trade_rows(direct_clob, include_market_observations=False)
+    raw_market_trades = _direct_trade_rows(direct_clob, include_market_observations=True)
+    all_direct_items = [*raw_orders, *raw_positions, *raw_account_trades, *raw_market_trades]
 
-    scoped_account_trades = [
-        trade
-        for trade in _direct_trade_rows(direct_clob, include_market_observations=False)
-        if _direct_trade_token_id(trade) in token_ids
-    ]
-    scoped_market_trades = [
-        trade
-        for trade in _direct_trade_rows(direct_clob, include_market_observations=True)
-        if _direct_trade_token_id(trade) in token_ids
-    ]
+    condition_ids: set[str] = set()
+    for item in all_direct_items:
+        item_token = _direct_order_token_id(item) or _direct_position_token_id(item) or _direct_trade_token_id(item)
+        item_event_slug = _direct_item_event_slug(item)
+        if item_token not in token_ids and (not item_event_slug or item_event_slug not in event_slugs):
+            continue
+        condition_id = _direct_item_condition_id(item)
+        if condition_id:
+            condition_ids.add(condition_id)
+
+    def matches(item: dict[str, Any], token_id: str | None) -> bool:
+        if token_id and token_id in token_ids:
+            return True
+        condition_id = _direct_item_condition_id(item)
+        if condition_id and condition_id in condition_ids:
+            return True
+        event_slug = _direct_item_event_slug(item)
+        return bool(event_slug and event_slug in event_slugs)
+
+    scoped_orders = [order for order in raw_orders if matches(order, _direct_order_token_id(order))]
+    scoped_positions = [position for position in raw_positions if matches(position, _direct_position_token_id(position))]
+    scoped_account_trades = [trade for trade in raw_account_trades if matches(trade, _direct_trade_token_id(trade))]
+    scoped_market_trades = [trade for trade in raw_market_trades if matches(trade, _direct_trade_token_id(trade))]
+    event_token_ids = {
+        token
+        for token in [
+            *token_ids,
+            *[_direct_order_token_id(order) for order in scoped_orders],
+            *[_direct_position_token_id(position) for position in scoped_positions],
+            *[_direct_trade_token_id(trade) for trade in scoped_market_trades],
+        ]
+        if token
+    }
 
     scoped = dict(direct_clob)
     scoped["open_orders"] = dict(open_orders_section)
@@ -2574,7 +2651,9 @@ def _event_scoped_direct_clob(direct_clob: dict[str, Any], plan: dict[str, Any])
     scoped["event_open_position_count"] = len(scoped_positions)
     scoped["global_open_order_count"] = direct_clob.get("open_order_count", len(raw_orders))
     scoped["global_open_position_count"] = len(raw_positions)
-    scoped["event_token_ids"] = sorted(token_ids)
+    scoped["event_token_ids"] = sorted(event_token_ids)
+    scoped["event_condition_ids"] = sorted(condition_ids)
+    scoped["event_slugs"] = sorted(event_slugs)
 
     current_token_trades = direct_clob.get("current_token_trades")
     if isinstance(current_token_trades, dict):
@@ -2583,7 +2662,7 @@ def _event_scoped_direct_clob(direct_clob: dict[str, Any], plan: dict[str, Any])
         scoped["current_token_trades"] = {}
     scoped["current_token_trades"]["trades"] = scoped_market_trades
     scoped["current_token_trades"]["trade_count"] = len(scoped_market_trades)
-    scoped["current_token_trades"]["token_ids"] = sorted(token_ids)
+    scoped["current_token_trades"]["token_ids"] = sorted(event_token_ids)
     scoped["current_token_trade_count"] = len(scoped_market_trades)
     if "trades" in scoped:
         scoped["trades"] = scoped_account_trades

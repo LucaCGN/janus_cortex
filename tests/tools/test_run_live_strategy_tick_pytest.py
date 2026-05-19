@@ -500,6 +500,78 @@ def test_auto_protect_direct_position_replaces_event_start_expired_target_withou
     assert result["candidate_strategy_plan_required"] is False
 
 
+def test_auto_protect_direct_position_does_not_target_strategy_owned_live_entry_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "event_id": "8da3c71c-1926-5f97-8473-7c742c7156b8",
+            "context_summary": {"event_slug": "nba-sas-okc-2026-05-18"},
+            "active_strategies": [
+                {
+                    "strategy_id": "sas-q4-live-test",
+                    "family": "price_stability_micro_grid",
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "target_return_fraction": 0.08,
+                        "minimum_target_cents": 3,
+                    },
+                }
+            ],
+        },
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {
+                        "asset": "token-sas",
+                        "avg_price": 0.78,
+                        "event_slug": "nba-sas-okc-2026-05-18",
+                        "outcome": "Spurs",
+                        "size": 5.008,
+                    }
+                ]
+            },
+            "open_orders": {"orders": []},
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+    )
+
+    assert calls == []
+    assert result["submitted_orders"] == []
+    assert result["recommended_orders"] == [
+        {
+            "reason": "strategy_owned_position_requires_plan_target_review",
+            "token_id": "token-sas",
+            "outcome_label": "Spurs",
+            "position_size": 5.008,
+            "open_sell_size": 0.0,
+            "uncovered_size": 5.008,
+            "matched_strategy_id": "sas-q4-live-test",
+            "matched_strategy_family": "price_stability_micro_grid",
+        }
+    ]
+    assert result["position_reactions"][0]["action"] == "strategy_owned_position_target_review_required"
+    assert result["position_reactions"][0]["revision_request"]["reason"] == "strategy_owned_position_target_review_required"
+    assert result["candidate_strategy_plan_required"] is True
+
+
 def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 
@@ -1112,6 +1184,77 @@ def test_event_tick_counts_local_pending_buy_intents_before_direct_mirror_pytest
     assert portfolio_state["open_positions"] == 0
     assert portfolio_state["pending_intents"] == 1
     assert portfolio_state["current_event_inventory_proof"]["pending_intent_count"] == 1
+
+
+def test_event_scoped_direct_clob_includes_sibling_outcome_inventory_pytest() -> None:
+    scoped = live_tick._event_scoped_direct_clob(
+        {
+            "open_order_count": 2,
+            "open_orders": {
+                "orders": [
+                    {
+                        "id": "0xsibling",
+                        "market": "condition-game",
+                        "token_id": "token-okc",
+                        "side": "BUY",
+                        "price": 0.15,
+                        "size": 20,
+                    },
+                    {
+                        "id": "0xother",
+                        "market": "condition-other",
+                        "token_id": "token-other",
+                        "side": "BUY",
+                        "price": 0.2,
+                        "size": 20,
+                    },
+                ]
+            },
+            "open_positions": {
+                "positions": [
+                    {
+                        "asset": "token-okc",
+                        "condition_id": "condition-game",
+                        "event_slug": "nba-sas-okc-2026-05-18",
+                        "outcome": "Thunder",
+                        "size": 5,
+                    },
+                    {
+                        "asset": "token-other",
+                        "condition_id": "condition-other",
+                        "event_slug": "other-event",
+                        "outcome": "Other",
+                        "size": 5,
+                    },
+                ]
+            },
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "trade-sas",
+                        "asset_id": "token-sas",
+                        "market": "condition-game",
+                        "side": "BUY",
+                        "price": 0.76,
+                        "size": 5,
+                    }
+                ]
+            },
+        },
+        {
+            "context_summary": {"event_slug": "nba-sas-okc-2026-05-18"},
+            "active_strategies": [{"entry_rules": {"token_id": "token-sas"}}],
+        },
+    )
+
+    assert scoped["event_open_order_count"] == 1
+    assert scoped["event_open_position_count"] == 1
+    assert scoped["event_condition_ids"] == ["condition-game"]
+    assert scoped["event_slugs"] == ["nba-sas-okc-2026-05-18"]
+    assert scoped["event_token_ids"] == ["token-okc", "token-sas"]
+    assert scoped["open_orders"]["orders"][0]["id"] == "0xsibling"
+    assert scoped["open_positions"]["positions"][0]["asset"] == "token-okc"
+    assert scoped["current_token_trade_count"] == 1
 
 
 def test_mirror_direct_open_orders_for_tick_posts_reviewed_capture_pytest(monkeypatch) -> None:
