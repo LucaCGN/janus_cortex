@@ -129,7 +129,9 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
         missing: list[ExecutionGateName] = []
         for gate in EXECUTION_GATE_ORDER:
             gate_value = bool(getattr(self, gate))
-            if gate == "approved_order_management_path":
+            if gate == "market_token_order_state_resolved":
+                gate_value = gate_value and _has_market_token_order_state_proof(self)
+            elif gate == "approved_order_management_path":
                 gate_value = gate_value and _has_adapter_proof(self)
             elif gate == "portfolio_ledger_path":
                 gate_value = gate_value and _has_portfolio_ledger_proof(self)
@@ -710,6 +712,14 @@ def _has_adapter_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
     return True
 
 
+def _has_market_token_order_state_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    return bool(
+        _has_text(snapshot.market_title)
+        and _has_text(snapshot.market_slug)
+        and _has_text(snapshot.token_id)
+    )
+
+
 def _has_portfolio_ledger_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
     if not _has_text(snapshot.idempotency_key):
         return False
@@ -815,10 +825,19 @@ def _build_execution_gate_diagnostics(
         missing_fields=[] if snapshot.direct_clob_truth_fresh else ["direct_clob_truth_fresh"],
     )
 
+    market_missing: list[str] = []
+    if not snapshot.market_token_order_state_resolved:
+        market_missing.append("market_token_order_state_resolved")
+    if not _has_text(snapshot.market_title):
+        market_missing.append("market_title")
+    if not _has_text(snapshot.market_slug):
+        market_missing.append("market_slug")
+    if not _has_text(snapshot.token_id):
+        market_missing.append("token_id")
     gates["market_token_order_state_resolved"] = _diagnostic_entry(
-        passed=bool(snapshot.market_token_order_state_resolved),
+        passed=bool(snapshot.market_token_order_state_resolved and _has_market_token_order_state_proof(snapshot)),
         required_fields=("market_title", "market_slug", "token_id", "market_token_order_state_resolved"),
-        missing_fields=[] if snapshot.market_token_order_state_resolved else ["market_token_order_state_resolved"],
+        missing_fields=market_missing,
     )
 
     adapter_missing: list[str] = []

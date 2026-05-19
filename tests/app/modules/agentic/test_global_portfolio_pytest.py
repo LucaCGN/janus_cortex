@@ -104,6 +104,33 @@ def test_execution_gate_snapshot_reports_issue59_concrete_proof_gaps_pytest() ->
     assert "kill_switch_clearance.source" in diagnostics["gates"]["kill_switch_clear"]["missing_fields"]
 
 
+def test_execution_gate_snapshot_requires_market_token_identity_for_resolved_state_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id=None,
+        **_execution_proof_kwargs(),
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+    )
+
+    diagnostics = snapshot.proof_diagnostics
+
+    assert snapshot.execution_authorized is False
+    assert snapshot.missing_gates == ["market_token_order_state_resolved"]
+    assert diagnostics["next_missing_gate"] == "market_token_order_state_resolved"
+    assert diagnostics["gates"]["market_token_order_state_resolved"]["passed"] is False
+    assert diagnostics["gates"]["market_token_order_state_resolved"]["missing_fields"] == ["token_id"]
+
+
 def test_watchlist_entry_rejects_execution_authority_pytest() -> None:
     with pytest.raises(ValueError, match="cannot authorize execution"):
         GlobalPortfolioWatchlistEntry(
@@ -268,6 +295,9 @@ def test_artifact_flags_paired_yes_no_exposure_pytest() -> None:
 def test_execution_gate_snapshot_blocks_missing_portfolio_manager_path_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id="token-demo",
         **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
@@ -294,6 +324,9 @@ def test_execution_gate_snapshot_blocks_missing_portfolio_manager_path_pytest() 
 def test_execution_gate_snapshot_rejects_non_authoritative_truth_sources_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="trend_entry",
+        market_title="Global trend market",
+        market_slug="global-trend-market",
+        token_id="token-demo",
         **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
@@ -315,6 +348,9 @@ def test_execution_gate_snapshot_rejects_non_authoritative_truth_sources_pytest(
 def test_execution_gate_snapshot_requires_named_adapter_budget_killswitch_and_policy_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id="token-demo",
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
         approved_order_management_path=True,
@@ -346,6 +382,9 @@ def test_execution_gate_snapshot_requires_idempotency_and_reconciliation_plan_py
 
     snapshot = build_execution_gate_snapshot(
         action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id="token-demo",
         **proof,
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
@@ -376,6 +415,9 @@ def test_execution_gate_snapshot_rejects_market_order_exception_proof_pytest() -
     }
     snapshot = build_execution_gate_snapshot(
         action="existing_position_target",
+        market_title="Global target market",
+        market_slug="global-target-market",
+        token_id="token-demo",
         **proof,
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
@@ -397,6 +439,9 @@ def test_execution_gate_snapshot_rejects_market_order_exception_proof_pytest() -
 def test_execution_gate_snapshot_satisfies_only_when_all_gates_true_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="existing_position_close",
+        market_title="Global close market",
+        market_slug="global-close-market",
+        token_id="token-demo",
         **_execution_proof_kwargs(),
         direct_clob_truth_fresh=True,
         market_token_order_state_resolved=True,
