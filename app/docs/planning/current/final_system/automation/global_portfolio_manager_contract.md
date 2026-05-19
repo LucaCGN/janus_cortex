@@ -130,7 +130,7 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
-Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but a live call still requires the full proof bundle below, `execution_approved=true`, reviewer metadata, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, and runtime activation of the latest API code. Direct fallback remains plan-only until separately approved.
+Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but a live call still requires the full proof bundle below, `execution_approved=true`, reviewer metadata, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, and runtime activation of the latest API code through `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`. Direct fallback remains plan-only until separately approved.
 
 Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 
@@ -147,6 +147,8 @@ For `#54`, boolean gate claims are not enough. A portfolio-manager action plan c
 - `idempotency_key` and `reconciliation_plan`: the pre-submit ledger identity and the path back into Janus reconciliation after the action.
 
 If any of those concrete proof fields are missing or internally inconsistent, the gate remains `management_plan_only_execution_gate_missing` even if the corresponding boolean flag is `true`. This prevents the automation from repeatedly restating blockers while also preventing vague gate claims from authorizing order preparation.
+
+Even when the action-plan proof bundle is complete, non-dry-run order management must fail closed unless the running API process has `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`; request-level `execution_approved=true` and reviewer metadata are necessary but not sufficient runtime activation.
 
 For grid services, the `#54` proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, service heartbeat path, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only.
 

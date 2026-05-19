@@ -1353,6 +1353,42 @@ def test_portfolio_manager_order_management_rejects_non_dry_run_pytest() -> None
     assert "execution_approved=true" in response.json()["error"]["message"]
 
 
+def test_portfolio_manager_order_management_live_path_requires_runtime_flag_pytest() -> None:
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {
+                    "market_id": MARKET_ID,
+                    "outcome_id": OUTCOME_ID,
+                    "token_id": "token-demo",
+                    "side": "sell",
+                    "order_type": "limit",
+                    "limit_price": 0.39,
+                    "size": 5,
+                },
+                "dry_run": False,
+                "execution_approved": True,
+                "reviewed_by": "controller",
+                "reason": "unit-test approved portfolio manager placement",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 403
+    assert (
+        "JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true is required"
+        in response.json()["error"]["message"]
+    )
+
+
 def test_portfolio_manager_order_management_live_path_places_order_when_gate_proven_pytest(monkeypatch) -> None:
     class FakeCursor:
         def __init__(self, connection):
@@ -1392,6 +1428,7 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
 
     connection = FakeConnection()
     placed = {}
+    monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
 
     def fake_db_connection():
         yield connection
@@ -1467,7 +1504,8 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
 
 
-def test_portfolio_manager_order_management_live_path_rejects_order_proof_mismatch_pytest() -> None:
+def test_portfolio_manager_order_management_live_path_rejects_order_proof_mismatch_pytest(monkeypatch) -> None:
+    monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import uuid
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timedelta, timezone
@@ -53,6 +54,7 @@ _PROVIDER_NAMESPACE = uuid.UUID("41395777-ed5f-474f-a5b7-c97567f5ca56")
 _PORTFOLIO_SYNC_NAMESPACE = uuid.UUID("44ecb08d-f092-4a67-b542-c944bcf1c352")
 _PORTFOLIO_MANAGER_APPROVED_EXECUTION_PATH = "janus_portfolio_order_management"
 _PORTFOLIO_MANAGER_ADAPTER_NAME = "janus_portfolio_manager_order_management_v1"
+_PORTFOLIO_MANAGER_RUNTIME_FLAG = "JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED"
 
 
 def _provider_uuid_for(code: str) -> str:
@@ -61,6 +63,21 @@ def _provider_uuid_for(code: str) -> str:
 
 def _portfolio_sync_uuid_for(*parts: str) -> str:
     return str(uuid.uuid5(_PORTFOLIO_SYNC_NAMESPACE, "|".join(parts)))
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _portfolio_manager_order_management_enabled_or_raise() -> None:
+    if not _env_bool(_PORTFOLIO_MANAGER_RUNTIME_FLAG, False):
+        raise HTTPException(
+            status_code=403,
+            detail=f"{_PORTFOLIO_MANAGER_RUNTIME_FLAG}=true is required when dry_run=false",
+        )
 
 
 def _resolve_provider_id(
@@ -858,6 +875,7 @@ def apply_portfolio_manager_order_management_order(
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=to_jsonable(exc.errors())) from exc
 
+    _portfolio_manager_order_management_enabled_or_raise()
     _portfolio_manager_gate_ready_or_raise(plan)
     normalized_order = _normalize_portfolio_manager_requested_order(
         plan=plan,
@@ -3051,6 +3069,7 @@ def preview_portfolio_manager_order_management(
             status_code=403,
             detail="execution_approved=true is required when dry_run=false",
         )
+    _portfolio_manager_order_management_enabled_or_raise()
     if payload.account_id is None:
         raise HTTPException(status_code=422, detail="account_id is required when dry_run=false")
 
