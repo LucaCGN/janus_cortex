@@ -22,6 +22,7 @@ PORTFOLIO_MANAGER_ACTION_SCHEMA_VERSION = "polymarket_portfolio_manager_action_p
 _POSITIVE_TREND_WORDS = {"up", "uptrend", "positive", "bullish", "rising", "continuation"}
 _NEGATIVE_TREND_WORDS = {"down", "downtrend", "negative", "bearish", "falling", "breaking_down"}
 _SIDEWAYS_TREND_WORDS = {"sideways", "range", "rangebound", "oscillating", "band", "flat"}
+_BROKEN_THESIS_WORDS = {"broken", "invalidated", "falsified", "failed", "abandoned", "thesis_broken"}
 _CATALYST_CATEGORIES = {
     "geopolitics",
     "economics",
@@ -35,6 +36,18 @@ _CATALYST_CATEGORIES = {
     "sports",
     "basketball",
 }
+_LOW_PRICED_CATALYST_KEYWORDS = {
+    "ai model",
+    "best ai",
+    "openai",
+    "anthropic",
+    "google",
+    "gemini",
+    "artificial intelligence",
+    "benchmark",
+    "model at the end",
+}
+_LOW_PRICED_CATALYST_PRICE_CEILING = Decimal("0.08")
 
 
 @dataclass(frozen=True)
@@ -50,6 +63,7 @@ class PositionManagementDecision:
     trend_direction: str
     oscillation_band_percent: str | None
     category: str
+    thesis_state: str
     target_state: str
     recommended_action: str
     proposed_micro_action: dict[str, Any]
@@ -158,6 +172,11 @@ def build_portfolio_manager_action_plan(
     elif catalog_candidates:
         selected_type = "open_new_event_micro_position"
         selected = asdict(catalog_candidates[0])
+    else:
+        existing_hold = _select_existing_position_hold(position_decisions)
+        if existing_hold is not None:
+            selected_type = "manage_existing_position"
+            selected = asdict(existing_hold)
 
     action_satisfied = selected is not None
     execution_blockers = [
@@ -231,7 +250,15 @@ def _evaluate_position(
     trend = _trend_direction(position)
     oscillation = _oscillation_band_percent(position)
     target_state = _target_state(position, open_orders=open_orders, token_id=token_id)
+    thesis_state = _thesis_state(
+        position,
+        title=title,
+        market_slug=market_slug,
+        category=category,
+        current_price=current_price,
+    )
     action, rationale = _recommend_position_action(
+        thesis_state=thesis_state,
         pnl_percent=pnl_percent,
         trend_direction=trend,
         oscillation_band_percent=oscillation,
@@ -251,6 +278,7 @@ def _evaluate_position(
         trend_direction=trend,
         oscillation_band_percent=str(oscillation) if oscillation is not None else None,
         category=category,
+        thesis_state=thesis_state,
         target_state=target_state,
         recommended_action=action,
         proposed_micro_action=_position_micro_action(
@@ -267,12 +295,19 @@ def _evaluate_position(
 
 def _recommend_position_action(
     *,
+    thesis_state: str,
     pnl_percent: Decimal | None,
     trend_direction: str,
     oscillation_band_percent: Decimal | None,
     target_state: str,
     oscillation_grid_threshold_percent: Decimal,
 ) -> tuple[str, str]:
+    if thesis_state == "low_priced_catalyst_hold":
+        return (
+            "hold_low_priced_catalyst_option",
+            "Position is a low-priced catalyst option with no direct thesis falsification; do not force a near-price target sell.",
+        )
+
     if pnl_percent is None:
         if target_state in {"target_missing", "target_stale"}:
             return "set_or_refresh_target", "Existing position lacks usable PnL but needs target maintenance."
@@ -324,6 +359,14 @@ def _position_micro_action(
             "limit_price": str(target_price.quantize(Decimal("0.01"))),
             "max_size": str(max_initial_shares),
             "target_notional_usd": str(target_notional_usd),
+            "order_preparation_allowed": False,
+        }
+    if action == "hold_low_priced_catalyst_option":
+        return {
+            "action": "hold_catalyst_option_no_near_target",
+            "target_policy": "do_not_place_mechanical_one_cent_sell_target",
+            "optional_review": "Consider only a deliberate high-conviction partial target after fresh catalyst/news and orderbook review.",
+            "falsification_trigger": "Reclassify if direct evidence shows thesis invalidation, liquidity failure, resolved-market state, or stronger opportunity-cost reason.",
             "order_preparation_allowed": False,
         }
     return {"action": "monitor_existing_position", "order_preparation_allowed": False}
@@ -496,13 +539,26 @@ def _select_existing_position_action(
         "close_win_and_convert_to_grid": 95,
         "sell_loss_and_rebuy_lower_or_close": 90,
         "set_or_refresh_target": 80,
-        "hold_negative_positive_thesis": 50,
-        "hold_positive_uptrend": 40,
     }
     actionable = [decision for decision in decisions if priority.get(decision.recommended_action, 0) > 0]
     if not actionable:
         return None
     return sorted(actionable, key=lambda decision: priority.get(decision.recommended_action, 0), reverse=True)[0]
+
+
+def _select_existing_position_hold(
+    decisions: list[PositionManagementDecision],
+) -> PositionManagementDecision | None:
+    priority = {
+        "hold_low_priced_catalyst_option": 60,
+        "hold_negative_positive_thesis": 50,
+        "hold_positive_uptrend": 40,
+        "hold_and_recheck": 10,
+    }
+    hold_decisions = [decision for decision in decisions if priority.get(decision.recommended_action, 0) > 0]
+    if not hold_decisions:
+        return None
+    return sorted(hold_decisions, key=lambda decision: priority.get(decision.recommended_action, 0), reverse=True)[0]
 
 
 def _catalog_rows(catalog: dict[str, Any]) -> list[dict[str, Any]]:
@@ -526,6 +582,67 @@ def _profile_terms(profile_studies: list[dict[str, Any]]) -> set[str]:
             if value:
                 terms.add(value)
     return terms
+
+
+def _thesis_state(
+    position: dict[str, Any],
+    *,
+    title: str,
+    market_slug: str,
+    category: str,
+    current_price: Decimal | None,
+) -> str:
+    explicit = _first_text(
+        position,
+        (
+            "thesis_state",
+            "thesis_status",
+            "hypothesis_state",
+            "hypothesis_status",
+            "operator_thesis",
+        ),
+    )
+    normalized = explicit.lower().replace("-", "_").replace(" ", "_")
+    if normalized:
+        if normalized in _BROKEN_THESIS_WORDS:
+            return "thesis_broken"
+        if "catalyst" in normalized and "hold" in normalized:
+            return "low_priced_catalyst_hold"
+        return normalized
+    if _is_low_priced_catalyst_position(
+        position,
+        title=title,
+        market_slug=market_slug,
+        category=category,
+        current_price=current_price,
+    ):
+        return "low_priced_catalyst_hold"
+    return "unknown"
+
+
+def _is_low_priced_catalyst_position(
+    position: dict[str, Any],
+    *,
+    title: str,
+    market_slug: str,
+    category: str,
+    current_price: Decimal | None,
+) -> bool:
+    if current_price is None or current_price > _LOW_PRICED_CATALYST_PRICE_CEILING:
+        return False
+    raw_tags = position.get("tags") or position.get("categories") or position.get("markets") or ""
+    haystack = " ".join(
+        (
+            title,
+            market_slug,
+            category.replace("_", " "),
+            str(raw_tags),
+            _first_text(position, ("description", "notes", "resolution_source")),
+        )
+    ).lower()
+    category_terms = {category.lower(), category.lower().replace("_", " ")}
+    has_ai_category = bool(category_terms & {"ai", "tech", "ai models", "ai_models", "technology"})
+    return has_ai_category or any(keyword in haystack for keyword in _LOW_PRICED_CATALYST_KEYWORDS)
 
 
 def _target_state(position: dict[str, Any], *, open_orders: list[dict[str, Any]], token_id: str) -> str:

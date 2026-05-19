@@ -2296,7 +2296,7 @@ def test_polymarket_cli_plan_grid_service_spawn_outputs_gated_plan(tmp_path, cap
     assert payload["order_submission_attempted"] is False
 
 
-def test_polymarket_portfolio_manager_action_plan_selects_required_existing_action() -> None:
+def test_polymarket_portfolio_manager_action_plan_skips_catalyst_hold_for_actionable_target() -> None:
     plan = build_portfolio_manager_action_plan(
         {
             "status": "read_only_snapshot",
@@ -2310,6 +2310,15 @@ def test_polymarket_portfolio_manager_action_plan_selects_required_existing_acti
                     "current_price": "0.06",
                     "trend_direction": "sideways",
                     "oscillation_band_percent": "5",
+                },
+                {
+                    "title": "Will Flavio Bolsonaro win the 2026 Brazilian Presidential Election?",
+                    "market_slug": "flavio-bolsonaro-president-2026",
+                    "token_id": "flavio-yes",
+                    "size": "5",
+                    "average_price": "0.30",
+                    "current_price": "0.28",
+                    "trend_direction": "unknown",
                 }
             ],
             "open_orders": [],
@@ -2342,13 +2351,57 @@ def test_polymarket_portfolio_manager_action_plan_selects_required_existing_acti
     assert plan.action_requirement_satisfied is True
     assert plan.selected_action_type == "manage_existing_position"
     assert plan.selected_action is not None
-    assert plan.selected_action["recommended_action"] == "close_win_and_convert_to_grid"
+    openai = next(decision for decision in plan.existing_position_decisions if decision["token_id"] == "openai-yes")
+    assert openai["thesis_state"] == "low_priced_catalyst_hold"
+    assert openai["recommended_action"] == "hold_low_priced_catalyst_option"
+    assert openai["proposed_micro_action"]["action"] == "hold_catalyst_option_no_near_target"
+    assert plan.selected_action["token_id"] == "flavio-yes"
+    assert plan.selected_action["recommended_action"] == "set_or_refresh_target"
     assert plan.market_candidate_count == 1
     assert plan.profile_candidate_count == 1
     assert plan.browser_research_required is True
     assert "https://polymarket.com/breaking" in plan.browser_research_pages
     assert plan.order_preparation_attempted is False
     assert plan.order_submission_attempted is False
+
+
+def test_polymarket_portfolio_manager_action_plan_uses_catalog_when_only_existing_action_is_catalyst_hold() -> None:
+    plan = build_portfolio_manager_action_plan(
+        {
+            "status": "read_only_snapshot",
+            "open_positions": [
+                {
+                    "title": "Will OpenAI have the best AI model at the end of June 2026?",
+                    "market_slug": "openai-best-model-june-2026",
+                    "token_id": "openai-yes",
+                    "size": "150",
+                    "average_price": "0.0443",
+                    "current_price": "0.034",
+                    "trend_direction": "sideways",
+                }
+            ],
+            "open_orders": [],
+        },
+        frontend_catalog_snapshot={
+            "breaking_events": [
+                {
+                    "title": "Will Google have the best Math AI model at the end of May 2026?",
+                    "market_slug": "google-best-math-ai-model-may-2026",
+                    "outcome": "Yes",
+                    "price": "0.31",
+                    "category": "ai",
+                }
+            ]
+        },
+        profile_studies=[],
+        now_utc=datetime(2026, 5, 19, 22, 0, 0, tzinfo=UTC),
+    )
+
+    assert plan.status == "required_action_selected_execution_gated"
+    assert plan.selected_action_type == "open_new_event_micro_position"
+    assert plan.selected_action is not None
+    assert plan.selected_action["market_slug"] == "google-best-math-ai-model-may-2026"
+    assert plan.existing_position_decisions[0]["recommended_action"] == "hold_low_priced_catalyst_option"
 
 
 def test_polymarket_cli_plan_manager_action_selects_new_catalog_action(tmp_path, capsys) -> None:
