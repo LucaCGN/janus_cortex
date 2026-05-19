@@ -876,7 +876,7 @@ def _auto_protect_direct_positions(
     )
     for position in positions:
         event_slug = str(position.get("event_slug") or position.get("slug") or "")
-        if event_slug and event_slug != event_id:
+        if not _direct_item_matches_event_alias(event_slug, event_id=event_id, plan=plan):
             continue
         token_id = str(position.get("asset") or position.get("token_id") or "").strip()
         if not token_id:
@@ -901,6 +901,7 @@ def _auto_protect_direct_positions(
             else None
         )
         sleeve = _strategy_sleeve_metadata(matched_strategy)
+        adverse_reviewed = False
         if outcome_ref is not None and avg_price is not None:
             adverse_review = _position_adverse_review(
                 event_id=event_id,
@@ -915,11 +916,31 @@ def _auto_protect_direct_positions(
                 uncovered_size=uncovered_size,
             )
             if adverse_review is not None:
+                adverse_reviewed = True
                 reaction["adverse_position_reviews"].append(adverse_review)
                 reaction["position_reactions"].append(adverse_review)
                 reaction["revision_requests"].append(adverse_review["revision_request"])
-        if uncovered_size <= 1e-9:
-            reaction["covered_positions"].append({"token_id": token_id, "position_size": position_size, "open_sell_size": open_sell_size})
+        if not adverse_reviewed and uncovered_size <= 1e-9:
+            reaction["covered_positions"].append(
+                {
+                    "token_id": token_id,
+                    "position_size": position_size,
+                    "open_sell_size": open_sell_size,
+                    "coverage_status": "covered",
+                }
+            )
+            continue
+        if not adverse_reviewed and open_sell_size > 0.0 and uncovered_size < min_size:
+            reaction["covered_positions"].append(
+                {
+                    "token_id": token_id,
+                    "position_size": position_size,
+                    "open_sell_size": open_sell_size,
+                    "uncovered_size": uncovered_size,
+                    "coverage_status": "covered_except_dust_below_exchange_minimum",
+                    "minimum_size": min_size,
+                }
+            )
             continue
         position_reaction = {
             "action": "adopt_operator_position",
@@ -1599,7 +1620,7 @@ def _unknown_direct_order_reactions(
         if not isinstance(order, dict):
             continue
         event_slug = str(order.get("event_slug") or order.get("slug") or "").strip()
-        if event_slug and event_slug != event_id:
+        if not _direct_item_matches_event_alias(event_slug, event_id=event_id, plan=plan):
             continue
         token_id = str(order.get("token_id") or order.get("asset_id") or order.get("asset") or "").strip()
         if not token_id or token_id not in plan_outcomes:
@@ -1683,7 +1704,7 @@ def _unknown_direct_trade_reactions(
         if not isinstance(trade, dict):
             continue
         event_slug = str(trade.get("event_slug") or trade.get("slug") or "").strip()
-        if event_slug and event_slug != event_id:
+        if not _direct_item_matches_event_alias(event_slug, event_id=event_id, plan=plan):
             continue
         token_id = _direct_trade_token_id(trade)
         if not token_id or token_id not in plan_outcomes:
@@ -2037,7 +2058,7 @@ def _pending_intent_summary(
         if not isinstance(item, dict):
             continue
         event_slug = str(item.get("event_slug") or "").strip()
-        if event_slug and event_slug != event_id:
+        if not _direct_item_matches_event_alias(event_slug, event_id=event_id, plan=plan):
             continue
         side = str(item.get("side") or "").strip().lower()
         if side != "buy":
@@ -2098,24 +2119,26 @@ def _known_portfolio_order_external_ids(
         },
         timeout=60,
     )
+    plan_ids = _plan_known_external_order_ids(plan)
     if payload.get("ok") is False:
         return {
             "ok": False,
-            "source": source,
-            "external_order_ids": [],
+            "source": f"{source}+current_strategy_plan",
+            "external_order_ids": sorted(plan_ids),
+            "known_order_count": len(plan_ids),
             "error": payload.get("error") or payload.get("status_code") or "portfolio_order_query_failed",
         }
-    ids: set[str] = set()
+    ids: set[str] = set(plan_ids)
     for item in payload.get("items") or []:
         if not isinstance(item, dict):
             continue
         event_slug = str(item.get("event_slug") or "").strip()
-        if event_slug and event_slug != event_id:
+        if not _direct_item_matches_event_alias(event_slug, event_id=event_id, plan=plan):
             continue
         external_order_id = str(item.get("external_order_id") or "").strip().lower()
         if external_order_id:
             ids.add(external_order_id)
-    return {"ok": True, "source": source, "external_order_ids": sorted(ids), "known_order_count": len(ids)}
+    return {"ok": True, "source": f"{source}+current_strategy_plan", "external_order_ids": sorted(ids), "known_order_count": len(ids)}
 
 
 def _direct_open_order_external_ids(direct_clob: dict[str, Any]) -> set[str]:
@@ -2261,6 +2284,84 @@ def _direct_order_external_id(order: dict[str, Any]) -> str | None:
         if value:
             return value
     return None
+
+
+_PLAN_EVENT_ALIAS_KEYS = (
+    "event_id",
+    "event_slug",
+    "canonical_slug",
+    "polymarket_slug",
+    "slug",
+)
+
+_PLAN_EXTERNAL_ORDER_ID_KEYS = {
+    "external_order_id",
+    "external_order_ids",
+    "live_order_external_id",
+    "target_order_external_id",
+}
+
+
+def _add_plan_alias(aliases: set[str], value: Any) -> None:
+    text = str(value or "").strip().lower()
+    if text:
+        aliases.add(text)
+
+
+def _plan_event_aliases(plan: dict[str, Any], *, event_id: str | None = None) -> set[str]:
+    aliases: set[str] = set()
+    _add_plan_alias(aliases, event_id)
+    if not isinstance(plan, dict):
+        return aliases
+    for key in _PLAN_EVENT_ALIAS_KEYS:
+        _add_plan_alias(aliases, plan.get(key))
+    context = plan.get("context_summary") if isinstance(plan.get("context_summary"), dict) else {}
+    for key in _PLAN_EVENT_ALIAS_KEYS:
+        _add_plan_alias(aliases, context.get(key))
+    for section_name in ("active_strategies", "trigger_conditions", "portfolio_reconciliation"):
+        for item in plan.get(section_name) or []:
+            if not isinstance(item, dict):
+                continue
+            for key in _PLAN_EVENT_ALIAS_KEYS:
+                _add_plan_alias(aliases, item.get(key))
+            entry_rules = item.get("entry_rules") if isinstance(item.get("entry_rules"), dict) else {}
+            for key in _PLAN_EVENT_ALIAS_KEYS:
+                _add_plan_alias(aliases, entry_rules.get(key))
+    return aliases
+
+
+def _direct_item_matches_event_alias(value: Any, *, event_id: str, plan: dict[str, Any]) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return True
+    return text in _plan_event_aliases(plan, event_id=event_id)
+
+
+def _collect_plan_external_order_ids(value: Any, ids: set[str]) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key in _PLAN_EXTERNAL_ORDER_ID_KEYS:
+                if isinstance(item, list):
+                    for child in item:
+                        _collect_plan_external_order_ids(child, ids)
+                    continue
+                text = str(item or "").strip().lower()
+                if text:
+                    ids.add(text)
+                continue
+            if isinstance(item, (dict, list)):
+                _collect_plan_external_order_ids(item, ids)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _collect_plan_external_order_ids(item, ids)
+
+
+def _plan_known_external_order_ids(plan: dict[str, Any]) -> set[str]:
+    ids: set[str] = set()
+    for section_name in ("active_strategies", "trigger_conditions", "portfolio_reconciliation"):
+        _collect_plan_external_order_ids(plan.get(section_name), ids)
+    return ids
 
 
 def _plan_token_ids(plan: dict[str, Any]) -> set[str]:

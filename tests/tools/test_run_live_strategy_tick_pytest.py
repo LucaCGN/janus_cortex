@@ -343,12 +343,94 @@ def test_auto_protect_direct_position_skips_when_target_already_covers_pytest(mo
     )
 
     assert result["submitted_orders"] == []
-    assert result["covered_positions"] == [{"token_id": "token-sas", "position_size": 5.0, "open_sell_size": 5.0}]
+    assert result["covered_positions"] == [
+        {"token_id": "token-sas", "position_size": 5.0, "open_sell_size": 5.0, "coverage_status": "covered"}
+    ]
     assert result["position_reactions"] == []
     assert result["revision_requests"] == []
     assert result["candidate_strategy_plan_required"] is False
     assert "candidate_strategy_plan" not in result
     assert calls == []
+
+
+def test_auto_protect_direct_position_treats_slug_alias_dust_target_as_covered_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "event_id": "8da3c71c-1926-5f97-8473-7c742c7156b8",
+            "context_summary": {"event_slug": "nba-sas-okc-2026-05-18"},
+            "active_strategies": [
+                {
+                    "strategy_id": "sas-live-post-order-monitor",
+                    "family": "operator_order_management",
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                    "shadow_flags": {"live_order_external_id": "0xbuy"},
+                }
+            ],
+            "portfolio_reconciliation": [{"action": "monitor_live_target_sell_order", "external_order_id": "0xsell"}],
+        },
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {
+                        "asset": "token-sas",
+                        "avg_price": 0.3099,
+                        "event_slug": "nba-sas-okc-2026-05-18",
+                        "outcome": "Spurs",
+                        "size": 32.258,
+                    }
+                ]
+            },
+            "open_orders": {
+                "orders": [
+                    {
+                        "id": "0xsell",
+                        "token_id": "token-sas",
+                        "event_slug": "nba-sas-okc-2026-05-18",
+                        "side": "SELL",
+                        "status": "LIVE",
+                        "size": 32.25,
+                        "price": 0.50,
+                    }
+                ]
+            },
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+        known_external_order_ids={"0xsell", "0xbuy"},
+    )
+
+    assert calls == []
+    assert result["order_reactions"] == []
+    assert result["position_reactions"] == []
+    assert result["revision_requests"] == []
+    assert result["candidate_strategy_plan_required"] is False
+    assert result["covered_positions"] == [
+        {
+            "token_id": "token-sas",
+            "position_size": 32.258,
+            "open_sell_size": 32.25,
+            "uncovered_size": pytest.approx(0.008),
+            "coverage_status": "covered_except_dust_below_exchange_minimum",
+            "minimum_size": 5.0,
+        }
+    ]
 
 
 def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_pytest(monkeypatch) -> None:
@@ -1013,6 +1095,32 @@ def test_pending_intent_summary_ignores_local_order_filled_in_direct_clob_pytest
     assert summary["pending_intent_count"] == 0
     assert summary["pending_buy_intent_count"] == 0
     assert summary["orders"] == []
+
+
+def test_known_portfolio_order_ids_include_current_strategy_plan_ids_pytest(monkeypatch) -> None:
+    def fake_api_json(api_root: str, method: str, path: str, **kwargs):
+        assert path == "/v1/portfolio/orders"
+        return {"ok": True, "items": []}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    summary = live_tick._known_portfolio_order_external_ids(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "event_id": "8da3c71c-1926-5f97-8473-7c742c7156b8",
+            "context_summary": {"event_slug": "nba-sas-okc-2026-05-18"},
+            "active_strategies": [{"shadow_flags": {"live_order_external_id": "0xbuy"}}],
+            "portfolio_reconciliation": [{"external_order_id": "0xsell"}],
+        },
+    )
+
+    assert summary["ok"] is True
+    assert summary["source"] == "/v1/portfolio/orders+current_strategy_plan"
+    assert summary["external_order_ids"] == ["0xbuy", "0xsell"]
+    assert summary["known_order_count"] == 2
 
 
 def test_position_target_price_uses_scaled_micro_grid_policy_pytest() -> None:
