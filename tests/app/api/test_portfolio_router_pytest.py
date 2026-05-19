@@ -1528,6 +1528,117 @@ def test_portfolio_manager_order_management_live_path_places_order_when_gate_pro
     assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
 
 
+def test_portfolio_manager_order_management_requires_external_order_id_confirmation_pytest(monkeypatch) -> None:
+    class FakeCursor:
+        def __init__(self, connection):
+            self.connection = connection
+            self.row = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, query, params=None) -> None:
+            self.connection.executed.append((query, params))
+            if "INSERT INTO portfolio.manager_action_ledger" in query:
+                self.row = (params[0],)
+            elif "UPDATE portfolio.manager_action_ledger" in query:
+                self.row = (params[-1],)
+            elif "INSERT INTO portfolio.orders" in query:
+                self.row = (params[0],)
+            elif "INSERT INTO portfolio.order_events" in query:
+                self.row = (params[0],)
+            else:
+                self.row = None
+
+        def fetchone(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        def cursor(self, *_, **__):
+            return FakeCursor(self)
+
+    class FakePlaceResult:
+        success = True
+        raw = {"status": "live"}
+
+    connection = FakeConnection()
+    monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+
+    def fake_db_connection():
+        yield connection
+
+    monkeypatch.setattr(portfolio_router, "_fetch_portfolio_manager_order_by_id", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(portfolio_router, "_ensure_market_exists", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        portfolio_router,
+        "_validate_market_outcome_relation",
+        lambda *_args, **_kwargs: OUTCOME_ID,
+    )
+    monkeypatch.setattr(
+        portfolio_router,
+        "_fetch_account_wallet",
+        lambda *_args, **_kwargs: {
+            "account_id": ACCOUNT_ID,
+            "wallet_address": "0x0000000000000000000000000000000000000001",
+            "proxy_wallet_address": "0x0000000000000000000000000000000000000002",
+            "account_label": "unit-test",
+            "is_active": True,
+        },
+    )
+    monkeypatch.setattr(portfolio_router, "place_new_order", lambda *_args, **_kwargs: FakePlaceResult())
+
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {
+                    "market_id": MARKET_ID,
+                    "outcome_id": OUTCOME_ID,
+                    "token_id": "token-demo",
+                    "side": "sell",
+                    "order_type": "limit",
+                    "limit_price": 0.39,
+                    "size": 5,
+                },
+                "dry_run": False,
+                "execution_approved": True,
+                "reviewed_by": "controller",
+                "reason": "unit-test approved portfolio manager placement",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    execution = payload["order_management_execution"]
+    ledger_finalization = execution["execution_payload"]["manager_action_ledger_finalization"]
+    assert execution["status"] == "submit_confirmation_missing"
+    assert execution["external_order_id"] is None
+    assert execution["event_type"] == "portfolio_manager_place_confirmation_missing"
+    assert execution["side_effects"]["orders_prepared"] is True
+    assert execution["side_effects"]["orders_submitted"] is True
+    assert execution["side_effects"]["orders_placed"] is False
+    assert execution["ledger_finalized"]["result"] == "approved_portfolio_manager_path_submission_unconfirmed"
+    assert ledger_finalization["result"] == "approved_portfolio_manager_path_submission_unconfirmed"
+    assert ledger_finalization["post_confirmation_reconciliation"]["expected_external_order_id"] is None
+    assert any("UPDATE portfolio.manager_action_ledger" in query for query, _ in connection.executed)
+    assert any("INSERT INTO portfolio.orders" in query for query, _ in connection.executed)
+    assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
+
+
 def test_portfolio_manager_order_management_live_path_rejects_order_proof_mismatch_pytest(monkeypatch) -> None:
     monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
     plan = _ready_manager_action_plan_fixture()

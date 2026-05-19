@@ -917,11 +917,12 @@ def _build_portfolio_manager_order_ledger_finalization(
     execution_payload: dict[str, Any],
     side_effects: dict[str, Any],
 ) -> dict[str, Any]:
-    result = (
-        "execution_performed_via_approved_portfolio_manager_path"
-        if execution_status == "submitted"
-        else "approved_portfolio_manager_path_submission_failed"
-    )
+    if execution_status == "submitted":
+        result = "execution_performed_via_approved_portfolio_manager_path"
+    elif execution_status == "submit_confirmation_missing":
+        result = "approved_portfolio_manager_path_submission_unconfirmed"
+    else:
+        result = "approved_portfolio_manager_path_submission_failed"
     proof = dict(execution_payload.get("concrete_adapter_proof") or {})
     return {
         "schema_version": "portfolio_manager_order_management_ledger_finalization_v1",
@@ -1091,14 +1092,17 @@ def apply_portfolio_manager_order_management_order(
     place_result = place_new_order(creds, request)
     execution_payload["clob_response"] = to_jsonable(place_result.raw)
     external_order_id = _extract_external_order_id(place_result.raw)
-    if place_result.success:
+    if place_result.success and external_order_id:
         order_status = "submitted"
         event_type = "portfolio_manager_place_submitted"
+    elif place_result.success:
+        order_status = "submit_confirmation_missing"
+        event_type = "portfolio_manager_place_confirmation_missing"
     else:
         order_status = "submit_error"
         event_type = "portfolio_manager_place_failed"
     side_effects = {
-        "orders_placed": bool(place_result.success),
+        "orders_placed": bool(place_result.success and external_order_id),
         "orders_cancelled": False,
         "orders_replaced": False,
         "orders_submitted": True,
