@@ -130,6 +130,8 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
             gate_value = bool(getattr(self, gate))
             if gate == "approved_order_management_path":
                 gate_value = gate_value and _has_adapter_proof(self)
+            elif gate == "portfolio_ledger_path":
+                gate_value = gate_value and _has_portfolio_ledger_proof(self)
             elif gate == "separate_risk_budget":
                 gate_value = gate_value and _has_named_global_portfolio_risk_budget(self)
             elif gate == "minimum_order_compliance":
@@ -695,6 +697,15 @@ def _has_adapter_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
     if not _has_text(snapshot.adapter_name):
         return False
     return True
+
+
+def _has_portfolio_ledger_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:
+    if not _has_text(snapshot.idempotency_key):
+        return False
+    plan = snapshot.reconciliation_plan
+    if isinstance(plan, dict):
+        return any(_has_text(value) for value in plan.values())
+    return _has_text(plan)
 
 
 def _has_named_global_portfolio_risk_budget(snapshot: GlobalPortfolioExecutionGateSnapshot) -> bool:

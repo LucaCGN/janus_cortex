@@ -287,11 +287,37 @@ def test_execution_gate_snapshot_requires_named_adapter_budget_killswitch_and_po
     assert snapshot.execution_authorized is False
     assert snapshot.missing_gates == [
         "approved_order_management_path",
+        "portfolio_ledger_path",
         "separate_risk_budget",
         "minimum_order_compliance",
         "target_stop_rebuy_policy",
         "kill_switch_clear",
     ]
+
+
+def test_execution_gate_snapshot_requires_idempotency_and_reconciliation_plan_pytest() -> None:
+    proof = _execution_proof_kwargs()
+    proof["idempotency_key"] = ""
+    proof["reconciliation_plan"] = {}
+
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        **proof,
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+    )
+
+    assert snapshot.result == "management_plan_only_execution_gate_missing"
+    assert snapshot.execution_authorized is False
+    assert snapshot.order_preparation_authorized is False
+    assert snapshot.missing_gates == ["portfolio_ledger_path"]
 
 
 def test_execution_gate_snapshot_rejects_market_order_exception_proof_pytest() -> None:
