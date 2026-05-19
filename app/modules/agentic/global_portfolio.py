@@ -735,7 +735,7 @@ def _has_minimum_order_proof(snapshot: GlobalPortfolioExecutionGateSnapshot) -> 
     if side not in {"buy", "sell"}:
         return False
     if order_type != "limit":
-        return bool(proof.get("market_order_exception_approved"))
+        return False
     if price is None or not 0.0 < price <= 1.0:
         return False
     if size is None or min_size is None or size < min_size:

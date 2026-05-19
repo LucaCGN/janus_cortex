@@ -294,6 +294,36 @@ def test_execution_gate_snapshot_requires_named_adapter_budget_killswitch_and_po
     ]
 
 
+def test_execution_gate_snapshot_rejects_market_order_exception_proof_pytest() -> None:
+    proof = _execution_proof_kwargs()
+    proof["minimum_order_proof"] = {
+        "side": "sell",
+        "order_type": "market",
+        "size": 5.0,
+        "notional_usd": 1.95,
+        "min_size": 5.0,
+        "market_order_exception_approved": True,
+    }
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        **proof,
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=True,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=True,
+        minimum_order_compliance=True,
+        kill_switch_clear=True,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob", "janus_api", "portfolio_ledger"],
+    )
+
+    assert snapshot.result == "management_plan_only_execution_gate_missing"
+    assert snapshot.execution_authorized is False
+    assert snapshot.order_preparation_authorized is False
+    assert snapshot.missing_gates == ["minimum_order_compliance"]
+
+
 def test_execution_gate_snapshot_satisfies_only_when_all_gates_true_pytest() -> None:
     snapshot = build_execution_gate_snapshot(
         action="existing_position_close",
