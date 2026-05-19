@@ -43,6 +43,7 @@ from codex_tools.polymarket import (
     RESIDUAL_CLASSIFICATION_SCHEMA_VERSION,
     SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION,
     SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION,
+    SETTLEMENT_READINESS_REPORT_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
     build_post_redeem_reconciliation,
@@ -51,6 +52,7 @@ from codex_tools.polymarket import (
     build_grid_service_preview,
     build_polymarket_safety_gate_snapshot,
     build_redeem_preview,
+    build_settlement_readiness_report,
     classify_documented_residual_positions,
     classify_resolved_market_residual,
     evaluate_direct_truth_freshness,
@@ -1485,6 +1487,82 @@ def test_documented_residual_position_review_splits_active_and_documented_rows()
     assert documented["classification"]["live_readiness_blocker"] is False
 
 
+def test_settlement_readiness_report_allows_documented_residual_only() -> None:
+    residual_position = {
+        **_losing_residual_position(),
+        "settlement_residual": {
+            "market_resolved": True,
+            "payout_per_share": "0",
+            "issue_link": "https://github.com/LucaCGN/janus_cortex/issues/58",
+            "post_redeem_recheck_plan": "Recheck direct account and Janus settlement ledger before closure.",
+        },
+    }
+
+    report = build_settlement_readiness_report(
+        _settlement_snapshot(open_positions=[residual_position]),
+        event_id="nba-sas-okc-2026-05-18",
+        now_utc=datetime(2026, 5, 19, 13, 40, 0, tzinfo=UTC),
+        source_evidence={"artifact": "unit-test"},
+    )
+
+    assert report.schema_version == SETTLEMENT_READINESS_REPORT_SCHEMA_VERSION
+    assert report.status == "ready_documented_residual_only"
+    assert report.live_readiness_blocker is False
+    assert report.open_order_count == 0
+    assert report.raw_open_position_count == 1
+    assert report.active_open_position_count == 0
+    assert report.documented_residual_position_count == 1
+    assert report.blocked_residual_classification_count == 0
+    assert report.blockers == []
+    assert report.event_id == "nba-sas-okc-2026-05-18"
+    assert report.source_evidence == {"artifact": "unit-test"}
+    assert report.documented_residual_positions[0]["classification"]["residual_type"] == "zero_value_residual"
+    assert report.transaction_preparation_attempted is False
+    assert report.transaction_submission_attempted is False
+    assert report.order_submission_attempted is False
+
+
+def test_settlement_readiness_report_blocks_active_or_unproven_inventory() -> None:
+    active_position = {
+        "market_slug": "nba-nyk-cle-2026-05-19",
+        "condition_id": "condition-cle",
+        "token_id": "token-cavs",
+        "size": "5",
+        "current_value": "2.50",
+    }
+    active_order = {
+        "id": "0xopen",
+        "condition_id": "condition-cle",
+        "token_id": "token-cavs",
+        "side": "SELL",
+    }
+
+    report = build_settlement_readiness_report(
+        _settlement_snapshot(open_positions=[active_position], open_orders=[active_order]),
+        now_utc=datetime(2026, 5, 19, 13, 45, 0, tzinfo=UTC),
+    )
+    partial = build_settlement_readiness_report(
+        {
+            **_settlement_snapshot(open_positions=[]),
+            "status": "read_only_snapshot_partial",
+            "section_status": {"open_positions": "ok", "open_orders": "blocked_missing_clob_credentials"},
+        },
+        now_utc=datetime(2026, 5, 19, 13, 46, 0, tzinfo=UTC),
+    )
+
+    assert report.status == "blocked_settlement_inventory"
+    assert report.live_readiness_blocker is True
+    assert "event_scoped_open_orders_present" in report.blockers
+    assert "active_open_positions_present" in report.blockers
+    assert report.active_open_orders == [active_order]
+    assert report.active_open_positions == [active_position]
+    assert report.order_submission_attempted is False
+    assert partial.status == "blocked_settlement_inventory"
+    assert partial.live_readiness_blocker is True
+    assert "direct_truth_snapshot_not_complete" in partial.blockers
+    assert "direct_open_order_truth_unavailable" in partial.blockers
+
+
 def test_resolved_residual_blocks_when_event_open_order_remains() -> None:
     position = _losing_residual_position()
     classification = classify_resolved_market_residual(
@@ -1947,6 +2025,46 @@ def test_polymarket_cli_reconcile_redeem_reports_flat_without_execution(capsys, 
     assert payload["status"] == "post_redeem_reconciled_flat"
     assert payload["residual_cleared"] is True
     assert payload["live_readiness_blocker"] is False
+    assert payload["transaction_preparation_attempted"] is False
+    assert payload["transaction_broadcast_attempted"] is False
+    assert payload["order_submission_attempted"] is False
+
+
+def test_polymarket_cli_settlement_readiness_outputs_report(capsys, tmp_path: Path) -> None:
+    residual_position = {
+        **_losing_residual_position(),
+        "settlement_residual": {
+            "market_resolved": True,
+            "payout_per_share": "0",
+            "issue_link": "https://github.com/LucaCGN/janus_cortex/issues/58",
+            "post_redeem_recheck_plan": "Recheck direct account and Janus settlement ledger before closure.",
+        },
+    }
+    snapshot_path = tmp_path / "snapshot.json"
+    snapshot_path.write_text(
+        json.dumps(_settlement_snapshot(open_positions=[residual_position])),
+        encoding="utf-8",
+    )
+
+    exit_code = polymarket_cli_main(
+        [
+            "settlement-readiness",
+            "--direct-truth-json",
+            str(snapshot_path),
+            "--event-id",
+            "nba-sas-okc-2026-05-18",
+            "--now-utc",
+            "2026-05-19T13:50:00Z",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == SETTLEMENT_READINESS_REPORT_SCHEMA_VERSION
+    assert payload["status"] == "ready_documented_residual_only"
+    assert payload["live_readiness_blocker"] is False
+    assert payload["documented_residual_position_count"] == 1
+    assert payload["active_open_position_count"] == 0
     assert payload["transaction_preparation_attempted"] is False
     assert payload["transaction_broadcast_attempted"] is False
     assert payload["order_submission_attempted"] is False

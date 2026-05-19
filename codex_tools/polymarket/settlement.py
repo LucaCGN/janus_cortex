@@ -22,6 +22,7 @@ from codex_tools.polymarket.safety import NON_AUTHORITATIVE_TRUTH_SOURCES
 RESIDUAL_CLASSIFICATION_SCHEMA_VERSION = "polymarket_residual_classification_v1"
 REDEEM_PREVIEW_SCHEMA_VERSION = "polymarket_redeem_preview_v1"
 POST_REDEEM_RECONCILIATION_SCHEMA_VERSION = "polymarket_post_redeem_reconciliation_v1"
+SETTLEMENT_READINESS_REPORT_SCHEMA_VERSION = "polymarket_settlement_readiness_report_v1"
 SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION = "polymarket_settlement_ledger_entry_v1"
 SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION = "polymarket_settlement_ledger_write_v1"
 SETTLEMENT_LEDGER_FILE_NAME = "settlement_ledger.jsonl"
@@ -118,6 +119,35 @@ class PolymarketPostRedeemReconciliation:
     matching_open_position_count: int
     blockers: list[str]
     evidence: dict[str, Any]
+    transaction_preparation_attempted: bool
+    transaction_signing_attempted: bool
+    transaction_submission_attempted: bool
+    transaction_broadcast_attempted: bool
+    order_preparation_attempted: bool
+    order_submission_attempted: bool
+    no_execution_statement: str
+
+
+@dataclass(frozen=True)
+class PolymarketSettlementReadinessReport:
+    schema_version: str
+    status: str
+    live_readiness_blocker: bool
+    generated_at_utc: str
+    event_id: str | None
+    direct_truth_status: str
+    section_status: dict[str, Any]
+    open_order_count: int
+    raw_open_position_count: int
+    active_open_position_count: int
+    documented_residual_position_count: int
+    blocked_residual_classification_count: int
+    blockers: list[str]
+    active_open_orders: list[dict[str, Any]]
+    active_open_positions: list[dict[str, Any]]
+    documented_residual_positions: list[dict[str, Any]]
+    blocked_residual_classifications: list[dict[str, Any]]
+    source_evidence: dict[str, Any]
     transaction_preparation_attempted: bool
     transaction_signing_attempted: bool
     transaction_submission_attempted: bool
@@ -282,6 +312,15 @@ def _section_status(snapshot: dict[str, Any] | None, section: str) -> str:
     if not isinstance(section_status, dict):
         return ""
     return _text(section_status.get(section))
+
+
+def _section_status_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(snapshot, dict):
+        return {}
+    section_status = snapshot.get("section_status") or {}
+    if isinstance(section_status, dict):
+        return dict(section_status)
+    return {}
 
 
 def _has_documented_owner(
@@ -722,6 +761,88 @@ def classify_documented_residual_positions(
     }
 
 
+def build_settlement_readiness_report(
+    direct_truth_snapshot: dict[str, Any] | None,
+    *,
+    event_id: str | None = None,
+    now_utc: datetime | str | None = None,
+    source_evidence: dict[str, Any] | None = None,
+) -> PolymarketSettlementReadinessReport:
+    """Summarize whether resolved residual inventory blocks unrelated live readiness."""
+
+    generated_at = _coerce_utc(now_utc).isoformat().replace("+00:00", "Z")
+    open_orders = _open_orders(direct_truth_snapshot)
+    open_positions = _open_positions(direct_truth_snapshot)
+    direct_truth_status = _snapshot_status(direct_truth_snapshot)
+    section_status = _section_status_payload(direct_truth_snapshot)
+    blockers: list[str] = []
+
+    if direct_truth_status != "read_only_snapshot":
+        blockers.append("direct_truth_snapshot_not_complete")
+    if _section_status(direct_truth_snapshot, "open_orders") != "ok":
+        blockers.append("direct_open_order_truth_unavailable")
+    if _section_status(direct_truth_snapshot, "open_positions") != "ok":
+        blockers.append("direct_open_position_truth_unavailable")
+
+    if blockers:
+        active_open_positions = open_positions
+        documented_residual_positions: list[dict[str, Any]] = []
+        blocked_residual_classifications: list[dict[str, Any]] = []
+    else:
+        residual_review = classify_documented_residual_positions(
+            open_orders=open_orders,
+            open_positions=open_positions,
+        )
+        active_open_positions = residual_review["active_open_positions"]
+        documented_residual_positions = residual_review["documented_residual_positions"]
+        blocked_residual_classifications = residual_review["blocked_residual_classifications"]
+
+    if open_orders:
+        blockers.append("event_scoped_open_orders_present")
+    if active_open_positions:
+        blockers.append("active_open_positions_present")
+    if blocked_residual_classifications:
+        blockers.append("blocked_residual_classifications_present")
+
+    if blockers:
+        status = "blocked_settlement_inventory"
+        live_readiness_blocker = True
+    elif documented_residual_positions:
+        status = "ready_documented_residual_only"
+        live_readiness_blocker = False
+    else:
+        status = "flat_no_inventory"
+        live_readiness_blocker = False
+
+    return PolymarketSettlementReadinessReport(
+        schema_version=SETTLEMENT_READINESS_REPORT_SCHEMA_VERSION,
+        status=status,
+        live_readiness_blocker=live_readiness_blocker,
+        generated_at_utc=generated_at,
+        event_id=event_id,
+        direct_truth_status=direct_truth_status,
+        section_status=section_status,
+        open_order_count=len(open_orders),
+        raw_open_position_count=len(open_positions),
+        active_open_position_count=len(active_open_positions),
+        documented_residual_position_count=len(documented_residual_positions),
+        blocked_residual_classification_count=len(blocked_residual_classifications),
+        blockers=blockers,
+        active_open_orders=open_orders,
+        active_open_positions=active_open_positions,
+        documented_residual_positions=documented_residual_positions,
+        blocked_residual_classifications=blocked_residual_classifications,
+        source_evidence=dict(source_evidence or {}),
+        transaction_preparation_attempted=False,
+        transaction_signing_attempted=False,
+        transaction_submission_attempted=False,
+        transaction_broadcast_attempted=False,
+        order_preparation_attempted=False,
+        order_submission_attempted=False,
+        no_execution_statement=NO_REDEMPTION_STATEMENT,
+    )
+
+
 def extract_settlement_residual_metadata(position: dict[str, Any]) -> dict[str, Any] | None:
     residual = position.get("settlement_residual")
     residual_metadata = residual if isinstance(residual, dict) else {}
@@ -924,15 +1045,18 @@ __all__ = [
     "REDEEM_PREVIEW_SCHEMA_VERSION",
     "REQUIRED_REDEEM_GATE_LABELS",
     "RESIDUAL_CLASSIFICATION_SCHEMA_VERSION",
+    "SETTLEMENT_READINESS_REPORT_SCHEMA_VERSION",
     "SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION",
     "SETTLEMENT_LEDGER_FILE_NAME",
     "SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION",
     "PolymarketPostRedeemReconciliation",
     "PolymarketRedeemPreview",
     "PolymarketResidualClassification",
+    "PolymarketSettlementReadinessReport",
     "PolymarketSettlementLedgerWrite",
     "build_post_redeem_reconciliation",
     "build_settlement_ledger_entry",
+    "build_settlement_readiness_report",
     "build_redeem_preview",
     "classify_documented_residual_positions",
     "classify_resolved_market_residual",

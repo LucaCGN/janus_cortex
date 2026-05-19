@@ -15,6 +15,7 @@ from codex_tools.polymarket.preview import build_fallback_preview
 from codex_tools.polymarket.settlement import (
     build_post_redeem_reconciliation,
     build_redeem_preview,
+    build_settlement_readiness_report,
     write_settlement_ledger_prewrite,
 )
 
@@ -130,6 +131,15 @@ def _build_parser() -> argparse.ArgumentParser:
     reconcile_redeem.add_argument("--redemption-source")
     reconcile_redeem.add_argument("--now-utc")
     reconcile_redeem.set_defaults(func=_reconcile_redeem)
+
+    settlement_readiness = subparsers.add_parser(
+        "settlement-readiness",
+        help="Build a non-executing settlement residual readiness report.",
+    )
+    settlement_readiness.add_argument("--direct-truth-json", required=True, type=Path)
+    settlement_readiness.add_argument("--event-id")
+    settlement_readiness.add_argument("--now-utc")
+    settlement_readiness.set_defaults(func=_settlement_readiness)
     return parser
 
 
@@ -254,6 +264,18 @@ def _reconcile_redeem(args: argparse.Namespace, output: TextIO) -> int:
         now_utc=args.now_utc,
     )
     json.dump(asdict(reconciliation), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _settlement_readiness(args: argparse.Namespace, output: TextIO) -> int:
+    report = build_settlement_readiness_report(
+        _read_required_json_file(args.direct_truth_json),
+        event_id=args.event_id,
+        now_utc=args.now_utc,
+        source_evidence={"cli_command": "settlement-readiness"},
+    )
+    json.dump(asdict(report), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
 
