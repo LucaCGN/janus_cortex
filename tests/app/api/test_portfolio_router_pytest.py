@@ -1639,6 +1639,73 @@ def test_portfolio_manager_order_management_requires_external_order_id_confirmat
     assert any("INSERT INTO portfolio.order_events" in query for query, _ in connection.executed)
 
 
+def test_portfolio_manager_order_management_idempotency_replay_requires_external_order_id_pytest(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
+
+    monkeypatch.setattr(
+        portfolio_router,
+        "_fetch_portfolio_manager_order_by_id",
+        lambda *_args, **_kwargs: {
+            "order_id": "existing-portfolio-manager-order",
+            "external_order_id": None,
+            "status": "submit_confirmation_missing",
+            "metadata_json": {},
+        },
+    )
+
+    def fail_place_new_order(*_args, **_kwargs):
+        raise AssertionError("idempotency replay must not submit another order")
+
+    monkeypatch.setattr(portfolio_router, "place_new_order", fail_place_new_order)
+
+    plan = _ready_manager_action_plan_fixture()
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/order-management",
+            json={
+                "account_id": ACCOUNT_ID,
+                "action_plan": plan.model_dump(mode="json"),
+                "requested_order": {
+                    "market_id": MARKET_ID,
+                    "outcome_id": OUTCOME_ID,
+                    "token_id": "token-demo",
+                    "side": "sell",
+                    "order_type": "limit",
+                    "limit_price": 0.39,
+                    "size": 5,
+                },
+                "dry_run": False,
+                "execution_approved": True,
+                "reviewed_by": "controller",
+                "reason": "unit-test idempotency replay",
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    execution = payload["order_management_execution"]
+    replay_payload = execution["execution_payload"]
+    assert payload["status"] == "idempotency_replayed_unconfirmed"
+    assert execution["status"] == "idempotency_replayed_unconfirmed"
+    assert execution["result"] == "approved_portfolio_manager_path_submission_unconfirmed"
+    assert execution["external_order_id"] is None
+    assert execution["event_type"] == "portfolio_manager_place_idempotency_replayed_unconfirmed"
+    assert execution["side_effects"]["orders_placed"] is False
+    assert execution["side_effects"]["orders_prepared"] is False
+    assert execution["side_effects"]["orders_submitted"] is False
+    assert replay_payload["schema_version"] == "portfolio_manager_order_management_idempotency_replay_v1"
+    assert replay_payload["confirmed_external_order"] is False
+    assert replay_payload["external_order_id_required_for_confirmed_replay"] is True
+    assert replay_payload["post_confirmation_reconciliation"]["required"] is True
+
+
 def test_portfolio_manager_order_management_live_path_rejects_order_proof_mismatch_pytest(monkeypatch) -> None:
     monkeypatch.setenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", "true")
     plan = _ready_manager_action_plan_fixture()

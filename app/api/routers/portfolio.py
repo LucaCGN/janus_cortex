@@ -983,17 +983,51 @@ def apply_portfolio_manager_order_management_order(
 
     existing_order = _fetch_portfolio_manager_order_by_id(connection, order_id=order_id)
     if existing_order is not None:
+        existing_status = str(existing_order.get("status") or "").strip()
+        existing_external_order_id = str(existing_order.get("external_order_id") or "").strip() or None
+        failed_statuses = {"submit_error", "failed", "rejected"}
+        unconfirmed_statuses = {"", "submit_confirmation_missing", "pending_confirmation", "unknown"}
+        if existing_status in failed_statuses:
+            replay_status = "idempotency_replayed_failed"
+            replay_result = "approved_portfolio_manager_path_submission_failed"
+            event_type = "portfolio_manager_place_idempotency_replayed_failed"
+            confirmed_external_order = False
+        elif existing_external_order_id and existing_status not in unconfirmed_statuses:
+            replay_status = "idempotency_replayed"
+            replay_result = "execution_performed_via_approved_portfolio_manager_path"
+            event_type = "portfolio_manager_place_idempotency_replayed"
+            confirmed_external_order = True
+        else:
+            replay_status = "idempotency_replayed_unconfirmed"
+            replay_result = "approved_portfolio_manager_path_submission_unconfirmed"
+            event_type = "portfolio_manager_place_idempotency_replayed_unconfirmed"
+            confirmed_external_order = False
         return {
             "schema_version": "portfolio_manager_order_management_execution_v1",
-            "status": "idempotency_replayed",
+            "status": replay_status,
+            "result": replay_result,
             "dry_run": False,
             "order_id": str(existing_order["order_id"]),
-            "external_order_id": existing_order.get("external_order_id"),
-            "event_type": "portfolio_manager_place_idempotency_replayed",
+            "external_order_id": existing_external_order_id,
+            "event_type": event_type,
             "ledger_applied": False,
             "execution_payload": {
+                "schema_version": "portfolio_manager_order_management_idempotency_replay_v1",
                 "idempotency_key": idempotency_key,
-                "existing_order_status": existing_order.get("status"),
+                "existing_order_status": existing_status or None,
+                "existing_external_order_id": existing_external_order_id,
+                "confirmed_external_order": confirmed_external_order,
+                "external_order_id_required_for_confirmed_replay": True,
+                "replay_result": replay_result,
+                "post_confirmation_reconciliation": {
+                    "required": not confirmed_external_order,
+                    "expected_external_order_id": existing_external_order_id,
+                    "next_checks": [
+                        "direct_clob_open_order_or_fill_confirmation",
+                        "portfolio_order_lifecycle_reconciliation",
+                        "manager_action_ledger_status_review",
+                    ],
+                },
             },
             "side_effects": {
                 "orders_placed": False,
