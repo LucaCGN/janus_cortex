@@ -80,6 +80,7 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | Closed foundation | Active Codex global portfolio-manager execution policy and trend lane defined with ledger/preview surfaces. |
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | Codex tooling split and preview-first Polymarket fallback base implemented. |
 | [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Planned/sprint | Implement approved global portfolio execution gate proof and concrete order adapter. |
+| [#57](https://github.com/LucaCGN/janus_cortex/issues/57) | P0 | Planned/sprint | Reconcile Spurs/Thunder final settlement and residual Thunder direct-CLOB exposure before new NBA live execution. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Planned/sprint | Run passive WNBA CLOB capture and season-level shadow backtests. |
 | [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | Research backlog | Compare NBA pregame, immediate-live, post-Q1, and post-Q1-stability entry timing with fillability and event-start cancellation effects. |

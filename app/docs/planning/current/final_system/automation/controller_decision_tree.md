@@ -77,6 +77,8 @@ The 2026-05-18 bootstrap pass performed the first repo-local reconciliation and 
 
 Postgame direct-CLOB truth must be event-scoped before it is used for PnL attribution. Global account positions and open orders from alien, geopolitics, elections, AI-model, or other portfolio markets must not keep a completed NBA/WNBA event marked unresolved unless their token/condition/event scope matches that event.
 
+If a completed Janus-covered NBA/WNBA event still has event-scoped direct CLOB open orders, open positions, valuation mismatches, or unresolved lifecycle state, route to the settlement/reconciliation issue for that event before enabling new live execution. For the 2026-05-18 Spurs/Thunder test, that issue is [#57](https://github.com/LucaCGN/janus_cortex/issues/57). Keep WNBA passive/shadow work in [#50](https://github.com/LucaCGN/janus_cortex/issues/50); do not use #50 as the NBA settlement bucket.
+
 ## Active Live-Game Analyst Rules
 
 When a covered NBA/WNBA game is live, the controller should not behave like a generic no-op scheduler. It should route to `live-monitor-analyst` and produce or inspect a fresh checkpoint that can support Janus decisions:
@@ -98,6 +100,7 @@ On an NBA/WNBA test day, repeated passive capture is not enough when the blocker
 5. At event start, Polymarket may clear/cancel resting orders. After start time, local submitted/open rows are advisory only: the controller must re-prove direct CLOB open orders or fills before treating a pregame buy or target as live. Missing direct CLOB orders after start should be classified as event-start expiry, not as pending exposure.
 6. UUID catalog event ids must resolve through the catalog-linked NBA game id before live monitoring is considered complete. A live tick that reports `event_id_not_parseable` for a UUID covered event is a tooling blocker, not a trading signal.
 7. Live-monitor artifacts must expose current-event inventory, not only worker readiness. If `live_execution_evidence.items` is empty because the worker is stopped, the controller still needs direct CLOB event inventory from the monitor artifact or a bounded dry live-strategy tick.
+8. A prior final event with unresolved event-scoped direct CLOB inventory blocks new live-worker enablement until it is reconciled or explicitly classified as a documented residual. For current May 18 NBA state, [#57](https://github.com/LucaCGN/janus_cortex/issues/57) owns this gate; [#55](https://github.com/LucaCGN/janus_cortex/issues/55) remains entry-timing research, and [#50](https://github.com/LucaCGN/janus_cortex/issues/50) remains WNBA passive/shadow evidence.
 
 ## Global Portfolio Rules
 

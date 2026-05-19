@@ -103,6 +103,8 @@ After an explicit operator-approved minimum-size covered-market order has been s
 
 During an active covered NBA/WNBA live game, the controller is also a game/market analyst for Janus infrastructure. It must keep the newest machine-readable live checkpoint fresh enough for the current phase and summarize score/clock/period, market movement, direct CLOB current-event inventory, pending intents, LLM/runtime triggers, and blockers. No-change compression must not suppress this checkpoint when the prior artifact is stale, lacks direct current-event inventory, or conflicts with fresher evidence.
 
+After a covered NBA/WNBA game reaches final or settlement, unresolved event-scoped direct CLOB orders, positions, fills, or valuation mismatches are live-readiness blockers for the next event. They must route to a settlement/reconciliation issue before any new worker enablement or new live-order test. The 2026-05-18 Spurs/Thunder residual Thunder order/position is owned by [#57](https://github.com/LucaCGN/janus_cortex/issues/57), while [#50](https://github.com/LucaCGN/janus_cortex/issues/50) remains scoped to WNBA passive capture and shadow backtests.
+
 ## Operating Modes
 
 | Mode | Trigger | Allowed Work |

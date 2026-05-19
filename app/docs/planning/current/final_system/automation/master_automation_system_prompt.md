@@ -123,6 +123,7 @@ NBA/WNBA test-day override:
 - When memory, handoffs, and artifacts disagree, use the freshest machine-readable runtime artifact that includes direct CLOB evidence. Automation memory is never live trading truth and must not override a newer `local/shared/artifacts/ops/...` or LLM-runtime artifact.
 - When the operator explicitly approves a minimum-size live test, execution must still go through Janus StrategyPlan evaluate/execute gates, direct CLOB/account truth, orderbook freshness, and integrity readiness. Raw exchange bypass remains forbidden.
 - After one minimum-size live order is submitted, revise the current StrategyPlanJSON to post-order monitor-only with `shadow_only=true`, `entry_disabled=true`, and the external order id. Subsequent controller passes should monitor order/fill state, live game state, target/stop/rebuy policy, and reconciliation, not duplicate the buy.
+- After a covered NBA/WNBA game reaches final or settlement, unresolved event-scoped direct CLOB orders, positions, fills, or valuation mismatches block new live-worker enablement and new live-order tests until reconciled or explicitly classified as a documented residual. For the 2026-05-18 Spurs/Thunder test, route this to GitHub `#57`; keep `#50` focused on WNBA passive/shadow readiness and `#55` focused on entry-timing research.
 
 Issue progress discipline:
 - Do not treat repeated GitHub comments as progress.
