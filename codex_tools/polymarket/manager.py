@@ -250,12 +250,16 @@ def _evaluate_position(
     trend = _trend_direction(position)
     oscillation = _oscillation_band_percent(position)
     target_state = _target_state(position, open_orders=open_orders, token_id=token_id)
-    thesis_state = _thesis_state(
-        position,
-        title=title,
-        market_slug=market_slug,
-        category=category,
-        current_price=current_price,
+    thesis_state = (
+        "covered_basketball_defer_to_janus"
+        if covered
+        else _thesis_state(
+            position,
+            title=title,
+            market_slug=market_slug,
+            category=category,
+            current_price=current_price,
+        )
     )
     action, rationale = _recommend_position_action(
         thesis_state=thesis_state,
@@ -302,6 +306,11 @@ def _recommend_position_action(
     target_state: str,
     oscillation_grid_threshold_percent: Decimal,
 ) -> tuple[str, str]:
+    if thesis_state == "covered_basketball_defer_to_janus":
+        return (
+            "defer_covered_basketball_to_janus",
+            "Covered NBA/WNBA inventory belongs to the Janus trading Python system, not the Codex global portfolio lane.",
+        )
     if thesis_state == "low_priced_catalyst_hold":
         return (
             "hold_low_priced_catalyst_option",
@@ -368,6 +377,12 @@ def _position_micro_action(
             "optional_review": "Consider only a deliberate high-conviction partial target after fresh catalyst/news and orderbook review.",
             "falsification_trigger": "Reclassify if direct evidence shows thesis invalidation, liquidity failure, resolved-market state, or stronger opportunity-cost reason.",
             "order_preparation_allowed": False,
+        }
+    if action == "defer_covered_basketball_to_janus":
+        return {
+            "action": "defer_to_janus_covered_market_inventory",
+            "order_preparation_allowed": False,
+            "reason": "covered_basketball_scope",
         }
     return {"action": "monitor_existing_position", "order_preparation_allowed": False}
 

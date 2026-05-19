@@ -2312,6 +2312,16 @@ def test_polymarket_portfolio_manager_action_plan_skips_catalyst_hold_for_action
                     "oscillation_band_percent": "5",
                 },
                 {
+                    "title": "Cavaliers vs. Knicks",
+                    "market_slug": "nba-cavaliers-knicks-2026-05-19",
+                    "token_id": "cavs-yes",
+                    "size": "15.2",
+                    "average_price": "0.33",
+                    "current_price": "0.325",
+                    "category": "nba",
+                    "trend_direction": "unknown",
+                },
+                {
                     "title": "Will Flavio Bolsonaro win the 2026 Brazilian Presidential Election?",
                     "market_slug": "flavio-bolsonaro-president-2026",
                     "token_id": "flavio-yes",
@@ -2355,6 +2365,9 @@ def test_polymarket_portfolio_manager_action_plan_skips_catalyst_hold_for_action
     assert openai["thesis_state"] == "low_priced_catalyst_hold"
     assert openai["recommended_action"] == "hold_low_priced_catalyst_option"
     assert openai["proposed_micro_action"]["action"] == "hold_catalyst_option_no_near_target"
+    covered = next(decision for decision in plan.existing_position_decisions if decision["token_id"] == "cavs-yes")
+    assert covered["recommended_action"] == "defer_covered_basketball_to_janus"
+    assert covered["proposed_micro_action"]["action"] == "defer_to_janus_covered_market_inventory"
     assert plan.selected_action["token_id"] == "flavio-yes"
     assert plan.selected_action["recommended_action"] == "set_or_refresh_target"
     assert plan.market_candidate_count == 1
