@@ -75,6 +75,8 @@ The 2026-05-18 bootstrap pass performed the first repo-local reconciliation and 
 | `postgame` | Review/reconciliation precedes development planning unless a P0 safety bug blocks all work. |
 | `settlement` | Direct CLOB/account truth must be reconciled before performance claims. |
 
+Postgame direct-CLOB truth must be event-scoped before it is used for PnL attribution. Global account positions and open orders from alien, geopolitics, elections, AI-model, or other portfolio markets must not keep a completed NBA/WNBA event marked unresolved unless their token/condition/event scope matches that event.
+
 ## Active Live-Game Analyst Rules
 
 When a covered NBA/WNBA game is live, the controller should not behave like a generic no-op scheduler. It should route to `live-monitor-analyst` and produce or inspect a fresh checkpoint that can support Janus decisions:
@@ -103,6 +105,8 @@ The `janus-portfolio-manager` lane is the Codex global portfolio manager. It is 
 
 1. Manage existing operator/global positions: verify direct CLOB truth, matching targets, stale/missing targets, exits, rebuy watches, and concentration risk.
 2. Proactively scout uncovered categories such as geopolitics, economics, culture, crypto, and sports futures for trend-following opportunities where the thesis is trend, market structure, liquidity, mispricing, and return path rather than direct final-outcome prediction.
+2a. Always check live basketball markets outside the Janus-covered NBA/WNBA modules when data is available. Until promoted, other basketball leagues belong to Codex global portfolio management, not the internal covered-market portfolio agent.
+2b. Review ongoing events traded in the last month for 1c grid suitability. The first approved surface is preview-only `codex_tools/polymarket preview-grid-service`; high-frequency grid services require separate service-spawn approval, budget, kill-switch, ledger, rate-limit, and reconciliation gates.
 3. Execute only through an approved Janus portfolio order-management path or an approved independent `codex_tools/polymarket/*` fallback path after all gates in `automation/global_portfolio_manager_contract.md` and `automation/codex_tooling_contract.md` are true.
 4. If execution gates are missing, update watchlists, Obsidian lessons, GitHub blockers, and runtime evidence without preparing or submitting orders.
 5. Successful new-market trades must become backlog tests or Obsidian do/don't lessons before any domain is promoted.

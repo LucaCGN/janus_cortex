@@ -15,7 +15,7 @@ The current `codex_tool/` package is useful, but it is mostly a thin Codex-to-Ja
 - `codex_tool/*` exists and is imported by current tests and reports.
 - Existing `codex_tool` scripts should be treated as compatibility entrypoints until `#53` migrates them safely.
 - Most current `codex_tool` scripts call Janus API endpoints on `http://127.0.0.1:8010`.
-- The `codex_tools/janus/` and `codex_tools/polymarket/` base namespaces now exist with tests, preview-first direct Polymarket safety gates, read-only account snapshot helpers, inert fallback ledger writes, and selected Janus compatibility migrations.
+- The `codex_tools/janus/` and `codex_tools/polymarket/` base namespaces now exist with tests, preview-first direct Polymarket safety gates, read-only account snapshot helpers, inert fallback ledger writes, preview-only 1c grid-service planning, and selected Janus compatibility migrations.
 - `tools/polymarket_smoke_order.py` is not an automation path and must remain retired from controller/portfolio-manager use.
 
 Do not rename or delete `codex_tool/` until compatibility tests prove the existing imports and automation prompts still work.
@@ -49,6 +49,23 @@ They may place, cancel, replace, close, or open positions only when all gates ar
 10. The tool defaults to preview/dry-run unless an explicit approved execution flag/config is present.
 
 If any gate is missing, the tool must return a management plan or blocker and must not prepare, sign, submit, cancel, or replace an order.
+
+## Grid-Service Preview Tools
+
+The first approved grid surface is `codex_tools/polymarket preview-grid-service`. It reads a direct account snapshot and produces inert candidates for one-cent sell/rebuy grids on ongoing positions that have meaningful movement, including global categories and basketball markets outside the covered NBA/WNBA Janus modules.
+
+This tool is not an execution loop. It must always return `service_spawn_authorized=false`, `order_preparation_attempted=false`, and `order_submission_attempted=false` until a separate issue proves:
+
+- service-spawn approval and owner persona
+- named global-portfolio grid budget
+- per-market and aggregate max notional
+- maximum concurrent legs and rate limits
+- direct-CLOB freshness requirement before every leg
+- kill-switch polling and shutdown behavior
+- idempotent ledger write before each action and CLOB confirmation after each action
+- Janus reconciliation artifacts for every fill, cancel, replace, target, and rebuy
+
+High-frequency services must be supervised as independent running services with their own heartbeat, lock, ledger, and kill switch. They must not be hidden inside a recurring Codex prompt pass.
 
 ## Persona Use
 

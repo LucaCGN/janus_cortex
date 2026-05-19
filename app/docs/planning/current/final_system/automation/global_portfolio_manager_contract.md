@@ -15,6 +15,8 @@ This automation is not a validator for NBA/WNBA Janus trades, not the internal J
 - managing already-existing positions that the operator chose to buy
 - maintaining or closing matching sell targets when direct CLOB truth and Janus gates allow it
 - finding attractive trend-following opportunities in uncovered market categories
+- checking live basketball markets outside the currently covered NBA/WNBA modules for quick high-trust return opportunities
+- reviewing ongoing events traded in the last month for 1c grid suitability when repeated mark-to-market swings appear
 - turning successful new-market trades into backlog tests, domain-lane candidates, and Obsidian lessons
 
 It inherits `app/docs/planning/current/final_system/global_ego_and_purpose.md`: Janus should trade trends, liquidity, market structure, and return paths, not pretend it can predict final outcomes directly.
@@ -96,6 +98,20 @@ The premise is trend trading, not final-outcome prediction. A candidate must rec
 
 New-market trend entries require stronger gates than existing-position target maintenance because they expand the portfolio into uncovered categories.
 
+### Cross-League Basketball and 1c Grid Incubation
+
+The global portfolio manager must scan live basketball markets outside Janus-covered NBA/WNBA when data and time permit. These markets are not covered-market Janus inventory until a separate domain-promotion issue adds them to the Python trading system. Before promotion, they are Codex global-portfolio opportunities and must use the global-portfolio risk budget and gates.
+
+Each material pass should also review ongoing markets traded by the account in the last month, including aliens/UAP, geopolitics, elections, AI-model events, economics, culture, and other open positions. If direct account truth shows an existing position with repeated roughly 3-5% movement, enough liquidity, and tight enough spread, the automation should create a preview-only 1c grid candidate:
+
+- current position, token, side, size, average/current price, and existing open target orders
+- proposed next sell/rebuy leg, normally one cent around the current mark
+- risk cap, max concurrent legs, stop condition, and reconciliation plan
+- evidence that this is market-structure harvesting rather than final-outcome prediction
+- exact gates missing before any service spawn or order preparation
+
+`codex_tools/polymarket preview-grid-service` is the approved first-slice tooling for this analysis. It is inert: it may output candidate service specs, but it may not prepare orders or start a high-frequency service. A live grid service requires a separate approved service-spawn path, rate limits, idempotent ledger writes before each leg, direct-CLOB confirmation after each leg, kill-switch polling, and reconciliation back into Janus.
+
 ## Execution Authority Gate
 
 The portfolio manager is intended to become trading-capable, but it may only place, cancel, replace, submit, or prepare orders when all required authority gates are true:
@@ -126,6 +142,8 @@ For `#54`, boolean gate claims are not enough. A portfolio-manager action plan c
 - `idempotency_key` and `reconciliation_plan`: the pre-submit ledger identity and the path back into Janus reconciliation after the action.
 
 If any of those concrete proof fields are missing or internally inconsistent, the gate remains `management_plan_only_execution_gate_missing` even if the corresponding boolean flag is `true`. This prevents the automation from repeatedly restating blockers while also preventing vague gate claims from authorizing order preparation.
+
+For grid services, the `#54` proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, service heartbeat path, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only.
 
 ## New-Market Learning Rule
 
