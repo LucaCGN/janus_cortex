@@ -60,6 +60,50 @@ def _execution_proof_kwargs() -> dict[str, object]:
     }
 
 
+def test_execution_gate_snapshot_reports_issue59_concrete_proof_gaps_pytest() -> None:
+    snapshot = build_execution_gate_snapshot(
+        action="existing_position_target",
+        market_title="Will OpenAI have the best AI model at the end of June 2026?",
+        market_slug="will-openai-have-the-best-ai-model-at-the-end-of-june-2026",
+        token_id="token-openai",
+        approved_execution_path="janus_portfolio_order_management",
+        adapter_name="janus_portfolio_manager_order_management_v1",
+        adapter_version="repo_current_runtime_preview",
+        risk_budget={},
+        minimum_order_proof={},
+        target_stop_rebuy_policy_detail={},
+        kill_switch_clearance={},
+        direct_clob_truth_fresh=True,
+        market_token_order_state_resolved=False,
+        approved_order_management_path=True,
+        portfolio_ledger_path=True,
+        separate_risk_budget=False,
+        minimum_order_compliance=False,
+        target_stop_rebuy_policy=False,
+        kill_switch_clear=False,
+        non_runtime_truth_rejected=True,
+        truth_sources=["direct_clob_account_snapshot", "janus_api_order_management_preview", "repo_contracts"],
+    )
+
+    diagnostics = snapshot.proof_diagnostics
+
+    assert diagnostics["schema_version"] == "global_portfolio_execution_gate_diagnostics_v1"
+    assert diagnostics["proof_bundle_complete"] is False
+    assert diagnostics["next_missing_gate"] == "market_token_order_state_resolved"
+    assert diagnostics["gates"]["approved_order_management_path"]["passed"] is True
+    assert diagnostics["gates"]["portfolio_ledger_path"]["missing_fields"] == [
+        "idempotency_key",
+        "reconciliation_plan",
+    ]
+    assert "risk_budget_name" in diagnostics["gates"]["separate_risk_budget"]["missing_fields"]
+    assert "minimum_order_proof.side" in diagnostics["gates"]["minimum_order_compliance"]["missing_fields"]
+    assert (
+        "target_stop_rebuy_policy_detail.target_price"
+        in diagnostics["gates"]["target_stop_rebuy_policy"]["missing_fields"]
+    )
+    assert "kill_switch_clearance.source" in diagnostics["gates"]["kill_switch_clear"]["missing_fields"]
+
+
 def test_watchlist_entry_rejects_execution_authority_pytest() -> None:
     with pytest.raises(ValueError, match="cannot authorize execution"):
         GlobalPortfolioWatchlistEntry(

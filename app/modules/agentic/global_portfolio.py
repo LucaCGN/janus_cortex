@@ -121,6 +121,7 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
     execution_authorized: bool = False
     order_preparation_authorized: bool = False
     live_order_impact: Literal["none", "read-only", "order-path"] = "read-only"
+    proof_diagnostics: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _summarize_execution_gates(self) -> "GlobalPortfolioExecutionGateSnapshot":
@@ -151,11 +152,20 @@ class GlobalPortfolioExecutionGateSnapshot(BaseModel):
         self.order_preparation_authorized = self.execution_authorized
         self.result = "execution_gates_satisfied" if self.execution_authorized else "management_plan_only_execution_gate_missing"
         self.live_order_impact = "order-path" if self.execution_authorized else "read-only"
+        self.proof_diagnostics = _build_execution_gate_diagnostics(
+            self,
+            missing_gates=missing,
+            rejected_truth_sources=rejected_sources,
+        )
         return self
 
 
 def build_execution_gate_snapshot(**kwargs: Any) -> GlobalPortfolioExecutionGateSnapshot:
     return GlobalPortfolioExecutionGateSnapshot.model_validate(kwargs)
+
+
+def build_execution_gate_diagnostics(snapshot: GlobalPortfolioExecutionGateSnapshot) -> dict[str, Any]:
+    return _build_execution_gate_diagnostics(snapshot)
 
 
 class GlobalPortfolioManagerActionPlan(BaseModel):
@@ -633,6 +643,7 @@ def _build_manager_action_ledger_record(plan: GlobalPortfolioManagerActionPlan) 
         "truth_sources": list(snapshot.truth_sources),
         "rejected_truth_sources": list(snapshot.rejected_truth_sources),
         "missing_gates": list(snapshot.missing_gates),
+        "proof_diagnostics": dict(snapshot.proof_diagnostics),
         "evidence": dict(snapshot.evidence),
         "proposed_action": dict(plan.proposed_action),
         "management_plan": list(plan.management_plan),
@@ -773,6 +784,225 @@ def _has_kill_switch_clearance(snapshot: GlobalPortfolioExecutionGateSnapshot) -
     return bool(clearance.get("clear") is True and _has_text(clearance.get("source")) and not blockers)
 
 
+def _diagnostic_entry(
+    *,
+    passed: bool,
+    required_fields: tuple[str, ...],
+    missing_fields: list[str] | None = None,
+    blockers: list[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        "passed": passed,
+        "required_fields": list(required_fields),
+        "missing_fields": list(missing_fields or []),
+        "blockers": list(blockers or []),
+    }
+
+
+def _build_execution_gate_diagnostics(
+    snapshot: GlobalPortfolioExecutionGateSnapshot,
+    *,
+    missing_gates: list[ExecutionGateName] | None = None,
+    rejected_truth_sources: list[str] | None = None,
+) -> dict[str, Any]:
+    missing = list(missing_gates if missing_gates is not None else snapshot.missing_gates)
+    rejected = list(rejected_truth_sources if rejected_truth_sources is not None else snapshot.rejected_truth_sources)
+    gates: dict[str, dict[str, Any]] = {}
+
+    gates["direct_clob_truth_fresh"] = _diagnostic_entry(
+        passed=bool(snapshot.direct_clob_truth_fresh),
+        required_fields=("direct_clob_truth_fresh", "truth_sources"),
+        missing_fields=[] if snapshot.direct_clob_truth_fresh else ["direct_clob_truth_fresh"],
+    )
+
+    gates["market_token_order_state_resolved"] = _diagnostic_entry(
+        passed=bool(snapshot.market_token_order_state_resolved),
+        required_fields=("market_title", "market_slug", "token_id", "market_token_order_state_resolved"),
+        missing_fields=[] if snapshot.market_token_order_state_resolved else ["market_token_order_state_resolved"],
+    )
+
+    adapter_missing: list[str] = []
+    if not snapshot.approved_order_management_path:
+        adapter_missing.append("approved_order_management_path")
+    if snapshot.approved_execution_path not in {"janus_portfolio_order_management", "independent_polymarket_fallback"}:
+        adapter_missing.append("approved_execution_path")
+    if not _has_text(snapshot.adapter_name):
+        adapter_missing.append("adapter_name")
+    gates["approved_order_management_path"] = _diagnostic_entry(
+        passed=bool(snapshot.approved_order_management_path and _has_adapter_proof(snapshot)),
+        required_fields=("approved_order_management_path", "approved_execution_path", "adapter_name"),
+        missing_fields=adapter_missing,
+    )
+
+    ledger_missing: list[str] = []
+    if not snapshot.portfolio_ledger_path:
+        ledger_missing.append("portfolio_ledger_path")
+    if not _has_text(snapshot.idempotency_key):
+        ledger_missing.append("idempotency_key")
+    plan = snapshot.reconciliation_plan
+    plan_present = any(_has_text(value) for value in plan.values()) if isinstance(plan, dict) else _has_text(plan)
+    if not plan_present:
+        ledger_missing.append("reconciliation_plan")
+    gates["portfolio_ledger_path"] = _diagnostic_entry(
+        passed=bool(snapshot.portfolio_ledger_path and _has_portfolio_ledger_proof(snapshot)),
+        required_fields=("portfolio_ledger_path", "idempotency_key", "reconciliation_plan"),
+        missing_fields=ledger_missing,
+    )
+
+    budget = dict(snapshot.risk_budget or {})
+    budget_missing: list[str] = []
+    budget_blockers: list[str] = []
+    budget_name = str(snapshot.risk_budget_name or budget.get("name") or "").strip()
+    if not snapshot.separate_risk_budget:
+        budget_missing.append("separate_risk_budget")
+    if not budget_name:
+        budget_missing.append("risk_budget_name")
+    scope = str(budget.get("scope") or budget.get("risk_bucket") or "").strip().lower()
+    if not scope:
+        budget_missing.append("risk_budget.scope")
+    elif scope != "global-portfolio":
+        budget_blockers.append("risk_budget_scope_not_global_portfolio")
+    limit = _numeric(budget.get("max_notional_usd") or budget.get("limit_notional_usd"))
+    used = _numeric(budget.get("used_notional_usd") or 0.0)
+    action_notional = _numeric(
+        budget.get("action_notional_usd")
+        or budget.get("proposed_notional_usd")
+        or snapshot.minimum_order_proof.get("notional_usd")
+    )
+    if limit is None or limit <= 0.0:
+        budget_missing.append("risk_budget.max_notional_usd")
+    if used is None or used < 0.0:
+        budget_blockers.append("risk_budget_used_notional_invalid")
+    if action_notional is None or action_notional < 0.0:
+        budget_missing.append("risk_budget.action_notional_usd")
+    elif limit is not None and used is not None and action_notional > max(0.0, limit - used) + 1e-9:
+        budget_blockers.append("risk_budget_action_exceeds_remaining_budget")
+    gates["separate_risk_budget"] = _diagnostic_entry(
+        passed=bool(snapshot.separate_risk_budget and _has_named_global_portfolio_risk_budget(snapshot)),
+        required_fields=(
+            "separate_risk_budget",
+            "risk_budget_name",
+            "risk_budget.scope",
+            "risk_budget.max_notional_usd",
+            "risk_budget.used_notional_usd",
+            "risk_budget.action_notional_usd",
+        ),
+        missing_fields=budget_missing,
+        blockers=budget_blockers,
+    )
+
+    proof = dict(snapshot.minimum_order_proof or {})
+    minimum_missing: list[str] = []
+    minimum_blockers: list[str] = []
+    side = str(proof.get("side") or "").strip().lower()
+    order_type = str(proof.get("order_type") or "limit").strip().lower()
+    price = _numeric(proof.get("price") or proof.get("limit_price"))
+    size = _numeric(proof.get("size"))
+    min_size = _numeric(proof.get("min_size") or proof.get("exchange_min_size") or 5.0)
+    min_buy_notional = _numeric(proof.get("min_buy_notional_usd") or 1.0)
+    notional = _numeric(proof.get("notional_usd") or proof.get("notional"))
+    if not snapshot.minimum_order_compliance:
+        minimum_missing.append("minimum_order_compliance")
+    if side not in {"buy", "sell"}:
+        minimum_missing.append("minimum_order_proof.side")
+    if order_type != "limit":
+        minimum_blockers.append("minimum_order_proof_order_type_not_limit")
+    if price is None:
+        minimum_missing.append("minimum_order_proof.price")
+    elif not 0.0 < price <= 1.0:
+        minimum_blockers.append("minimum_order_proof_price_out_of_bounds")
+    if size is None:
+        minimum_missing.append("minimum_order_proof.size")
+    elif min_size is not None and size < min_size:
+        minimum_blockers.append("minimum_order_proof_size_below_exchange_minimum")
+    if min_size is None:
+        minimum_missing.append("minimum_order_proof.min_size")
+    if side == "buy" and min_buy_notional is None:
+        minimum_missing.append("minimum_order_proof.min_buy_notional_usd")
+    if notional is None and price is not None and size is not None:
+        notional = price * size
+    if notional is None:
+        minimum_missing.append("minimum_order_proof.notional_usd")
+    elif side == "buy" and min_buy_notional is not None and notional < min_buy_notional:
+        minimum_blockers.append("minimum_order_proof_buy_notional_below_minimum")
+    gates["minimum_order_compliance"] = _diagnostic_entry(
+        passed=bool(snapshot.minimum_order_compliance and _has_minimum_order_proof(snapshot)),
+        required_fields=(
+            "minimum_order_compliance",
+            "minimum_order_proof.side",
+            "minimum_order_proof.order_type",
+            "minimum_order_proof.price",
+            "minimum_order_proof.size",
+            "minimum_order_proof.notional_usd",
+            "minimum_order_proof.min_size",
+            "minimum_order_proof.min_buy_notional_usd",
+        ),
+        missing_fields=minimum_missing,
+        blockers=minimum_blockers,
+    )
+
+    policy = dict(snapshot.target_stop_rebuy_policy_detail or {})
+    policy_missing: list[str] = []
+    policy_blockers: list[str] = []
+    if not snapshot.target_stop_rebuy_policy:
+        policy_missing.append("target_stop_rebuy_policy")
+    for key in ("policy_name", "target_policy", "stop_policy", "rebuy_policy", "reason"):
+        if not _has_text(policy.get(key)):
+            policy_missing.append(f"target_stop_rebuy_policy_detail.{key}")
+    target_price = _numeric(policy.get("target_price") or policy.get("limit_price"))
+    if snapshot.action in {"existing_position_target", "existing_position_replace"}:
+        if target_price is None:
+            policy_missing.append("target_stop_rebuy_policy_detail.target_price")
+        elif not 0.0 < target_price <= 1.0:
+            policy_blockers.append("target_stop_rebuy_policy_target_price_out_of_bounds")
+    gates["target_stop_rebuy_policy"] = _diagnostic_entry(
+        passed=bool(snapshot.target_stop_rebuy_policy and _has_target_stop_rebuy_policy(snapshot)),
+        required_fields=(
+            "target_stop_rebuy_policy",
+            "target_stop_rebuy_policy_detail.policy_name",
+            "target_stop_rebuy_policy_detail.target_policy",
+            "target_stop_rebuy_policy_detail.target_price",
+            "target_stop_rebuy_policy_detail.stop_policy",
+            "target_stop_rebuy_policy_detail.rebuy_policy",
+            "target_stop_rebuy_policy_detail.reason",
+        ),
+        missing_fields=policy_missing,
+        blockers=policy_blockers,
+    )
+
+    clearance = dict(snapshot.kill_switch_clearance or {})
+    kill_missing: list[str] = []
+    kill_blockers = [str(item) for item in clearance.get("blocked_reasons", []) if str(item).strip()]
+    if not snapshot.kill_switch_clear:
+        kill_missing.append("kill_switch_clear")
+    if clearance.get("clear") is not True:
+        kill_missing.append("kill_switch_clearance.clear")
+    if not _has_text(clearance.get("source")):
+        kill_missing.append("kill_switch_clearance.source")
+    gates["kill_switch_clear"] = _diagnostic_entry(
+        passed=bool(snapshot.kill_switch_clear and _has_kill_switch_clearance(snapshot)),
+        required_fields=("kill_switch_clear", "kill_switch_clearance.clear", "kill_switch_clearance.source"),
+        missing_fields=kill_missing,
+        blockers=kill_blockers,
+    )
+
+    truth_missing = [] if snapshot.non_runtime_truth_rejected else ["non_runtime_truth_rejected"]
+    gates["non_runtime_truth_rejected"] = _diagnostic_entry(
+        passed=bool(snapshot.non_runtime_truth_rejected and not rejected),
+        required_fields=("non_runtime_truth_rejected", "truth_sources"),
+        missing_fields=truth_missing,
+        blockers=[f"rejected_truth_source:{source}" for source in rejected],
+    )
+
+    return {
+        "schema_version": "global_portfolio_execution_gate_diagnostics_v1",
+        "proof_bundle_complete": not missing,
+        "missing_gates": missing,
+        "next_missing_gate": missing[0] if missing else None,
+        "gates": gates,
+    }
+
+
 def _parse_datetime(value: str | datetime | None) -> datetime:
     if value is None:
         return datetime.now(timezone.utc)
@@ -796,6 +1026,7 @@ __all__ = [
     "GlobalPortfolioExecutionGateSnapshot",
     "NO_EXECUTION_STATEMENT",
     "apply_watchlist_policy_flags",
+    "build_execution_gate_diagnostics",
     "build_manager_action_plan",
     "build_watchlist_artifact",
     "build_execution_gate_snapshot",

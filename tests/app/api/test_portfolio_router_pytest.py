@@ -1293,6 +1293,12 @@ def test_portfolio_manager_order_management_blocks_missing_gates_pytest() -> Non
     assert preview["approved_order_management_call_available"] is True
     assert preview["order_management_call_accepted"] is False
     assert preview["missing_gates"] == ["approved_order_management_path"]
+    assert preview["proof_diagnostics"]["schema_version"] == "global_portfolio_execution_gate_diagnostics_v1"
+    assert preview["proof_diagnostics"]["next_missing_gate"] == "approved_order_management_path"
+    assert preview["proof_diagnostics"]["gates"]["approved_order_management_path"]["missing_fields"] == [
+        "approved_order_management_path"
+    ]
+    assert preview["manager_action_ledger"]["ledger_record"]["proof_diagnostics"]["proof_bundle_complete"] is False
     assert preview["order_preparation_attempted"] is False
     assert preview["order_submission_attempted"] is False
 
@@ -1323,6 +1329,8 @@ def test_portfolio_manager_order_management_ready_plan_stays_preview_only_pytest
     assert preview["order_management_call_accepted"] is True
     assert preview["execution_authorized_by_gates"] is True
     assert preview["order_preparation_authorized_by_gates"] is True
+    assert preview["proof_diagnostics"]["proof_bundle_complete"] is True
+    assert preview["proof_diagnostics"]["next_missing_gate"] is None
     assert preview["manager_action_ledger"]["missing_gates"] == []
     assert preview["requested_order"] == {"side": "sell", "limit_price": 0.39, "size": 5}
     assert preview["side_effects"]["orders_placed"] is False

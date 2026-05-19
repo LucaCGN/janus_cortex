@@ -703,6 +703,7 @@ def build_portfolio_manager_order_management_preview(
         },
         "execution_authorized_by_gates": plan.execution_authorized,
         "order_preparation_authorized_by_gates": plan.order_preparation_authorized,
+        "proof_diagnostics": to_jsonable(plan.gate_snapshot.proof_diagnostics),
         "order_preparation_attempted": False,
         "order_submission_attempted": False,
         "live_order_impact": "read-only",
