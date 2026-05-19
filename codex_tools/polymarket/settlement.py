@@ -12,13 +12,18 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from typing import Any
 
+from app.runtime.local_paths import resolve_shared_root
 from codex_tools.polymarket.execution_gate import NO_EXECUTION_STATEMENT
 from codex_tools.polymarket.safety import NON_AUTHORITATIVE_TRUTH_SOURCES
 
 RESIDUAL_CLASSIFICATION_SCHEMA_VERSION = "polymarket_residual_classification_v1"
 REDEEM_PREVIEW_SCHEMA_VERSION = "polymarket_redeem_preview_v1"
+SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION = "polymarket_settlement_ledger_entry_v1"
+SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION = "polymarket_settlement_ledger_write_v1"
+SETTLEMENT_LEDGER_FILE_NAME = "settlement_ledger.jsonl"
 NO_REDEMPTION_STATEMENT = (
     "No redemption transaction was prepared, signed, submitted, or broadcast. "
     + NO_EXECUTION_STATEMENT
@@ -79,6 +84,23 @@ class PolymarketRedeemPreview:
     order_preparation_attempted: bool
     order_submission_attempted: bool
     gate_snapshot: dict[str, Any]
+    no_execution_statement: str
+
+
+@dataclass(frozen=True)
+class PolymarketSettlementLedgerWrite:
+    schema_version: str
+    status: str
+    ledger_path: str
+    ledger_id: str
+    idempotency_key: str
+    created: bool
+    transaction_preparation_attempted: bool
+    transaction_signing_attempted: bool
+    transaction_submission_attempted: bool
+    transaction_broadcast_attempted: bool
+    order_preparation_attempted: bool
+    order_submission_attempted: bool
     no_execution_statement: str
 
 
@@ -225,6 +247,16 @@ def _truth_sources_ok(truth_sources: list[str] | None) -> tuple[bool, list[str]]
     normalized = sorted({source.strip().lower() for source in truth_sources or [] if source.strip()})
     rejected = [source for source in normalized if source in NON_AUTHORITATIVE_TRUTH_SOURCES]
     return not rejected, rejected
+
+
+def default_settlement_ledger_root() -> Path:
+    return (
+        resolve_shared_root()
+        / "artifacts"
+        / "codex-tools"
+        / "polymarket"
+        / "settlement-ledger"
+    )
 
 
 def classify_resolved_market_residual(
@@ -446,6 +478,124 @@ def build_redeem_preview(
     )
 
 
+def _settlement_ledger_id(preview: PolymarketRedeemPreview) -> str:
+    return "settlement-" + preview.idempotency_key
+
+
+def _existing_settlement_ledger_keys(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+
+    keys: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        ledger_id = entry.get("ledger_id")
+        idempotency_key = entry.get("idempotency_key")
+        if isinstance(ledger_id, str):
+            keys.add(ledger_id)
+        if isinstance(idempotency_key, str):
+            keys.add(idempotency_key)
+    return keys
+
+
+def build_settlement_ledger_entry(
+    preview: PolymarketRedeemPreview,
+    *,
+    written_at_utc: datetime | str | None = None,
+    source_evidence: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build an inert settlement ledger entry for a redeem preview."""
+
+    timestamp = _coerce_utc(written_at_utc).isoformat().replace("+00:00", "Z")
+    return {
+        "schema_version": SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION,
+        "written_at_utc": timestamp,
+        "entry_type": "redeem_preview_prewrite",
+        "ledger_id": _settlement_ledger_id(preview),
+        "idempotency_key": preview.idempotency_key,
+        "status": "prewrite_recorded",
+        "redeem_preview_status": preview.status,
+        "redemption_authorized": preview.redemption_authorized,
+        "dry_run": preview.dry_run,
+        "expected_payout_usd": preview.expected_payout_usd,
+        "ledger_write_required_before_submission": preview.ledger_write_required_before_submission,
+        "source_evidence": dict(source_evidence or {}),
+        "transaction_preparation_attempted": False,
+        "transaction_signing_attempted": False,
+        "transaction_submission_attempted": False,
+        "transaction_broadcast_attempted": False,
+        "order_preparation_attempted": False,
+        "order_submission_attempted": False,
+        "no_execution_statement": NO_REDEMPTION_STATEMENT,
+        "redeem_preview": asdict(preview),
+    }
+
+
+def write_settlement_ledger_prewrite(
+    preview: PolymarketRedeemPreview,
+    *,
+    ledger_root: Path | None = None,
+    written_at_utc: datetime | str | None = None,
+    source_evidence: dict[str, Any] | None = None,
+) -> PolymarketSettlementLedgerWrite:
+    """Persist a pre-redeem ledger row without preparing any transaction."""
+
+    timestamp = _coerce_utc(written_at_utc)
+    root = ledger_root if ledger_root is not None else default_settlement_ledger_root()
+    ledger_dir = Path(root) / timestamp.date().isoformat()
+    ledger_path = ledger_dir / SETTLEMENT_LEDGER_FILE_NAME
+    ledger_id = _settlement_ledger_id(preview)
+
+    ledger_dir.mkdir(parents=True, exist_ok=True)
+    existing_keys = _existing_settlement_ledger_keys(ledger_path)
+    if ledger_id in existing_keys or preview.idempotency_key in existing_keys:
+        return PolymarketSettlementLedgerWrite(
+            schema_version=SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION,
+            status="already_recorded",
+            ledger_path=str(ledger_path),
+            ledger_id=ledger_id,
+            idempotency_key=preview.idempotency_key,
+            created=False,
+            transaction_preparation_attempted=False,
+            transaction_signing_attempted=False,
+            transaction_submission_attempted=False,
+            transaction_broadcast_attempted=False,
+            order_preparation_attempted=False,
+            order_submission_attempted=False,
+            no_execution_statement=NO_REDEMPTION_STATEMENT,
+        )
+
+    entry = build_settlement_ledger_entry(
+        preview,
+        written_at_utc=timestamp,
+        source_evidence=source_evidence,
+    )
+    with ledger_path.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(json.dumps(entry, sort_keys=True, separators=(",", ":")))
+        handle.write("\n")
+
+    return PolymarketSettlementLedgerWrite(
+        schema_version=SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION,
+        status="written",
+        ledger_path=str(ledger_path),
+        ledger_id=ledger_id,
+        idempotency_key=preview.idempotency_key,
+        created=True,
+        transaction_preparation_attempted=False,
+        transaction_signing_attempted=False,
+        transaction_submission_attempted=False,
+        transaction_broadcast_attempted=False,
+        order_preparation_attempted=False,
+        order_submission_attempted=False,
+        no_execution_statement=NO_REDEMPTION_STATEMENT,
+    )
+
+
 def _coerce_utc(value: datetime | str | None) -> datetime:
     if value is None:
         return datetime.now(UTC)
@@ -463,9 +613,16 @@ __all__ = [
     "REDEEM_PREVIEW_SCHEMA_VERSION",
     "REQUIRED_REDEEM_GATE_LABELS",
     "RESIDUAL_CLASSIFICATION_SCHEMA_VERSION",
+    "SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION",
+    "SETTLEMENT_LEDGER_FILE_NAME",
+    "SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION",
     "PolymarketRedeemPreview",
     "PolymarketResidualClassification",
+    "PolymarketSettlementLedgerWrite",
+    "build_settlement_ledger_entry",
     "build_redeem_preview",
     "classify_resolved_market_residual",
+    "default_settlement_ledger_root",
     "derive_redeem_idempotency_key",
+    "write_settlement_ledger_prewrite",
 ]

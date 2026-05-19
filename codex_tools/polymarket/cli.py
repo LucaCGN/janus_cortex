@@ -12,7 +12,7 @@ from typing import Any, Sequence, TextIO
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
 from codex_tools.polymarket.grid_service import build_grid_service_preview
 from codex_tools.polymarket.preview import build_fallback_preview
-from codex_tools.polymarket.settlement import build_redeem_preview
+from codex_tools.polymarket.settlement import build_redeem_preview, write_settlement_ledger_prewrite
 
 
 def _read_json_file(path: Path | None) -> dict[str, Any] | None:
@@ -111,6 +111,8 @@ def _build_parser() -> argparse.ArgumentParser:
     redeem.add_argument("--janus-codex-approval", action="store_true")
     redeem.add_argument("--truth-source", action="append", default=[])
     redeem.add_argument("--now-utc")
+    redeem.add_argument("--write-settlement-ledger", action="store_true")
+    redeem.add_argument("--settlement-ledger-root", type=Path)
     redeem.set_defaults(func=_preview_redeem)
     return parser
 
@@ -206,7 +208,17 @@ def _preview_redeem(args: argparse.Namespace, output: TextIO) -> int:
         truth_sources=args.truth_source,
         now_utc=args.now_utc,
     )
-    json.dump(asdict(preview), output, indent=2, sort_keys=True)
+    payload = asdict(preview)
+    if args.write_settlement_ledger:
+        ledger_write = write_settlement_ledger_prewrite(
+            preview,
+            ledger_root=args.settlement_ledger_root,
+            written_at_utc=args.now_utc,
+        )
+        payload["settlement_ledger_write"] = asdict(ledger_write)
+    else:
+        payload["settlement_ledger_write"] = None
+    json.dump(payload, output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
 

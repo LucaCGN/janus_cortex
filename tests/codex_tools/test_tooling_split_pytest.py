@@ -40,8 +40,11 @@ from codex_tools.polymarket import (
     PREVIEW_SCHEMA_VERSION,
     REDEEM_PREVIEW_SCHEMA_VERSION,
     RESIDUAL_CLASSIFICATION_SCHEMA_VERSION,
+    SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION,
+    SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION,
     PolymarketExecutionGateSnapshot,
     PolymarketFallbackIntent,
+    build_settlement_ledger_entry,
     build_fallback_preview,
     build_grid_service_preview,
     build_polymarket_safety_gate_snapshot,
@@ -54,6 +57,7 @@ from codex_tools.polymarket import (
     read_account_snapshot,
     build_fallback_decision,
     write_fallback_decision_ledger,
+    write_settlement_ledger_prewrite,
 )
 from codex_tools.polymarket.cli import main as polymarket_cli_main
 
@@ -1550,6 +1554,77 @@ def test_redeem_preview_all_gates_stays_dry_run_without_broadcast() -> None:
     assert preview.transaction_broadcast_attempted is False
 
 
+def test_settlement_ledger_prewrite_records_redeem_preview_without_execution(tmp_path: Path) -> None:
+    position = {
+        "market_slug": "nba-sas-okc-2026-05-18",
+        "condition_id": "condition-okc",
+        "token_id": "token-spurs",
+        "size": "7.5",
+        "current_value": "7.5",
+    }
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": True,
+            "condition_id": "condition-okc",
+            "market_slug": "nba-sas-okc-2026-05-18",
+            "winning_token_id": "token-spurs",
+            "payouts": {"token-spurs": "1"},
+        },
+        _settlement_snapshot(open_positions=[position]),
+        issue_link="https://github.com/LucaCGN/janus_cortex/issues/58",
+        post_redeem_recheck_plan="Recheck direct account and Janus ledger after redeem.",
+        wallet_ready=True,
+        chain_ready=True,
+        signer_ready=True,
+        gas_fee_ready=True,
+        kill_switch_clear=True,
+        ledger_available=True,
+        janus_codex_approval=True,
+        truth_sources=["direct_clob", "janus_api"],
+        now_utc=datetime(2026, 5, 19, 12, 0, 0, tzinfo=UTC),
+    )
+    entry = build_settlement_ledger_entry(
+        preview,
+        written_at_utc=datetime(2026, 5, 19, 12, 1, 0, tzinfo=UTC),
+        source_evidence={"artifact": "unit-test"},
+    )
+    first_write = write_settlement_ledger_prewrite(
+        preview,
+        ledger_root=tmp_path,
+        written_at_utc=datetime(2026, 5, 19, 12, 1, 0, tzinfo=UTC),
+        source_evidence={"artifact": "unit-test"},
+    )
+    duplicate_write = write_settlement_ledger_prewrite(
+        preview,
+        ledger_root=tmp_path,
+        written_at_utc=datetime(2026, 5, 19, 12, 1, 0, tzinfo=UTC),
+    )
+
+    assert entry["schema_version"] == SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION
+    assert entry["redeem_preview_status"] == "dry_run_redeem_preview_only"
+    assert entry["transaction_preparation_attempted"] is False
+    assert entry["transaction_submission_attempted"] is False
+    assert entry["order_preparation_attempted"] is False
+    assert entry["order_submission_attempted"] is False
+    assert first_write.schema_version == SETTLEMENT_LEDGER_WRITE_SCHEMA_VERSION
+    assert first_write.status == "written"
+    assert first_write.created is True
+    assert first_write.transaction_preparation_attempted is False
+    assert first_write.transaction_submission_attempted is False
+    assert first_write.order_preparation_attempted is False
+    assert first_write.order_submission_attempted is False
+    assert duplicate_write.status == "already_recorded"
+    assert duplicate_write.created is False
+    ledger_rows = Path(first_write.ledger_path).read_text(encoding="utf-8").splitlines()
+    assert len(ledger_rows) == 1
+    ledger_payload = json.loads(ledger_rows[0])
+    assert ledger_payload["schema_version"] == SETTLEMENT_LEDGER_ENTRY_SCHEMA_VERSION
+    assert ledger_payload["idempotency_key"] == preview.idempotency_key
+    assert ledger_payload["source_evidence"] == {"artifact": "unit-test"}
+    assert ledger_payload["redeem_preview"]["transaction_broadcast_attempted"] is False
+
+
 def test_polymarket_cli_preview_redeem_outputs_zero_value_residual(capsys, tmp_path: Path) -> None:
     snapshot_path = tmp_path / "snapshot.json"
     snapshot_path.write_text(
@@ -1591,6 +1666,71 @@ def test_polymarket_cli_preview_redeem_outputs_zero_value_residual(capsys, tmp_p
     assert payload["transaction_signing_attempted"] is False
     assert payload["transaction_submission_attempted"] is False
     assert payload["transaction_broadcast_attempted"] is False
+
+
+def test_polymarket_cli_preview_redeem_can_write_settlement_ledger(capsys, tmp_path: Path) -> None:
+    position = {
+        "market_slug": "nba-sas-okc-2026-05-18",
+        "condition_id": "condition-okc",
+        "token_id": "token-spurs",
+        "size": "7.5",
+        "current_value": "7.5",
+    }
+    snapshot_path = tmp_path / "snapshot.json"
+    ledger_root = tmp_path / "settlement-ledger"
+    snapshot_path.write_text(
+        json.dumps(_settlement_snapshot(open_positions=[position])),
+        encoding="utf-8",
+    )
+
+    exit_code = polymarket_cli_main(
+        [
+            "preview-redeem",
+            "--direct-truth-json",
+            str(snapshot_path),
+            "--position-token-id",
+            "token-spurs",
+            "--market-resolved",
+            "--condition-id",
+            "condition-okc",
+            "--market-slug",
+            "nba-sas-okc-2026-05-18",
+            "--winning-token-id",
+            "token-spurs",
+            "--expected-payout-usd",
+            "7.5",
+            "--issue-link",
+            "https://github.com/LucaCGN/janus_cortex/issues/58",
+            "--post-redeem-recheck-plan",
+            "Recheck direct account and Janus ledger after redeem.",
+            "--wallet-ready",
+            "--chain-ready",
+            "--signer-ready",
+            "--gas-fee-ready",
+            "--kill-switch-clear",
+            "--ledger-available",
+            "--janus-codex-approval",
+            "--truth-source",
+            "direct_clob",
+            "--truth-source",
+            "janus_api",
+            "--now-utc",
+            "2026-05-19T12:00:00Z",
+            "--write-settlement-ledger",
+            "--settlement-ledger-root",
+            str(ledger_root),
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "dry_run_redeem_preview_only"
+    assert payload["settlement_ledger_write"]["status"] == "written"
+    assert Path(payload["settlement_ledger_write"]["ledger_path"]).exists()
+    assert payload["settlement_ledger_write"]["transaction_preparation_attempted"] is False
+    assert payload["settlement_ledger_write"]["transaction_submission_attempted"] is False
+    assert payload["transaction_broadcast_attempted"] is False
+    assert payload["order_submission_attempted"] is False
 
 
 def test_polymarket_grid_service_preview_finds_global_and_other_basketball_candidates() -> None:
