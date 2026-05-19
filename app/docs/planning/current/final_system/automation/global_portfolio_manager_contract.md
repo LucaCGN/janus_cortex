@@ -3,6 +3,7 @@
 Status: active intent contract
 Created: 2026-05-18
 GitHub issue: https://github.com/LucaCGN/janus_cortex/issues/52
+Active tooling issue: https://github.com/LucaCGN/janus_cortex/issues/56
 Current automation id: `janus-portfolio-manager`
 Prompt file: `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
 
@@ -17,6 +18,8 @@ This automation is not a validator for NBA/WNBA Janus trades, not the internal J
 - finding attractive trend-following opportunities in uncovered market categories
 - checking live basketball markets outside the currently covered NBA/WNBA modules for quick high-trust return opportunities
 - reviewing ongoing events traded in the last month for 1c grid suitability when repeated mark-to-market swings appear
+- browsing the Polymarket frontend catalog for live, trending, breaking, new, and category pages because the UI exposes discovery context that direct account/API snapshots do not fully reproduce
+- monitoring saved winning-profile studies and public profile pages for repeatable current-position or trade-history signals
 - turning successful new-market trades into backlog tests, domain-lane candidates, and Obsidian lessons
 
 It inherits `app/docs/planning/current/final_system/global_ego_and_purpose.md`: Janus should trade trends, liquidity, market structure, and return paths, not pretend it can predict final outcomes directly.
@@ -30,6 +33,7 @@ The portfolio manager must also route through the correct Codex tool surface:
 - The target split is governed by `automation/codex_tooling_contract.md` and GitHub issue `#53`.
 - Concrete Janus portfolio order-management adapter implementation was completed in GitHub issue `#54`; real-call activation and post-confirmation direct-CLOB reconciliation proof are tracked separately in GitHub issue `#59`.
 - Resolved-market redemption and unredeemed residual tolerance are tracked separately in GitHub issue `#58`.
+- Active portfolio-manager action planning and gated grid-service spawn planning are tracked in GitHub issue `#56`.
 
 ## Scope Boundary
 
@@ -65,6 +69,14 @@ Until the prior LLM token-spend bug is proven contained with durable runtime evi
 
 ## Operating Lanes
 
+Each portfolio-manager run must attempt to do real portfolio work. After the mandatory safety/direct-truth checks, at least one of these outcomes must occur:
+
+1. Manage one existing position the manager entered or is responsible for: close, target, replace, hold with explicit thesis state, rebuy-watch, or convert to grid candidate through an approved path.
+2. Select one new event for a bounded micro-position based on frontend browsing, catalog evidence, profile-study insight, or direct market data.
+3. Produce a gated grid-service spawn plan for an existing position that has enough oscillation, liquidity, and spread quality.
+
+If execution gates block the selected action, the result is not ordinary `no_material_change`; it is a blocked required action with the exact missing gate. The automation should fix or route the blocker rather than repeatedly reporting passive monitoring.
+
 ### Existing-Position Management
 
 For positions that already exist in direct CLOB/account truth, the portfolio manager should:
@@ -75,7 +87,14 @@ For positions that already exist in direct CLOB/account truth, the portfolio man
 - propose or execute target maintenance only through an approved Janus order-management path
 - preserve a ledger trail for why a target was placed, cancelled, replaced, or left unchanged
 
-The default action for unmatched open positions is to produce a target-policy decision, not to blindly trade.
+The default action for unmatched open positions is to produce a target-policy decision, not to blindly trade. For every material open position, classify the price behavior and apply these management rules:
+
+- positive PnL plus heavy oscillation inside a repeated band: secure the win when gates allow and convert the position to a 1c grid candidate
+- negative PnL but the original positive trend hypothesis remains intact: hold and recheck with an explicit falsification trigger
+- positive PnL in an uptrend: keep the position and monitor target/stop/rebuy state
+- positive PnL in a downtrend: close or target the position to secure gains when gates allow
+- negative PnL in a strong downtrend: sell and set a lower rebuy only if the thesis remains strong; otherwise close the position when gates allow
+- missing or stale target: refresh target/stop/rebuy policy before another passive pass is accepted
 
 Resolved positions require a separate settlement classification. If a direct account row is only an unredeemed resolved-market residual, the manager should classify it as `redeemable_residual`, `zero_value_residual`, or `unknown_settlement_state` instead of treating it as a normal open trading position. `zero_value_residual` and `redeemable_residual` may remain held while the app continues unrelated work only when direct account/CLOB truth, resolved market/token/outcome state, expected payout/current value, no direct open orders, and ledger or GitHub issue linkage are recorded. Non-dry-run redemption belongs to the [#58](https://github.com/LucaCGN/janus_cortex/issues/58) gate and requires Janus+Codex approval, not chat-memory approval.
 
@@ -83,7 +102,17 @@ Resolved positions require a separate settlement classification. If a direct acc
 
 For markets where Janus has no current position, the portfolio manager should proactively scout uncovered categories such as geopolitics, economics, culture, crypto, sports futures, and other prediction-market domains when higher-priority safety and NBA/WNBA readiness work is not active.
 
-Execution blockers suppress order preparation and submission, but they should not suppress research. After any urgent safety check and existing-position scan, each bounded pass should maintain at least one uncovered-category candidate or explicitly record why no candidate was worth carrying forward. This keeps the opportunity pipeline alive while preserving execution authority.
+Execution blockers suppress order preparation and submission, but they should not suppress research. After any urgent safety check and existing-position scan, each bounded pass should maintain at least one uncovered-category candidate or explicitly record why no candidate was worth carrying forward. This keeps the opportunity pipeline alive while preserving execution authority. Once the micro-risk execution gates are active, the manager must either take one bounded micro-position on a newly researched event or manage a position it entered in the prior loop.
+
+Frontend browsing is required for discovery. The pass should navigate or otherwise inspect the Polymarket web UI, at minimum:
+
+- `https://polymarket.com/` trending front page
+- `https://polymarket.com/breaking`
+- `https://polymarket.com/new`
+- live sports pages, including basketball outside NBA/WNBA
+- politics, finance, geopolitics, economy, tech/AI, culture, crypto, and other high-volume categories relevant to current profile-study signals
+
+The UI is catalog/discovery evidence only. Before execution, the manager must map the chosen UI market/outcome to direct CLOB/account/orderbook truth, token id, tick size, spread, depth, minimum order proof, and ledger/reconciliation path.
 
 The premise is trend trading, not final-outcome prediction. A candidate must record:
 
@@ -101,11 +130,27 @@ The premise is trend trading, not final-outcome prediction. A candidate must rec
 
 New-market trend entries require stronger gates than existing-position target maintenance because they expand the portfolio into uncovered categories.
 
+Initial validation exposure is capped to micro-risk: target about `$1` notional where exchange constraints permit, never more than `5` shares or `$5` notional for an initial event/position without a new explicit policy. Limit orders are the default; market orders require a separate exception policy.
+
+### Winning-Profile Monitoring
+
+The manager must read saved profile-study notes and, when possible, browse the corresponding public Polymarket profile pages. Profiles such as `classified`, `car`, `aenews2`, and other notes under `40_Profile_Studies` are current benchmark sources.
+
+Profile evidence is not copy authority. The manager should extract:
+
+- current category concentration
+- 1D/1W/1M return path when visible
+- current active positions and recent trade-history themes
+- repeated entry/exit shapes, position sizing, and target behavior
+- candidate market clusters that overlap with current frontend catalog opportunities
+
+If a winning profile has an active or recently successful trade in a market that also passes Janus direct-truth and micro-risk checks, the manager may select a bounded micro-position candidate or a grid/service candidate. It must still prove direct market/token/orderbook truth and all execution gates before any order preparation.
+
 ### Cross-League Basketball and 1c Grid Incubation
 
 The global portfolio manager must scan live basketball markets outside Janus-covered NBA/WNBA when data and time permit. These markets are not covered-market Janus inventory until a separate domain-promotion issue adds them to the Python trading system. Before promotion, they are Codex global-portfolio opportunities and must use the global-portfolio risk budget and gates.
 
-Each material pass should also review ongoing markets traded by the account in the last month, including aliens/UAP, geopolitics, elections, AI-model events, economics, culture, and other open positions. If direct account truth shows an existing position with repeated roughly 3-5% movement, enough liquidity, and tight enough spread, the automation should create a preview-only 1c grid candidate:
+Each material pass should also review ongoing markets traded by the account in the last month, including aliens/UAP, geopolitics, elections, AI-model events, economics, culture, and other open positions. If direct account truth shows an existing position with repeated roughly 3-5% movement, enough liquidity, and tight enough spread, the automation should create a 1c grid candidate:
 
 - current position, token, side, size, average/current price, and existing open target orders
 - proposed next sell/rebuy leg, normally one cent around the current mark
@@ -113,7 +158,7 @@ Each material pass should also review ongoing markets traded by the account in t
 - evidence that this is market-structure harvesting rather than final-outcome prediction
 - exact gates missing before any service spawn or order preparation
 
-`codex_tools/polymarket preview-grid-service` is the approved first-slice tooling for this analysis. It is inert: it may output candidate service specs, but it may not prepare orders or start a high-frequency service. A live grid service requires a separate approved service-spawn path, rate limits, idempotent ledger writes before each leg, direct-CLOB confirmation after each leg, kill-switch polling, and reconciliation back into Janus.
+`codex_tools/polymarket preview-grid-service` is the approved first-slice tooling for candidate generation. `codex_tools/polymarket plan-grid-service-spawn` is the gated service-spawn proof surface. A service may be spawned only when the spawn plan proves explicit service approval, owner persona, named grid budget, per-market and aggregate max notional, max concurrent legs, rate limits, direct-CLOB freshness, kill-switch clearance, durable ledger path, Janus reconciliation path, heartbeat path, and lock scope. Starting the service does not authorize individual orders; every leg still requires fresh direct truth, idempotent ledger write, kill-switch poll, minimum-order proof, and post-call reconciliation.
 
 ## Execution Authority Gate
 
@@ -130,7 +175,7 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
-Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter, but operational activation remains blocked on `#59` until a reviewed real-call proof shows complete dry-run readiness, explicit runtime activation, direct CLOB/account truth, catalog market/outcome mapping, ledger persistence, idempotency, risk/rate guards, external order id confirmation, and post-confirmation direct-CLOB reconciliation. Direct fallback remains plan-only until separately approved.
+Current state: base `#53` tooling is preview-first and non-executing for direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter. `#59` proved dry-run readiness and runtime kill-switch clearance, but operational non-dry-run activation still requires an explicitly reviewed runtime with `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, reviewer approval metadata, fresh direct truth, and post-confirmation direct-CLOB reconciliation. `#56` now owns active portfolio-manager candidate/action planning, frontend/profile discovery enforcement, and gated grid-service spawn planning. Direct fallback remains plan-only until separately approved.
 
 Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 
@@ -156,7 +201,7 @@ The file uses schema `global_portfolio_kill_switch_clearance_v1` and must contai
 
 Even when the action-plan proof bundle is complete, non-dry-run order management must fail closed unless the running API process has `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`; request-level `execution_approved=true` and reviewer metadata are necessary but not sufficient runtime activation.
 
-For grid services, the same proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, service heartbeat path, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only.
+For grid services, the same proof bundle must additionally name the grid budget bucket, maximum concurrent grid legs, per-market max notional, aggregate max notional, rate limits, service heartbeat path, lock scope, kill-switch poll interval, and the exact reconciliation artifact/ledger path. Until those fields exist, grid tooling is preview-only. Once those fields exist, the service may be spawned as a supervised bounded service, but individual order legs remain gated and must not bypass the per-action execution proof.
 
 ## New-Market Learning Rule
 
@@ -197,6 +242,8 @@ Each material run should produce or update:
 The run must explicitly state one of:
 
 - `execution_performed_via_approved_portfolio_manager_path`
+- `required_action_selected_execution_gated`
+- `grid_service_spawn_plan_ready`
 - `management_plan_only_execution_gate_missing`
 - `no_material_change`
 
@@ -208,5 +255,6 @@ The run must explicitly state one of:
 - Do not use this automation to validate Janus NBA/WNBA live trades.
 - Do not merge global-portfolio risk with NBA/WNBA live-testing budgets.
 - Do not promote an uncovered category directly to autonomous scaled trading.
+- Do not allow passive no-op loops when no safety blocker exists; select a required existing-position action, new-event micro-position candidate, or grid-service candidate each run.
 - Do not use market orders unless a separate exception policy allows it for that exact case.
 - Do not create duplicate Obsidian notes for every pass; edit, merge, split, and relink first.

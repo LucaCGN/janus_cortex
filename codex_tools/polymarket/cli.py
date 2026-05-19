@@ -1,4 +1,4 @@
-"""Command line entrypoints for preview-only Polymarket fallback planning."""
+"""Command line entrypoints for gated Polymarket portfolio planning."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import Any, Sequence, TextIO
 
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
-from codex_tools.polymarket.grid_service import build_grid_service_preview
+from codex_tools.polymarket.grid_service import build_grid_service_preview, build_grid_service_spawn_plan
+from codex_tools.polymarket.manager import build_portfolio_manager_action_plan
 from codex_tools.polymarket.preview import build_fallback_preview
 from codex_tools.polymarket.settlement import (
     build_post_redeem_reconciliation,
@@ -32,7 +33,7 @@ def _read_json_file(path: Path | None) -> dict[str, Any] | None:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build preview-only Polymarket fallback decisions.",
+        description="Build gated Polymarket portfolio decisions and service plans.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -87,6 +88,35 @@ def _build_parser() -> argparse.ArgumentParser:
     grid.add_argument("--include-other-basketball", action="store_true", default=True)
     grid.add_argument("--include-covered-basketball", action="store_true")
     grid.set_defaults(func=_preview_grid_service)
+
+    grid_spawn = subparsers.add_parser(
+        "plan-grid-service-spawn",
+        help="Build a non-executing gated 1c grid service spawn plan.",
+    )
+    grid_spawn.add_argument("--grid-preview-json", required=True, type=Path)
+    grid_spawn.add_argument("--service-config-json", required=True, type=Path)
+    grid_spawn.add_argument("--now-utc")
+    grid_spawn.add_argument(
+        "--non-dry-run-intent",
+        action="store_true",
+        help="Authorize the service-spawn plan when every service gate is present; still does not start it.",
+    )
+    grid_spawn.set_defaults(func=_plan_grid_service_spawn)
+
+    manager_plan = subparsers.add_parser(
+        "plan-manager-action",
+        help="Build a required portfolio-manager action plan from account, frontend, and profile evidence.",
+    )
+    manager_plan.add_argument("--direct-truth-json", required=True, type=Path)
+    manager_plan.add_argument("--frontend-catalog-json", type=Path)
+    manager_plan.add_argument("--profile-studies-json", type=Path)
+    manager_plan.add_argument("--now-utc")
+    manager_plan.add_argument("--target-notional-usd", default="1")
+    manager_plan.add_argument("--max-initial-shares", default="5")
+    manager_plan.add_argument("--max-initial-notional-usd", default="5")
+    manager_plan.add_argument("--oscillation-grid-threshold-percent", default="3")
+    manager_plan.add_argument("--action-optional", action="store_true")
+    manager_plan.set_defaults(func=_plan_manager_action)
 
     redeem = subparsers.add_parser(
         "preview-redeem",
@@ -203,6 +233,43 @@ def _preview_grid_service(args: argparse.Namespace, output: TextIO) -> int:
         include_covered_basketball=args.include_covered_basketball,
     )
     json.dump(asdict(preview), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _plan_grid_service_spawn(args: argparse.Namespace, output: TextIO) -> int:
+    plan = build_grid_service_spawn_plan(
+        _read_required_json_file(args.grid_preview_json),
+        _read_required_json_file(args.service_config_json),
+        now_utc=args.now_utc,
+        dry_run=not args.non_dry_run_intent,
+    )
+    json.dump(asdict(plan), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _plan_manager_action(args: argparse.Namespace, output: TextIO) -> int:
+    profile_payload = _read_json_file(args.profile_studies_json)
+    if profile_payload is None:
+        profile_studies: list[dict[str, Any]] = []
+    elif isinstance(profile_payload.get("profiles"), list):
+        profile_studies = [dict(item) for item in profile_payload["profiles"] if isinstance(item, dict)]
+    else:
+        raise ValueError("--profile-studies-json must contain a 'profiles' list")
+
+    plan = build_portfolio_manager_action_plan(
+        _read_required_json_file(args.direct_truth_json),
+        frontend_catalog_snapshot=_read_json_file(args.frontend_catalog_json),
+        profile_studies=profile_studies,
+        now_utc=args.now_utc,
+        require_action_each_run=not args.action_optional,
+        target_notional_usd=args.target_notional_usd,
+        max_initial_shares=args.max_initial_shares,
+        max_initial_notional_usd=args.max_initial_notional_usd,
+        oscillation_grid_threshold_percent=args.oscillation_grid_threshold_percent,
+    )
+    json.dump(asdict(plan), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
 

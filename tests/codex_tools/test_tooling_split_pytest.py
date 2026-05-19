@@ -37,6 +37,8 @@ from codex_tools.janus import watchlists as janus_watchlists
 from codex_tools.janus import worker as janus_worker
 from codex_tools.polymarket import (
     GRID_SERVICE_SCHEMA_VERSION,
+    GRID_SERVICE_SPAWN_SCHEMA_VERSION,
+    PORTFOLIO_MANAGER_ACTION_SCHEMA_VERSION,
     POST_REDEEM_RECONCILIATION_SCHEMA_VERSION,
     PREVIEW_SCHEMA_VERSION,
     REDEEM_PREVIEW_SCHEMA_VERSION,
@@ -50,7 +52,9 @@ from codex_tools.polymarket import (
     build_settlement_ledger_entry,
     build_fallback_preview,
     build_grid_service_preview,
+    build_grid_service_spawn_plan,
     build_polymarket_safety_gate_snapshot,
+    build_portfolio_manager_action_plan,
     build_redeem_preview,
     build_settlement_readiness_report,
     classify_documented_residual_positions,
@@ -2155,5 +2159,236 @@ def test_polymarket_cli_preview_grid_service_outputs_inert_plan(tmp_path, capsys
     assert payload["schema_version"] == GRID_SERVICE_SCHEMA_VERSION
     assert payload["status"] == "candidate_review_required"
     assert payload["service_spawn_authorized"] is False
+    assert payload["order_preparation_attempted"] is False
+    assert payload["order_submission_attempted"] is False
+
+
+def test_polymarket_grid_service_spawn_plan_requires_operational_gates() -> None:
+    preview = build_grid_service_preview(
+        {
+            "status": "read_only_snapshot",
+            "open_positions": [
+                {
+                    "title": "US x Iran permanent peace deal by May 31?",
+                    "market_slug": "us-iran-peace-may-31",
+                    "token_id": "iran-yes",
+                    "size": "10",
+                    "average_price": "0.10",
+                    "current_price": "0.14",
+                }
+            ],
+            "open_orders": [],
+        },
+        now_utc=datetime(2026, 5, 19, 22, 0, 0, tzinfo=UTC),
+        min_abs_pnl_percent="3",
+    )
+
+    blocked = build_grid_service_spawn_plan(
+        preview,
+        {
+            "explicit_service_spawn_approval": True,
+            "owner_persona": "codex-global-portfolio-agent",
+        },
+        now_utc=datetime(2026, 5, 19, 22, 1, 0, tzinfo=UTC),
+    )
+
+    assert blocked.schema_version == GRID_SERVICE_SPAWN_SCHEMA_VERSION
+    assert blocked.status == "blocked_missing_service_spawn_gates"
+    assert blocked.service_spawn_authorized is False
+    assert "risk_budget_name" in blocked.missing_gates
+    assert blocked.order_preparation_attempted is False
+    assert blocked.order_submission_attempted is False
+
+    ready = build_grid_service_spawn_plan(
+        preview,
+        {
+            "explicit_service_spawn_approval": True,
+            "owner_persona": "codex-global-portfolio-agent",
+            "risk_budget_name": "global-portfolio-grid-micro-test",
+            "per_market_max_notional_usd": "5",
+            "aggregate_max_notional_usd": "25",
+            "max_concurrent_legs": "2",
+            "rate_limit_per_minute": "6",
+            "direct_truth_max_age_seconds": "30",
+            "kill_switch_clearance": {"clear": True, "source": "runtime", "blocked_reasons": []},
+            "ledger_path": "local/shared/ledgers/global-portfolio-grid/actions.jsonl",
+            "reconciliation_path": "local/shared/artifacts/global-portfolio-manager/reconciliation",
+            "heartbeat_path": "local/shared/handoffs/global-portfolio-manager/grid-service-heartbeat.json",
+            "lock_scope": "global-portfolio-grid-service",
+        },
+        now_utc=datetime(2026, 5, 19, 22, 1, 0, tzinfo=UTC),
+    )
+
+    assert ready.status == "dry_run_service_spawn_ready"
+    assert ready.missing_gates == []
+    assert ready.service_spawn_authorized is False
+
+    authorized = build_grid_service_spawn_plan(
+        preview,
+        ready.service_config,
+        now_utc=datetime(2026, 5, 19, 22, 1, 0, tzinfo=UTC),
+        dry_run=False,
+    )
+
+    assert authorized.status == "service_spawn_authorized"
+    assert authorized.service_spawn_authorized is True
+    assert authorized.order_preparation_attempted is False
+    assert authorized.order_submission_attempted is False
+
+
+def test_polymarket_cli_plan_grid_service_spawn_outputs_gated_plan(tmp_path, capsys) -> None:
+    preview_path = tmp_path / "grid_preview.json"
+    preview_path.write_text(
+        json.dumps(
+            {
+                "schema_version": GRID_SERVICE_SCHEMA_VERSION,
+                "status": "candidate_review_required",
+                "candidates": [{"title": "OpenAI best model", "token_id": "openai-yes"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    config_path = tmp_path / "service_config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "explicit_service_spawn_approval": True,
+                "owner_persona": "codex-global-portfolio-agent",
+                "risk_budget_name": "global-portfolio-grid-micro-test",
+                "per_market_max_notional_usd": "5",
+                "aggregate_max_notional_usd": "25",
+                "max_concurrent_legs": "2",
+                "rate_limit_per_minute": "6",
+                "direct_truth_max_age_seconds": "30",
+                "kill_switch_clearance": {"clear": True, "source": "runtime", "blocked_reasons": []},
+                "ledger_path": "local/shared/ledgers/global-portfolio-grid/actions.jsonl",
+                "reconciliation_path": "local/shared/artifacts/global-portfolio-manager/reconciliation",
+                "heartbeat_path": "local/shared/handoffs/global-portfolio-manager/grid-service-heartbeat.json",
+                "lock_scope": "global-portfolio-grid-service",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = polymarket_cli_main(
+        [
+            "plan-grid-service-spawn",
+            "--grid-preview-json",
+            str(preview_path),
+            "--service-config-json",
+            str(config_path),
+            "--now-utc",
+            "2026-05-19T22:00:00Z",
+            "--non-dry-run-intent",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == GRID_SERVICE_SPAWN_SCHEMA_VERSION
+    assert payload["status"] == "service_spawn_authorized"
+    assert payload["service_spawn_authorized"] is True
+    assert payload["order_preparation_attempted"] is False
+    assert payload["order_submission_attempted"] is False
+
+
+def test_polymarket_portfolio_manager_action_plan_selects_required_existing_action() -> None:
+    plan = build_portfolio_manager_action_plan(
+        {
+            "status": "read_only_snapshot",
+            "open_positions": [
+                {
+                    "title": "Will OpenAI have the best AI model at the end of June 2026?",
+                    "market_slug": "openai-best-model-june-2026",
+                    "token_id": "openai-yes",
+                    "size": "100",
+                    "average_price": "0.04",
+                    "current_price": "0.06",
+                    "trend_direction": "sideways",
+                    "oscillation_band_percent": "5",
+                }
+            ],
+            "open_orders": [],
+        },
+        frontend_catalog_snapshot={
+            "trending_events": [
+                {
+                    "title": "US x Iran permanent peace deal by May 31?",
+                    "market_slug": "us-iran-peace-may-31",
+                    "outcome": "Yes",
+                    "price": "0.12",
+                    "category": "geopolitics",
+                }
+            ]
+        },
+        profile_studies=[
+            {
+                "profile": "classified",
+                "category": "geopolitics",
+                "source_url": "https://polymarket.com/@classified",
+                "insight": "Watch event clusters around Iran negotiations.",
+            }
+        ],
+        now_utc=datetime(2026, 5, 19, 22, 0, 0, tzinfo=UTC),
+    )
+
+    assert plan.schema_version == PORTFOLIO_MANAGER_ACTION_SCHEMA_VERSION
+    assert plan.status == "required_action_selected_execution_gated"
+    assert plan.action_required_each_run is True
+    assert plan.action_requirement_satisfied is True
+    assert plan.selected_action_type == "manage_existing_position"
+    assert plan.selected_action is not None
+    assert plan.selected_action["recommended_action"] == "close_win_and_convert_to_grid"
+    assert plan.market_candidate_count == 1
+    assert plan.profile_candidate_count == 1
+    assert plan.browser_research_required is True
+    assert "https://polymarket.com/breaking" in plan.browser_research_pages
+    assert plan.order_preparation_attempted is False
+    assert plan.order_submission_attempted is False
+
+
+def test_polymarket_cli_plan_manager_action_selects_new_catalog_action(tmp_path, capsys) -> None:
+    direct_path = tmp_path / "account.json"
+    direct_path.write_text(json.dumps({"status": "read_only_snapshot", "open_positions": [], "open_orders": []}), encoding="utf-8")
+    catalog_path = tmp_path / "catalog.json"
+    catalog_path.write_text(
+        json.dumps(
+            {
+                "live_events": [
+                    {
+                        "title": "EuroLeague: Madrid vs Olympiacos",
+                        "market_slug": "euroleague-madrid-oly",
+                        "outcome": "Olympiacos",
+                        "price": "0.31",
+                        "category": "basketball",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    profiles_path = tmp_path / "profiles.json"
+    profiles_path.write_text(json.dumps({"profiles": []}), encoding="utf-8")
+
+    exit_code = polymarket_cli_main(
+        [
+            "plan-manager-action",
+            "--direct-truth-json",
+            str(direct_path),
+            "--frontend-catalog-json",
+            str(catalog_path),
+            "--profile-studies-json",
+            str(profiles_path),
+            "--now-utc",
+            "2026-05-19T22:00:00Z",
+        ]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["schema_version"] == PORTFOLIO_MANAGER_ACTION_SCHEMA_VERSION
+    assert payload["status"] == "required_action_selected_execution_gated"
+    assert payload["selected_action_type"] == "open_new_event_micro_position"
+    assert payload["selected_action"]["proposed_micro_action"]["action"] == "open_new_micro_position_via_approved_path"
     assert payload["order_preparation_attempted"] is False
     assert payload["order_submission_attempted"] is False

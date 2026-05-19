@@ -146,6 +146,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | closed | Active Codex global portfolio-manager policy, prompt, action ledger, and dry-run order-management preview implemented. |
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | closed | Base `codex_tools/janus` and `codex_tools/polymarket` split, preview-first fallback gates, account reads, ledgers, CLI, and compatibility wrappers implemented. |
 | [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | closed | Approved global portfolio execution gate proof, concrete Janus order-management adapter, runtime activation guard, risk/rate evidence, ledger finalization, confirmation-id handling, and idempotency replay hardening implemented. |
+| [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | open | Active portfolio-manager action planning, frontend/profile discovery enforcement, global 1c grid-service spawn proof, and cross-league basketball scanner. |
 | [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | open | Prove portfolio-manager real-call reconciliation before operational activation. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |

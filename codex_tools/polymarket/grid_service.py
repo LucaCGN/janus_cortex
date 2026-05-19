@@ -1,8 +1,10 @@
-"""Preview-only 1c grid service planning for global Polymarket positions.
+"""1c grid service planning for global Polymarket positions.
 
-The planner is intentionally inert. It turns a direct account snapshot into a
+The candidate planner is inert. It turns a direct account snapshot into a
 reviewable service-spawn plan, but it does not prepare, sign, submit, cancel,
-or replace orders.
+or replace orders. The service-spawn planner below can prove whether an
+external supervised service is ready to start, but it still does not start the
+service or perform order actions.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import Any
 from codex_tools.polymarket.execution_gate import NO_EXECUTION_STATEMENT
 
 GRID_SERVICE_SCHEMA_VERSION = "polymarket_grid_service_preview_v1"
+GRID_SERVICE_SPAWN_SCHEMA_VERSION = "polymarket_grid_service_spawn_plan_v1"
 
 _COVERED_BASKETBALL_MARKERS = (" nba", "nba-", "wnba", "women's national basketball", "spurs vs.", "thunder")
 _OTHER_BASKETBALL_MARKERS = (
@@ -74,6 +77,40 @@ class PolymarketGridServicePreview:
     order_preparation_attempted: bool
     order_submission_attempted: bool
     no_execution_statement: str
+
+
+@dataclass(frozen=True)
+class PolymarketGridServiceSpawnPlan:
+    schema_version: str
+    status: str
+    generated_at_utc: str
+    candidate_count: int
+    service_spawn_authorized: bool
+    dry_run: bool
+    missing_gates: list[str]
+    service_config: dict[str, Any]
+    selected_candidates: list[dict[str, Any]]
+    service_start_command: list[str]
+    order_preparation_attempted: bool
+    order_submission_attempted: bool
+    no_execution_statement: str
+
+
+_REQUIRED_SERVICE_GATES = {
+    "explicit_service_spawn_approval": "explicit service-spawn approval",
+    "owner_persona": "owner persona",
+    "risk_budget_name": "named global-portfolio grid budget",
+    "per_market_max_notional_usd": "per-market max notional",
+    "aggregate_max_notional_usd": "aggregate max notional",
+    "max_concurrent_legs": "maximum concurrent legs",
+    "rate_limit_per_minute": "rate limit",
+    "direct_truth_max_age_seconds": "direct-CLOB freshness requirement",
+    "kill_switch_clearance": "kill-switch clearance",
+    "ledger_path": "durable ledger path",
+    "reconciliation_path": "Janus reconciliation path",
+    "heartbeat_path": "service heartbeat path",
+    "lock_scope": "service lock scope",
+}
 
 
 def _decimal(value: Any) -> Decimal | None:
@@ -325,9 +362,98 @@ def build_grid_service_preview(
     )
 
 
+def build_grid_service_spawn_plan(
+    preview: PolymarketGridServicePreview | dict[str, Any],
+    service_config: dict[str, Any],
+    *,
+    now_utc: datetime | str | None = None,
+    dry_run: bool = True,
+) -> PolymarketGridServiceSpawnPlan:
+    """Build a gated service-spawn plan from a preview candidate set.
+
+    This function does not spawn a process and does not call Polymarket. It
+    only proves whether the service spec has enough fields for a separate
+    supervisor to start it.
+    """
+
+    generated_at = _coerce_utc(now_utc).isoformat().replace("+00:00", "Z")
+    preview_payload = asdict(preview) if isinstance(preview, PolymarketGridServicePreview) else dict(preview)
+    candidates = list(preview_payload.get("candidates") or [])
+    missing = _missing_service_spawn_gates(service_config)
+    if not candidates:
+        missing.append("grid_candidates")
+
+    authorized = not dry_run and not missing
+    if authorized:
+        status = "service_spawn_authorized"
+    elif not missing:
+        status = "dry_run_service_spawn_ready"
+    else:
+        status = "blocked_missing_service_spawn_gates"
+
+    return PolymarketGridServiceSpawnPlan(
+        schema_version=GRID_SERVICE_SPAWN_SCHEMA_VERSION,
+        status=status,
+        generated_at_utc=generated_at,
+        candidate_count=len(candidates),
+        service_spawn_authorized=authorized,
+        dry_run=dry_run,
+        missing_gates=missing,
+        service_config=dict(service_config),
+        selected_candidates=candidates,
+        service_start_command=_service_start_command(service_config),
+        order_preparation_attempted=False,
+        order_submission_attempted=False,
+        no_execution_statement=NO_EXECUTION_STATEMENT,
+    )
+
+
+def _missing_service_spawn_gates(config: dict[str, Any]) -> list[str]:
+    missing: list[str] = []
+    for key in _REQUIRED_SERVICE_GATES:
+        if not _service_gate_present(config, key):
+            missing.append(key)
+    clearance = config.get("kill_switch_clearance")
+    if isinstance(clearance, dict):
+        blockers = [item for item in clearance.get("blocked_reasons", []) if str(item).strip()]
+        if clearance.get("clear") is not True or not str(clearance.get("source") or "").strip() or blockers:
+            if "kill_switch_clearance" not in missing:
+                missing.append("kill_switch_clearance")
+    return missing
+
+
+def _service_gate_present(config: dict[str, Any], key: str) -> bool:
+    value = config.get(key)
+    if key == "explicit_service_spawn_approval":
+        return value is True
+    if key == "kill_switch_clearance":
+        return isinstance(value, dict)
+    if key in {
+        "per_market_max_notional_usd",
+        "aggregate_max_notional_usd",
+        "max_concurrent_legs",
+        "rate_limit_per_minute",
+        "direct_truth_max_age_seconds",
+    }:
+        number = _decimal(value)
+        return number is not None and number > 0
+    return bool(str(value or "").strip())
+
+
+def _service_start_command(config: dict[str, Any]) -> list[str]:
+    config_path = str(config.get("config_path") or "").strip()
+    command = ["python", "-m", "codex_tools.polymarket", "run-grid-service"]
+    if config_path:
+        command.extend(["--config", config_path])
+    return command
+
+
 __all__ = [
     "GRID_SERVICE_SCHEMA_VERSION",
+    "GRID_SERVICE_SPAWN_SCHEMA_VERSION",
     "PolymarketGridCandidate",
     "PolymarketGridServicePreview",
+    "PolymarketGridServiceSpawnPlan",
     "build_grid_service_preview",
+    "build_grid_service_spawn_plan",
 ]

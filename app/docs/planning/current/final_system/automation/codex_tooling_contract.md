@@ -15,7 +15,7 @@ The current `codex_tool/` package is useful, but it is mostly a thin Codex-to-Ja
 - `codex_tool/*` exists and is imported by current tests and reports.
 - Existing `codex_tool` scripts should be treated as compatibility entrypoints until `#53` migrates them safely.
 - Most current `codex_tool` scripts call Janus API endpoints on `http://127.0.0.1:8010`.
-- The `codex_tools/janus/` and `codex_tools/polymarket/` base namespaces now exist with tests, preview-first direct Polymarket safety gates, read-only account snapshot helpers, inert fallback ledger writes, preview-only 1c grid-service planning, and selected Janus compatibility migrations.
+- The `codex_tools/janus/` and `codex_tools/polymarket/` base namespaces now exist with tests, preview-first direct Polymarket safety gates, read-only account snapshot helpers, inert fallback ledger writes, 1c grid candidate planning, gated service-spawn planning, required portfolio-manager action planning, and selected Janus compatibility migrations.
 - `tools/polymarket_smoke_order.py` is not an automation path and must remain retired from controller/portfolio-manager use.
 
 Do not rename or delete `codex_tool/` until compatibility tests prove the existing imports and automation prompts still work.
@@ -69,11 +69,21 @@ A non-dry-run redeem path must require all of these gates:
 
 If any gate is missing, the tool must return a redeem preview or blocker and must not prepare, sign, submit, or broadcast a redemption transaction.
 
-## Grid-Service Preview Tools
+## Portfolio Action And Grid-Service Tools
 
 The first approved grid surface is `codex_tools/polymarket preview-grid-service`. It reads a direct account snapshot and produces inert candidates for one-cent sell/rebuy grids on ongoing positions that have meaningful movement, including global categories and basketball markets outside the covered NBA/WNBA Janus modules.
 
-This tool is not an execution loop. It must always return `service_spawn_authorized=false`, `order_preparation_attempted=false`, and `order_submission_attempted=false` until a separate issue proves:
+The approved active-manager planning surface is `codex_tools/polymarket plan-manager-action`. It reads direct account truth plus optional frontend catalog/profile-study observations and forces one of these per-run outcomes:
+
+- manage an existing position with a target/close/hold/rebuy/grid decision
+- select a new frontend/profile-informed market for a bounded micro-position candidate
+- record the exact blocker that prevented a required action
+
+The action planner is not an order endpoint. It must return `order_preparation_attempted=false` and `order_submission_attempted=false`; it exists so the automation cannot hide behind passive monitoring when an action candidate exists.
+
+The approved service-spawn proof surface is `codex_tools/polymarket plan-grid-service-spawn`. It may return `service_spawn_authorized=true` only when an explicit non-dry-run service-spawn intent and all service gates are present. Starting a service is still not order authority; every service leg must separately prove the independent execution gate before any order preparation or submission.
+
+Grid tooling must require:
 
 - service-spawn approval and owner persona
 - named global-portfolio grid budget
@@ -88,11 +98,12 @@ High-frequency services must be supervised as independent running services with 
 
 ## Persona Use
 
-- `codex-global-portfolio-agent` may use `codex_tools/polymarket/` for approved portfolio management when Janus is degraded or when the portfolio-manager contract selects the direct path. The older `global-portfolio-agent` name is only a compatibility alias for this Codex global portfolio persona.
+- `codex-global-portfolio-agent` may use `codex_tools/polymarket/` for approved portfolio management when Janus is degraded or when the portfolio-manager contract selects the direct path. It must use `plan-manager-action` or equivalent before reporting a passive portfolio no-op. The older `global-portfolio-agent` name is only a compatibility alias for this Codex global portfolio persona.
 - `janus-covered-market-portfolio-agent` uses `codex_tools/janus/` and Janus API/order-manager gates for covered markets such as NBA/WNBA. It must not use direct Polymarket fallback tools for speculative uncovered-market scouting.
 - `live-monitor-analyst` may use `codex_tools/polymarket/` only for urgent protect/close/cancel/replace actions during a Janus runtime break, and only under the independent Polymarket execution gate.
 - `master-controller` may inspect tool availability, create issues, route blockers, and no-op. It must not execute orders itself.
 - `development-agent` owns implementation under `#53`.
+- `#56` owns active-manager action planning, frontend/profile discovery enforcement, and gated grid/scalping service spawn hardening after the `#53` foundation.
 
 ## Implementation Acceptance
 
