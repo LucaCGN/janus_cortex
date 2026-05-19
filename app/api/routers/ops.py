@@ -266,6 +266,7 @@ def run_ops_postgame_review(
         connection,
         payload,
         event_ids=reviewed_event_ids,
+        day=payload.session_date,
     )
     recorded = record_ops_stage(
         "postgame-review",
@@ -1264,6 +1265,7 @@ def _build_postgame_portfolio_pnl_attribution(
     payload: OpsCycleRequest,
     *,
     event_ids: list[str],
+    day: str | None,
 ) -> dict[str, Any]:
     if not event_ids:
         return {
@@ -1303,10 +1305,17 @@ def _build_postgame_portfolio_pnl_attribution(
         }
 
     direct_evidence = direct_context.get("direct_evidence") or {}
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key != "trades"}
+    direct_evidence_summary = {
+        key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}
+    }
     items: list[dict[str, Any]] = []
     for event_id in event_ids:
         try:
+            event_direct_context = _event_scoped_order_lifecycle_direct_context(
+                direct_context,
+                event_id=event_id,
+                day=day,
+            )
             rows = _fetch_order_lifecycle_reconciliation_rows(
                 connection,
                 account_id=payload.account_id,
@@ -1314,10 +1323,10 @@ def _build_postgame_portfolio_pnl_attribution(
             )
             lifecycle_report = build_order_lifecycle_reconciliation_report(
                 rows,
-                direct_open_order_external_ids=direct_context["direct_open_order_external_ids"],
-                direct_open_order_count=direct_context["direct_open_order_count"],
-                direct_open_position_count=direct_context["direct_open_position_count"],
-                direct_trade_rows=direct_context["direct_trade_rows"],
+                direct_open_order_external_ids=event_direct_context["direct_open_order_external_ids"],
+                direct_open_order_count=event_direct_context["direct_open_order_count"],
+                direct_open_position_count=event_direct_context["direct_open_position_count"],
+                direct_trade_rows=event_direct_context["direct_trade_rows"],
             )
             pnl_attribution = build_portfolio_pnl_attribution_report(lifecycle_report)
             items.append(
@@ -1325,6 +1334,7 @@ def _build_postgame_portfolio_pnl_attribution(
                     "ok": True,
                     "event_id": event_id,
                     "event_slug": event_id,
+                    "direct_event_scope": event_direct_context.get("direct_event_scope"),
                     "reconciliation": lifecycle_report,
                     "pnl_attribution": pnl_attribution,
                 }
@@ -1365,6 +1375,126 @@ def _build_postgame_portfolio_pnl_attribution(
             "items": items,
         }
     )
+
+
+def _event_scoped_order_lifecycle_direct_context(
+    direct_context: dict[str, Any],
+    *,
+    event_id: str,
+    day: str | None,
+) -> dict[str, Any]:
+    direct_evidence = direct_context.get("direct_evidence") if isinstance(direct_context.get("direct_evidence"), dict) else {}
+    raw_orders = list(direct_evidence.get("open_orders") or [])
+    raw_positions = list(direct_evidence.get("open_positions") or [])
+    raw_trades = list(direct_context.get("direct_trade_rows") or direct_evidence.get("trades") or [])
+    plan, plan_event_id, lookup_event_ids = load_current_strategy_plan_for_event(event_id, day=day)
+    if not isinstance(plan, dict):
+        return {
+            **direct_context,
+            "direct_event_scope": {
+                "schema_version": "postgame_direct_event_scope_v1",
+                "status": "missing_current_strategy_plan",
+                "event_id": event_id,
+                "lookup_event_ids": lookup_event_ids,
+                "open_order_count": direct_context.get("direct_open_order_count"),
+                "open_position_count": direct_context.get("direct_open_position_count"),
+                "trade_count": len(raw_trades),
+                "scoped": False,
+            },
+        }
+
+    token_ids = set(_strategy_plan_token_ids(plan))
+    event_slugs = set(_strategy_plan_event_slugs(plan))
+    if not token_ids and not event_slugs:
+        return {
+            **direct_context,
+            "direct_event_scope": {
+                "schema_version": "postgame_direct_event_scope_v1",
+                "status": "scope_keys_missing",
+                "event_id": event_id,
+                "plan_event_id": plan_event_id,
+                "lookup_event_ids": lookup_event_ids,
+                "open_order_count": direct_context.get("direct_open_order_count"),
+                "open_position_count": direct_context.get("direct_open_position_count"),
+                "trade_count": len(raw_trades),
+                "scoped": False,
+            },
+        }
+
+    condition_ids = _direct_condition_ids_for_event_scope(
+        raw_orders=raw_orders,
+        raw_positions=raw_positions,
+        raw_trades=raw_trades,
+        token_ids=token_ids,
+        event_slugs=event_slugs,
+    )
+    open_orders = [
+        order
+        for order in raw_orders
+        if _direct_item_matches_current_event(order, token_ids=token_ids, condition_ids=condition_ids, event_slugs=event_slugs)
+    ]
+    open_positions = [
+        position
+        for position in raw_positions
+        if _direct_item_matches_current_event(
+            position,
+            token_ids=token_ids,
+            condition_ids=condition_ids,
+            event_slugs=event_slugs,
+        )
+    ]
+    trades = [
+        trade
+        for trade in raw_trades
+        if _direct_item_matches_current_event(trade, token_ids=token_ids, condition_ids=condition_ids, event_slugs=event_slugs)
+    ]
+    open_order_ids = [
+        external_id
+        for external_id in (_direct_item_external_id(order) for order in open_orders)
+        if external_id is not None
+    ]
+    scoped_evidence = {
+        **direct_evidence,
+        "open_order_external_ids": open_order_ids,
+        "open_order_count": len(open_orders),
+        "open_position_count": len(open_positions),
+        "trade_count": len(trades),
+        "open_orders": open_orders,
+        "open_positions": open_positions,
+        "trades": trades,
+    }
+    return {
+        **direct_context,
+        "direct_open_order_external_ids": open_order_ids,
+        "direct_open_order_count": len(open_orders),
+        "direct_open_position_count": len(open_positions),
+        "direct_trade_rows": trades,
+        "direct_evidence": scoped_evidence,
+        "direct_event_scope": {
+            "schema_version": "postgame_direct_event_scope_v1",
+            "status": "scoped",
+            "event_id": event_id,
+            "plan_event_id": plan_event_id,
+            "lookup_event_ids": lookup_event_ids,
+            "token_ids": sorted(token_ids),
+            "condition_ids": sorted(condition_ids),
+            "event_slugs": sorted(event_slugs),
+            "open_order_count": len(open_orders),
+            "open_position_count": len(open_positions),
+            "trade_count": len(trades),
+            "scoped": True,
+        },
+    }
+
+
+def _direct_item_external_id(item: Any) -> str | None:
+    if not isinstance(item, dict):
+        item = getattr(item, "__dict__", {}) or {}
+    for key in ("id", "order_id", "external_order_id", "external_id", "hash"):
+        value = item.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
 
 
 def _build_postgame_live_evidence(

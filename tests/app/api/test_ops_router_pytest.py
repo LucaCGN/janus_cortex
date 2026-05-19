@@ -1982,18 +1982,26 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
         assert kwargs["account_id"] == "56964015-5935-5035-bdab-b056c9277146"
         assert kwargs["include_direct_clob_evidence"] is True
         return {
-            "direct_open_order_external_ids": [],
-            "direct_open_order_count": 0,
-            "direct_open_position_count": 0,
-            "direct_trade_rows": [{"id": "direct-trade-1"}],
+            "direct_open_order_external_ids": ["global-order-1"],
+            "direct_open_order_count": 1,
+            "direct_open_position_count": 1,
+            "direct_trade_rows": [
+                {"id": "direct-trade-1", "token_id": "token-1"},
+                {"id": "global-trade-1", "token_id": "other-token"},
+            ],
             "direct_evidence": {
                 "enabled": True,
                 "ok": True,
                 "error": None,
-                "open_order_count": 0,
-                "open_position_count": 0,
-                "trade_count": 1,
-                "trades": [{"id": "direct-trade-1"}],
+                "open_order_count": 1,
+                "open_position_count": 1,
+                "trade_count": 2,
+                "open_orders": [{"id": "global-order-1", "token_id": "other-token"}],
+                "open_positions": [{"asset_id": "other-token", "size": "5"}],
+                "trades": [
+                    {"id": "direct-trade-1", "token_id": "token-1"},
+                    {"id": "global-trade-1", "token_id": "other-token"},
+                ],
             },
         }
 
@@ -2004,7 +2012,10 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
 
     def fake_lifecycle_report(rows, **kwargs):
         assert rows == [{"order_id": "order-1"}]
-        assert kwargs["direct_trade_rows"] == [{"id": "direct-trade-1"}]
+        assert kwargs["direct_open_order_external_ids"] == []
+        assert kwargs["direct_open_order_count"] == 0
+        assert kwargs["direct_open_position_count"] == 0
+        assert kwargs["direct_trade_rows"] == [{"id": "direct-trade-1", "token_id": "token-1"}]
         return {"order_count": 1, "pnl_attribution_ready": True, "items": []}
 
     monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
@@ -2084,7 +2095,11 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     assert fetch_calls[0]["event_slug"] == "nba-sas-min-2026-05-10"
     attribution = payload["portfolio_pnl_attribution"]
     assert attribution["status"] == "ready"
-    assert attribution["direct_evidence"]["trade_count"] == 1
+    assert attribution["direct_evidence"]["trade_count"] == 2
+    assert attribution["items"][0]["direct_event_scope"]["status"] == "scoped"
+    assert attribution["items"][0]["direct_event_scope"]["open_order_count"] == 0
+    assert attribution["items"][0]["direct_event_scope"]["open_position_count"] == 0
+    assert attribution["items"][0]["direct_event_scope"]["trade_count"] == 1
     assert attribution["items"][0]["pnl_attribution"]["known_cashflow_usd"] == 0.8
     assert "portfolio_pnl_attribution" in Path(payload["path"]).read_text(encoding="utf-8")
 

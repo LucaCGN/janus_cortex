@@ -1153,6 +1153,7 @@ def _fetch_direct_order_lifecycle_evidence(
             "open_position_count": None,
             "trade_count": None,
             "open_orders": [],
+            "open_positions": [],
             "trades": [],
         }
 
@@ -1170,6 +1171,7 @@ def _fetch_direct_order_lifecycle_evidence(
             "open_position_count": None,
             "trade_count": None,
             "open_orders": [],
+            "open_positions": [],
             "trades": [],
         }
 
@@ -1179,6 +1181,7 @@ def _fetch_direct_order_lifecycle_evidence(
         if order_id is not None
     ]
     open_order_rows = [_direct_item_to_dict(order) for order in open_orders]
+    open_position_rows = [_direct_item_to_dict(position) for position in open_positions]
     trade_rows = [_direct_item_to_dict(trade) for trade in trades]
     return {
         "enabled": True,
@@ -1189,6 +1192,7 @@ def _fetch_direct_order_lifecycle_evidence(
         "open_position_count": len(open_positions),
         "trade_count": len(trade_rows),
         "open_orders": open_order_rows,
+        "open_positions": open_position_rows,
         "trades": trade_rows,
     }
 
@@ -2713,7 +2717,7 @@ def reconcile_portfolio_orders(
         direct_trade_rows=direct_context["direct_trade_rows"],
     )
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}}
     return {
         "filters": {
             "account_id": str(account_id) if account_id is not None else None,
@@ -2780,7 +2784,7 @@ def reconcile_portfolio_order_pnl_attribution(
         final_winning_outcome_id=final_winning_outcome_id,
     )
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}}
     return {
         "filters": {
             "account_id": str(account_id) if account_id is not None else None,
@@ -2850,7 +2854,7 @@ def backfill_portfolio_order_statuses(
         )
 
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}}
     return {
         "dry_run": payload.dry_run,
         "filters": {
@@ -2920,7 +2924,7 @@ def backfill_portfolio_order_trades(
         )
 
     direct_evidence = direct_context["direct_evidence"]
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}}
     return {
         "dry_run": payload.dry_run,
         "filters": {
@@ -2970,7 +2974,7 @@ def mirror_direct_open_portfolio_orders(
             reason=review_reason,
         )
 
-    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders"}}
+    direct_evidence_summary = {key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}}
     return {
         "dry_run": dry_run,
         "status": "planned" if dry_run else "applied",
