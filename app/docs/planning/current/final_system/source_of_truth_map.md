@@ -104,6 +104,7 @@ Obsidian should hold curated context:
 
 - strategy principles
 - game review memory
+- portfolio trade rationale and post-close lessons
 - profile studies
 - operator preferences
 - architecture rationale
@@ -113,6 +114,20 @@ Obsidian should hold curated context:
 Obsidian should not hold live order truth, worker status, active lock authority, or service readiness truth.
 
 Obsidian maintenance must follow `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`. The default action is to update, merge, split, relink, or mark notes superseded before creating new notes. New notes are valid only when they represent durable concepts, cases, profiles, or source summaries that are linked from the relevant index and overview pages.
+
+### Portfolio Trade Rationale Registry
+
+The global portfolio manager must use this Obsidian registry as the curated index for Codex/Janus-assisted portfolio trades:
+
+`C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationale Registry.md`
+
+For every successful non-dry-run portfolio-manager entry/add trade, create or update one linked Obsidian trade rationale note under:
+
+`C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationales\`
+
+The registry row must include the trade note path, market/outcome, entry timestamp, size/price/notional, action artifact path, direct post-trade reconciliation artifact path, status, and related GitHub issue. The individual trade note must hold the thesis, profile/frontend/direct-truth evidence, target/stop/rebuy policy, falsification trigger, risk cap, and artifact links.
+
+For every successful non-dry-run portfolio-manager close/sell/redeem that reduces or exits a recorded position, update the original trade rationale note before treating the lifecycle as complete. The close review must record realized/unrealized result, what worked, caveats, what not to do next time, whether the setup is repeatable, and whether to create/update a GitHub replay/backtest/domain-lane issue.
 
 ## Promotion Rule
 

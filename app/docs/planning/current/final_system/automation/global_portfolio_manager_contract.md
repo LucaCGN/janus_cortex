@@ -238,12 +238,40 @@ For grid services, the same proof bundle must additionally name the grid budget 
 
 When a portfolio-manager trade in a new or uncovered market succeeds, the follow-up is mandatory:
 
+- create or update an Obsidian trade rationale note under `20_Trading_Knowledge/Trade Rationales/`
+- append or update the row for that note in `20_Trading_Knowledge/Trade Rationale Registry.md`
+- include the Obsidian trade rationale note path in the portfolio-manager pass artifact, final response, and any material GitHub issue comment
 - create or update a GitHub issue for a replay/backtest/domain-lane test if the setup appears repeatable
 - update Obsidian with the trade thesis, why it worked, what not to overgeneralize, and what future test would validate it
 - record the realized/unrealized return contribution against the `1,000`, `10,000`, and `100,000` proof thresholds when available
 - record whether the insight belongs in a future domain lane, a profile-study lesson, or a one-off operator/manual case
 
 A single winning trade is evidence for a test, not authority to scale the domain.
+
+### Trade Rationale And Close Review Notes
+
+Every successful non-dry-run entry/add trade made through the portfolio-manager path must create or update one Obsidian trade rationale note before the run is considered complete. Use the modular curation policy: update an existing note for repeat adds to the same market/outcome instead of creating duplicates.
+
+Required note location:
+
+`C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationales\`
+
+Required registry:
+
+`C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationale Registry.md`
+
+Entry trade note must include:
+
+- market title, slug, outcome, side, token/condition identifiers when known
+- entry timestamp, size, limit price, notional, external order id, transaction id when available
+- direct pre-trade truth, post-trade reconciliation, and runtime artifact paths
+- frontend/profile/catalog evidence and why it mattered
+- thesis, target, stop, rebuy, falsification trigger, risk budget, and expected receipt
+- status: `open`, `partially_closed`, `closed`, `redeemed`, or `invalidated`
+
+Every successful non-dry-run close, target-fill, sell, or redeem that reduces a recorded position must update the original trade note. The close review must include realized/unrealized result, direct close evidence, what worked, caveats, what not to do again, whether the original thesis was right or merely lucky, whether a grid/rebuy/replay issue should be created, and the next portfolio rule change if any.
+
+The portfolio-manager final response must not reduce the next action to a single carried target after a fill. It must report the trade rationale note path and state that target/stop/rebuy review is one candidate in the next full portfolio scan unless the scan has already proven it is the best action.
 
 ## Required Read Order
 
