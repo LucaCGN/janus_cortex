@@ -143,12 +143,16 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | closed | Global portfolio watchlist schema, read-only tooling, target policy flags, and artifacts implemented; active execution moved through `#54` and remaining activation proof is `#59`. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | closed | Direct open CLOB order mirror endpoint implemented and runtime-validated; portfolio HTTP orders now expose the four current direct open sell targets. |
-| [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | open | Run passive WNBA CLOB capture and season-level shadow backtests. |
+| [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | closed | WNBA passive/shadow baseline and blocker report published; sustained active-window capture/audit moved to closed `#60`. |
 | [#52](https://github.com/LucaCGN/janus_cortex/issues/52) | P0 | closed | Active Codex global portfolio-manager policy, prompt, action ledger, and dry-run order-management preview implemented. |
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | closed | Base `codex_tools/janus` and `codex_tools/polymarket` split, preview-first fallback gates, account reads, ledgers, CLI, and compatibility wrappers implemented. |
 | [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | closed | Approved global portfolio execution gate proof, concrete Janus order-management adapter, runtime activation guard, risk/rate evidence, ledger finalization, confirmation-id handling, and idempotency replay hardening implemented. |
 | [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | open | Active portfolio-manager action planning, frontend/profile discovery enforcement, one-shot portfolio order routing, global 1c grid-service spawn proof, and cross-league basketball scanner. |
 | [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | open | Prove portfolio-manager real-call reconciliation before operational activation. |
+| [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | open | NBA entry-timing research for pregame, immediate-live, post-Q1, and event-start cancellation effects; supports #61 but does not own live execution. |
+| [#60](https://github.com/LucaCGN/janus_cortex/issues/60) | P1 | closed | WNBA sustained active-window passive CLOB/trade capture and audit integration completed; future WNBA live-promotion is #62. |
+| [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | open | Next NBA playoff min-size live trade route through Janus StrategyPlan/evaluate/execute/live-worker gates. |
+| [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | open | WNBA shadow-to-controlled-min-size live test readiness route. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |

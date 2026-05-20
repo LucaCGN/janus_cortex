@@ -60,20 +60,22 @@ Safety and live event state override backlog progress.
 
 No-op is allowed only after open sprint issues have been checked for an actionable bounded slice. A clean worktree, clear queue, and unchanged runtime artifacts are not enough to no-op when an open P0/P1 implementation issue is unblocked.
 
-## Time-Boxed Sports Priority Override - 2026-05-19
+## Current Sports Priority Override - 2026-05-20
 
-For the operator-approved two-hour readiness window around the May 19/20 basketball slate, the controller must prioritize:
+For the operator-approved next-day live trading readiness work, the controller must prioritize NBA/WNBA covered-market readiness before global-portfolio expansion, crypto/options scouting, and ordinary future-domain work:
 
-1. `#55` Cavaliers at Knicks NBA playoff live-readiness and minimum-size Janus trade gating, scheduled `2026-05-20T00:00:00Z` / `2026-05-19 21:00 BRT`.
-2. `#60` Toronto at Phoenix WNBA sustained active-window passive CLOB capture and audit integration, scheduled `2026-05-20T02:00:00Z` / `2026-05-19 23:00 BRT`.
+1. `#61` next NBA playoff covered-market min-size live trade through Janus StrategyPlan/evaluate/execute/live-worker gates.
+2. `#62` WNBA promotion from closed passive/shadow foundation to controlled min-size live test readiness.
+3. `#55` remains NBA entry-timing research only; use it for pregame vs immediate-live vs post-Q1 evidence that informs StrategyPlan templates, not as the event execution checklist.
+4. Closed `#60` remains WNBA sustained passive capture/audit foundation only; do not route future WNBA live-promotion passes there unless direct regression evidence appears.
 
-During this window, global-portfolio expansion, crypto/options scouting, and ordinary future-domain work are explicitly lower priority unless direct live-money safety is unclear. No-op compression is valid only when:
+Until `#61` and `#62` each have a fresh pregame/live-readiness checkpoint or an exact blocker, no-op compression is valid only when:
 
-- #55 has a fresh checkpoint for the current game phase with direct event-scoped CLOB inventory, game state, orderbook state, StrategyPlan gate, worker/LLM state, and an exact live-test blocker or approved minimum-size live-test result.
-- #60 has fresh sustained passive capture/audit evidence or an exact blocker to generating it.
-- no active non-stale lock owns the required sports scope.
+- the latest #61 artifact/checkpoint identifies the NBA event, market/outcome/token ids, StrategyPlanJSON id, account/session state, worker/runtime gate state, direct current-event CLOB inventory, orderbook state, target/stop/rebuy posture, and either an approved minimum-size live-test result or the exact blocker preventing trading;
+- the latest #62 artifact/checkpoint identifies WNBA target game(s), market/outcome/token ids, WNBA StrategyPlanJSON candidate, feed/event mapping, worker/runtime gate state, direct current-event CLOB inventory, orderbook/trade state, and either an approved minimum-size live-test result or the exact blocker preventing WNBA trading; and
+- no fresh active lock owns the required sports scope.
 
-`Trade on the NBA game` means route through Janus-approved StrategyPlan evaluate/execute/live-worker gates only after direct truth, integrity, current StrategyPlan, worker state, orderbook freshness, target/stop/rebuy policy, and explicit operator/runtime approval are present. The controller must never bypass Janus with raw exchange calls. If any gate is missing, the pass must record the exact missing gate and next unblock action.
+`Trade on the NBA/WNBA game` means route through Janus-approved StrategyPlan evaluate/execute/live-worker gates only after direct truth, integrity, current StrategyPlan, worker state, orderbook freshness, target/stop/rebuy policy, and explicit operator/runtime approval are present. The controller must never bypass Janus with raw exchange calls. If any gate is missing, the pass must record the exact missing gate and next unblock command before switching to portfolio/crypto work.
 
 ## Recurring Automation Gate
 
@@ -100,7 +102,7 @@ Issues [#50](https://github.com/LucaCGN/janus_cortex/issues/50) and [#60](https:
 
 Resolved-market redemption is a settlement workflow, not CLOB order authority. A prior-event unredeemed position may be classified as a documented residual instead of live exposure only after fresh direct CLOB/account truth proves no event-scoped open orders, market resolution/payout state is known, expected residual value is recorded, and a ledger/follow-up issue owns the redeem or residual state. The app must continue to hold and operate with documented unredeemed residual positions, including zero-valued losing tokens, without treating them as active risk for unrelated new games. Non-dry-run redemption requires the gated Janus+Codex approval workflow in [#58](https://github.com/LucaCGN/janus_cortex/issues/58); never redeem from stale mirrors, screenshots, chat memory, or Obsidian notes.
 
-After [#57](https://github.com/LucaCGN/janus_cortex/issues/57), [#58](https://github.com/LucaCGN/janus_cortex/issues/58), and [#60](https://github.com/LucaCGN/janus_cortex/issues/60) are closed, none should remain the active development route. If no active/near-term covered NBA/WNBA live-readiness route outranks development, the controller should claim one bounded slice from the open sprint backlog: [#59](https://github.com/LucaCGN/janus_cortex/issues/59) for portfolio-manager real-call reconciliation proof, [#55](https://github.com/LucaCGN/janus_cortex/issues/55) for entry-timing/event-start expiry research, or [#56](https://github.com/LucaCGN/janus_cortex/issues/56) for active portfolio-manager action planning, Polymarket frontend/profile discovery enforcement, one-shot portfolio order routing, grid-service spawn proof, and cross-league scanner work. It should not wait for fresh Spurs/Thunder/WNBA foundation evidence or repeatedly compress as no-change solely because old evidence remains flat.
+After [#57](https://github.com/LucaCGN/janus_cortex/issues/57), [#58](https://github.com/LucaCGN/janus_cortex/issues/58), and [#60](https://github.com/LucaCGN/janus_cortex/issues/60) are closed, none should remain the active development route. The next-game sports readiness routes are [#61](https://github.com/LucaCGN/janus_cortex/issues/61) for the next NBA playoff minimum-size Janus live trade and [#62](https://github.com/LucaCGN/janus_cortex/issues/62) for WNBA promotion from shadow capture to controlled minimum-size live readiness. If no active/near-term covered NBA/WNBA live-readiness route outranks development because #61/#62 are freshly checkpointed or explicitly blocked, the controller should claim one bounded slice from the open sprint backlog: [#59](https://github.com/LucaCGN/janus_cortex/issues/59) for portfolio-manager real-call reconciliation proof, [#55](https://github.com/LucaCGN/janus_cortex/issues/55) for entry-timing/event-start expiry research, or [#56](https://github.com/LucaCGN/janus_cortex/issues/56) for active portfolio-manager action planning, Polymarket frontend/profile discovery enforcement, one-shot portfolio order routing, grid-service spawn proof, and cross-league scanner work. It should not wait for fresh Spurs/Thunder/WNBA foundation evidence or repeatedly compress as no-change solely because old evidence remains flat.
 
 ## Active Live-Game Analyst Rules
 
