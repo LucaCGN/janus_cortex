@@ -93,6 +93,12 @@ class ProfileStudyCandidate:
     market_hint: str | None
     insight: str
     matched_catalog_title: str | None
+    recent_trade_count: int
+    active_position_count: int
+    latest_trade_market: str | None
+    latest_trade_outcome: str | None
+    latest_position_market: str | None
+    mimic_candidate: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -422,7 +428,7 @@ def _build_catalog_candidates(
     max_initial_shares: Decimal,
     max_initial_notional_usd: Decimal,
 ) -> list[MarketCatalogCandidate]:
-    rows = _catalog_rows(catalog)
+    rows = _catalog_rows(catalog) + _profile_signal_catalog_rows(profile_studies)
     profile_terms = _profile_terms(profile_studies)
     candidates: list[MarketCatalogCandidate] = []
     for row in rows:
@@ -488,6 +494,12 @@ def _catalog_score(
     )
     if "live" in source_l:
         score += 4
+    if "winning_profile" in source_l:
+        score += 5
+    if "recent_trade" in source_l or "trade_history" in source_l:
+        score += 2
+    if "active_position" in source_l or "current_position" in source_l:
+        score += 2
     if "trending" in source_l or "breaking" in source_l:
         score += 3
     if "new" in source_l:
@@ -545,6 +557,10 @@ def _build_profile_candidates(
             continue
         category = _first_text(profile, ("category", "primary_category", "type"))
         market_hint = _first_text(profile, ("market_hint", "market", "focus", "tag"))
+        recent_trades = _profile_recent_trade_rows(profile)
+        active_positions = _profile_active_position_rows(profile)
+        latest_trade = recent_trades[0] if recent_trades else {}
+        latest_position = active_positions[0] if active_positions else {}
         matched = _match_profile_to_catalog(category, market_hint, catalog_candidates)
         results.append(
             ProfileStudyCandidate(
@@ -555,9 +571,88 @@ def _build_profile_candidates(
                 insight=_first_text(profile, ("insight", "lesson", "pattern"))
                 or "Review profile returns and trade history for transferable market-structure lessons.",
                 matched_catalog_title=matched,
+                recent_trade_count=len(recent_trades),
+                active_position_count=len(active_positions),
+                latest_trade_market=_title(latest_trade) or _market_slug(latest_trade) or None,
+                latest_trade_outcome=_first_text(latest_trade, ("outcome", "side", "position", "name")) or None,
+                latest_position_market=_title(latest_position) or _market_slug(latest_position) or None,
+                mimic_candidate=_profile_mimic_candidate(
+                    profile=profile,
+                    latest_trade=latest_trade,
+                    latest_position=latest_position,
+                    matched_catalog_title=matched,
+                ),
             )
         )
     return results
+
+
+def _profile_signal_catalog_rows(profile_studies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for profile in profile_studies:
+        if not isinstance(profile, dict):
+            continue
+        handle = _first_text(profile, ("profile", "name", "handle")) or "unknown"
+        source_url = _first_text(profile, ("source_url", "url"))
+        category = _first_text(profile, ("category", "primary_category", "type"))
+        for source_name, items in (
+            ("winning_profile_recent_trade", _profile_recent_trade_rows(profile)),
+            ("winning_profile_active_position", _profile_active_position_rows(profile)),
+        ):
+            for item in items[:3]:
+                normalized = dict(item)
+                normalized.setdefault("source", source_name)
+                normalized.setdefault("profile", handle)
+                normalized.setdefault("source_url", source_url)
+                normalized.setdefault("category", category)
+                normalized.setdefault("market_slug", _market_slug(item) or _first_text(profile, ("market_hint", "market", "focus", "tag")))
+                normalized.setdefault("title", _title(item) or _first_text(profile, ("market_hint", "market", "focus", "tag")))
+                normalized.setdefault("outcome", _first_text(item, ("outcome", "side", "position", "name")) or "Yes")
+                rows.append(normalized)
+    return rows
+
+
+def _profile_recent_trade_rows(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    return _profile_nested_rows(profile, ("recent_trades", "latest_trades", "trade_history", "trades"))
+
+
+def _profile_active_position_rows(profile: dict[str, Any]) -> list[dict[str, Any]]:
+    return _profile_nested_rows(profile, ("active_positions", "current_positions", "positions"))
+
+
+def _profile_nested_rows(profile: dict[str, Any], keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for key in keys:
+        value = profile.get(key)
+        if isinstance(value, list):
+            rows.extend(item for item in value if isinstance(item, dict))
+    return rows
+
+
+def _profile_mimic_candidate(
+    *,
+    profile: dict[str, Any],
+    latest_trade: dict[str, Any],
+    latest_position: dict[str, Any],
+    matched_catalog_title: str | None,
+) -> dict[str, Any]:
+    source = latest_trade if latest_trade else latest_position
+    if not source:
+        return {
+            "candidate_present": False,
+            "reason": "No structured recent trade or active-position rows were supplied for this profile.",
+        }
+    return {
+        "candidate_present": True,
+        "profile": _first_text(profile, ("profile", "name", "handle")) or "unknown",
+        "source_type": "recent_trade" if latest_trade else "active_position",
+        "market": _title(source) or _market_slug(source),
+        "market_slug": _market_slug(source),
+        "outcome": _first_text(source, ("outcome", "side", "position", "name")) or "Yes",
+        "price": _first_text(source, ("price", "current_price", "entry_price", "avg_price", "average_price")),
+        "matched_catalog_title": matched_catalog_title,
+        "rule": "Treat as a mimic candidate only after mapping to direct CLOB/token/orderbook truth and passing micro-risk execution gates.",
+    }
 
 
 def _match_profile_to_catalog(
@@ -810,6 +905,11 @@ def _profile_terms(profile_studies: list[dict[str, Any]]) -> set[str]:
             value = str(profile.get(key) or "").strip().lower()
             if value:
                 terms.add(value)
+        for row in _profile_recent_trade_rows(profile) + _profile_active_position_rows(profile):
+            for key in ("category", "market", "market_slug", "title", "event_title", "question", "outcome", "side"):
+                value = str(row.get(key) or "").strip().lower()
+                if value:
+                    terms.add(value)
     return terms
 
 

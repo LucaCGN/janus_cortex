@@ -2419,6 +2419,49 @@ def test_polymarket_portfolio_manager_action_plan_uses_catalog_when_only_existin
     assert plan.existing_position_decisions[0]["recommended_action"] == "hold_low_priced_catalyst_option"
 
 
+def test_polymarket_portfolio_manager_action_plan_promotes_recent_profile_trade_candidate() -> None:
+    plan = build_portfolio_manager_action_plan(
+        {"status": "read_only_snapshot", "open_positions": [], "open_orders": []},
+        frontend_catalog_snapshot={},
+        profile_studies=[
+            {
+                "profile": "car",
+                "source_url": "https://polymarket.com/@car",
+                "category": "geopolitics",
+                "insight": "Recent trades are useful mimic candidates only after direct truth mapping.",
+                "recent_trades": [
+                    {
+                        "title": "US x Iran permanent peace deal by July 31, 2026?",
+                        "market_slug": "us-iran-peace-july-31",
+                        "outcome": "No",
+                        "price": "0.41",
+                        "category": "geopolitics",
+                    }
+                ],
+                "active_positions": [
+                    {
+                        "title": "Will the Iranian regime fall by May 31?",
+                        "market_slug": "iran-regime-fall-may-31",
+                        "outcome": "No",
+                        "current_price": "0.99",
+                    }
+                ],
+            }
+        ],
+        now_utc=datetime(2026, 5, 20, 9, 0, 0, tzinfo=UTC),
+    )
+
+    assert plan.status == "required_action_selected_execution_gated"
+    assert plan.selected_action_type == "open_new_event_micro_position"
+    assert plan.selected_action is not None
+    assert plan.selected_action["source"] == "winning_profile_recent_trade"
+    assert plan.selected_action["market_slug"] == "us-iran-peace-july-31"
+    assert plan.profile_candidates[0]["recent_trade_count"] == 1
+    assert plan.profile_candidates[0]["active_position_count"] == 1
+    assert plan.profile_candidates[0]["mimic_candidate"]["candidate_present"] is True
+    assert plan.profile_candidates[0]["mimic_candidate"]["source_type"] == "recent_trade"
+
+
 def test_polymarket_portfolio_manager_action_plan_suppresses_unchanged_recent_target_action() -> None:
     direct_truth = {
         "status": "read_only_snapshot",

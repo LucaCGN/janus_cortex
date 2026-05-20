@@ -20,6 +20,7 @@ This automation is not a validator for NBA/WNBA Janus trades, not the internal J
 - reviewing ongoing events traded in the last month for 1c grid suitability when repeated mark-to-market swings appear
 - browsing the Polymarket frontend catalog for live, trending, breaking, new, and category pages because the UI exposes discovery context that direct account/API snapshots do not fully reproduce
 - monitoring saved winning-profile studies and public profile pages for repeatable current-position or trade-history signals
+- watching studied winning profiles for new active positions or recent trades on every material run, then considering whether the latest trade/position should be mimicked as a micro-risk candidate after direct CLOB proof
 - turning successful new-market trades into backlog tests, domain-lane candidates, and Obsidian lessons
 
 It inherits `app/docs/planning/current/final_system/global_ego_and_purpose.md`: Janus should trade trends, liquidity, market structure, and return paths, not pretend it can predict final outcomes directly.
@@ -147,8 +148,16 @@ Profile evidence is not copy authority. The manager should extract:
 - current category concentration
 - 1D/1W/1M return path when visible
 - current active positions and recent trade-history themes
+- newest visible trade and newest visible active-position row since the prior pass, when visible
 - repeated entry/exit shapes, position sizing, and target behavior
 - candidate market clusters that overlap with current frontend catalog opportunities
+
+Every material run must treat winning-profile deltas as a required scouting input. If a studied profile has a new trade, a newly visible active position, or a still-fresh trade that was not evaluated in the previous pass, the portfolio manager must either:
+
+- build a structured mimic candidate for that profile trade/position, map it to direct CLOB/token/orderbook truth, and consider a bounded micro-position through the approved order-management path; or
+- reject it explicitly with the reason, such as resolved/illiquid market, spread too wide, minimum-order failure, thesis unclear, risk cap conflict, duplicate existing exposure, covered-market conflict, or no direct token mapping.
+
+When invoking `codex_tools/polymarket plan-manager-action`, encode profile deltas in `--profile-studies-json` using structured `recent_trades` and `active_positions` arrays. The planner promotes these rows into `winning_profile_recent_trade` and `winning_profile_active_position` candidates so they compete with normal frontend catalog candidates instead of remaining passive narrative. A profile mimic candidate is still discovery evidence only; execution requires the full direct-truth and Janus gate bundle.
 
 If a winning profile has an active or recently successful trade in a market that also passes Janus direct-truth and micro-risk checks, the manager may select a bounded micro-position candidate or a grid/service candidate. It must still prove direct market/token/orderbook truth and all execution gates before any order preparation.
 
