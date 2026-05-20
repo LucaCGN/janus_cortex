@@ -110,6 +110,7 @@ class PortfolioManagerActionPlan:
     market_candidates: list[dict[str, Any]]
     profile_candidate_count: int
     profile_candidates: list[dict[str, Any]]
+    repeat_suppression: dict[str, Any]
     micro_trade_policy: dict[str, Any]
     execution_gate_status: str
     execution_blockers: list[str]
@@ -125,6 +126,7 @@ def build_portfolio_manager_action_plan(
     *,
     frontend_catalog_snapshot: dict[str, Any] | None = None,
     profile_studies: list[dict[str, Any]] | None = None,
+    recent_action_history: dict[str, Any] | list[dict[str, Any]] | None = None,
     now_utc: datetime | str | None = None,
     require_action_each_run: bool = True,
     target_notional_usd: Decimal | float | str = Decimal("1"),
@@ -139,6 +141,7 @@ def build_portfolio_manager_action_plan(
     max_shares = _decimal(max_initial_shares) or Decimal("5")
     max_notional = _decimal(max_initial_notional_usd) or Decimal("5")
     oscillation_threshold = _decimal(oscillation_grid_threshold_percent) or Decimal("3")
+    recent_fingerprints = _recent_action_fingerprints(recent_action_history)
 
     open_orders = list(direct_truth_snapshot.get("open_orders") or [])
     position_decisions = [
@@ -165,15 +168,22 @@ def build_portfolio_manager_action_plan(
     selected_type = "none"
     selected: dict[str, Any] | None = None
 
-    existing_action = _select_existing_position_action(position_decisions)
+    existing_action = _select_existing_position_action(position_decisions, recent_fingerprints=recent_fingerprints)
     if existing_action is not None:
         selected_type = "manage_existing_position"
         selected = asdict(existing_action)
     elif catalog_candidates:
-        selected_type = "open_new_event_micro_position"
-        selected = asdict(catalog_candidates[0])
+        catalog_action = _select_catalog_candidate(catalog_candidates, recent_fingerprints=recent_fingerprints)
+        if catalog_action is not None:
+            selected_type = "open_new_event_micro_position"
+            selected = asdict(catalog_action)
+        else:
+            existing_hold = _select_existing_position_hold(position_decisions, recent_fingerprints=recent_fingerprints)
+            if existing_hold is not None:
+                selected_type = "manage_existing_position"
+                selected = asdict(existing_hold)
     else:
-        existing_hold = _select_existing_position_hold(position_decisions)
+        existing_hold = _select_existing_position_hold(position_decisions, recent_fingerprints=recent_fingerprints)
         if existing_hold is not None:
             selected_type = "manage_existing_position"
             selected = asdict(existing_hold)
@@ -202,6 +212,17 @@ def build_portfolio_manager_action_plan(
         market_candidates=[asdict(candidate) for candidate in catalog_candidates],
         profile_candidate_count=len(profile_candidates),
         profile_candidates=[asdict(candidate) for candidate in profile_candidates],
+        repeat_suppression={
+            "enabled": bool(recent_fingerprints),
+            "recent_action_fingerprint_count": len(recent_fingerprints),
+            "suppressed_existing_position_decision_count": sum(
+                1 for decision in position_decisions if _is_recent_existing_position(decision, recent_fingerprints)
+            ),
+            "suppressed_market_candidate_count": sum(
+                1 for candidate in catalog_candidates if _catalog_candidate_fingerprint(candidate) in recent_fingerprints
+            ),
+            "rule": "Do not repeat the same selected action when token/market/action/price/size evidence is unchanged; select the next safe candidate instead.",
+        },
         micro_trade_policy={
             "target_notional_usd": str(target_notional),
             "max_initial_shares": str(max_shares),
@@ -362,12 +383,18 @@ def _position_micro_action(
             "order_preparation_allowed": False,
         }
     if action == "set_or_refresh_target":
-        target_price = min(current_price + Decimal("0.01"), Decimal("0.99"))
+        average_price = _first_decimal(position, ("average_price", "avg_price", "avgPrice", "entry_price"))
+        target_price, target_policy = _target_maintenance_limit_price(
+            current_price=current_price,
+            average_price=average_price,
+        )
         return {
             "action": "set_one_cent_target_via_approved_path",
-            "limit_price": str(target_price.quantize(Decimal("0.01"))),
+            "limit_price": str(target_price),
             "max_size": str(max_initial_shares),
             "target_notional_usd": str(target_notional_usd),
+            "target_policy": target_policy,
+            "average_price": str(average_price) if average_price is not None else None,
             "order_preparation_allowed": False,
         }
     if action == "hold_low_priced_catalyst_option":
@@ -548,6 +575,8 @@ def _match_profile_to_catalog(
 
 def _select_existing_position_action(
     decisions: list[PositionManagementDecision],
+    *,
+    recent_fingerprints: set[str],
 ) -> PositionManagementDecision | None:
     priority = {
         "close_positive_downtrend": 100,
@@ -555,7 +584,12 @@ def _select_existing_position_action(
         "sell_loss_and_rebuy_lower_or_close": 90,
         "set_or_refresh_target": 80,
     }
-    actionable = [decision for decision in decisions if priority.get(decision.recommended_action, 0) > 0]
+    actionable = [
+        decision
+        for decision in decisions
+        if priority.get(decision.recommended_action, 0) > 0
+        and not _is_recent_existing_position(decision, recent_fingerprints)
+    ]
     if not actionable:
         return None
     return sorted(actionable, key=lambda decision: priority.get(decision.recommended_action, 0), reverse=True)[0]
@@ -563,6 +597,8 @@ def _select_existing_position_action(
 
 def _select_existing_position_hold(
     decisions: list[PositionManagementDecision],
+    *,
+    recent_fingerprints: set[str],
 ) -> PositionManagementDecision | None:
     priority = {
         "hold_low_priced_catalyst_option": 60,
@@ -570,10 +606,188 @@ def _select_existing_position_hold(
         "hold_positive_uptrend": 40,
         "hold_and_recheck": 10,
     }
-    hold_decisions = [decision for decision in decisions if priority.get(decision.recommended_action, 0) > 0]
+    hold_decisions = [
+        decision
+        for decision in decisions
+        if priority.get(decision.recommended_action, 0) > 0
+        and not _is_recent_existing_position(decision, recent_fingerprints)
+    ]
     if not hold_decisions:
         return None
     return sorted(hold_decisions, key=lambda decision: priority.get(decision.recommended_action, 0), reverse=True)[0]
+
+
+def _select_catalog_candidate(
+    candidates: list[MarketCatalogCandidate],
+    *,
+    recent_fingerprints: set[str],
+) -> MarketCatalogCandidate | None:
+    for candidate in candidates:
+        if _catalog_candidate_fingerprint(candidate) not in recent_fingerprints:
+            return candidate
+    return None
+
+
+def _target_maintenance_limit_price(
+    *,
+    current_price: Decimal,
+    average_price: Decimal | None,
+) -> tuple[Decimal, str]:
+    if average_price is not None and current_price < average_price:
+        return (
+            _limit_price_cent_ceiling(min(average_price + Decimal("0.01"), Decimal("0.99"))),
+            "recovery_target_one_cent_above_average_cost",
+        )
+    return (
+        _limit_price_cent_ceiling(min(current_price + Decimal("0.01"), Decimal("0.99"))),
+        "one_cent_above_current_mark",
+    )
+
+
+def _limit_price_cent_ceiling(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_UP)
+
+
+def _recent_action_fingerprints(history: dict[str, Any] | list[dict[str, Any]] | None) -> set[str]:
+    if history is None:
+        return set()
+    rows: list[dict[str, Any]] = []
+    if isinstance(history, list):
+        rows.extend(item for item in history if isinstance(item, dict))
+    elif isinstance(history, dict):
+        selected = history.get("selected_action")
+        if isinstance(selected, dict):
+            rows.append(selected)
+        for key in ("recent_actions", "selected_actions", "actions"):
+            value = history.get(key)
+            if isinstance(value, list):
+                rows.extend(item for item in value if isinstance(item, dict))
+    fingerprints: set[str] = set()
+    for row in rows:
+        fingerprint = _action_mapping_fingerprint(row)
+        if fingerprint:
+            fingerprints.add(fingerprint)
+        token_fingerprint = _action_mapping_token_fingerprint(row)
+        if token_fingerprint:
+            fingerprints.add(token_fingerprint)
+    return fingerprints
+
+
+def _action_mapping_fingerprint(action: dict[str, Any]) -> str | None:
+    if any(action.get(key) for key in ("token_id", "asset_id", "asset", "outcomeTokenId", "clobTokenId")):
+        token_id = _token_id(action)
+        return "|".join(
+            (
+                "existing",
+                token_id,
+                _market_slug(action),
+                _action_mapping_recommended_action(action),
+                _action_mapping_target_state(action),
+                _action_mapping_current_price(action),
+                _first_text(action, ("average_price", "avg_price", "avgPrice", "entry_price")),
+                _first_text(action, ("size", "quantity", "shares", "balance")),
+            )
+        )
+    if action.get("market_slug") or action.get("title"):
+        return "|".join(
+            (
+                "catalog",
+                _market_slug(action),
+                _first_text(action, ("outcome", "side", "name")),
+                _first_text(action, ("price", "current_price", "probability", "yes_price", "best_ask")),
+            )
+        )
+    return None
+
+
+def _action_mapping_token_fingerprint(action: dict[str, Any]) -> str | None:
+    if not any(action.get(key) for key in ("token_id", "asset_id", "asset", "outcomeTokenId", "clobTokenId")):
+        return None
+    return "|".join(
+        (
+            "existing_token",
+            _token_id(action),
+            _action_mapping_recommended_action(action),
+            _action_mapping_target_state(action),
+            _action_mapping_current_price(action),
+            _first_text(action, ("average_price", "avg_price", "avgPrice", "entry_price")),
+            _first_text(action, ("size", "quantity", "shares", "balance")),
+        )
+    )
+
+
+def _action_mapping_target_state(action: dict[str, Any]) -> str:
+    explicit = _first_text(action, ("target_state", "target_status"))
+    if explicit:
+        return explicit
+    requested_order = action.get("requested_order")
+    if isinstance(requested_order, dict) and str(requested_order.get("side") or "").lower() == "sell":
+        return "target_missing"
+    return ""
+
+
+def _action_mapping_recommended_action(action: dict[str, Any]) -> str:
+    explicit = _first_text(action, ("recommended_action", "action"))
+    if explicit:
+        return explicit
+    requested_order = action.get("requested_order")
+    requested_side = ""
+    if isinstance(requested_order, dict):
+        requested_side = str(requested_order.get("side") or "").lower()
+    if _first_text(action, ("type",)) == "manage_existing_position" and requested_side == "sell":
+        return "set_or_refresh_target"
+    return _first_text(action, ("type",))
+
+
+def _action_mapping_current_price(action: dict[str, Any]) -> str:
+    explicit = _first_text(action, ("current_price", "cur_price", "curPrice", "market_price", "price"))
+    if explicit:
+        return explicit
+    current_value = _decimal(action.get("current_value"))
+    size = _decimal(action.get("size"))
+    if current_value is not None and size is not None and size != 0:
+        return str(current_value / size)
+    return ""
+
+
+def _existing_position_fingerprint(decision: PositionManagementDecision) -> str:
+    return "|".join(
+        (
+            "existing",
+            decision.token_id,
+            decision.market_slug,
+            decision.recommended_action,
+            decision.target_state,
+            decision.current_price or "",
+            decision.average_price or "",
+            decision.size,
+        )
+    )
+
+
+def _existing_position_token_fingerprint(decision: PositionManagementDecision) -> str:
+    return "|".join(
+        (
+            "existing_token",
+            decision.token_id,
+            decision.recommended_action,
+            decision.target_state,
+            decision.current_price or "",
+            decision.average_price or "",
+            decision.size,
+        )
+    )
+
+
+def _is_recent_existing_position(decision: PositionManagementDecision, recent_fingerprints: set[str]) -> bool:
+    return (
+        _existing_position_fingerprint(decision) in recent_fingerprints
+        or _existing_position_token_fingerprint(decision) in recent_fingerprints
+    )
+
+
+def _catalog_candidate_fingerprint(candidate: MarketCatalogCandidate) -> str:
+    return "|".join(("catalog", candidate.market_slug, candidate.outcome, candidate.price or ""))
 
 
 def _catalog_rows(catalog: dict[str, Any]) -> list[dict[str, Any]]:

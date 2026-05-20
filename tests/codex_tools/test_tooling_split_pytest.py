@@ -2370,6 +2370,8 @@ def test_polymarket_portfolio_manager_action_plan_skips_catalyst_hold_for_action
     assert covered["proposed_micro_action"]["action"] == "defer_to_janus_covered_market_inventory"
     assert plan.selected_action["token_id"] == "flavio-yes"
     assert plan.selected_action["recommended_action"] == "set_or_refresh_target"
+    assert plan.selected_action["proposed_micro_action"]["limit_price"] == "0.31"
+    assert plan.selected_action["proposed_micro_action"]["target_policy"] == "recovery_target_one_cent_above_average_cost"
     assert plan.market_candidate_count == 1
     assert plan.profile_candidate_count == 1
     assert plan.browser_research_required is True
@@ -2415,6 +2417,96 @@ def test_polymarket_portfolio_manager_action_plan_uses_catalog_when_only_existin
     assert plan.selected_action is not None
     assert plan.selected_action["market_slug"] == "google-best-math-ai-model-may-2026"
     assert plan.existing_position_decisions[0]["recommended_action"] == "hold_low_priced_catalyst_option"
+
+
+def test_polymarket_portfolio_manager_action_plan_suppresses_unchanged_recent_target_action() -> None:
+    direct_truth = {
+        "status": "read_only_snapshot",
+        "open_positions": [
+            {
+                "title": "Will OpenAI have the best AI model at the end of June 2026?",
+                "market_slug": "openai-best-model-june-2026",
+                "token_id": "openai-yes",
+                "size": "150",
+                "average_price": "0.0443",
+                "current_price": "0.034",
+                "trend_direction": "sideways",
+            },
+            {
+                "title": "Will Flavio Bolsonaro win the 2026 Brazilian Presidential Election?",
+                "market_slug": "flavio-bolsonaro-president-2026",
+                "token_id": "flavio-yes",
+                "size": "5",
+                "average_price": "0.309",
+                "current_price": "0.2805",
+                "trend_direction": "unknown",
+            },
+            {
+                "title": "Will 2026 be the hottest year on record?",
+                "market_slug": "hottest-year-2026",
+                "token_id": "climate-yes",
+                "size": "5",
+                "average_price": "0.36",
+                "current_price": "0.33",
+                "trend_direction": "unknown",
+            },
+        ],
+        "open_orders": [],
+    }
+    first = build_portfolio_manager_action_plan(
+        direct_truth,
+        frontend_catalog_snapshot={},
+        profile_studies=[],
+        now_utc=datetime(2026, 5, 19, 22, 0, 0, tzinfo=UTC),
+    )
+
+    repeat_aware = build_portfolio_manager_action_plan(
+        direct_truth,
+        frontend_catalog_snapshot={},
+        profile_studies=[],
+        recent_action_history=asdict(first),
+        now_utc=datetime(2026, 5, 19, 22, 5, 0, tzinfo=UTC),
+    )
+
+    assert first.selected_action is not None
+    assert first.selected_action["token_id"] == "flavio-yes"
+    assert repeat_aware.selected_action is not None
+    assert repeat_aware.selected_action["token_id"] == "climate-yes"
+    assert repeat_aware.selected_action["proposed_micro_action"]["limit_price"] == "0.37"
+    assert repeat_aware.repeat_suppression["enabled"] is True
+    assert repeat_aware.repeat_suppression["suppressed_existing_position_decision_count"] == 1
+
+    portfolio_pass_recent_action = {
+        "type": "manage_existing_position",
+        "market_slug": "hottest-year-2026",
+        "token_id": "climate-yes",
+        "size": "5",
+        "avg_price": "0.36",
+        "current_value": "1.65",
+        "requested_order": {"side": "sell", "limit_price": "0.37", "size": "5"},
+    }
+    scout_next = build_portfolio_manager_action_plan(
+        direct_truth,
+        frontend_catalog_snapshot={
+            "breaking_events": [
+                {
+                    "title": "Will Google have the best Math AI model at the end of May 2026?",
+                    "market_slug": "google-best-math-ai-model-may-2026",
+                    "outcome": "Yes",
+                    "price": "0.31",
+                    "category": "ai",
+                }
+            ]
+        },
+        profile_studies=[],
+        recent_action_history={"selected_actions": [first.selected_action, portfolio_pass_recent_action]},
+        now_utc=datetime(2026, 5, 19, 22, 10, 0, tzinfo=UTC),
+    )
+
+    assert scout_next.selected_action_type == "open_new_event_micro_position"
+    assert scout_next.selected_action is not None
+    assert scout_next.selected_action["market_slug"] == "google-best-math-ai-model-may-2026"
+    assert scout_next.repeat_suppression["suppressed_existing_position_decision_count"] == 2
 
 
 def test_polymarket_cli_plan_manager_action_selects_new_catalog_action(tmp_path, capsys) -> None:

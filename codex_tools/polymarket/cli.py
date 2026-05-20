@@ -25,8 +25,16 @@ from codex_tools.polymarket.settlement import (
 def _read_json_file(path: Path | None) -> dict[str, Any] | None:
     if path is None:
         return None
-    with path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
+    raw = path.read_bytes()
+    payload: Any | None = None
+    for encoding in ("utf-8", "utf-8-sig", "utf-16"):
+        try:
+            payload = json.loads(raw.decode(encoding))
+            break
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    if payload is None:
+        raise ValueError(f"could not decode JSON file: {path}")
     if not isinstance(payload, dict):
         raise ValueError("--direct-truth-json must contain a JSON object")
     return payload
@@ -111,6 +119,11 @@ def _build_parser() -> argparse.ArgumentParser:
     manager_plan.add_argument("--direct-truth-json", required=True, type=Path)
     manager_plan.add_argument("--frontend-catalog-json", type=Path)
     manager_plan.add_argument("--profile-studies-json", type=Path)
+    manager_plan.add_argument(
+        "--recent-actions-json",
+        type=Path,
+        help="Optional previous manager action plan or recent action list used to avoid repeating unchanged dry-run actions.",
+    )
     manager_plan.add_argument("--now-utc")
     manager_plan.add_argument("--target-notional-usd", default="1")
     manager_plan.add_argument("--max-initial-shares", default="5")
@@ -282,6 +295,7 @@ def _plan_manager_action(args: argparse.Namespace, output: TextIO) -> int:
         _read_required_json_file(args.direct_truth_json),
         frontend_catalog_snapshot=_read_json_file(args.frontend_catalog_json),
         profile_studies=profile_studies,
+        recent_action_history=_read_recent_action_history(args.recent_actions_json),
         now_utc=args.now_utc,
         require_action_each_run=not args.action_optional,
         target_notional_usd=args.target_notional_usd,
@@ -292,6 +306,42 @@ def _plan_manager_action(args: argparse.Namespace, output: TextIO) -> int:
     json.dump(asdict(plan), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
+
+
+def _read_recent_action_history(path: Path | None) -> dict[str, Any] | None:
+    payload = _read_json_file(path)
+    if payload is None or path is None:
+        return payload
+    selected_actions: list[dict[str, Any]] = []
+    selected = payload.get("selected_action")
+    if isinstance(selected, dict):
+        selected_actions.append(selected)
+    existing_selected_actions = payload.get("selected_actions")
+    if isinstance(existing_selected_actions, list):
+        selected_actions.extend(item for item in existing_selected_actions if isinstance(item, dict))
+
+    artifacts = payload.get("artifacts")
+    manager_plan_path = artifacts.get("manager_action_plan") if isinstance(artifacts, dict) else None
+    if manager_plan_path:
+        manager_payload = _read_optional_related_json(path, str(manager_plan_path))
+        manager_selected = manager_payload.get("selected_action") if manager_payload else None
+        if isinstance(manager_selected, dict):
+            selected_actions.append(manager_selected)
+
+    if selected_actions:
+        expanded = dict(payload)
+        expanded["selected_actions"] = selected_actions
+        return expanded
+    return payload
+
+
+def _read_optional_related_json(source_path: Path, related_path: str) -> dict[str, Any] | None:
+    candidate = Path(related_path)
+    candidates = [candidate] if candidate.is_absolute() else [Path.cwd() / candidate, source_path.parent / candidate]
+    for path in candidates:
+        if path.exists():
+            return _read_json_file(path)
+    return None
 
 
 def _portfolio_manager_order(args: argparse.Namespace, output: TextIO) -> int:

@@ -77,6 +77,8 @@ Each portfolio-manager run must attempt to do real portfolio work. After the man
 
 If execution gates block the selected action, the result is not ordinary `no_material_change`; it is a blocked required action with the exact missing gate. The automation should fix or route the blocker rather than repeatedly reporting passive monitoring.
 
+During temporary 5-minute testing cadence, the manager must also suppress unchanged repeated dry-runs. Pass the latest prior manager action plan or equivalent recent-action list to `codex_tools/polymarket plan-manager-action --recent-actions-json <path>` when available. If the same token/market/action/price/size evidence is unchanged, select the next safe existing-position action or new-event candidate instead of repeating the same dry-run. Repetition is allowed only when direct truth changed, the target/order filled or disappeared, or a reviewed `#59` non-dry-run window is open.
+
 ### Existing-Position Management
 
 For positions that already exist in direct CLOB/account truth, the portfolio manager should:
@@ -97,6 +99,8 @@ The default action for unmatched open positions is to produce a target-policy de
 - missing or stale target: refresh target/stop/rebuy policy before another passive pass is accepted
 
 Target maintenance is thesis-aware. A low-priced catalyst-option position is not automatically a sell-target candidate just because it is red or target-missing. Markets such as the OpenAI best-AI-model position, where a surprise model/news catalyst can reprice a very cheap option, should classify as `low_priced_catalyst_hold` unless direct evidence falsifies the thesis. The required action for that row is a hold/reassess plan with explicit falsification and optional deliberate high-target review, not a mechanical one-cent sell target. If other target-missing or close/replace candidates exist, the manager should select those for the dry-run order path instead of wasting the run on a catalyst hold. If no actionable existing-position candidate exists, the manager should scout a new micro-position candidate before treating the hold itself as the selected action.
+
+For red target-missing positions whose thesis is not explicitly broken, target maintenance should prefer a recovery target above average cost when average cost is known, not a near-mark loss-taking target. Example: an average cost of `0.36` and current mark near `0.33` should propose a reviewed limit sell target around `0.37`, subject to tick size, spread, and direct orderbook proof. If the thesis is broken, classify the row as close/loss management instead of target maintenance.
 
 Resolved positions require a separate settlement classification. If a direct account row is only an unredeemed resolved-market residual, the manager should classify it as `redeemable_residual`, `zero_value_residual`, or `unknown_settlement_state` instead of treating it as a normal open trading position. `zero_value_residual` and `redeemable_residual` may remain held while the app continues unrelated work only when direct account/CLOB truth, resolved market/token/outcome state, expected payout/current value, no direct open orders, and ledger or GitHub issue linkage are recorded. Non-dry-run redemption belongs to the [#58](https://github.com/LucaCGN/janus_cortex/issues/58) gate and requires Janus+Codex approval, not chat-memory approval.
 
@@ -161,6 +165,8 @@ Each material pass should also review ongoing markets traded by the account in t
 - exact gates missing before any service spawn or order preparation
 
 `codex_tools/polymarket preview-grid-service` is the approved first-slice tooling for grid candidate generation. `codex_tools/polymarket plan-grid-service-spawn` is the gated service-spawn proof surface for repeated/scalping logic. Grid services are not the ordinary order path. One-shot portfolio opens, closes, targets, and rebuys should route through `codex_tools/polymarket portfolio-manager-order`, which calls Janus `POST /v1/portfolio/manager/order-management` and may place a limit buy/sell only when the full action-plan proof bundle, runtime flag, kill switch, risk/rate limits, reviewer metadata, ledger/idempotency, and reconciliation gates pass.
+
+At high cadence, `codex_tools/polymarket plan-manager-action` should receive the latest previous manager action plan through `--recent-actions-json` so unchanged target-maintenance dry-runs do not repeat every cycle. A suppressed repeat is not a no-op; the manager should select the next existing-position action, new micro-position candidate, or grid candidate and report the suppressed prior action in the artifact.
 
 A grid service may be spawned only when the spawn plan proves explicit service approval, owner persona, named grid budget, per-market and aggregate max notional, max concurrent legs, rate limits, direct-CLOB freshness, kill-switch clearance, durable ledger path, Janus reconciliation path, heartbeat path, and lock scope. Starting the service does not authorize individual orders; every leg still requires fresh direct truth, idempotent ledger write, kill-switch poll, minimum-order proof, and post-call reconciliation.
 
