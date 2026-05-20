@@ -30,6 +30,7 @@ from app.data.pipelines.daily.wnba.analysis.state_panel import build_wnba_state_
 
 
 FIXTURE_PATH = REPO_ROOT / "tests" / "app" / "data" / "nodes" / "wnba" / "fixtures" / "wnba_cdn_samples.json"
+DEFAULT_CAPTURE_ARTIFACT_ROOT = REPO_ROOT / "local" / "shared" / "artifacts" / "wnba-live-capture"
 
 
 def _jsonable(value: Any) -> Any:
@@ -53,11 +54,91 @@ def _select_sample_game_id(games_df: Any, requested_game_id: str | None) -> str 
     return str(selected.iloc[0]["game_id"])
 
 
+def _as_int(value: Any) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _summarize_passive_capture_artifacts(root: Path | None) -> dict[str, Any]:
+    if root is None:
+        return {
+            "status": "not_configured",
+            "artifact_root": None,
+            "files": [],
+            "event_keys": [],
+            "total_tick_rows": 0,
+            "total_trade_rows": 0,
+            "orders_allowed_seen": False,
+        }
+    if not root.exists():
+        return {
+            "status": "missing",
+            "artifact_root": str(root),
+            "files": [],
+            "event_keys": [],
+            "total_tick_rows": 0,
+            "total_trade_rows": 0,
+            "orders_allowed_seen": False,
+        }
+
+    files: list[dict[str, Any]] = []
+    event_keys: set[str] = set()
+    total_tick_rows = 0
+    total_trade_rows = 0
+    orders_allowed_seen = False
+
+    for path in sorted(root.glob("**/*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        if "orders_allowed" not in payload and "total_tick_rows" not in payload and "last_batch" not in payload:
+            continue
+
+        tick_rows = _as_int(payload.get("total_tick_rows"))
+        trade_rows = _as_int(payload.get("total_trade_rows") or payload.get("total_trade_count"))
+        if tick_rows <= 0 and isinstance(payload.get("last_batch"), dict):
+            tick_rows = _as_int(payload["last_batch"].get("tick_count"))
+        if tick_rows <= 0 and trade_rows <= 0:
+            continue
+
+        keys = [str(item) for item in (payload.get("event_keys") or []) if str(item or "").strip()]
+        event_keys.update(keys)
+        total_tick_rows += tick_rows
+        total_trade_rows += trade_rows
+        orders_allowed_seen = orders_allowed_seen or bool(payload.get("orders_allowed"))
+        files.append(
+            {
+                "path": str(path),
+                "status": payload.get("status"),
+                "event_keys": keys,
+                "tick_rows": tick_rows,
+                "trade_rows": trade_rows,
+                "orders_allowed": bool(payload.get("orders_allowed")),
+            }
+        )
+
+    return {
+        "status": "consumed" if files else "empty",
+        "artifact_root": str(root),
+        "files": files,
+        "event_keys": sorted(event_keys),
+        "total_tick_rows": total_tick_rows,
+        "total_trade_rows": total_trade_rows,
+        "orders_allowed_seen": orders_allowed_seen,
+    }
+
+
 def build_wnba_analysis_bundle(
     *,
     season: str,
     sample_game_id: str | None = None,
     use_fixture: bool = False,
+    capture_artifact_root: Path | str | None = None,
 ) -> dict[str, Any]:
     if use_fixture:
         schedule_payload, boxscore_payload, pbp_payload = _load_fixture_payloads()
@@ -116,6 +197,15 @@ def build_wnba_analysis_bundle(
                 else 0
             )
 
+    resolved_capture_root: Path | None
+    if capture_artifact_root is not None:
+        resolved_capture_root = Path(capture_artifact_root)
+    elif use_fixture:
+        resolved_capture_root = None
+    else:
+        resolved_capture_root = DEFAULT_CAPTURE_ARTIFACT_ROOT
+    passive_capture = _summarize_passive_capture_artifacts(resolved_capture_root)
+
     counts = WnbaDataCounts(
         season=season,
         schedule_games=int(len(games_df)),
@@ -123,9 +213,9 @@ def build_wnba_analysis_bundle(
         games_with_play_by_play=games_with_pbp,
         play_by_play_rows=pbp_rows,
         player_boxscore_rows=player_boxscore_rows,
-        market_link_count=0,
-        clob_tick_count=0,
-        clob_trade_count=0,
+        market_link_count=int(len(passive_capture["event_keys"])),
+        clob_tick_count=int(passive_capture["total_tick_rows"]),
+        clob_trade_count=int(passive_capture["total_trade_rows"]),
         state_panel_rows=state_panel_rows,
         ml_feature_rows=ml_feature_rows,
         labeled_ml_feature_rows=labeled_ml_feature_rows,
@@ -154,6 +244,7 @@ def build_wnba_analysis_bundle(
         "season": season,
         "sample_game_id": resolved_game_id,
         "source_mode": "fixture" if use_fixture else "wnba_cdn",
+        "passive_capture_summary": passive_capture,
         "data_audit": data_audit,
         "lane_signal_summary": {
             "rows": int(len(lane_signal_df)),
@@ -176,6 +267,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--season", default="2026")
     parser.add_argument("--sample-game-id", default=None)
     parser.add_argument("--fixture", action="store_true")
+    parser.add_argument("--capture-artifact-root", type=Path, default=DEFAULT_CAPTURE_ARTIFACT_ROOT)
     parser.add_argument("--json", action="store_true")
     return parser
 
@@ -186,6 +278,7 @@ def main() -> int:
         season=args.season,
         sample_game_id=args.sample_game_id,
         use_fixture=args.fixture,
+        capture_artifact_root=args.capture_artifact_root,
     )
     if args.json:
         print(json.dumps(payload, default=_jsonable, indent=2, sort_keys=True))

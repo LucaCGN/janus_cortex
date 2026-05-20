@@ -37,6 +37,7 @@ def _calibration_blockers(analysis_payload: dict[str, Any], price_history_payloa
     integration = analysis_payload.get("integration_readiness") or {}
     ml_training = analysis_payload.get("ml_training") or {}
     historical = analysis_payload.get("historical_backfill") or {}
+    counts = (analysis_payload.get("data_audit") or {}).get("counts") or {}
     has_price_history_probe = _price_history_probe_ready(price_history_payload)
     blockers: list[str] = []
     blockers.extend(str(value) for value in integration.get("calibration_blockers") or [])
@@ -46,7 +47,10 @@ def _calibration_blockers(analysis_payload: dict[str, Any], price_history_payloa
     if price_history_payload:
         ml_readiness = price_history_payload.get("ml_readiness") or {}
         blockers.extend(str(value) for value in ml_readiness.get("blockers") or [])
-    blockers.append("missing_passive_wnba_clob_tick_trade_capture_for_full_microstructure_replay")
+    if _as_int(counts.get("clob_tick_count")) <= 0:
+        blockers.append("missing_passive_wnba_clob_tick_trade_capture_for_full_microstructure_replay")
+    elif _as_int(counts.get("clob_trade_count")) <= 0:
+        blockers.append("missing_passive_wnba_clob_trade_capture_for_full_microstructure_replay")
     if has_price_history_probe:
         blockers = [
             blocker

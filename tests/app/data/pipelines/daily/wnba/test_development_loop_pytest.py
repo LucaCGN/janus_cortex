@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.data.pipelines.daily.wnba.analysis.development_loop import evaluate_wnba_standard_development_loop
 from tools.run_wnba_analysis_bundle import build_wnba_analysis_bundle
 
@@ -64,3 +66,34 @@ def test_wnba_development_loop_blocks_when_structural_readiness_fails_pytest() -
     assert payload["standard_loop_allowed"] is False
     assert "missing_wnba_lane_signal_rows" in payload["minimum_before_standard_loop"]
     assert "missing_wnba_state_panel_rows" in payload["minimum_before_standard_loop"]
+
+
+def test_wnba_analysis_bundle_consumes_passive_capture_artifacts_pytest(tmp_path) -> None:
+    capture_root = tmp_path / "wnba-live-capture" / "2026-05-19"
+    capture_root.mkdir(parents=True)
+    (capture_root / "status.json").write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "orders_allowed": False,
+                "event_keys": ["wnba-tor-phx-2026-05-19"],
+                "total_tick_rows": 26,
+                "total_trade_rows": 0,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    analysis_payload = build_wnba_analysis_bundle(
+        season="2026",
+        use_fixture=True,
+        capture_artifact_root=tmp_path / "wnba-live-capture",
+    )
+    counts = analysis_payload["data_audit"]["counts"]
+    payload = evaluate_wnba_standard_development_loop(analysis_payload=analysis_payload)
+
+    assert counts["market_link_count"] == 1
+    assert counts["clob_tick_count"] == 26
+    assert analysis_payload["passive_capture_summary"]["status"] == "consumed"
+    assert "missing_passive_wnba_clob_tick_trade_capture_for_full_microstructure_replay" not in payload["calibrated_or_live_blockers"]
+    assert "missing_passive_wnba_clob_trade_capture_for_full_microstructure_replay" in payload["calibrated_or_live_blockers"]
