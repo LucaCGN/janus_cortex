@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
@@ -268,25 +269,42 @@ def _run_event_tick(
         live_state = api_json(api_root, "GET", f"/v1/nba/games/{game['game_id']}/live")
 
     outcome_specs: list[dict[str, Any]] = []
+    market_outcome_refs: dict[str, dict[str, str]] = {}
     for strategy in plan.get("active_strategies") or []:
         entry_rules = strategy.get("entry_rules") or {}
         outcome_id = str(entry_rules.get("outcome_id") or "").strip()
-        if outcome_id:
+        token_id = str(entry_rules.get("token_id") or "").strip()
+        resolved_ref = _resolve_outcome_ref(
+            api_root,
+            outcome_id=outcome_id,
+            token_id=token_id,
+            fallback_market_id=str(entry_rules.get("market_id") or plan.get("market_id") or "").strip(),
+            fallback_label=_outcome_label_from_strategy(strategy, entry_rules),
+        )
+        if resolved_ref:
+            market_outcome_refs_key = resolved_ref.get("outcome_id") or outcome_id
+            if market_outcome_refs_key:
+                market_outcome_refs[market_outcome_refs_key] = resolved_ref
+            if resolved_ref.get("token_id"):
+                market_outcome_refs[str(resolved_ref["token_id"])] = resolved_ref
+            outcome_id = str(resolved_ref.get("outcome_id") or outcome_id).strip()
+            token_id = str(resolved_ref.get("token_id") or token_id).strip()
+        if outcome_id or token_id:
             outcome_specs.append(
                 {
                     "outcome_id": outcome_id,
                     "outcome_label": _outcome_label_from_strategy(strategy, entry_rules),
                     "side": str(entry_rules.get("side") or "buy"),
+                    "token_id": token_id,
                     "strategy": strategy,
                     "entry_rules": entry_rules,
                     "source": "active_strategy",
                 }
             )
 
-    market_outcome_refs: dict[str, dict[str, str]] = {}
     market_outcome_lookup_error: str | None = None
     market_id = str(plan.get("market_id") or "").strip()
-    if market_id:
+    if market_id and _looks_like_uuid(market_id):
         try:
             market_outcomes = api_json(api_root, "GET", f"/v1/markets/{market_id}/outcomes")
             for row in market_outcomes.get("items") or []:
@@ -311,6 +329,7 @@ def _run_event_tick(
                         "outcome_id": outcome_id,
                         "outcome_label": ref["outcome_label"] or None,
                         "side": "buy",
+                        "token_id": ref["token_id"],
                         "strategy": {},
                         "entry_rules": {"side": "buy", "outcome_id": outcome_id, "token_id": ref["token_id"]},
                         "source": "market_outcome_context",
@@ -320,26 +339,55 @@ def _run_event_tick(
             market_outcome_lookup_error = str(exc)
 
     outcome_states: dict[str, dict[str, Any]] = {}
+    token_states: dict[str, dict[str, Any]] = {}
     orderbook_results: dict[str, Any] = {}
     sampled_outcomes: list[dict[str, Any]] = []
     for spec in outcome_specs:
         strategy = spec.get("strategy") if isinstance(spec.get("strategy"), dict) else {}
         entry_rules = spec.get("entry_rules") if isinstance(spec.get("entry_rules"), dict) else {}
         outcome_id = str(spec.get("outcome_id") or "")
+        token_id = str(spec.get("token_id") or entry_rules.get("token_id") or "").strip()
+        if not outcome_id and token_id:
+            resolved_ref = _resolve_outcome_ref(
+                api_root,
+                token_id=token_id,
+                fallback_market_id=str(entry_rules.get("market_id") or market_id).strip(),
+                fallback_label=str(spec.get("outcome_label") or "").strip(),
+            )
+            if resolved_ref:
+                outcome_id = str(resolved_ref.get("outcome_id") or "").strip()
+                token_id = str(resolved_ref.get("token_id") or token_id).strip()
+                if outcome_id:
+                    market_outcome_refs[outcome_id] = resolved_ref
+                if token_id:
+                    market_outcome_refs[token_id] = resolved_ref
+        if not outcome_id and token_id:
+            outcome_id = token_id
+            market_outcome_refs[outcome_id] = {
+                "market_id": str(entry_rules.get("market_id") or market_id).strip(),
+                "outcome_id": outcome_id,
+                "token_id": token_id,
+                "outcome_label": str(spec.get("outcome_label") or "").strip(),
+            }
+            entry_rules["outcome_id"] = outcome_id
         if not outcome_id or outcome_id in outcome_states:
             continue
-        api_json(
-            api_root,
-            "POST",
-            "/v1/sync/polymarket/orderbook",
-            {
+        if _looks_like_uuid(outcome_id):
+            orderbook_payload = {
                 "outcome_id": outcome_id,
                 "sample_count": orderbook_sample_count,
                 "sample_interval_sec": orderbook_sample_interval_sec,
                 "max_levels_per_side": 10,
-            },
-        )
-        latest = api_json(api_root, "GET", f"/v1/outcomes/{outcome_id}/orderbook/latest")
+            }
+            if token_id:
+                orderbook_payload["token_id"] = token_id
+            api_json(api_root, "POST", "/v1/sync/polymarket/orderbook", orderbook_payload)
+            latest = api_json(api_root, "GET", f"/v1/outcomes/{outcome_id}/orderbook/latest")
+        else:
+            latest = _fetch_direct_orderbook_latest(
+                token_id=token_id,
+                market_id=str(entry_rules.get("market_id") or market_id).strip(),
+            )
         outcome_label = str(spec.get("outcome_label") or "").strip() or _outcome_label_from_strategy(strategy, entry_rules)
         if not outcome_label:
             try:
@@ -351,18 +399,22 @@ def _run_event_tick(
             {
                 "outcome_id": outcome_id,
                 "outcome_label": outcome_label,
-                "token_id": str(entry_rules.get("token_id") or market_outcome_refs.get(outcome_id, {}).get("token_id") or ""),
+                "token_id": str(token_id or market_outcome_refs.get(outcome_id, {}).get("token_id") or ""),
                 "source": spec.get("source"),
             }
         )
         orderbook_results[outcome_id] = latest
-        outcome_states[outcome_id] = _state_from_orderbook(
+        state = _state_from_orderbook(
             latest,
             side=str(entry_rules.get("side") or "buy"),
             outcome_label=outcome_label,
             game=game,
             live_state=live_state,
         )
+        outcome_states[outcome_id] = state
+        if token_id:
+            market_outcome_refs[token_id] = market_outcome_refs.get(outcome_id, {})
+            token_states[token_id] = dict(state)
 
     watch_persistence = _persist_orderbook_watch_ticks(
         api_root=api_root,
@@ -471,6 +523,7 @@ def _run_event_tick(
     ]
     market_state = {
         "outcome_states": outcome_states,
+        "token_states": token_states,
         "sampled_outcomes": sampled_outcomes,
         "game": game,
         "live_state": _compact_live_state(live_state),
@@ -2111,16 +2164,18 @@ def _pending_intent_summary(
 ) -> dict[str, Any]:
     market_id = str(plan.get("market_id") or "").strip()
     source = "/v1/portfolio/orders"
+    query: dict[str, Any] = {
+        "account_id": account_id,
+        "side": "buy",
+        "limit": 5000,
+    }
+    if _looks_like_uuid(market_id):
+        query["market_id"] = market_id
     payload = api_json(
         api_root,
         "GET",
         source,
-        query={
-            "account_id": account_id,
-            "market_id": market_id or None,
-            "side": "buy",
-            "limit": 5000,
-        },
+        query=query,
         timeout=60,
     )
     if payload.get("ok") is False:
@@ -2207,15 +2262,17 @@ def _known_portfolio_order_external_ids(
 ) -> dict[str, Any]:
     market_id = str(plan.get("market_id") or "").strip()
     source = "/v1/portfolio/orders"
+    query: dict[str, Any] = {
+        "account_id": account_id,
+        "limit": 5000,
+    }
+    if _looks_like_uuid(market_id):
+        query["market_id"] = market_id
     payload = api_json(
         api_root,
         "GET",
         source,
-        query={
-            "account_id": account_id,
-            "market_id": market_id or None,
-            "limit": 5000,
-        },
+        query=query,
         timeout=60,
     )
     plan_ids = _plan_known_external_order_ids(plan)
@@ -3167,7 +3224,133 @@ def _unique(values: list[str]) -> list[str]:
     return result
 
 
+def _looks_like_uuid(value: Any) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    try:
+        UUID(raw)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _resolve_outcome_ref(
+    api_root: str,
+    *,
+    outcome_id: str | None = None,
+    token_id: str | None = None,
+    fallback_market_id: str | None = None,
+    fallback_label: str | None = None,
+) -> dict[str, str] | None:
+    outcome_text = str(outcome_id or "").strip()
+    token_text = str(token_id or "").strip()
+    if token_text:
+        try:
+            row = api_json(api_root, "GET", f"/v1/outcomes/by-token/{token_text}")
+            if row.get("ok") is False:
+                row = {}
+            resolved_outcome_id = str(row.get("outcome_id") or outcome_text).strip()
+            resolved_market_id = str(row.get("market_id") or fallback_market_id or "").strip()
+            resolved_label = str(row.get("outcome_label") or fallback_label or "").strip()
+            if resolved_outcome_id:
+                return {
+                    "market_id": resolved_market_id,
+                    "outcome_id": resolved_outcome_id,
+                    "token_id": token_text,
+                    "outcome_label": resolved_label,
+                }
+        except Exception:
+            pass
+    if outcome_text:
+        return {
+            "market_id": str(fallback_market_id or "").strip(),
+            "outcome_id": outcome_text,
+            "token_id": token_text,
+            "outcome_label": str(fallback_label or "").strip(),
+        }
+    return None
+
+
+def _fetch_direct_orderbook_latest(*, token_id: str, market_id: str | None = None) -> dict[str, Any]:
+    try:
+        from app.data.nodes.polymarket.blockchain.manage_portfolio import PolymarketCredentials
+        from app.data.nodes.polymarket.blockchain.stream_orderbook import fetch_orderbook
+
+        snapshot = fetch_orderbook(
+            PolymarketCredentials(
+                wallet_address="",
+                private_key=None,
+                clob_host="https://clob.polymarket.com",
+                chain_id=137,
+            ),
+            token_id=token_id,
+            market_id=market_id,
+        )
+    except Exception as exc:
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            "ok": False,
+            "levels_count": 0,
+            "snapshot": {
+                "market_id": market_id,
+                "token_id": token_id,
+                "best_bid": None,
+                "best_ask": None,
+                "spread": None,
+                "captured_at": now,
+            },
+            "error": str(exc),
+            "source": "direct_clob_token_orderbook_failed",
+        }
+    best_bid = snapshot.bids[0].price if snapshot.bids else None
+    best_ask = snapshot.asks[0].price if snapshot.asks else None
+    spread = (
+        round(float(best_ask) - float(best_bid), 6)
+        if best_bid is not None and best_ask is not None
+        else None
+    )
+    return {
+        "ok": True,
+        "levels_count": len(snapshot.bids) + len(snapshot.asks),
+        "snapshot": {
+            "market_id": market_id or snapshot.market_id,
+            "token_id": token_id,
+            "best_bid": best_bid,
+            "best_ask": best_ask,
+            "spread": spread,
+            "min_order_size": snapshot.min_order_size,
+            "tick_size": snapshot.tick_size,
+            "captured_at": snapshot.timestamp.isoformat(),
+            "source": "direct_clob_token_orderbook",
+        },
+        "levels": {
+            "bids": [{"price": item.price, "size": item.size} for item in snapshot.bids[:10]],
+            "asks": [{"price": item.price, "size": item.size} for item in snapshot.asks[:10]],
+        },
+        "source": "direct_clob_token_orderbook",
+    }
+
+
 def _resolve_game(api_root: str, event_id: str, session_date: str) -> dict[str, Any]:
+    parsed_wnba = _parse_wnba_event_id(event_id)
+    if parsed_wnba:
+        resolved = _resolve_wnba_game_from_cdn(event_id, parsed_wnba, session_date=session_date)
+        if resolved:
+            return resolved
+        team_a, team_b, date = parsed_wnba
+        return {
+            "event_id": event_id,
+            "league": "wnba",
+            "resolved": True,
+            "resolution_source": "wnba_event_slug_fallback",
+            "game_date": date or session_date,
+            "away_team_slug": team_a.upper(),
+            "home_team_slug": team_b.upper(),
+            "game_status": None,
+            "game_status_text": "wnba_scoreboard_unavailable",
+        }
+
     games = api_json(api_root, "GET", "/v1/nba/games", query={"limit": 1000})
     items = games.get("items") or []
     parsed = _parse_event_id(event_id)
@@ -3224,6 +3407,84 @@ def _parse_event_id(event_id: str) -> tuple[str, str, str] | None:
     if len(parts) < 6 or parts[0] != "nba":
         return None
     return parts[1], parts[2], "-".join(parts[-3:])
+
+
+def _parse_wnba_event_id(event_id: str) -> tuple[str, str, str] | None:
+    parts = event_id.lower().split("-")
+    if len(parts) < 6 or parts[0] != "wnba":
+        return None
+    return parts[1], parts[2], "-".join(parts[-3:])
+
+
+def _resolve_wnba_game_from_cdn(
+    event_id: str,
+    parsed: tuple[str, str, str],
+    *,
+    session_date: str,
+) -> dict[str, Any] | None:
+    team_a, team_b, date = parsed
+    wanted = {_wnba_slug_alias(team_a), _wnba_slug_alias(team_b)}
+    expected_date = date or session_date
+    try:
+        from app.data.nodes.wnba.live.live_stats import fetch_todays_scoreboard_df
+
+        df = fetch_todays_scoreboard_df()
+    except Exception as exc:
+        return {
+            "event_id": event_id,
+            "league": "wnba",
+            "resolved": False,
+            "reason": "wnba_scoreboard_fetch_failed",
+            "error": str(exc),
+            "parsed": parsed,
+        }
+    try:
+        rows = df.to_dict(orient="records")
+    except Exception:
+        rows = []
+    for item in rows:
+        if str(item.get("game_date") or "") and str(item.get("game_date") or "") != expected_date:
+            continue
+        slugs = {
+            _wnba_slug_alias(item.get("home_team_tricode")),
+            _wnba_slug_alias(item.get("away_team_tricode")),
+        }
+        if wanted == slugs:
+            return {
+                **_jsonable_mapping(item),
+                "event_id": event_id,
+                "league": "wnba",
+                "resolved": True,
+                "resolution_source": "wnba_cdn_scoreboard_event_slug",
+            }
+    return None
+
+
+def _wnba_slug_alias(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "por": "pdx",
+        "portland": "pdx",
+        "portlandfire": "pdx",
+        "fire": "pdx",
+        "indiana": "ind",
+        "fever": "ind",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _jsonable_mapping(item: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in item.items():
+        if hasattr(value, "isoformat"):
+            result[key] = value.isoformat()
+        else:
+            try:
+                is_nan = value != value
+            except Exception:
+                is_nan = False
+            result[key] = None if is_nan else value
+    return result
 
 
 def _compact_live_state(live_state: dict[str, Any]) -> dict[str, Any]:
