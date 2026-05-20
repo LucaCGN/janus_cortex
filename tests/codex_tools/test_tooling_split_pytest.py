@@ -2419,6 +2419,36 @@ def test_polymarket_portfolio_manager_action_plan_uses_catalog_when_only_existin
     assert plan.existing_position_decisions[0]["recommended_action"] == "hold_low_priced_catalyst_option"
 
 
+def test_polymarket_portfolio_manager_action_plan_allows_five_share_micro_order_below_one_dollar() -> None:
+    plan = build_portfolio_manager_action_plan(
+        {"status": "read_only_snapshot", "open_positions": [], "open_orders": []},
+        frontend_catalog_snapshot={
+            "trending_events": [
+                {
+                    "title": "Will the US confirm that aliens exist before 2027?",
+                    "market_slug": "will-the-us-confirm-that-aliens-exist-before-2027",
+                    "outcome": "Yes",
+                    "price": "0.15",
+                    "category": "culture",
+                }
+            ]
+        },
+        profile_studies=[],
+        now_utc=datetime(2026, 5, 20, 21, 45, 0, tzinfo=UTC),
+    )
+
+    assert plan.status == "required_action_selected_execution_gated"
+    assert plan.selected_action_type == "open_new_event_micro_position"
+    assert plan.selected_action is not None
+    action = plan.selected_action["proposed_micro_action"]
+    assert action["action"] == "open_new_micro_position_via_approved_path"
+    assert action["size"] == "5"
+    assert action["notional_usd"] == "0.75"
+    assert action["sizing_policy"]["target_notional_limited_by_share_cap"] is True
+    assert action["sizing_policy"]["below_target_notional_allowed_when_exchange_minimum_size_met"] is True
+    assert plan.micro_trade_policy["minimum_mode"] == "target_notional_or_exchange_minimum_shares"
+
+
 def test_polymarket_portfolio_manager_action_plan_promotes_recent_profile_trade_candidate() -> None:
     plan = build_portfolio_manager_action_plan(
         {"status": "read_only_snapshot", "open_positions": [], "open_orders": []},

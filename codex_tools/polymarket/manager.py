@@ -234,7 +234,12 @@ def build_portfolio_manager_action_plan(
             "max_initial_shares": str(max_shares),
             "max_initial_notional_usd": str(max_notional),
             "order_type": "limit_only",
-            "rule": "Initial validation trades should target about $1, never exceed 5 shares or $5 notional without a new explicit policy.",
+            "minimum_mode": "target_notional_or_exchange_minimum_shares",
+            "rule": (
+                "Initial validation trades should target about $1 where possible, but a low-priced market may use "
+                "the exchange minimum 5-share order even when that notional is below $1. Never exceed 5 shares or "
+                "$5 notional without a new explicit policy."
+            ),
         },
         execution_gate_status="gated_no_order_preparation",
         execution_blockers=execution_blockers,
@@ -527,6 +532,7 @@ def _catalog_micro_action(
     shares_for_target = (target_notional_usd / price).quantize(Decimal("0.01"), rounding=ROUND_UP)
     size = min(max_initial_shares, shares_for_target)
     notional = (size * price).quantize(Decimal("0.01"), rounding=ROUND_UP)
+    target_notional_limited_by_share_cap = size == max_initial_shares and shares_for_target > max_initial_shares
     if notional > max_initial_notional_usd:
         return {
             "action": "blocked_micro_size_exceeds_cap",
@@ -543,6 +549,14 @@ def _catalog_micro_action(
         "limit_price": str(price.quantize(Decimal("0.01"))),
         "size": str(size),
         "notional_usd": str(notional),
+        "sizing_policy": {
+            "target_notional_usd": str(target_notional_usd),
+            "max_initial_shares": str(max_initial_shares),
+            "max_initial_notional_usd": str(max_initial_notional_usd),
+            "target_notional_limited_by_share_cap": target_notional_limited_by_share_cap,
+            "below_target_notional_allowed_when_exchange_minimum_size_met": target_notional_limited_by_share_cap,
+            "minimum_mode": "target_notional_or_exchange_minimum_shares",
+        },
         "order_preparation_allowed": False,
     }
 

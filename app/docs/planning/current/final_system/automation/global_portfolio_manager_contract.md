@@ -139,7 +139,7 @@ The premise is trend trading, not final-outcome prediction. A candidate must rec
 
 New-market trend entries require stronger gates than existing-position target maintenance because they expand the portfolio into uncovered categories.
 
-Initial validation exposure is capped to micro-risk: target about `$1` notional where exchange constraints permit, never more than `5` shares or `$5` notional for an initial event/position without a new explicit policy. Limit orders are the default; market orders require a separate exception policy.
+Initial validation exposure is capped to micro-risk: target about `$1` notional where exchange constraints permit, but a low-priced market may use the exchange-minimum `5` share order even when that notional is below `$1`. Never exceed `5` shares or `$5` notional for an initial event/position without a new explicit policy. Limit orders are the default; market orders require a separate exception policy. The portfolio manager must not block a candidate solely because `$1` would require more than `5` shares; if direct CLOB proof shows the exchange minimum is `5` shares and the resulting notional is under the `$5` cap, construct the proof bundle with `minimum_mode=target_notional_or_exchange_minimum_shares` and continue through the normal risk/approval/reconciliation gates.
 
 ### Winning-Profile Monitoring
 
