@@ -117,6 +117,16 @@ Routing priority:
 
 No-op is valid only after checking open sprint issues for an actionable bounded slice. A clean worktree, clear queue, unchanged artifacts, or flat prior-event settlement does not by itself justify no-op when an unblocked P0/P1 implementation issue exists.
 
+Two-hour NBA/WNBA priority override for 2026-05-19 21:00-23:00 BRT:
+- Primary covered-market target: Cavaliers at Knicks, NBA Eastern Conference Finals Game 1, scheduled `2026-05-20T00:00:00Z` / `2026-05-19 21:00 BRT`, GitHub `#55`.
+- Primary WNBA shadow target: Toronto at Phoenix, scheduled `2026-05-20T02:00:00Z` / `2026-05-19 23:00 BRT`, GitHub `#60`.
+- Until the two-hour window ends or both deliverables are complete, the controller must not route to global-portfolio expansion, crypto/options exploration, stale closed issues, or ordinary no-change compression unless live safety is unclear or a fresh active lock owns the sports scope.
+- For `#55`, each pass should refresh direct current-event NBA evidence when the prior checkpoint is stale for the current phase. Required evidence: score, clock, period, orderbook bid/ask/spread, direct event-scoped open orders, open positions, recent fills/trades, pending intents, StrategyPlan gate, worker state, LLM/runtime trigger state, target/stop/rebuy posture, and exact blocker to a minimum-size Janus live test.
+- If all Janus live-test gates are current and explicit operator approval is present in repo/runtime handoff evidence, the controller should route through the approved Janus StrategyPlan evaluate/execute/live-worker path for a minimum-size test. It must not use raw exchange bypass. If any gate is missing, the pass must write the exact blocker and next unblock command instead of moving to portfolio/crypto work.
+- After any NBA order/fill is observed, the next pass must monitor and reconcile; do not duplicate the buy. It should require target/stop/protect/rebuy handling before further entry.
+- For `#60`, finish WNBA shadow testing by running or verifying sustained active-window passive CLOB capture with `orders_allowed=false`, integrating captured tick/trade evidence into the WNBA analysis audit path, and rerunning the WNBA development-loop/check artifacts. WNBA remains non-live unless a separate reviewed WNBA StrategyPlan/integrity/fillability/operator gate exists.
+- Success for this override is not a comment count. Success is fresh #55 live-readiness/trade-gate evidence plus fresh #60 shadow/audit evidence, with artifacts and handoffs updated only when material.
+
 NBA/WNBA test-day override:
 - If a covered NBA game is near start or live and `current_plan_count_today=0`, do not keep repeating WNBA passive captures as the primary action. Route to bounded StrategyPlanJSON/pregame-plan creation or record the exact blocker.
 - WNBA passive capture with `orders_allowed=false` remains valid WNBA shadow evidence, but it does not prove the Janus covered-market live-worker order path.

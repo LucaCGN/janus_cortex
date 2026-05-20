@@ -60,6 +60,21 @@ Safety and live event state override backlog progress.
 
 No-op is allowed only after open sprint issues have been checked for an actionable bounded slice. A clean worktree, clear queue, and unchanged runtime artifacts are not enough to no-op when an open P0/P1 implementation issue is unblocked.
 
+## Time-Boxed Sports Priority Override - 2026-05-19
+
+For the operator-approved two-hour readiness window around the May 19/20 basketball slate, the controller must prioritize:
+
+1. `#55` Cavaliers at Knicks NBA playoff live-readiness and minimum-size Janus trade gating, scheduled `2026-05-20T00:00:00Z` / `2026-05-19 21:00 BRT`.
+2. `#60` Toronto at Phoenix WNBA sustained active-window passive CLOB capture and audit integration, scheduled `2026-05-20T02:00:00Z` / `2026-05-19 23:00 BRT`.
+
+During this window, global-portfolio expansion, crypto/options scouting, and ordinary future-domain work are explicitly lower priority unless direct live-money safety is unclear. No-op compression is valid only when:
+
+- #55 has a fresh checkpoint for the current game phase with direct event-scoped CLOB inventory, game state, orderbook state, StrategyPlan gate, worker/LLM state, and an exact live-test blocker or approved minimum-size live-test result.
+- #60 has fresh sustained passive capture/audit evidence or an exact blocker to generating it.
+- no active non-stale lock owns the required sports scope.
+
+`Trade on the NBA game` means route through Janus-approved StrategyPlan evaluate/execute/live-worker gates only after direct truth, integrity, current StrategyPlan, worker state, orderbook freshness, target/stop/rebuy policy, and explicit operator/runtime approval are present. The controller must never bypass Janus with raw exchange calls. If any gate is missing, the pass must record the exact missing gate and next unblock action.
+
 ## Recurring Automation Gate
 
 If today's event data has not been reconciled through an explicit Codex/operator reconciliation pass, the controller may run only in docs/source-of-truth cleanup mode.
