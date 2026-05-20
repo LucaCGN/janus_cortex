@@ -250,7 +250,7 @@ A single winning trade is evidence for a test, not authority to scale the domain
 
 ### Trade Rationale And Close Review Notes
 
-Every successful non-dry-run entry/add trade made through the portfolio-manager path must create or update one Obsidian trade rationale note before the run is considered complete. Use the modular curation policy: update an existing note for repeat adds to the same market/outcome instead of creating duplicates.
+Every successful non-dry-run portfolio-manager order placement must create or update one Obsidian trade rationale note before the run is considered complete. This includes entry/add orders and resting target/exit/rebuy orders even when they do not immediately fill. Use the modular curation policy: update an existing note for repeat adds or target/exit/rebuy maintenance on the same market/outcome instead of creating duplicates.
 
 Required note location:
 
@@ -260,18 +260,18 @@ Required registry:
 
 `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationale Registry.md`
 
-Entry trade note must include:
+Trade/order note must include:
 
 - market title, slug, outcome, side, token/condition identifiers when known
-- entry timestamp, size, limit price, notional, external order id, transaction id when available
-- direct pre-trade truth, post-trade reconciliation, and runtime artifact paths
+- order/action timestamp, action type (`entry`, `add`, `target`, `exit`, `rebuy`, `replace`, `close`, or `redeem-preview`), size, limit price, notional, external order id, transaction id when available
+- direct pre-order truth, post-order reconciliation, and runtime artifact paths
 - frontend/profile/catalog evidence and why it mattered
 - thesis, target, stop, rebuy, falsification trigger, risk budget, and expected receipt
-- status: `open`, `partially_closed`, `closed`, `redeemed`, or `invalidated`
+- status: `planned`, `resting_order`, `open`, `partially_closed`, `closed`, `redeemed`, or `invalidated`
 
 Every successful non-dry-run close, target-fill, sell, or redeem that reduces a recorded position must update the original trade note. The close review must include realized/unrealized result, direct close evidence, what worked, caveats, what not to do again, whether the original thesis was right or merely lucky, whether a grid/rebuy/replay issue should be created, and the next portfolio rule change if any.
 
-The portfolio-manager final response must not reduce the next action to a single carried target after a fill. It must report the trade rationale note path and state that target/stop/rebuy review is one candidate in the next full portfolio scan unless the scan has already proven it is the best action.
+The portfolio-manager final response must not reduce the next action to a single carried target after a fill or resting target order. It must report the trade rationale note path and state that target/stop/rebuy review is one candidate in the next full portfolio scan unless the scan has already proven it is the best action.
 
 ## Required Read Order
 

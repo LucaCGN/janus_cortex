@@ -54,6 +54,20 @@ The controller automation should read these anchor files on every material pass:
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
+## Current Automation Topology
+
+As of 2026-05-20, the Codex app automation layer is split into five lanes so portfolio trading oversight does not compete with the development/issue loop:
+
+| Automation | Cadence | Scope | Hard boundary |
+|---|---:|---|---|
+| `oversight-portfolio` | 1 hour | Review `janus-portfolio-manager` behavior, strategy quality, trade-rationale lifecycle, winning-profile delta use, target/close/grid decisions, and #56/#59 evidence. | Oversight only: no order, cancel, replace, redeem, signing, broadcasting, or worker/service start. |
+| `oversight-devloop` | 30 minutes | Monitor the development loop, queue locks, dirty worktree, repeated issue comments, issue splitting/closure, backlog drift, and whether implementation slices are being claimed, validated, committed, pushed, and closed. | No trading actions; code/docs patches only when issue-backed and narrow. |
+| `janus-master-dev` | 15 minutes | Recurring Janus development/live-readiness executor for issue-backed work, especially #61/#62 sports readiness, #55 research support, #59 activation proof, and bounded #56 tooling/docs work when sports does not preempt it. | Not the global portfolio trader; no raw exchange bypass; Janus live actions only through approved Janus gates. |
+| `janus-portfolio-manager` | 30 minutes | Active Codex global portfolio manager for existing-position actions, new micro-position scouting, Polymarket frontend/profile discovery, one-shot order routing, and grid/scalping candidates. | May trade only through approved portfolio-manager order paths and live gates; no Janus NBA/WNBA covered-market authority. |
+| `janus-obsidian-builder` | 6 hours | Curated Obsidian memory, indexes, profile/trade rationale navigation, source links, and note hygiene. | No execution, no automation schedule edits, no repo contract rewrites unless explicitly issue-backed. |
+
+Historical automation ids in `C:\Users\lnoni\.codex\automations` may remain for continuity, but the displayed names/prompts should match this topology. If a crash or time-machine restore reverts prompts, restore these five lanes before running portfolio or development loops again.
+
 ## Runtime State Anchors
 
 The controller should inspect these runtime surfaces when they exist:
@@ -121,11 +135,11 @@ The global portfolio manager must use this Obsidian registry as the curated inde
 
 `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationale Registry.md`
 
-For every successful non-dry-run portfolio-manager entry/add trade, create or update one linked Obsidian trade rationale note under:
+For every successful non-dry-run portfolio-manager order placement, create or update one linked Obsidian trade rationale note under:
 
 `C:\Users\lnoni\OneDrive\Documentos\Janus\Janus-Brain\20_Trading_Knowledge\Trade Rationales\`
 
-The registry row must include the trade note path, market/outcome, entry timestamp, size/price/notional, action artifact path, direct post-trade reconciliation artifact path, status, and related GitHub issue. The individual trade note must hold the thesis, profile/frontend/direct-truth evidence, target/stop/rebuy policy, falsification trigger, risk cap, and artifact links.
+This includes entry/add orders and resting target/exit/rebuy orders even when they do not immediately fill. The registry row must include the trade note path, market/outcome, order timestamp, action type, size/price/notional, external order id when available, action artifact path, direct post-order reconciliation artifact path, status, and related GitHub issue. The individual trade note must hold the thesis, profile/frontend/direct-truth evidence, target/stop/rebuy policy, falsification trigger, risk cap, and artifact links.
 
 For every successful non-dry-run portfolio-manager close/sell/redeem that reduces or exits a recorded position, update the original trade rationale note before treating the lifecycle as complete. The close review must record realized/unrealized result, what worked, caveats, what not to do next time, whether the setup is repeatable, and whether to create/update a GitHub replay/backtest/domain-lane issue.
 

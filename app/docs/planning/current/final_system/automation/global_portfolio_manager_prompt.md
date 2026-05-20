@@ -133,7 +133,7 @@ Run one Janus Portfolio Manager pass from C:\Users\lnoni\OneDrive\Documentos\Cod
 
 Carry-forward rule: a filled trade's next target/stop/rebuy review is only a candidate for the next full portfolio scan, not the whole next pass. The next run must still reevaluate all material positions, scan frontend/new/profile sources, watch winning-profile deltas, check cross-league basketball, review grid/scalp candidates, and select the highest-quality action after that full scan.
 
-Trade-rationale rule: every successful non-dry-run entry/add trade must create or update a linked Obsidian trade rationale note under `20_Trading_Knowledge/Trade Rationales/`, update `20_Trading_Knowledge/Trade Rationale Registry.md`, and include the note path in the final response/artifact. Every successful close/sell/redeem that reduces a recorded position must update that original note with close evidence, what worked, caveats, and what not to repeat.
+Trade-rationale rule: every successful non-dry-run portfolio-manager order placement must create or update a linked Obsidian trade rationale note under `20_Trading_Knowledge/Trade Rationales/`, update `20_Trading_Knowledge/Trade Rationale Registry.md`, and include the note path in the final response/artifact. This includes entry/add orders and resting target/exit/rebuy orders even when they do not immediately fill. Every successful close/sell/redeem or target fill that reduces a recorded position must update that original note with close evidence, what worked, caveats, and what not to repeat. A next target/stop/rebuy review is a candidate in the next full portfolio scan, not the whole next pass.
 ```
 
 ## Ad Hoc Prompt Pattern

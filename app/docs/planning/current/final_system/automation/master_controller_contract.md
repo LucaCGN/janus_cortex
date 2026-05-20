@@ -1,15 +1,17 @@
 ﻿# Janus Master Controller Automation Contract
 
 Status: draft control contract
-Cadence target: every 5 minutes after reconciliation; 10 minutes is acceptable during bootstrap hardening
-Mode: one stable controller automation, mutable repo and Obsidian instructions
-Current automation id: `janus-master-controller`
+Cadence target: every 15 minutes after the 2026-05-20 oversight split
+Mode: one stable development/live-readiness executor automation, with separate portfolio and dev-loop oversight heartbeats
+Current automation display name: `janus-master-dev` (legacy automation id may remain `janus-master-controller` in Codex config)
 
 ## Purpose
 
 The controller automation coordinates Janus work without depending on pinned-chat memory. It reads the repo docs, runtime handoffs, GitHub issue state, and Obsidian references, then decides what work should happen next.
 
 The automation itself should remain stable. Behavior changes should come from editing this contract and adjacent queue/spec files.
+
+The master controller is no longer the portfolio oversight lane. Portfolio strategy quality, trade-rationale lifecycle drift, and winning-profile/action quality are monitored by `oversight-portfolio`; the active global portfolio actions themselves belong to `janus-portfolio-manager`. Development-loop health, stale repeated comments, issue splitting/closure, dirty-worktree cleanup, and anti-stagnation checks belong to `oversight-devloop`. The master controller should still observe those lanes when they block Janus live readiness, but it should not spend repeated passes acting as their primary reviewer.
 
 ## Core Principle
 
@@ -124,6 +126,8 @@ After [#57](https://github.com/LucaCGN/janus_cortex/issues/57), [#58](https://gi
 | `no_op` | Nothing safe or useful to do | Write short status only if useful. |
 
 `no_op` is not valid while an open unblocked P0/P1 implementation issue has a bounded next slice and no higher-priority live/pregame/postgame route is active.
+
+In the five-lane automation topology, `global_portfolio_management` is normally executed by `janus-portfolio-manager`, not by `janus-master-dev`. The master controller may route or patch bounded portfolio tooling/docs under `#56/#59` when no covered NBA/WNBA readiness work preempts it, but it must not monopolize portfolio strategy review or duplicate the portfolio manager's active trading loop.
 
 ## Live-Game Rule
 
