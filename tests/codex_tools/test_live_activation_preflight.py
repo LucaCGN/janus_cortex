@@ -4,6 +4,8 @@ from dataclasses import asdict
 
 from codex_tools.janus import live_activation
 
+PORTFOLIO_ACCOUNT_ID = "56964015-5935-5035-bdab-b056c9277146"
+
 
 def _live_env() -> dict[str, str]:
     return {
@@ -20,7 +22,7 @@ def _live_env() -> dict[str, str]:
         "JANUS_LIVE_TEST_MIN_BUY_NOTIONAL_USD": "1",
         "JANUS_PORTFOLIO_MANAGER_ACTIVATION_MODE": "live",
         "JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED": "true",
-        "JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID": "account-1",
+        "JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID": PORTFOLIO_ACCOUNT_ID,
         "JANUS_PORTFOLIO_MANAGER_EXECUTION_APPROVED": "true",
         "JANUS_PORTFOLIO_MANAGER_REVIEWED_BY": "codex-global-portfolio-agent",
         "JANUS_PORTFOLIO_MANAGER_REASON": "approved live micro-position test",
@@ -106,7 +108,7 @@ def test_portfolio_manager_live_activation_requires_reviewed_runtime_switches() 
         live_activation.build_portfolio_manager_config(
             {
                 "JANUS_PORTFOLIO_MANAGER_ACTIVATION_MODE": "live",
-                "JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID": "account-1",
+                "JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID": PORTFOLIO_ACCOUNT_ID,
                 "JANUS_PORTFOLIO_MANAGER_MAX_INITIAL_NOTIONAL_USD": "5",
                 "JANUS_PORTFOLIO_MANAGER_TARGET_NOTIONAL_USD": "1",
                 "JANUS_PORTFOLIO_MANAGER_DIRECT_TRUTH_MAX_AGE_SECONDS": "30",
@@ -118,6 +120,31 @@ def test_portfolio_manager_live_activation_requires_reviewed_runtime_switches() 
     assert "JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED must be true for live mode" in result.blockers
     assert "JANUS_PORTFOLIO_MANAGER_EXECUTION_APPROVED must be true for live mode" in result.blockers
     assert "JANUS_PORTFOLIO_MANAGER_KILL_SWITCH_CLEAR must be true for live mode" in result.blockers
+
+
+def test_portfolio_manager_live_activation_rejects_wallet_account_id() -> None:
+    result = live_activation.evaluate_portfolio_manager_activation(
+        live_activation.build_portfolio_manager_config(
+            {
+                "JANUS_PORTFOLIO_MANAGER_ACTIVATION_MODE": "live",
+                "JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED": "true",
+                "JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID": "0x7d2F936Af73a54e06E1b78975503Ff1810F94fb4",
+                "JANUS_PORTFOLIO_MANAGER_EXECUTION_APPROVED": "true",
+                "JANUS_PORTFOLIO_MANAGER_REVIEWED_BY": "codex-global-portfolio-agent",
+                "JANUS_PORTFOLIO_MANAGER_REASON": "approved live micro-position test",
+                "JANUS_PORTFOLIO_MANAGER_KILL_SWITCH_CLEAR": "true",
+                "JANUS_PORTFOLIO_MANAGER_MAX_INITIAL_NOTIONAL_USD": "5",
+                "JANUS_PORTFOLIO_MANAGER_TARGET_NOTIONAL_USD": "1",
+                "JANUS_PORTFOLIO_MANAGER_DIRECT_TRUTH_MAX_AGE_SECONDS": "30",
+            }
+        )
+    )
+
+    assert result.ready is False
+    assert (
+        "JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID must be a Janus portfolio account UUID, not a wallet address"
+        in result.blockers
+    )
 
 
 def test_live_activation_preflight_payload_is_json_serializable() -> None:

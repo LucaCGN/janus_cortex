@@ -190,10 +190,12 @@ Current state: base `#53` tooling is preview-first for independent direct fallba
 Before expecting a non-dry-run portfolio action, the automation must run or inspect:
 
 ```powershell
-python codex_tool/live_activation_preflight.py --scope portfolio-manager --env-file .env --mode live --account-id <ACCOUNT_ID> --require-ready
+python codex_tool/live_activation_preflight.py --scope portfolio-manager --env-file .env --mode live --account-id <ACCOUNT_UUID_NOT_WALLET> --require-ready
 ```
 
-This preflight does not authorize an order by itself. It only proves the runtime switchboard is not the blocker: `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, execution approval/reviewer metadata are present, kill switch is clear, micro-risk caps remain in force, and the direct-truth freshness policy is strict enough for live mode. If this preflight is blocked, the manager must fix or route the exact blocker instead of repeating `management_plan_only_execution_gate_missing` without progress.
+This preflight does not authorize an order by itself. It only proves the runtime switchboard is not the blocker: `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, `JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID` is a Janus portfolio account UUID rather than a wallet address, execution approval/reviewer metadata are present, kill switch is clear, micro-risk caps remain in force, and the direct-truth freshness policy is strict enough for live mode. If this preflight is blocked, the manager must fix or route the exact blocker instead of repeating `management_plan_only_execution_gate_missing` without progress.
+
+When that live preflight is ready, dry-run is only the immediate same-pass smoke check for the selected order. A live-mode portfolio-manager pass must not stop after an accepted dry-run preview: it should immediately rerun `portfolio-manager-order` with `--execute --execution-approved --reviewed-by <persona> --reason <reason>` for the same fresh action, then perform the required direct-CLOB/order/ledger reconciliation. If the second call is not made, the pass must report the exact blocker as productivity drift.
 
 Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 

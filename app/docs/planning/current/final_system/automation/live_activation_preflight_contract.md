@@ -50,7 +50,7 @@ Live readiness requires:
 
 - `JANUS_PORTFOLIO_MANAGER_ACTIVATION_MODE=live`
 - `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`
-- `JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID=<account uuid>`
+- `JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID=<Janus portfolio account UUID, not a wallet/proxy address>`
 - `JANUS_PORTFOLIO_MANAGER_EXECUTION_APPROVED=true`
 - `JANUS_PORTFOLIO_MANAGER_REVIEWED_BY=<persona>`
 - `JANUS_PORTFOLIO_MANAGER_REASON=<reason>`
@@ -86,8 +86,10 @@ python codex_tool/live_activation_preflight.py --scope sports-live --env-file .e
 Portfolio-manager live readiness:
 
 ```powershell
-python codex_tool/live_activation_preflight.py --scope portfolio-manager --env-file .env --mode live --account-id <ACCOUNT_ID> --require-ready
+python codex_tool/live_activation_preflight.py --scope portfolio-manager --env-file .env --mode live --account-id <ACCOUNT_UUID_NOT_WALLET> --require-ready
 ```
+
+The portfolio-manager account id is the UUID in `portfolio.trading_accounts.account_id`. It is not the Polymarket wallet/proxy address. A wallet-shaped value such as `0x...` must fail preflight because the live order-management endpoint validates `account_id` as a UUID before it can fetch the account wallet and submit through the approved adapter.
 
 ## Controller Rule
 

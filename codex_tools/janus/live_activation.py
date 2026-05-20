@@ -7,6 +7,7 @@ from argparse import ArgumentParser, Namespace
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from codex_tools.janus.client import DEFAULT_API_ROOT, api_json, base_parser, exit_for_response
 from codex_tools.janus.worker import get_live_strategy_worker_status
@@ -278,6 +279,7 @@ def evaluate_portfolio_manager_activation(config: dict[str, Any]) -> ActivationS
 
     mode = str(config.get("mode") or "rehearsal")
     live_mode = mode == "live"
+    account_id = str(config.get("account_id") or "").strip()
     add(
         "order_management_runtime_enabled",
         bool(config.get("enabled")) if live_mode else True,
@@ -286,10 +288,17 @@ def evaluate_portfolio_manager_activation(config: dict[str, Any]) -> ActivationS
     )
     add(
         "account_id_present",
-        bool(config.get("account_id")),
+        bool(account_id),
         _redact(config.get("account_id")),
         blocker="JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID missing",
     )
+    if account_id:
+        add(
+            "account_id_uuid_shape",
+            _is_uuid_text(account_id),
+            _redact(account_id),
+            blocker="JANUS_PORTFOLIO_MANAGER_ACCOUNT_ID must be a Janus portfolio account UUID, not a wallet address",
+        )
     add(
         "execution_approved",
         bool(config.get("execution_approved")) if live_mode else True,
@@ -380,7 +389,7 @@ def build_sports_live_next_commands(config: dict[str, Any]) -> dict[str, str]:
 def build_portfolio_manager_next_commands(config: dict[str, Any]) -> dict[str, str]:
     reviewed_by = config.get("reviewed_by") or "<REVIEWER>"
     reason = config.get("reason") or "<REASON>"
-    account_id = config.get("account_id") or "<ACCOUNT_ID>"
+    account_id = config.get("account_id") or "<ACCOUNT_UUID_NOT_WALLET>"
     return {
         "dry_run_order": (
             "python -m codex_tools.polymarket portfolio-manager-order "
@@ -548,6 +557,14 @@ def _nested_bool(*payloads: dict[str, Any], key: str) -> bool:
         if key in payload:
             return bool(payload.get(key))
     return False
+
+
+def _is_uuid_text(value: str) -> bool:
+    try:
+        UUID(str(value))
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def _redact(value: Any) -> Any:
