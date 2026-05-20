@@ -181,6 +181,14 @@ If any gate is missing, the pass must fall back to management planning: update t
 
 Current state: base `#53` tooling is preview-first for independent direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter. `#59` proved dry-run readiness and runtime kill-switch clearance, and `codex_tools/polymarket portfolio-manager-order` now exposes the concrete Codex CLI call to that Janus path for one-shot limit orders. Operational non-dry-run activation still requires an explicitly reviewed runtime with `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, reviewer approval metadata, fresh direct truth, and post-confirmation direct-CLOB reconciliation. `#56` owns active portfolio-manager candidate/action planning, frontend/profile discovery enforcement, one-shot order routing from selected actions, and gated grid-service spawn planning. Independent direct fallback remains plan-only until separately approved.
 
+Before expecting a non-dry-run portfolio action, the automation must run or inspect:
+
+```powershell
+python codex_tool/live_activation_preflight.py --scope portfolio-manager --env-file .env --mode live --account-id <ACCOUNT_ID> --require-ready
+```
+
+This preflight does not authorize an order by itself. It only proves the runtime switchboard is not the blocker: `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, execution approval/reviewer metadata are present, kill switch is clear, micro-risk caps remain in force, and the direct-truth freshness policy is strict enough for live mode. If this preflight is blocked, the manager must fix or route the exact blocker instead of repeating `management_plan_only_execution_gate_missing` without progress.
+
 Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 
 ### Concrete `#54`/`#59` Proof Bundle

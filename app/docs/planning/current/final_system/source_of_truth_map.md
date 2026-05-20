@@ -42,14 +42,15 @@ The controller automation should read these anchor files on every material pass:
 11. `app/docs/planning/current/final_system/automation/backlog_layers.md`
 12. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
 13. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
-14. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
-15. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
-16. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-17. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-18. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
-19. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-20. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-21. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+14. `app/docs/planning/current/final_system/automation/live_activation_preflight_contract.md`
+15. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
+16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
+17. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+19. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
+20. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+21. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+22. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 

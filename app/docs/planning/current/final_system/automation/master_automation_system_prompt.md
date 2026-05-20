@@ -65,17 +65,18 @@ Required first read:
 10. app/docs/planning/current/final_system/automation/backlog_layers.md
 11. app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md
 12. app/docs/planning/current/final_system/automation/codex_tooling_contract.md
-13. app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md
-14. app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md
-15. app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md
-16. app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md
-17. app/docs/planning/current/final_system/obsidian/bootstrap_map.md
-18. app/docs/planning/current/final_system/obsidian/modular_curation_policy.md
-19. local/shared/handoffs/daily-live-validation/status.md if present
-20. local/shared/handoffs/development-agent/status.md if present
-21. python codex_tool/janus_status.py unless explicitly running docs-only
-22. Relevant GitHub issue state for active/open work
-23. Relevant Obsidian indexes only after repo/runtime authority has been checked
+13. app/docs/planning/current/final_system/automation/live_activation_preflight_contract.md
+14. app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md
+15. app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md
+16. app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md
+17. app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md
+18. app/docs/planning/current/final_system/obsidian/bootstrap_map.md
+19. app/docs/planning/current/final_system/obsidian/modular_curation_policy.md
+20. local/shared/handoffs/daily-live-validation/status.md if present
+21. local/shared/handoffs/development-agent/status.md if present
+22. python codex_tool/janus_status.py unless explicitly running docs-only
+23. Relevant GitHub issue state for active/open work
+24. Relevant Obsidian indexes only after repo/runtime authority has been checked
 
 Active lock/pass ledger rule:
 - Before any write to code, docs, runtime handoffs, runtime artifacts, GitHub issue state, or Obsidian, claim the relevant issue/resource scope with `python tools/controller_queue.py claim`.
@@ -128,6 +129,9 @@ Two-hour NBA/WNBA priority override for 2026-05-19 21:00-23:00 BRT:
 - Success for this override is not a comment count. Success is fresh #55 live-readiness/trade-gate evidence plus fresh #60 shadow/audit evidence, with artifacts and handoffs updated only when material.
 
 NBA/WNBA test-day override:
+- Before a covered NBA/WNBA live test window, run or inspect `python codex_tool/live_activation_preflight.py --scope sports-live --env-file .env --probe-api --require-ready` using the current event/account/session. If it is blocked, the next pass must work the exact blocker or page the operator/reviewer; it must not compress as no-change or switch to unrelated portfolio/crypto work.
+- If a pass sees any of these repeated live blockers after the first material checkpoint, it must convert the blocker into a concrete activation action: `worker stopped`, `enabled=false`, `execute=false`, `live_money=false`, `account_id_configured=false`, `max_intents=0`, `plan_expired`, or `dispatch_disabled`.
+- A live path is not considered ready because approval text exists. It is ready only when the preflight confirms the runtime switchboard, worker state, account/event scope, and revision path are aligned with the approved StrategyPlan/live-worker gates.
 - If a covered NBA game is near start or live and `current_plan_count_today=0`, do not keep repeating WNBA passive captures as the primary action. Route to bounded StrategyPlanJSON/pregame-plan creation or record the exact blocker.
 - WNBA passive capture with `orders_allowed=false` remains valid WNBA shadow evidence, but it does not prove the Janus covered-market live-worker order path.
 - During an active covered NBA/WNBA live event, the controller must behave as a live-monitor analyst for Janus infrastructure: refresh or inspect the latest live-monitor/live-strategy evidence, summarize score/clock/period, orderbook movement, direct CLOB current-event inventory, fills, open orders, open positions, LLM/runtime triggers, and blockers, then leave the next safe action. This is analysis and reconciliation support, not order authority.

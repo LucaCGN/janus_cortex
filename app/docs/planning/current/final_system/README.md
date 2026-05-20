@@ -32,6 +32,7 @@ It exists to avoid another large, fragile rewrite. The rule for this phase is:
 | `automation/backlog_layers.md` | Idea, planned, sprint, active queue, and evidence backlog layers. |
 | `automation/subagent_parallelism_contract.md` | Rules for Codex sub-agent use, locks, and integration. |
 | `automation/codex_tooling_contract.md` | Codex tool split between Janus API wrappers and independent Polymarket fallback tooling. |
+| `automation/live_activation_preflight_contract.md` | Sports-live and portfolio-manager rehearsal/live switchboard for pregame activation checks. |
 | `automation/global_portfolio_explorer_contract.md` | Legacy/read-only global portfolio discovery contract. |
 | `automation/global_portfolio_manager_contract.md` | Active portfolio-manager intent contract for existing-position management, trend scouting, and gated execution. |
 | `automation/docs_memory_health_check.md` | Checklist for repo, Obsidian, GitHub, and handoff health. |
