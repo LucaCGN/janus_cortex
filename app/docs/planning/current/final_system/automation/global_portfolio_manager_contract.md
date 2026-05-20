@@ -80,6 +80,8 @@ If execution gates block the selected action, the result is not ordinary `no_mat
 
 During temporary 5-minute testing cadence, the manager must also suppress unchanged repeated dry-runs. Pass the latest prior manager action plan or equivalent recent-action list to `codex_tools/polymarket plan-manager-action --recent-actions-json <path>` when available. If the same token/market/action/price/size evidence is unchanged, select the next safe existing-position action or new-event candidate instead of repeating the same dry-run. Repetition is allowed only when direct truth changed, the target/order filled or disappeared, or a reviewed `#59` non-dry-run window is open.
 
+A completed micro-position fill may create a follow-up target/stop/rebuy candidate for the next pass, but it must not become the whole next pass by default. The next pass must rerun the full portfolio loop: fresh direct account/order/trade truth, all material existing-position classifications, frontend catalog scouting, winning-profile delta watch, profile mimic/reject decisions, cross-league basketball scan, and grid/scalp review. The new fill's target candidate competes with all other existing-position, new-event, profile-mimic, and grid candidates. It should be selected only if it remains the best action after that full scan; otherwise it is carried forward as target policy state.
+
 ### Existing-Position Management
 
 For positions that already exist in direct CLOB/account truth, the portfolio manager should:
