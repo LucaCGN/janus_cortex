@@ -66,10 +66,13 @@ The authoritative roster is:
 
 `app/docs/planning/current/final_system/automation/cicd_automation_roster.md`
 
+All recurring Janus CI/CD lanes should be normal cron-style Codex app automations with explicit repo roots. Pinned-chat heartbeat automations are not valid for durable Janus automation governance because they can miss automation memory/JSON outputs after app or thread failures.
+
 Core lanes:
 
 | Automation | Cadence | Scope | Hard boundary |
 |---|---:|---|---|
+| `master-janus-manager` | 1 hour | Review last automation runs across all Janus lanes, detect prompt/memory/source-of-truth drift, and keep GitHub issues, repo docs, and Obsidian aligned as the durable CI/CD truth. | Automation governance only: no trading actions, no worker/service starts, no fresh-lock takeover. |
 | `oversight-portfolio` | 1 hour | Review `janus-portfolio-manager` behavior, strategy quality, trade-rationale lifecycle, winning-profile delta use, target/close/grid decisions, and #56/#59 evidence. | Oversight only: no order, cancel, replace, redeem, signing, broadcasting, or worker/service start. |
 | `oversight-devloop` | 30 minutes | Monitor the development loop, queue locks, dirty worktree, repeated issue comments, issue splitting/closure, backlog drift, and whether implementation slices are being claimed, validated, committed, pushed, and closed. | No trading actions; code/docs patches only when issue-backed and narrow. |
 | `janus-master-dev` | 15 minutes | Recurring Janus development/live-readiness executor for issue-backed work, especially #61/#62 sports readiness, #55 research support, #59 activation proof, and bounded #56 tooling/docs work when sports does not preempt it. | Not the global portfolio trader; no raw exchange bypass; Janus live actions only through approved Janus gates. |
@@ -87,7 +90,7 @@ Current-scope expansion before crypto/options:
 | `janus-performance-review` | [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | Daily/project-chief review of live results, missed signals, strategy responsiveness, pregame accuracy, issue progress, and next development priorities. | Read-only trading; may create/update issues, backlog, docs, and Obsidian summaries. |
 | `nba-pregame-research` | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | NBA pregame research as structured optional priors. | Research only; never a liveness dependency. |
 | `wnba-pregame-research` | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | WNBA pregame research as structured optional priors. | Research only; never a liveness dependency. |
-| issue lifecycle health pass | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Anti-stagnation scoring for repeated comments, stale blockers, unclosed work, and oversized issues. | Governance only; no trading. |
+| `master-janus-manager` and `oversight-devloop` | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Anti-stagnation scoring for repeated comments, stale blockers, unclosed work, oversized issues, missing automation memory, stale prompts, pinned-heartbeat regression, and source-of-truth drift. | Governance only; no trading. |
 | Obsidian backlog repair | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repair note-to-backlog promotion so curated notes become bounded issue candidates without becoming runtime truth. | Curation/governance only; no trading. |
 
 ## Runtime State Anchors
