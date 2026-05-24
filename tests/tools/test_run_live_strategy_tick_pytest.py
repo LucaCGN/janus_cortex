@@ -156,6 +156,8 @@ def test_wnba_slug_aliases_cover_current_live_window_teams_pytest() -> None:
     assert live_tick._wnba_slug_alias("LA") == "las"
     assert live_tick._wnba_slug_alias("Los Angeles Sparks") == "las"
     assert live_tick._wnba_slug_alias("SEA") == "sea"
+    assert live_tick._wnba_slug_alias("WAS") == "wsh"
+    assert live_tick._wnba_slug_alias("Washington Mystics") == "wsh"
     assert live_tick._wnba_slug_alias("DAL") == "dal"
 
 

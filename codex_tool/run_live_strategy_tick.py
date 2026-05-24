@@ -3652,6 +3652,10 @@ def _wnba_slug_alias(value: Any) -> str:
         "losangelessparks": "las",
         "sparks": "las",
         "la": "las",
+        "was": "wsh",
+        "washington": "wsh",
+        "washingtonmystics": "wsh",
+        "mystics": "wsh",
     }
     return aliases.get(normalized, aliases.get(compact, normalized))
 
