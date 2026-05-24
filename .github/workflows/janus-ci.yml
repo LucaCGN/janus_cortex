@@ -1,0 +1,58 @@
+name: Janus CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  python-ci:
+    name: Python tests and import checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JANUS_LOCAL_ROOT: ${{ github.workspace }}/local
+      JANUS_TEST_MODE: "1"
+      JANUS_LIVE_TEST_ENABLED: "false"
+      JANUS_LIVE_STRATEGY_WORKER_ENABLED: "false"
+      JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED: "false"
+      PYTHONWARNINGS: "default"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -c constraints.txt
+
+      - name: Compile core packages
+        run: |
+          python -m compileall app codex_tool codex_tools tools
+
+      - name: Run focused runtime tests
+        run: |
+          python -m pytest -q \
+            tests/app/modules/agentic/test_strategy_plan_contracts_pytest.py \
+            tests/app/modules/agentic/test_live_strategy_worker_pytest.py \
+            tests/tools/test_run_live_strategy_tick_pytest.py \
+            tests/codex_tool/test_run_live_strategy_tick_pytest.py \
+            tests/tools/test_run_execution_replay_artifact_pytest.py
+
+      - name: Run focused API and portfolio tests
+        run: |
+          python -m pytest -q \
+            tests/app/api/test_ops_router_pytest.py \
+            tests/app/api/test_portfolio_router_pytest.py \
+            tests/app/modules/agentic/test_global_portfolio_pytest.py
+
+      - name: Validate git whitespace
+        run: git diff --check

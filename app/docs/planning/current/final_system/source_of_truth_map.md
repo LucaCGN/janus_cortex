@@ -33,49 +33,56 @@ The controller automation should read these anchor files on every material pass:
 2. `app/docs/planning/current/final_system/source_of_truth_map.md`
 3. `app/docs/planning/current/final_system/global_ego_and_purpose.md`
 4. `app/docs/planning/current/final_system/market_scope_registry.md`
-5. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
-6. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
-7. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
-8. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
-9. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-10. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-11. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-12. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-13. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
-14. `app/docs/planning/current/final_system/automation/live_activation_preflight_contract.md`
-15. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
-16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
-17. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-19. `app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md`
-20. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
-21. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
-22. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-23. `app/docs/planning/current/final_system/backlog/live_runtime_scope_map_2026-05-24.md`
-24. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-25. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+5. `app/docs/planning/current/final_system/automation/cicd_automation_roster.md`
+6. `app/docs/planning/current/final_system/automation/master_controller_contract.md`
+7. `app/docs/planning/current/final_system/automation/master_automation_system_prompt.md`
+8. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
+9. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
+10. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
+11. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+12. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+13. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+14. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
+15. `app/docs/planning/current/final_system/automation/live_activation_preflight_contract.md`
+16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
+17. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
+18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+19. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+20. `app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md`
+21. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
+22. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
+23. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+24. `app/docs/planning/current/final_system/backlog/live_runtime_scope_map_2026-05-24.md`
+25. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+26. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
 ## Current Automation Topology
 
-As of 2026-05-20, the Codex app automation layer is split into five lanes so portfolio trading oversight does not compete with the development/issue loop:
+As of 2026-05-24, the Codex app automation layer is split into CI/CD lanes so portfolio trading oversight, Janus covered-market live readiness, research priors, postgame review, issue governance, and Obsidian curation do not compete for the same prompt.
+
+The authoritative roster is:
+
+`app/docs/planning/current/final_system/automation/cicd_automation_roster.md`
+
+Core lanes:
 
 | Automation | Cadence | Scope | Hard boundary |
 |---|---:|---|---|
 | `oversight-portfolio` | 1 hour | Review `janus-portfolio-manager` behavior, strategy quality, trade-rationale lifecycle, winning-profile delta use, target/close/grid decisions, and #56/#59 evidence. | Oversight only: no order, cancel, replace, redeem, signing, broadcasting, or worker/service start. |
 | `oversight-devloop` | 30 minutes | Monitor the development loop, queue locks, dirty worktree, repeated issue comments, issue splitting/closure, backlog drift, and whether implementation slices are being claimed, validated, committed, pushed, and closed. | No trading actions; code/docs patches only when issue-backed and narrow. |
 | `janus-master-dev` | 15 minutes | Recurring Janus development/live-readiness executor for issue-backed work, especially #61/#62 sports readiness, #55 research support, #59 activation proof, and bounded #56 tooling/docs work when sports does not preempt it. | Not the global portfolio trader; no raw exchange bypass; Janus live actions only through approved Janus gates. |
-| `janus-portfolio-manager` | 30 minutes | Active Codex global portfolio manager for existing-position actions, new micro-position scouting, Polymarket frontend/profile discovery, one-shot order routing, and grid/scalping candidates. | May trade only through approved portfolio-manager order paths and live gates; no Janus NBA/WNBA covered-market authority. |
+| `janus-portfolio-manager` | 6 hours deep pass; temporary 30 minutes only during active portfolio testing | Active Codex global portfolio manager for existing-position actions, new micro-position scouting, Polymarket frontend/profile discovery, one-shot order routing, and grid/scalping candidates. | May trade only through approved portfolio-manager order paths and live gates; no Janus NBA/WNBA covered-market authority. |
 | `janus-obsidian-builder` | 6 hours | Curated Obsidian memory, indexes, profile/trade rationale navigation, source links, and note hygiene. | No execution, no automation schedule edits, no repo contract rewrites unless explicitly issue-backed. |
 
-Historical automation ids in `C:\Users\lnoni\.codex\automations` may remain for continuity, but the displayed names/prompts should match this topology. If a crash or time-machine restore reverts prompts, restore these five lanes before running portfolio or development loops again.
+Additional active CI/CD lanes are `janus-performance-review`, `janus-postgame-signal-review`, `nba-pregame-research`, `wnba-pregame-research`, and `obsidian-backlog-ingestor`.
 
-Observed config drift 2026-05-24: the repo docs define `oversight-portfolio`, but the local automation directory inspection showed `janus-loop-oversight-console`, `janus-master-controller`, `janus-master-controller-2` without `automation.toml`, `janus-obsidian-builder`, `janus-portfolio-manager`, and `oversight-devloop`. Before relying on portfolio oversight, verify that the actual Codex automation config exists and matches the portfolio-only prompt. This drift does not change Janus runtime authority; it is an automation setup task.
+Historical automation ids in `C:\Users\lnoni\.codex\automations` may remain for continuity, but the displayed names/prompts should match the roster. If a crash or time-machine restore reverts prompts, restore `cicd_automation_roster.md` before running portfolio or development loops again.
 
-Planned current-scope expansion before crypto/options:
+Current-scope expansion before crypto/options:
 
-| Planned automation | Issue | Scope | Authority |
+| Automation/governance lane | Issue | Scope | Authority |
 |---|---|---|---|
 | `janus-performance-review` | [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | Daily/project-chief review of live results, missed signals, strategy responsiveness, pregame accuracy, issue progress, and next development priorities. | Read-only trading; may create/update issues, backlog, docs, and Obsidian summaries. |
 | `nba-pregame-research` | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | NBA pregame research as structured optional priors. | Research only; never a liveness dependency. |

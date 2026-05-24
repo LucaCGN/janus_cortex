@@ -1,0 +1,61 @@
+name: Janus Nightly Replay
+
+on:
+  schedule:
+    - cron: "35 8 * * *"
+  workflow_dispatch:
+
+jobs:
+  replay-smoke:
+    name: Replay and postgame smoke checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      JANUS_LOCAL_ROOT: ${{ github.workspace }}/local
+      JANUS_TEST_MODE: "1"
+      JANUS_LIVE_TEST_ENABLED: "false"
+      JANUS_LIVE_STRATEGY_WORKER_ENABLED: "false"
+      JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED: "false"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -c constraints.txt
+
+      - name: Compile replay surfaces
+        run: |
+          python -m compileall \
+            codex_tool/run_postgame_review.py \
+            codex_tool/build_replay_from_watch_session.py \
+            tools/run_execution_replay_artifact.py \
+            tools/postseason_replay_analysis.py \
+            tools/run_wnba_analysis_bundle.py
+
+      - name: Run replay-focused tests
+        run: |
+          python -m pytest -q \
+            tests/tools/test_run_execution_replay_artifact_pytest.py \
+            tests/app/modules/nba/execution/test_shadow_pytest.py \
+            tests/app/data/pipelines/daily/nba/test_analysis_replay_pytest.py \
+            tests/app/data/pipelines/daily/wnba/test_analysis_readiness_pytest.py \
+            tests/app/data/pipelines/daily/wnba/test_development_loop_pytest.py
+
+      - name: Upload local replay artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: janus-nightly-replay-local
+          path: |
+            local/shared/artifacts
+            local/shared/reports
+          if-no-files-found: ignore
