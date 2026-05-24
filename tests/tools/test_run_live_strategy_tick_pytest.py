@@ -795,6 +795,108 @@ def test_event_tick_can_submit_reviewed_candidate_strategy_plan_pytest(monkeypat
     assert result["ok"] is True
 
 
+def test_event_tick_submits_monitor_plan_when_current_plan_missing_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/events/nba-sas-okc-2026-05-24/agent-context":
+            return {"ok": True, "current_strategy_plan": None, "direct_open_order_count": 0, "direct_open_position_count": 0}
+        if path == "/v1/events/nba-sas-okc-2026-05-24/strategy-plan":
+            return {"ok": True, "status": "stored", "strategy_count": len(payload["active_strategies"])}
+        if path == "/v1/nba/games":
+            return {"ok": True, "items": []}
+        if path == "/v1/portfolio/orders":
+            return {"ok": True, "items": []}
+        if path == "/v1/events/nba-sas-okc-2026-05-24/strategy-plan/evaluate":
+            assert payload["market_state"]["sampled_outcomes"] == []
+            assert payload["market_state"]["game"]["reason"] == "game_not_found"
+            return {
+                "ok": True,
+                "intent_count": 0,
+                "blocked_count": 1,
+                "sleeve_states": [{"status": "blocked", "reason": "monitor_only_fallback"}],
+            }
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._run_event_tick(
+        api_root="http://test",
+        session_date="2026-05-24",
+        event_id="nba-sas-okc-2026-05-24",
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+        max_intents=2,
+        orderbook_sample_count=1,
+        orderbook_sample_interval_sec=0.0,
+        integrity_ready=True,
+        integrity_snapshot={"direct_clob": {"open_orders": {"orders": []}, "open_positions": {"positions": []}}},
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        share_precision=3,
+        auto_protect_manual_positions=True,
+        manual_target_delta_cents=5.0,
+        submit_candidate_strategy_plan=True,
+    )
+
+    plan_submit_index = next(i for i, call in enumerate(calls) if call["path"] == "/v1/events/nba-sas-okc-2026-05-24/strategy-plan")
+    evaluate_index = next(i for i, call in enumerate(calls) if call["path"] == "/v1/events/nba-sas-okc-2026-05-24/strategy-plan/evaluate")
+    submitted_plan = calls[plan_submit_index]["payload"]
+    StrategyPlan.model_validate(submitted_plan)
+    assert plan_submit_index < evaluate_index
+    assert submitted_plan["plan_owner"] == "system"
+    assert submitted_plan["context_summary"]["degraded_missing_pregame_plan"] is True
+    assert submitted_plan["active_strategies"][0]["family"] == "degraded_missing_plan_live_monitor"
+    assert submitted_plan["active_strategies"][0]["max_positions"] == 0
+    assert submitted_plan["active_strategies"][0]["entry_rules"]["entry_disabled"] is True
+    assert submitted_plan["active_strategies"][0]["shadow_flags"]["must_not_place_orders"] is True
+    assert result["operator_reaction"]["missing_current_strategy_plan_fallback"] is True
+    assert result["operator_reaction"]["candidate_strategy_plan_submission"]["submitted"] is True
+    assert result["degraded_missing_plan_fallback"]["candidate_strategy_plan_submission"]["submitted"] is True
+    assert result["ok"] is True
+
+
+def test_event_tick_missing_plan_still_blocks_without_candidate_submit_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/events/nba-sas-okc-2026-05-24/agent-context":
+            return {"ok": True, "current_strategy_plan": None, "direct_open_order_count": 0, "direct_open_position_count": 0}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._run_event_tick(
+        api_root="http://test",
+        session_date="2026-05-24",
+        event_id="nba-sas-okc-2026-05-24",
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+        max_intents=2,
+        orderbook_sample_count=1,
+        orderbook_sample_interval_sec=0.0,
+        integrity_ready=True,
+        integrity_snapshot={},
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        share_precision=3,
+        auto_protect_manual_positions=True,
+        manual_target_delta_cents=5.0,
+        submit_candidate_strategy_plan=False,
+    )
+
+    assert result["ok"] is False
+    assert result["reason"] == "missing_current_strategy_plan"
+    assert result["degraded_missing_plan_fallback"]["candidate_strategy_plan_submission"]["reason"] == "review_flag_required"
+    assert [call["path"] for call in calls] == ["/v1/events/nba-sas-okc-2026-05-24/agent-context"]
+
+
 def test_auto_protect_direct_order_reacts_to_unknown_open_order_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 

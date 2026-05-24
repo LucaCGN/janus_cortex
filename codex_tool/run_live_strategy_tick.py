@@ -11,7 +11,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from app.modules.agentic.contracts import LLMRuntimeTrace
+from app.modules.agentic.contracts import ActiveStrategy, LLMRuntimeTrace, StrategyPlan
 from app.modules.agentic.llm_runtime import (
     build_current_event_inventory_proof,
     build_llm_runtime_trace,
@@ -254,8 +254,36 @@ def _run_event_tick(
         query={"session_date": session_date},
     )
     plan = context.get("current_strategy_plan") or {}
+    missing_plan_fallback: dict[str, Any] | None = None
     if not plan:
-        return {"ok": False, "event_id": event_id, "reason": "missing_current_strategy_plan", "context": context}
+        candidate_plan = _build_degraded_missing_plan_candidate(
+            event_id=event_id,
+            session_date=session_date,
+            source=source,
+            context=context,
+        )
+        candidate_submission = _submit_strategy_plan_payload(
+            api_root=api_root,
+            event_id=event_id,
+            candidate=candidate_plan,
+            enabled=submit_candidate_strategy_plan,
+            missing_reason="missing_current_strategy_plan",
+        )
+        missing_plan_fallback = {
+            "candidate_strategy_plan": candidate_plan,
+            "candidate_strategy_plan_submission": candidate_submission,
+        }
+        if not candidate_submission.get("submitted"):
+            return {
+                "ok": False,
+                "event_id": event_id,
+                "reason": "missing_current_strategy_plan",
+                "context": context,
+                "degraded_missing_plan_fallback": missing_plan_fallback,
+            }
+        plan = candidate_plan
+        context["current_strategy_plan"] = plan
+        context["degraded_missing_pregame_plan"] = True
 
     game = _resolve_game(api_root, event_id, session_date)
     live_state: dict[str, Any] = {}
@@ -550,12 +578,19 @@ def _run_event_tick(
     )
     operator_reaction["known_order_lookup"] = known_order_ids
     operator_reaction["direct_trade_persistence"] = direct_trade_persistence
-    operator_reaction["candidate_strategy_plan_submission"] = _submit_candidate_strategy_plan(
-        api_root=api_root,
-        event_id=event_id,
-        operator_reaction=operator_reaction,
-        enabled=submit_candidate_strategy_plan,
-    )
+    if missing_plan_fallback is not None:
+        operator_reaction["missing_current_strategy_plan_fallback"] = True
+        operator_reaction["candidate_strategy_plan"] = missing_plan_fallback["candidate_strategy_plan"]
+        operator_reaction["candidate_strategy_plan_submission"] = missing_plan_fallback[
+            "candidate_strategy_plan_submission"
+        ]
+    else:
+        operator_reaction["candidate_strategy_plan_submission"] = _submit_candidate_strategy_plan(
+            api_root=api_root,
+            event_id=event_id,
+            operator_reaction=operator_reaction,
+            enabled=submit_candidate_strategy_plan,
+        )
     llm_portfolio_state = dict(portfolio_state)
     if operator_reaction.get("submitted_orders"):
         llm_portfolio_state["submitted_orders"] = operator_reaction["submitted_orders"]
@@ -685,7 +720,101 @@ def _run_event_tick(
         "llm_runtime_status": market_state["llm_runtime_status"],
         "orderbook_results": _summarize_orderbooks(orderbook_results),
         "watch_persistence": watch_persistence,
+        "degraded_missing_plan_fallback": missing_plan_fallback,
     }
+
+
+def _safe_strategy_fragment(value: str) -> str:
+    fragment = "".join(ch.lower() if ch.isalnum() else "-" for ch in value).strip("-")
+    while "--" in fragment:
+        fragment = fragment.replace("--", "-")
+    return fragment[:64] or "event"
+
+
+def _fallback_market_id_from_context(context: dict[str, Any], event_id: str) -> str:
+    for key in ("market_id", "primary_market_id", "condition_id"):
+        value = str(context.get(key) or "").strip()
+        if value:
+            return value
+    event = context.get("event")
+    if isinstance(event, dict):
+        for key in ("market_id", "primary_market_id", "condition_id"):
+            value = str(event.get(key) or "").strip()
+            if value:
+                return value
+    return f"{event_id}:degraded-live-monitor"
+
+
+def _build_degraded_missing_plan_candidate(
+    *,
+    event_id: str,
+    session_date: str,
+    source: str,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    event_fragment = _safe_strategy_fragment(event_id)
+    plan = StrategyPlan(
+        event_id=event_id,
+        market_id=_fallback_market_id_from_context(context, event_id),
+        plan_owner="system",
+        context_summary={
+            "session_date": session_date,
+            "source": source,
+            "runtime_fallback": "missing_current_strategy_plan",
+            "degraded_missing_pregame_plan": True,
+            "purpose": (
+                "keep Janus live evidence collection and runtime gates active when pregame automation "
+                "did not publish a current StrategyPlan"
+            ),
+            "direct_open_order_count": context.get("direct_open_order_count"),
+            "direct_open_position_count": context.get("direct_open_position_count"),
+        },
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id=f"{event_fragment}-degraded-monitor",
+                family="degraded_missing_plan_live_monitor",
+                side="event",
+                sleeve_id=f"{event_fragment}-monitor",
+                sleeve_group="runtime-fallback",
+                sleeve_role="monitor-only",
+                budget_usd=0.0,
+                max_positions=0,
+                entry_rules={
+                    "entry_disabled": True,
+                    "reason": "missing_current_strategy_plan",
+                    "requires_event_specific_strategy_plan": True,
+                },
+                exit_rules={"live_execution_disabled": True},
+                stop_rules={"live_execution_disabled": True},
+                revision_triggers=[
+                    {
+                        "trigger_type": "routine_live_review",
+                        "reason": "replace degraded monitor plan with executable event-specific StrategyPlan",
+                    }
+                ],
+                shadow_flags={
+                    "shadow_only": True,
+                    "degraded_missing_pregame_plan": True,
+                    "must_not_place_orders": True,
+                },
+            )
+        ],
+        trigger_conditions=[
+            {
+                "trigger_type": "routine_live_review",
+                "reason": "current StrategyPlan was missing at live tick start",
+                "required_follow_up": "submit event-specific executable plan before live orders",
+            }
+        ],
+        explainability={
+            "fallback_contract": "missing_strategy_plan_does_not_disable_live_monitor",
+            "why_monitor_only": (
+                "The runtime can gather score/CLOB/account evidence without pregame research, but cannot invent "
+                "token-specific executable orders without a reviewed event plan."
+            ),
+        },
+    )
+    return plan.model_dump(mode="json")
 
 
 def _sleeve_runtime_status(evaluation: dict[str, Any] | None) -> dict[str, Any]:
@@ -745,11 +874,28 @@ def _submit_candidate_strategy_plan(
     operator_reaction: dict[str, Any],
     enabled: bool,
 ) -> dict[str, Any]:
+    candidate = operator_reaction.get("candidate_strategy_plan")
+    return _submit_strategy_plan_payload(
+        api_root=api_root,
+        event_id=event_id,
+        candidate=candidate,
+        enabled=enabled,
+        missing_reason="candidate_strategy_plan_missing",
+    )
+
+
+def _submit_strategy_plan_payload(
+    *,
+    api_root: str,
+    event_id: str,
+    candidate: dict[str, Any] | None,
+    enabled: bool,
+    missing_reason: str,
+) -> dict[str, Any]:
     if not enabled:
         return {"enabled": False, "submitted": False, "reason": "review_flag_required"}
-    candidate = operator_reaction.get("candidate_strategy_plan")
     if not isinstance(candidate, dict):
-        return {"enabled": True, "submitted": False, "reason": "candidate_strategy_plan_missing"}
+        return {"enabled": True, "submitted": False, "reason": missing_reason}
     response = api_json(api_root, "POST", f"/v1/events/{event_id}/strategy-plan", candidate)
     ok = bool(response.get("ok", True))
     return {

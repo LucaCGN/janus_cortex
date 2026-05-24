@@ -98,6 +98,12 @@ If cash or portfolio value changes, the cap changes mechanically. The absolute c
 | Scoreboard stale but CLOB live | No new order unless event config explicitly permits CLOB-only mode and current inventory/risk gates pass. |
 | CLOB unavailable | Live execution fails closed even if scoreboard or LLM signals are strong. |
 
+### Implemented Fallback Slice
+
+As of 2026-05-24, `codex_tool/run_live_strategy_tick.py` implements the first `#68` degraded-mode slice: when `current_strategy_plan` is missing and the caller passes `--submit-candidate-strategy-plan`, the tick stores a system-owned monitor-only fallback StrategyPlan and continues dry live evidence collection instead of stopping at `missing_current_strategy_plan`.
+
+The fallback is intentionally non-executable: `shadow_only=true`, `entry_disabled=true`, `must_not_place_orders=true`, `budget_usd=0`, and `max_positions=0`. It removes the liveness dependency on pregame Codex automation, but live orders still require an event-specific executable StrategyPlan with direct market/outcome/token mapping, event-scoped inventory proof, risk budget, target/stop/rebuy rules, and normal Janus execute/live-worker gates.
+
 ## Issue Routing
 
 `#63` owns the architecture and implementation route for Janus core live trading.
