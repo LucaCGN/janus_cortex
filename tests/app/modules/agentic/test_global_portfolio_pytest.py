@@ -7,13 +7,18 @@ import pytest
 
 from app.modules.agentic.global_portfolio import (
     GlobalPortfolioWatchlistEntry,
+    build_20_slot_board,
+    build_deep_pass_plan,
     build_execution_gate_snapshot,
+    build_grid_eligibility_review,
     build_manager_action_plan,
+    build_top_holder_scan,
     build_watchlist_artifact,
     load_watchlist_source,
     render_execution_gate_report,
     render_manager_action_plan,
     render_watchlist_report,
+    score_portfolio_candidates,
 )
 from tools.build_global_portfolio_watchlist import build_from_source, write_outputs
 
@@ -536,3 +541,362 @@ def test_manager_action_plan_is_ready_only_after_gate_snapshot_succeeds_pytest()
     report = render_manager_action_plan(plan)
     assert "ready_for_approved_order_management_call" in report
     assert "A separate approved order-management call is still required" in report
+
+
+def _twenty_slot_direct_truth_fixture() -> dict[str, object]:
+    positions = [
+        {
+            "market_title": f"Global market {index}",
+            "market_slug": f"global-market-{index}",
+            "outcome": "Yes",
+            "token_id": f"token-global-{index}",
+            "size": "5",
+            "current_price": "0.40",
+            "current_value_usd": "2.00",
+            "category": "geopolitics" if index < 4 else "tech",
+            "source_actor": "operator",
+        }
+        for index in range(1, 8)
+    ]
+    positions.append(
+        {
+            "market_title": "Will the Oklahoma City Thunder win the 2026 NBA Finals?",
+            "market_slug": "nba-finals-2026-okc",
+            "outcome": "Yes",
+            "token_id": "token-covered-nba",
+            "size": "2",
+            "current_price": "0.50",
+            "current_value_usd": "1.00",
+            "category": "nba",
+        }
+    )
+    return {
+        "account_id": "account-1",
+        "equity_usd": "113.76",
+        "cash_usd": "99.66",
+        "open_positions": positions,
+        "open_orders": [
+            {
+                "market_title": "Unfilled target sell order should not count",
+                "market_slug": "sell-target-market",
+                "token_id": "token-sell-target",
+                "side": "sell",
+                "status": "open",
+                "limit_price": "0.60",
+                "size": "5",
+            }
+        ],
+    }
+
+
+def test_twenty_slot_board_counts_global_positions_and_excludes_covered_basketball_pytest() -> None:
+    board = build_20_slot_board(_twenty_slot_direct_truth_fixture(), generated_at_utc="2026-05-21T12:00:00Z")
+
+    assert board.schema_version == "global_portfolio_20_slot_board_v1"
+    assert board.managed_slot_count == 7
+    assert board.empty_slot_count == 13
+    assert board.filled_position_slot_count == 7
+    assert board.approved_resting_entry_slot_count == 0
+    assert board.covered_market_ignored_count == 1
+    assert board.budget.effective_sleeve_cap_usd == 50.0
+    assert board.budget.codex_sleeve_usage_usd == 14.0
+    assert all(slot.risk_cap_usd <= 5.0 for slot in board.slots)
+    assert board.side_effects["orders_prepared"] is False
+
+
+def test_twenty_slot_board_counts_approved_resting_entry_orders_pytest() -> None:
+    direct_truth = {
+        "equity_usd": "20",
+        "open_positions": [],
+        "open_orders": [
+            {
+                "market_title": "Approved entry market",
+                "market_slug": "approved-entry-market",
+                "outcome": "Yes",
+                "token_id": "token-entry",
+                "side": "buy",
+                "status": "open",
+                "limit_price": "0.20",
+                "size": "5",
+                "approved_resting_entry": True,
+            }
+        ],
+    }
+
+    board = build_20_slot_board(direct_truth)
+
+    assert board.managed_slot_count == 1
+    assert board.empty_slot_count == 19
+    assert board.approved_resting_entry_slot_count == 1
+    assert board.slots[0].slot_status == "pending_entry"
+    assert board.budget.effective_sleeve_cap_usd == 10.0
+
+
+def test_twenty_slot_board_counts_local_approved_entry_orders_when_direct_rows_lack_metadata_pytest() -> None:
+    direct_truth = {
+        "equity_usd": "100",
+        "open_positions": [],
+        "open_orders": [
+            {
+                "market_title": "Direct CLOB target without local slot metadata",
+                "market_slug": "direct-target",
+                "token_id": "token-target",
+                "side": "sell",
+                "status": "open",
+                "limit_price": "0.60",
+                "size": "5",
+            }
+        ],
+        "local_open_orders": [
+            {
+                "market_title": "Approved local entry market",
+                "market_slug": "approved-local-entry",
+                "token_id": "token-entry-local",
+                "side": "buy",
+                "status": "submitted",
+                "limit_price": "0.57",
+                "size": "5",
+                "metadata_json": {
+                    "approved_resting_entry": True,
+                    "counts_as_managed_slot": True,
+                    "slot_role": "portfolio_manager_20_slot_entry",
+                },
+            }
+        ],
+    }
+
+    board = build_20_slot_board(direct_truth)
+
+    assert board.managed_slot_count == 1
+    assert board.empty_slot_count == 19
+    assert board.approved_resting_entry_slot_count == 1
+    assert board.slots[0].market_slug == "approved-local-entry"
+
+
+def test_candidate_scoring_rejects_known_blockers_and_promotes_mapped_liquid_candidate_pytest() -> None:
+    board = build_20_slot_board(_twenty_slot_direct_truth_fixture())
+    queue = score_portfolio_candidates(
+        [
+            {
+                "source": "profile_active_position",
+                "market_title": "Profile only market",
+                "market_slug": "profile-only-market",
+                "profile_signal": {"profile": "winner"},
+                "category": "culture",
+            },
+            {
+                "source": "frontend",
+                "market_title": "Mapped liquid geopolitics market",
+                "market_slug": "mapped-liquid-market",
+                "token_id": "token-candidate",
+                "janus_catalog_mapped": True,
+                "direct_orderbook": {"spread_cents": 1, "depth_usd": 25},
+                "proposed_notional_usd": "2.50",
+                "category": "macro",
+                "confidence": "medium",
+                "horizon": "medium",
+            },
+            {
+                "source": "frontend",
+                "market_title": "Illiquid market",
+                "market_slug": "illiquid-market",
+                "token_id": "token-illiquid",
+                "janus_catalog_mapped": True,
+                "direct_orderbook": {"spread_cents": 5, "depth_usd": 2},
+                "category": "finance",
+            },
+            {
+                "source": "frontend",
+                "market_title": "Will the Indiana Fever win tonight?",
+                "market_slug": "wnba-fever-tonight",
+                "token_id": "token-covered",
+                "janus_catalog_mapped": True,
+                "direct_orderbook": {"spread_cents": 1, "depth_usd": 30},
+                "category": "wnba",
+            },
+        ],
+        board,
+    )
+
+    by_slug = {candidate.market_slug: candidate for candidate in queue.candidates}
+    assert queue.ready_count == 1
+    assert by_slug["mapped-liquid-market"].status == "ready_for_order_proof"
+    assert "profile_only_without_direct_edge" in by_slug["profile-only-market"].rejection_reasons
+    assert "janus_catalog_token_mapping_missing" in by_slug["profile-only-market"].rejection_reasons
+    assert "illiquid_or_wide_spread" in by_slug["illiquid-market"].rejection_reasons
+    assert "covered_market_excluded" in by_slug["wnba-fever-tonight"].rejection_reasons
+
+
+def test_candidate_scoring_marks_scale_limited_micro_trade_without_blocking_validation_pytest() -> None:
+    board = build_20_slot_board(_twenty_slot_direct_truth_fixture())
+    queue = score_portfolio_candidates(
+        [
+            {
+                "source": "frontend",
+                "market_title": "Micro viable but not scalable market",
+                "market_slug": "micro-not-scalable",
+                "token_id": "token-micro-scale-limited",
+                "janus_catalog_mapped": True,
+                "strategy_style": "quick_trade",
+                "direct_orderbook": {
+                    "spread_cents": "1",
+                    "depth_usd": "40",
+                    "liquidity_capacity_usd": "40",
+                    "price_impact_1000_usd_cents": "5",
+                },
+                "proposed_price": "0.20",
+                "proposed_notional_usd": "5",
+                "expected_return_cents": "10",
+                "expected_hold_days": 7,
+                "category": "finance",
+            }
+        ],
+        board,
+    )
+
+    candidate = queue.candidates[0]
+    assert candidate.status == "ready_for_order_proof"
+    assert candidate.sizing_tier == "micro_only"
+    assert "scale_limited_quick_trade" in candidate.risk_return_flags
+    assert candidate.slippage_to_edge_ratio == 0.05
+    assert candidate.sizing_guidance["current_notional_is_scale_proof"] is False
+
+
+def test_candidate_scoring_rejects_quick_trade_when_slippage_consumes_edge_pytest() -> None:
+    board = build_20_slot_board(_twenty_slot_direct_truth_fixture())
+    queue = score_portfolio_candidates(
+        [
+            {
+                "source": "frontend",
+                "market_title": "Too tight quick edge",
+                "market_slug": "too-tight-quick-edge",
+                "token_id": "token-tight-edge",
+                "janus_catalog_mapped": True,
+                "strategy_style": "quick_trade",
+                "direct_orderbook": {"spread_cents": "1", "depth_usd": "100", "liquidity_capacity_usd": "500"},
+                "estimated_entry_slippage_cents": "1.2",
+                "proposed_price": "0.30",
+                "proposed_notional_usd": "2.50",
+                "expected_return_cents": "2",
+                "expected_hold_days": 3,
+                "category": "finance",
+            }
+        ],
+        board,
+    )
+
+    candidate = queue.candidates[0]
+    assert candidate.status == "rejected"
+    assert "slippage_consumes_expected_edge" in candidate.rejection_reasons
+    assert "quick_trade_edge_too_small_after_slippage" in candidate.rejection_reasons
+
+
+def test_candidate_scoring_rewards_payoff_velocity_over_slow_capital_drag_pytest() -> None:
+    board = build_20_slot_board(_twenty_slot_direct_truth_fixture())
+    queue = score_portfolio_candidates(
+        [
+            {
+                "source": "frontend",
+                "market_title": "Slow long thesis",
+                "market_slug": "slow-long-thesis",
+                "token_id": "token-slow-long",
+                "janus_catalog_mapped": True,
+                "strategy_style": "long_thesis",
+                "direct_orderbook": {"spread_cents": "0.5", "depth_usd": "500", "liquidity_capacity_usd": "500"},
+                "proposed_price": "0.20",
+                "proposed_notional_usd": "2.50",
+                "expected_return_cents": "10",
+                "expected_hold_days": 180,
+                "category": "culture",
+            },
+            {
+                "source": "frontend",
+                "market_title": "Fast asymmetric swing",
+                "market_slug": "fast-asymmetric-swing",
+                "token_id": "token-fast-swing",
+                "janus_catalog_mapped": True,
+                "strategy_style": "quick_trade",
+                "direct_orderbook": {"spread_cents": "0.5", "depth_usd": "500", "liquidity_capacity_usd": "500"},
+                "proposed_price": "0.20",
+                "proposed_notional_usd": "2.50",
+                "expected_return_cents": "4",
+                "expected_hold_days": 7,
+                "category": "economy",
+            },
+        ],
+        board,
+    )
+
+    assert queue.candidates[0].market_slug == "fast-asymmetric-swing"
+    assert queue.candidates[0].payoff_velocity_score > queue.candidates[1].payoff_velocity_score
+
+
+def test_top_holder_scan_promotes_high_profit_profiles_on_yes_and_no_sides_pytest() -> None:
+    scan = build_top_holder_scan(
+        market_title="US-Iran nuclear deal before 2027?",
+        market_slug="us-iran-nuclear-deal-before-2027",
+        yes_holders=[{"username": "ScottyNooo", "profit_loss_usd": "680590", "shares": "23.2"}],
+        no_holders=[{"username": "ImJustKen", "profit_loss_usd": "531838", "shares": "12.1"}],
+        min_profit_usd="100000",
+        generated_at_utc="2026-05-21T12:00:00Z",
+    )
+
+    assert scan.yes_holders_seen == 1
+    assert scan.no_holders_seen == 1
+    assert scan.high_profit_profile_count == 2
+    assert {profile["side"] for profile in scan.high_profit_profiles} == {"yes", "no"}
+
+
+def test_grid_eligibility_requires_30_day_movement_window_and_explicit_service_approval_pytest() -> None:
+    eligible = build_grid_eligibility_review(
+        market_title="Oscillating geopolitics market",
+        thirty_day_range_percent="12",
+        days_to_resolution=45,
+        stable_thesis=True,
+        spread_cents="1",
+        depth_usd="20",
+        explicit_service_spawn_approval=True,
+    )
+    blocked = build_grid_eligibility_review(
+        market_title="Too quiet market",
+        thirty_day_range_percent="8",
+        days_to_resolution=20,
+        stable_thesis=True,
+        spread_cents="1",
+        depth_usd="20",
+        explicit_service_spawn_approval=False,
+    )
+
+    assert eligible.status == "eligible_for_service_spawn_proof"
+    assert eligible.eligible is True
+    assert blocked.status == "blocked_missing_grid_gates"
+    assert "thirty_day_range_below_10_percent" in blocked.blockers
+    assert "resolution_window_below_30_days" in blocked.blockers
+    assert "explicit_service_spawn_approval_missing" in blocked.blockers
+
+
+def test_deep_pass_reports_slot_deficit_and_selected_bounded_candidate_pytest() -> None:
+    plan = build_deep_pass_plan(
+        _twenty_slot_direct_truth_fixture(),
+        candidate_rows=[
+            {
+                "source": "frontend",
+                "market_title": "Mapped liquid AI market",
+                "market_slug": "mapped-liquid-ai-market",
+                "token_id": "token-ai-candidate",
+                "janus_catalog_mapped": True,
+                "direct_orderbook": {"spread_cents": 1, "depth_usd": 40},
+                "proposed_notional_usd": "2.50",
+                "category": "ai",
+                "horizon": "medium",
+            }
+        ],
+        generated_at_utc="2026-05-21T12:00:00Z",
+    )
+
+    assert plan.status == "slot_deficit_candidate_ready"
+    assert plan.board.empty_slot_count == 13
+    assert plan.selected_candidate is not None
+    assert plan.selected_candidate.market_slug == "mapped-liquid-ai-market"
+    assert plan.required_order_path == "portfolio-manager-order"
+    assert plan.side_effects["orders_placed"] is False

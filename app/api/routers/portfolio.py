@@ -26,15 +26,28 @@ from app.api.models import (
     ManualOrderCreateRequest,
     ManualOrderResponse,
     PortfolioDirectTradeBackfillRequest,
+    PortfolioManagerGridEligibilityReviewRequest,
     PortfolioManagerActionLedgerRequest,
+    PortfolioManagerDeepPassRequest,
     PortfolioManagerOrderManagementRequest,
+    PortfolioManagerProfileObservationRequest,
+    PortfolioManagerSlotsReconcileRequest,
+    PortfolioManagerTopHolderScanRequest,
     PortfolioOrderStatusBackfillRequest,
     PortfolioPositionHistoryQuery,
     PortfolioPositionsQuery,
     PortfolioSummaryQuery,
     TradingAccountCreateRequest,
 )
-from app.modules.agentic.global_portfolio import GlobalPortfolioManagerActionPlan
+from app.modules.agentic.global_portfolio import (
+    GlobalPortfolio20SlotBoard,
+    GlobalPortfolioCandidateQueue,
+    GlobalPortfolioManagerActionPlan,
+    build_20_slot_board,
+    build_deep_pass_plan,
+    build_grid_eligibility_review,
+    build_top_holder_scan,
+)
 from app.modules.agentic.global_portfolio_kill_switch import load_global_portfolio_kill_switch_clearance
 from app.data.databases.repositories import JanusUpsertRepository
 from app.data.nodes.polymarket.blockchain.manage_portfolio import (
@@ -1201,6 +1214,11 @@ def apply_portfolio_manager_order_management_order(
         limit_price=float(normalized_order["limit_price"]),
         size=float(normalized_order["size"]),
         metadata_json={
+            "approved_resting_entry": normalized_order["side"] == "buy",
+            "counts_as_managed_slot": normalized_order["side"] == "buy",
+            "slot_role": "portfolio_manager_20_slot_entry" if normalized_order["side"] == "buy" else "portfolio_manager_exit_or_target",
+            "slot_target_count": 20,
+            "source_actor": "codex",
             "portfolio_manager_idempotency_key": idempotency_key,
             "action_plan": to_jsonable(action_plan),
             "execution": execution_payload,
@@ -1379,6 +1397,480 @@ def finalize_portfolio_manager_action_ledger_execution(
         "orders_submitted": bool((finalization.get("side_effects") or {}).get("orders_submitted")),
         "orders_prepared": bool((finalization.get("side_effects") or {}).get("orders_prepared")),
     }
+
+
+def apply_portfolio_manager_slots_reconciliation(
+    connection: PsycopgConnection,
+    *,
+    board: GlobalPortfolio20SlotBoard,
+    reviewed_by: str | None,
+    reason: str | None,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    board_json = board.model_dump(mode="json")
+    budget = board.budget
+    snapshot_id = _portfolio_sync_uuid_for(
+        "portfolio_manager_budget_snapshot",
+        str(board.account_id or ""),
+        str(board.generated_at_utc.isoformat()),
+        str(board.managed_slot_count),
+        str(board.empty_slot_count),
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO portfolio.manager_budget_snapshots (
+                snapshot_id,
+                account_id,
+                target_slot_count,
+                managed_slot_count,
+                empty_slot_count,
+                equity_usd,
+                cash_usd,
+                codex_sleeve_cap_usd,
+                codex_sleeve_max_equity_fraction,
+                effective_sleeve_cap_usd,
+                codex_sleeve_usage_usd,
+                codex_sleeve_remaining_usd,
+                per_position_cap_usd,
+                target_average_slot_notional_usd,
+                budget_status,
+                snapshot_json,
+                created_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (snapshot_id) DO NOTHING;
+            """,
+            (
+                snapshot_id,
+                board.account_id,
+                budget.target_slot_count,
+                budget.managed_slot_count,
+                budget.empty_slot_count,
+                budget.equity_usd,
+                budget.cash_usd,
+                budget.codex_sleeve_cap_usd,
+                budget.codex_sleeve_max_equity_fraction,
+                budget.effective_sleeve_cap_usd,
+                budget.codex_sleeve_usage_usd,
+                budget.codex_sleeve_remaining_usd,
+                budget.per_position_cap_usd,
+                budget.target_average_slot_notional_usd,
+                budget.budget_status,
+                Json(to_jsonable(budget.model_dump(mode="json"))),
+                now,
+            ),
+        )
+        slot_count = 0
+        for slot in board.slots:
+            slot_json = slot.model_dump(mode="json")
+            cursor.execute(
+                """
+                INSERT INTO portfolio.manager_slots (
+                    slot_id,
+                    account_id,
+                    slot_kind,
+                    status,
+                    market_title,
+                    market_slug,
+                    outcome,
+                    side,
+                    token_id,
+                    source_actor,
+                    risk_cap_usd,
+                    horizon,
+                    confidence,
+                    thesis,
+                    premises,
+                    invalidation_signals,
+                    watch_points,
+                    target_stop_rebuy,
+                    source_evidence,
+                    direct_truth,
+                    latest_action_state,
+                    obsidian_note_path,
+                    slot_json,
+                    last_reconciled_at,
+                    updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (slot_id)
+                DO UPDATE SET
+                    account_id = EXCLUDED.account_id,
+                    slot_kind = EXCLUDED.slot_kind,
+                    status = EXCLUDED.status,
+                    market_title = EXCLUDED.market_title,
+                    market_slug = EXCLUDED.market_slug,
+                    outcome = EXCLUDED.outcome,
+                    side = EXCLUDED.side,
+                    token_id = EXCLUDED.token_id,
+                    source_actor = EXCLUDED.source_actor,
+                    risk_cap_usd = EXCLUDED.risk_cap_usd,
+                    horizon = EXCLUDED.horizon,
+                    confidence = EXCLUDED.confidence,
+                    thesis = EXCLUDED.thesis,
+                    premises = EXCLUDED.premises,
+                    invalidation_signals = EXCLUDED.invalidation_signals,
+                    watch_points = EXCLUDED.watch_points,
+                    target_stop_rebuy = EXCLUDED.target_stop_rebuy,
+                    source_evidence = EXCLUDED.source_evidence,
+                    direct_truth = EXCLUDED.direct_truth,
+                    latest_action_state = EXCLUDED.latest_action_state,
+                    obsidian_note_path = EXCLUDED.obsidian_note_path,
+                    slot_json = EXCLUDED.slot_json,
+                    last_reconciled_at = EXCLUDED.last_reconciled_at,
+                    updated_at = EXCLUDED.updated_at;
+                """,
+                (
+                    slot.slot_id,
+                    slot.account_id,
+                    slot.slot_kind,
+                    slot.slot_status,
+                    slot.market_title,
+                    slot.market_slug,
+                    slot.outcome,
+                    slot.side,
+                    slot.token_id,
+                    slot.source_actor,
+                    slot.risk_cap_usd,
+                    slot.horizon,
+                    slot.confidence,
+                    slot.thesis,
+                    Json(to_jsonable(slot.premises)),
+                    Json(to_jsonable(slot.invalidation_signals)),
+                    Json(to_jsonable(slot.watch_points)),
+                    Json(to_jsonable(slot.target_stop_rebuy)),
+                    Json(to_jsonable(slot.source_evidence)),
+                    Json(to_jsonable(slot.direct_truth)),
+                    slot.latest_action_state,
+                    slot.obsidian_note_path,
+                    Json(to_jsonable(slot_json)),
+                    now,
+                    now,
+                ),
+            )
+            slot_count += 1
+            review_id = _portfolio_sync_uuid_for("portfolio_manager_slot_review", slot.slot_id, str(now.isoformat()))
+            cursor.execute(
+                """
+                INSERT INTO portfolio.manager_slot_reviews (
+                    review_id,
+                    slot_id,
+                    account_id,
+                    review_status,
+                    thesis_state,
+                    premise_changes,
+                    invalidating_signals_seen,
+                    action_plan,
+                    review_json,
+                    reviewed_by,
+                    reason,
+                    created_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (review_id) DO NOTHING;
+                """,
+                (
+                    review_id,
+                    slot.slot_id,
+                    slot.account_id,
+                    "reconciled",
+                    slot.latest_action_state,
+                    Json([]),
+                    Json([]),
+                    Json(to_jsonable(slot.target_stop_rebuy)),
+                    Json(to_jsonable(slot_json)),
+                    reviewed_by,
+                    reason,
+                    now,
+                ),
+            )
+    return {
+        "snapshot_id": snapshot_id,
+        "slot_rows_upserted": slot_count,
+        "budget_snapshot_written": True,
+        "reviewed_by": reviewed_by,
+        "reason": reason,
+        "board": to_jsonable(board_json),
+    }
+
+
+def apply_portfolio_manager_candidate_queue(
+    connection: PsycopgConnection,
+    *,
+    queue: GlobalPortfolioCandidateQueue,
+) -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    with connection.cursor() as cursor:
+        row_count = 0
+        for candidate in queue.candidates:
+            candidate_json = candidate.model_dump(mode="json")
+            cursor.execute(
+                """
+                INSERT INTO portfolio.manager_candidate_queue (
+                    candidate_id,
+                    account_id,
+                    source,
+                    market_title,
+                    market_slug,
+                    outcome,
+                    category,
+                    token_id,
+                    proposed_side,
+                    proposed_price,
+                    proposed_size,
+                    proposed_notional_usd,
+                    horizon,
+                    confidence,
+                    strategy_style,
+                    expected_hold_days,
+                    expected_return_cents,
+                    expected_return_on_notional_percent,
+                    estimated_entry_slippage_cents,
+                    slippage_to_edge_ratio,
+                    liquidity_capacity_usd,
+                    payoff_velocity_score,
+                    sizing_tier,
+                    sizing_guidance,
+                    risk_return_flags,
+                    score,
+                    status,
+                    rejection_reasons,
+                    edge_summary,
+                    source_url,
+                    direct_orderbook,
+                    profile_signal,
+                    top_holder_signal,
+                    candidate_json,
+                    last_scored_at,
+                    updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (candidate_id)
+                DO UPDATE SET
+                    account_id = EXCLUDED.account_id,
+                    source = EXCLUDED.source,
+                    market_title = EXCLUDED.market_title,
+                    market_slug = EXCLUDED.market_slug,
+                    outcome = EXCLUDED.outcome,
+                    category = EXCLUDED.category,
+                    token_id = EXCLUDED.token_id,
+                    proposed_side = EXCLUDED.proposed_side,
+                    proposed_price = EXCLUDED.proposed_price,
+                    proposed_size = EXCLUDED.proposed_size,
+                    proposed_notional_usd = EXCLUDED.proposed_notional_usd,
+                    horizon = EXCLUDED.horizon,
+                    confidence = EXCLUDED.confidence,
+                    strategy_style = EXCLUDED.strategy_style,
+                    expected_hold_days = EXCLUDED.expected_hold_days,
+                    expected_return_cents = EXCLUDED.expected_return_cents,
+                    expected_return_on_notional_percent = EXCLUDED.expected_return_on_notional_percent,
+                    estimated_entry_slippage_cents = EXCLUDED.estimated_entry_slippage_cents,
+                    slippage_to_edge_ratio = EXCLUDED.slippage_to_edge_ratio,
+                    liquidity_capacity_usd = EXCLUDED.liquidity_capacity_usd,
+                    payoff_velocity_score = EXCLUDED.payoff_velocity_score,
+                    sizing_tier = EXCLUDED.sizing_tier,
+                    sizing_guidance = EXCLUDED.sizing_guidance,
+                    risk_return_flags = EXCLUDED.risk_return_flags,
+                    score = EXCLUDED.score,
+                    status = EXCLUDED.status,
+                    rejection_reasons = EXCLUDED.rejection_reasons,
+                    edge_summary = EXCLUDED.edge_summary,
+                    source_url = EXCLUDED.source_url,
+                    direct_orderbook = EXCLUDED.direct_orderbook,
+                    profile_signal = EXCLUDED.profile_signal,
+                    top_holder_signal = EXCLUDED.top_holder_signal,
+                    candidate_json = EXCLUDED.candidate_json,
+                    last_scored_at = EXCLUDED.last_scored_at,
+                    updated_at = EXCLUDED.updated_at;
+                """,
+                (
+                    candidate.candidate_id,
+                    queue.account_id,
+                    candidate.source,
+                    candidate.market_title,
+                    candidate.market_slug,
+                    candidate.outcome,
+                    candidate.category,
+                    candidate.token_id,
+                    candidate.proposed_side,
+                    candidate.proposed_price,
+                    candidate.proposed_size,
+                    candidate.proposed_notional_usd,
+                    candidate.horizon,
+                    candidate.confidence,
+                    candidate.strategy_style,
+                    candidate.expected_hold_days,
+                    candidate.expected_return_cents,
+                    candidate.expected_return_on_notional_percent,
+                    candidate.estimated_entry_slippage_cents,
+                    candidate.slippage_to_edge_ratio,
+                    candidate.liquidity_capacity_usd,
+                    candidate.payoff_velocity_score,
+                    candidate.sizing_tier,
+                    Json(to_jsonable(candidate.sizing_guidance)),
+                    Json(to_jsonable(candidate.risk_return_flags)),
+                    candidate.score,
+                    candidate.status,
+                    Json(to_jsonable(candidate.rejection_reasons)),
+                    candidate.edge_summary,
+                    candidate.source_url,
+                    Json(to_jsonable(candidate.direct_orderbook)),
+                    Json(to_jsonable(candidate.profile_signal)),
+                    Json(to_jsonable(candidate.top_holder_signal)),
+                    Json(to_jsonable(candidate_json)),
+                    now,
+                    now,
+                ),
+            )
+            row_count += 1
+    return {"candidate_rows_upserted": row_count}
+
+
+def apply_portfolio_manager_top_holder_scan(
+    connection: PsycopgConnection,
+    *,
+    scan: Any,
+) -> dict[str, Any]:
+    scan_id = str(uuid4())
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO portfolio.manager_top_holder_scans (
+                scan_id,
+                market_title,
+                market_slug,
+                source_url,
+                yes_holders_seen,
+                no_holders_seen,
+                high_profit_profile_count,
+                high_profit_profiles,
+                scan_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+            """,
+            (
+                scan_id,
+                scan.market_title,
+                scan.market_slug,
+                scan.source_url,
+                scan.yes_holders_seen,
+                scan.no_holders_seen,
+                scan.high_profit_profile_count,
+                Json(to_jsonable(scan.high_profit_profiles)),
+                Json(to_jsonable(scan.model_dump(mode="json"))),
+            ),
+        )
+    return {"scan_id": scan_id, "high_profit_profile_count": scan.high_profit_profile_count}
+
+
+def apply_portfolio_manager_profile_observations(
+    connection: PsycopgConnection,
+    *,
+    account_id: str | None,
+    observations: list[dict[str, Any]],
+) -> dict[str, Any]:
+    written: list[str] = []
+    with cursor_dict(connection) as cursor:
+        for observation in observations:
+            if not isinstance(observation, dict):
+                continue
+            profile_name = str(
+                observation.get("profile_name")
+                or observation.get("profile")
+                or observation.get("handle")
+                or observation.get("username")
+                or ""
+            ).strip()
+            if not profile_name:
+                continue
+            observation_id = str(uuid4())
+            cursor.execute(
+                """
+                INSERT INTO portfolio.manager_profile_observations (
+                    observation_id,
+                    profile_name,
+                    account_id,
+                    source_url,
+                    observation_type,
+                    market_title,
+                    market_slug,
+                    side,
+                    token_id,
+                    profit_usd,
+                    observation_json,
+                    promoted_candidate_id
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """,
+                (
+                    observation_id,
+                    profile_name,
+                    account_id,
+                    observation.get("source_url"),
+                    str(observation.get("observation_type") or "profile_research"),
+                    observation.get("market_title") or observation.get("title"),
+                    observation.get("market_slug") or observation.get("slug"),
+                    observation.get("side") or observation.get("outcome"),
+                    observation.get("token_id") or observation.get("asset"),
+                    observation.get("profit_usd") or observation.get("profit_loss_usd") or observation.get("pnl_usd"),
+                    Json(to_jsonable(observation)),
+                    observation.get("promoted_candidate_id"),
+                ),
+            )
+            written.append(observation_id)
+    return {"observation_count": len(observations), "written": len(written), "observation_ids": written}
+
+
+def apply_portfolio_manager_grid_eligibility_review(
+    connection: PsycopgConnection,
+    *,
+    account_id: str | None,
+    slot_id: str | None,
+    review: Any,
+) -> dict[str, Any]:
+    review_id = str(uuid4())
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            """
+            INSERT INTO portfolio.manager_grid_eligibility_reviews (
+                review_id,
+                account_id,
+                slot_id,
+                market_title,
+                market_slug,
+                token_id,
+                thirty_day_range_percent,
+                days_to_resolution,
+                stable_thesis,
+                spread_cents,
+                depth_usd,
+                near_binary_catalyst,
+                explicit_service_spawn_approval,
+                eligible,
+                status,
+                blockers,
+                review_json
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+            """,
+            (
+                review_id,
+                account_id,
+                slot_id,
+                review.market_title,
+                review.market_slug,
+                review.token_id,
+                review.thirty_day_range_percent,
+                review.days_to_resolution,
+                review.stable_thesis,
+                review.spread_cents,
+                review.depth_usd,
+                review.near_binary_catalyst,
+                review.explicit_service_spawn_approval,
+                review.eligible,
+                review.status,
+                Json(to_jsonable(review.blockers)),
+                Json(to_jsonable(review.model_dump(mode="json"))),
+            ),
+        )
+    return {"review_id": review_id, "eligible": review.eligible, "status": review.status}
 
 
 def _credentials_for_account(account: dict[str, Any]) -> PolymarketCredentials:
@@ -3277,6 +3769,470 @@ def record_portfolio_manager_action_ledger(
         "ledger_write_only": True,
         "no_order_side_effects": preview["side_effects"],
         "manager_action_ledger": to_jsonable(preview),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/slots")
+def list_portfolio_manager_slots(
+    account_id: UUID | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if account_id is not None:
+        conditions.append("account_id = %s")
+        params.append(str(account_id))
+    if status_filter:
+        conditions.append("status = %s")
+        params.append(status_filter)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                slot_id,
+                account_id,
+                slot_kind,
+                status,
+                market_title,
+                market_slug,
+                outcome,
+                side,
+                token_id,
+                source_actor,
+                risk_cap_usd,
+                horizon,
+                confidence,
+                thesis,
+                premises,
+                invalidation_signals,
+                watch_points,
+                target_stop_rebuy,
+                latest_action_state,
+                obsidian_note_path,
+                slot_json,
+                last_reconciled_at,
+                updated_at
+            FROM portfolio.manager_slots
+            {where_sql}
+            ORDER BY updated_at DESC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {
+        "status": "ok",
+        "count": len(rows),
+        "slots": to_jsonable(rows),
+        "filters": {"account_id": str(account_id) if account_id is not None else None, "status": status_filter},
+    }
+
+
+@router.post("/manager/slots/reconcile")
+def reconcile_portfolio_manager_slots(
+    payload: PortfolioManagerSlotsReconcileRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    board = build_20_slot_board(
+        payload.direct_truth_snapshot,
+        account_id=str(payload.account_id) if payload.account_id is not None else None,
+        target_slot_count=payload.target_slot_count,
+        codex_sleeve_cap_usd=payload.codex_sleeve_cap_usd,
+        max_equity_fraction=payload.max_equity_fraction,
+        per_position_cap_usd=payload.per_position_cap_usd,
+    )
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied.append(
+            apply_portfolio_manager_slots_reconciliation(
+                connection,
+                board=board,
+                reviewed_by=reviewer,
+                reason=review_reason,
+            )
+        )
+    return {
+        "dry_run": payload.dry_run,
+        "status": "planned" if payload.dry_run else "applied",
+        "live_order_impact": "read-only",
+        "no_order_side_effects": board.side_effects,
+        "slot_board": to_jsonable(board.model_dump(mode="json")),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/candidates")
+def list_portfolio_manager_candidates(
+    account_id: UUID | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    source: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if account_id is not None:
+        conditions.append("account_id = %s")
+        params.append(str(account_id))
+    if status_filter:
+        conditions.append("status = %s")
+        params.append(status_filter)
+    if source:
+        conditions.append("source = %s")
+        params.append(source)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                candidate_id,
+                account_id,
+                source,
+                market_title,
+                market_slug,
+                outcome,
+                category,
+                token_id,
+                proposed_side,
+                proposed_price,
+                proposed_size,
+                proposed_notional_usd,
+                horizon,
+                confidence,
+                strategy_style,
+                expected_hold_days,
+                expected_return_cents,
+                expected_return_on_notional_percent,
+                estimated_entry_slippage_cents,
+                slippage_to_edge_ratio,
+                liquidity_capacity_usd,
+                payoff_velocity_score,
+                sizing_tier,
+                sizing_guidance,
+                risk_return_flags,
+                score,
+                status,
+                rejection_reasons,
+                edge_summary,
+                source_url,
+                candidate_json,
+                updated_at
+            FROM portfolio.manager_candidate_queue
+            {where_sql}
+            ORDER BY score DESC, updated_at DESC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {
+        "status": "ok",
+        "count": len(rows),
+        "candidates": to_jsonable(rows),
+        "filters": {
+            "account_id": str(account_id) if account_id is not None else None,
+            "status": status_filter,
+            "source": source,
+        },
+    }
+
+
+@router.post("/manager/deep-pass")
+def plan_portfolio_manager_deep_pass(
+    payload: PortfolioManagerDeepPassRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    plan = build_deep_pass_plan(
+        payload.direct_truth_snapshot,
+        candidate_rows=payload.candidate_rows,
+        account_id=str(payload.account_id) if payload.account_id is not None else None,
+        target_slot_count=payload.target_slot_count,
+    )
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied.append(
+            apply_portfolio_manager_slots_reconciliation(
+                connection,
+                board=plan.board,
+                reviewed_by=reviewer,
+                reason=review_reason,
+            )
+        )
+        applied.append(apply_portfolio_manager_candidate_queue(connection, queue=plan.candidate_queue))
+    return {
+        "dry_run": payload.dry_run,
+        "status": plan.status if payload.dry_run else "applied",
+        "live_order_impact": "read-only",
+        "no_order_side_effects": plan.side_effects,
+        "deep_pass_plan": to_jsonable(plan.model_dump(mode="json")),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/top-holder-scans")
+def list_portfolio_manager_top_holder_scans(
+    market_slug: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if market_slug:
+        conditions.append("market_slug = %s")
+        params.append(market_slug)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                scan_id,
+                market_title,
+                market_slug,
+                source_url,
+                yes_holders_seen,
+                no_holders_seen,
+                high_profit_profile_count,
+                high_profit_profiles,
+                scan_json,
+                created_at
+            FROM portfolio.manager_top_holder_scans
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"status": "ok", "count": len(rows), "top_holder_scans": to_jsonable(rows)}
+
+
+@router.post("/manager/top-holder-scans")
+def record_portfolio_manager_top_holder_scan(
+    payload: PortfolioManagerTopHolderScanRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+
+    scan = build_top_holder_scan(
+        market_title=payload.market_title,
+        market_slug=payload.market_slug,
+        source_url=payload.source_url,
+        yes_holders=payload.yes_holders,
+        no_holders=payload.no_holders,
+        min_profit_usd=payload.min_profit_usd,
+    )
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied.append(apply_portfolio_manager_top_holder_scan(connection, scan=scan))
+    return {
+        "dry_run": payload.dry_run,
+        "status": "planned" if payload.dry_run else "applied",
+        "live_order_impact": "read-only",
+        "no_order_side_effects": scan.side_effects,
+        "top_holder_scan": to_jsonable(scan.model_dump(mode="json")),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/profile-observations")
+def list_portfolio_manager_profile_observations(
+    profile_name: str | None = Query(default=None),
+    account_id: UUID | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if profile_name:
+        conditions.append("profile_name = %s")
+        params.append(profile_name)
+    if account_id is not None:
+        conditions.append("account_id = %s")
+        params.append(str(account_id))
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                observation_id,
+                profile_name,
+                account_id,
+                source_url,
+                observation_type,
+                market_title,
+                market_slug,
+                side,
+                token_id,
+                profit_usd,
+                observation_json,
+                promoted_candidate_id,
+                observed_at,
+                created_at
+            FROM portfolio.manager_profile_observations
+            {where_sql}
+            ORDER BY observed_at DESC, created_at DESC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"status": "ok", "count": len(rows), "profile_observations": to_jsonable(rows)}
+
+
+@router.post("/manager/profile-observations")
+def record_portfolio_manager_profile_observations(
+    payload: PortfolioManagerProfileObservationRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied.append(
+            apply_portfolio_manager_profile_observations(
+                connection,
+                account_id=str(payload.account_id) if payload.account_id is not None else None,
+                observations=payload.observations,
+            )
+        )
+    return {
+        "dry_run": payload.dry_run,
+        "status": "planned" if payload.dry_run else "applied",
+        "live_order_impact": "read-only",
+        "no_order_side_effects": {
+            "orders_placed": False,
+            "orders_cancelled": False,
+            "orders_replaced": False,
+            "orders_submitted": False,
+            "orders_prepared": False,
+            "live_worker_started": False,
+        },
+        "observation_count": len(payload.observations),
+        "observations": to_jsonable(payload.observations),
+        "applied": to_jsonable(applied),
+    }
+
+
+@router.get("/manager/grid-eligibility-reviews")
+def list_portfolio_manager_grid_eligibility_reviews(
+    account_id: UUID | None = Query(default=None),
+    market_slug: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    conditions: list[str] = []
+    params: list[Any] = []
+    if account_id is not None:
+        conditions.append("account_id = %s")
+        params.append(str(account_id))
+    if market_slug:
+        conditions.append("market_slug = %s")
+        params.append(market_slug)
+    if status_filter:
+        conditions.append("status = %s")
+        params.append(status_filter)
+    where_sql = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+    with cursor_dict(connection) as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                review_id,
+                account_id,
+                slot_id,
+                market_title,
+                market_slug,
+                token_id,
+                thirty_day_range_percent,
+                days_to_resolution,
+                stable_thesis,
+                spread_cents,
+                depth_usd,
+                near_binary_catalyst,
+                explicit_service_spawn_approval,
+                eligible,
+                status,
+                blockers,
+                review_json,
+                created_at
+            FROM portfolio.manager_grid_eligibility_reviews
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s;
+            """,
+            tuple(params),
+        )
+        rows = fetchall_dicts(cursor)
+    return {"status": "ok", "count": len(rows), "grid_eligibility_reviews": to_jsonable(rows)}
+
+
+@router.post("/manager/grid-eligibility-reviews")
+def record_portfolio_manager_grid_eligibility_review(
+    payload: PortfolioManagerGridEligibilityReviewRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> dict[str, Any]:
+    reviewer = str(payload.reviewed_by or "").strip()
+    review_reason = str(payload.reason or "").strip()
+    if not payload.dry_run and (not reviewer or not review_reason):
+        raise HTTPException(status_code=422, detail="reviewed_by and reason are required when dry_run=false")
+    review = build_grid_eligibility_review(
+        market_title=payload.market_title,
+        market_slug=payload.market_slug,
+        token_id=payload.token_id,
+        thirty_day_range_percent=payload.thirty_day_range_percent,
+        days_to_resolution=payload.days_to_resolution,
+        stable_thesis=payload.stable_thesis,
+        spread_cents=payload.spread_cents,
+        depth_usd=payload.depth_usd,
+        near_binary_catalyst=payload.near_binary_catalyst,
+        explicit_service_spawn_approval=payload.explicit_service_spawn_approval,
+        review_json=payload.review_json,
+    )
+    applied: list[dict[str, Any]] = []
+    if not payload.dry_run:
+        applied.append(
+            apply_portfolio_manager_grid_eligibility_review(
+                connection,
+                account_id=str(payload.account_id) if payload.account_id is not None else None,
+                slot_id=payload.slot_id,
+                review=review,
+            )
+        )
+    return {
+        "dry_run": payload.dry_run,
+        "status": "planned" if payload.dry_run else "applied",
+        "live_order_impact": "read-only",
+        "no_order_side_effects": review.side_effects,
+        "grid_eligibility_review": to_jsonable(review.model_dump(mode="json")),
         "applied": to_jsonable(applied),
     }
 

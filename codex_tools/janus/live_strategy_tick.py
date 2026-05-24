@@ -75,7 +75,7 @@ def build_live_strategy_tick_parser(description: str) -> ArgumentParser:
 
 def build_live_strategy_tick_kwargs(args: Namespace) -> dict[str, Any]:
     """Translate parsed CLI args into legacy ``run_tick`` keyword arguments."""
-    return {
+    kwargs = {
         "api_root": args.api_root,
         "session_date": args.session_date,
         "event_ids": args.event_ids,
@@ -88,7 +88,6 @@ def build_live_strategy_tick_kwargs(args: Namespace) -> dict[str, Any]:
         "orderbook_sample_interval_sec": args.orderbook_sample_interval_sec,
         "min_size": args.min_size,
         "min_buy_notional_usd": args.min_buy_notional_usd,
-        "max_buy_notional_usd": args.max_buy_notional_usd,
         "share_precision": args.share_precision,
         "auto_protect_manual_positions": args.auto_protect_manual_positions,
         "manual_target_delta_cents": args.manual_target_delta_cents,
@@ -96,6 +95,9 @@ def build_live_strategy_tick_kwargs(args: Namespace) -> dict[str, Any]:
         "enable_llm_dispatch": args.enable_llm_dispatch,
         "llm_runtime_artifact_root": args.llm_runtime_artifact_root,
     }
+    if args.max_buy_notional_usd is not None:
+        kwargs["max_buy_notional_usd"] = args.max_buy_notional_usd
+    return kwargs
 
 
 def describe_live_strategy_tick_compatibility() -> dict[str, Any]:

@@ -45,6 +45,60 @@ Janus has two portfolio concepts that must not be merged:
 | Internal Janus covered-market portfolio agent | Janus trading Python system | Covered markets such as NBA/WNBA: StrategyPlanJSON inventory effects, covered-market target/exit/rebuy evidence, Janus order-manager validators, event review, and DB/API reconciliation. | Proactive scouting of uncovered geopolitics/economics/culture markets. |
 | Codex global portfolio manager | Codex app automation `janus-portfolio-manager` | Operator/global positions, target maintenance, stale exits/rebuys, uncovered-category trend scouting, return receipts, and future-domain lessons. | Validating Janus NBA/WNBA trades or owning covered-market strategy authority. |
 
+## 20-Slot North Star
+
+The global portfolio manager now optimizes around a durable target of `20` managed global-portfolio slots. A managed slot is either:
+
+- a filled direct CLOB/account position that belongs to the Codex global portfolio sleeve; or
+- an approved resting entry order that is explicitly marked as an entry slot.
+
+Pure watchlist candidates, profile observations, frontend discoveries, and rejected candidate rows do not count as managed slots. Janus-covered NBA/WNBA inventory is portfolio-level exposure but does not satisfy Codex global slot count because NBA/WNBA remains owned by the separate Janus covered-market workflow.
+
+Each deep pass must reconcile direct truth into the 20-slot board before selecting any action:
+
+1. positions, open orders, trades, collateral, catalog mapping, open targets, fills, and current sleeve usage;
+2. filled global slots plus approved resting entry slots;
+3. empty-slot count and budget remaining;
+4. per-slot thesis, premises, invalidating signals, watch/action plan, target/stop/rebuy state, resolution risk, source actor, confidence, horizon, and Obsidian rationale link.
+
+The initial Codex manager sleeve is capped at `$50` and never more than `50%` of account equity. Each slot is capped at `$5` notional for now. Sizing should preserve enough remaining budget to reach 20 slots, with a default average target near `$2.50` per slot while allowing stronger candidates up to the `$5` cap. If direct truth shows fewer than 20 managed slots, the pass must either auto-fill the best bounded candidate through the approved `portfolio-manager-order` path when all gates pass, or return `slot_deficit_blocked` with exact blockers.
+
+## Risk/Return And Sizing Discipline
+
+The manager must distinguish a valid `$5` validation receipt from an idea that can survive larger size. Micro fills prove that the workflow, thesis, target, and reconciliation loop can work; they do not prove scalable quick-trade capacity. Every candidate and material slot review must classify:
+
+- `strategy_style`: `quick_trade`, `grid_candidate`, `trend_follow`, `catalyst_option`, `long_thesis`, `target_maintenance`, or `unknown`
+- expected hold window and expected return in cents
+- estimated entry slippage or price impact in cents
+- slippage-to-edge ratio
+- liquidity capacity and any `1000` dollar price-impact probe when available
+- payoff velocity score
+- sizing tier: `validation`, `micro_only`, `scalable_candidate`, `scale_limited`, or `unknown`
+
+Risk/return rules:
+
+- Quick trades and grid candidates require edge after spread/slippage. If estimated slippage consumes more than `35%` of expected edge, or if the expected edge is below `2c` and below twice estimated entry slippage, reject or demote the candidate before order proof.
+- A `$5` trade may remain valid as `micro_only` even when a `1000` dollar probe would move the book by `5c` or more. That row can produce receipts, but it is not scale proof and must not justify larger sizing without repeated fills plus direct depth/impact evidence.
+- A candidate becomes `scalable_candidate` only when direct orderbook/depth/impact evidence suggests it can absorb materially larger notional without spread or price impact eating the edge.
+- Long-thesis and catalyst-option rows must justify slot occupancy by confidence, potential return, horizon, and catalyst timing. Slow payoff with weak edge is capital drag even when the nominal risk is small.
+- Trend-follow rows should show improving premise evidence, target/stop/rebuy logic, and a return path fast enough to compete with available empty slots.
+
+Monitoring cadence follows the classification. Quick trades, grid candidates, and near catalyst windows require direct orderbook and premise checks on every deep pass. Medium trend-follow positions need premise and target review every deep pass, with web/current-event research when the premise changed. Long-thesis rows can tolerate slower external development but still need target, invalidation, and slot-occupancy review every deep pass. A row without current target/stop/rebuy state is incomplete regardless of thesis confidence.
+
+The durable state surfaces are:
+
+- `GET /v1/portfolio/manager/slots`
+- `POST /v1/portfolio/manager/slots/reconcile`
+- `GET /v1/portfolio/manager/candidates`
+- `POST /v1/portfolio/manager/deep-pass`
+- `codex_tools/polymarket reconcile-manager-slots`
+- `codex_tools/polymarket score-manager-candidates`
+- `codex_tools/polymarket scan-top-holders`
+- `codex_tools/polymarket plan-manager-deep-pass`
+- `codex_tools/polymarket review-grid-eligibility`
+
+The database-backed state includes manager slots, slot reviews, budget snapshots, candidate queue rows, profile observations, top-holder scans, and grid eligibility reviews. These tables are state memory and audit support only; live execution authority remains exclusively in the approved portfolio-manager order path and its gates.
+
 ## Authority Stack
 
 Use the normal Janus authority stack:
@@ -70,7 +124,16 @@ Until the prior LLM token-spend bug is proven contained with durable runtime evi
 
 ## Operating Lanes
 
-Each portfolio-manager run must attempt to do real portfolio work. After the mandatory safety/direct-truth checks, at least one of these outcomes must occur:
+The automation cadence is four deep strategic passes per day. Each portfolio-manager run must attempt to do real portfolio work after building the 20-slot board. The required sequence is:
+
+1. Reconcile direct truth and budget into the durable slot board.
+2. Review every existing slot for thesis state, premise changes, invalidating signals, target/stop/rebuy maintenance, resolution risk, and action triggers.
+3. Refresh the candidate pool from frontend categories, known winning profiles, newly discovered high-profit Yes/No top holders, direct CLOB/orderbook truth, and web/current-event research.
+4. Score candidates by direct orderability, edge source, profile/top-holder quality, market structure, horizon diversity, concentration, liquidity/spread, and fit with remaining slot budget.
+5. If below 20 managed slots, select the best bounded entry and either fill it through `portfolio-manager-order` when every gate passes or return `slot_deficit_blocked` with the exact blocker.
+6. If already at 20 managed slots, prioritize target maintenance, closes/reductions, replacement candidates, and grid conversion.
+
+After mandatory safety/direct-truth checks, at least one of these outcomes must occur:
 
 1. Manage one existing position the manager entered or is responsible for: close, target, replace, hold with explicit thesis state, rebuy-watch, or convert to grid candidate through an approved path.
 2. Select one new event for a bounded micro-position based on frontend browsing, catalog evidence, profile-study insight, or direct market data.
@@ -123,6 +186,8 @@ Frontend browsing is required for discovery. The pass should navigate or otherwi
 
 The UI is catalog/discovery evidence only. Before execution, the manager must map the chosen UI market/outcome to direct CLOB/account/orderbook truth, token id, tick size, spread, depth, minimum order proof, and ledger/reconciliation path.
 
+Selection must be execution-seeking, not first-candidate-only. When the selected frontend/profile row has fresh direct Gamma/CLOB token and orderbook proof but Janus catalog lookup by token returns missing, the manager should run an approved Janus catalog import/sync for the selected Polymarket event or market URL when available, then recheck the catalog mapping in the same pass. If mapping remains unavailable, the row becomes a watchlist rejection with `janus_catalog_token_mapping_missing`, and the pass must continue to the next candidate unless every candidate is blocked. Older profile active-position-only rows are scouting signals, not preferred executable candidates, unless paired with a recent trade delta, independent catalyst/source edge, acceptable concentration, and fillable direct orderbook.
+
 The premise is trend trading, not final-outcome prediction. A candidate must record:
 
 - category and market
@@ -167,7 +232,7 @@ If a winning profile has an active or recently successful trade in a market that
 
 The global portfolio manager must scan live basketball markets outside Janus-covered NBA/WNBA when data and time permit. These markets are not covered-market Janus inventory until a separate domain-promotion issue adds them to the Python trading system. Before promotion, they are Codex global-portfolio opportunities and must use the global-portfolio risk budget and gates.
 
-Each material pass should also review ongoing markets traded by the account in the last month, including aliens/UAP, geopolitics, elections, AI-model events, economics, culture, and other open positions. If direct account truth shows an existing position with repeated roughly 3-5% movement, enough liquidity, and tight enough spread, the automation should create a 1c grid candidate:
+Each material pass should also review ongoing markets traded by the account in the last month, including aliens/UAP, geopolitics, elections, AI-model events, economics, culture, and other open positions. The aggressive grid gate is now a 30-day movement profile: at least `10%` price range over the last 30 days, at least 30 days to resolution, stable thesis/context, acceptable spread/depth, no near binary catalyst, and explicit service-spawn approval. If direct account truth and orderbook evidence satisfy those gates, the automation should create a 1c grid candidate:
 
 - current position, token, side, size, average/current price, and existing open target orders
 - proposed next sell/rebuy leg, normally one cent around the current mark

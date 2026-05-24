@@ -383,6 +383,77 @@ class PortfolioManagerOrderManagementRequest(BaseModel):
     reason: str | None = None
 
 
+class PortfolioManagerSlotsReconcileRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    direct_truth_snapshot: dict[str, Any] = Field(default_factory=dict)
+    target_slot_count: int = Field(default=20, ge=1, le=100)
+    codex_sleeve_cap_usd: float = Field(default=50.0, gt=0.0)
+    max_equity_fraction: float = Field(default=0.5, gt=0.0, le=1.0)
+    per_position_cap_usd: float = Field(default=5.0, gt=0.0)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
+class PortfolioManagerDeepPassRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    direct_truth_snapshot: dict[str, Any] = Field(default_factory=dict)
+    candidate_rows: list[dict[str, Any]] = Field(default_factory=list)
+    target_slot_count: int = Field(default=20, ge=1, le=100)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
+class PortfolioManagerTopHolderScanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    market_title: str = Field(min_length=1)
+    market_slug: str | None = None
+    source_url: str | None = None
+    yes_holders: list[dict[str, Any]] = Field(default_factory=list)
+    no_holders: list[dict[str, Any]] = Field(default_factory=list)
+    min_profit_usd: float = Field(default=10000.0, ge=0.0)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
+class PortfolioManagerProfileObservationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    observations: list[dict[str, Any]] = Field(default_factory=list)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
+class PortfolioManagerGridEligibilityReviewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    account_id: UUID | None = None
+    slot_id: str | None = None
+    market_title: str = Field(min_length=1)
+    market_slug: str | None = None
+    token_id: str | None = None
+    thirty_day_range_percent: float | None = None
+    days_to_resolution: int | None = Field(default=None, ge=0)
+    stable_thesis: bool = False
+    spread_cents: float | None = None
+    depth_usd: float | None = None
+    near_binary_catalyst: bool = False
+    explicit_service_spawn_approval: bool = False
+    review_json: dict[str, Any] = Field(default_factory=dict)
+    dry_run: bool = True
+    reviewed_by: str | None = None
+    reason: str | None = None
+
+
 class ManualOrderResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

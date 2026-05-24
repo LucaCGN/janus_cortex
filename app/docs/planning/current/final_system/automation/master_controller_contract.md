@@ -204,6 +204,8 @@ At the beginning and end of every controller pass, inspect tracked git status an
 
 - If tracked files are dirty before a new claim and no active lock owns those paths, do not start unrelated implementation. Route to `development-end-phase` or `master-controller` cleanup.
 - If dirty paths span multiple issues or personas, classify the pass as `YELLOW` process drift, map paths to issue scope, and run validation for the smallest coherent slice.
+- If dirty paths are fully covered by one fresh active lock, do not treat the dirty worktree as a passive global blocker. Route to the owning issue: advance validation, commit/push, split the lock, release with an exact blocker, or explicitly defer only when a higher-priority live safety route preempts it.
+- If unrelated work is blocked only by a fresh lock on disjoint files, either use a separate clean worktree/issue slice or escalate to `master-janus-manager` / `oversight-devloop` to finish or split the owning lock. Repeating the same "dirty worktree blocks implementation" sentence without moving the owner issue is `YELLOW` automation stagnation.
 - If validation passes and ownership is clear, commit and push the coherent slice. If ownership is unclear or the slice includes operator/user edits that cannot be safely attributed, stop and request operator review.
 - Do not keep adding GitHub comments, handoff blocks, or runtime artifacts for unrelated issues while dirty mixed-scope work is unresolved.
 - Live safety still outranks cleanup, but only for the narrow live intervention. After the live fix, cleanup becomes the next required action.

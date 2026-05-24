@@ -9,6 +9,13 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Sequence, TextIO
 
+from app.modules.agentic.global_portfolio import (
+    build_20_slot_board,
+    build_deep_pass_plan,
+    build_grid_eligibility_review,
+    build_top_holder_scan,
+    score_portfolio_candidates,
+)
 from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
 from codex_tools.polymarket.grid_service import build_grid_service_preview, build_grid_service_spawn_plan
 from codex_tools.polymarket.manager import build_portfolio_manager_action_plan
@@ -38,6 +45,18 @@ def _read_json_file(path: Path | None) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         raise ValueError("--direct-truth-json must contain a JSON object")
     return payload
+
+
+def _read_json_any_file(path: Path | None) -> Any:
+    if path is None:
+        return None
+    raw = path.read_bytes()
+    for encoding in ("utf-8", "utf-8-sig", "utf-16"):
+        try:
+            return json.loads(raw.decode(encoding))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    raise ValueError(f"could not decode JSON file: {path}")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -131,6 +150,80 @@ def _build_parser() -> argparse.ArgumentParser:
     manager_plan.add_argument("--oscillation-grid-threshold-percent", default="3")
     manager_plan.add_argument("--action-optional", action="store_true")
     manager_plan.set_defaults(func=_plan_manager_action)
+
+    slots = subparsers.add_parser(
+        "reconcile-manager-slots",
+        help="Build the read-only 20-slot board from direct account truth.",
+    )
+    slots.add_argument("--direct-truth-json", required=True, type=Path)
+    slots.add_argument("--account-id")
+    slots.add_argument("--target-slot-count", type=int, default=20)
+    slots.add_argument("--codex-sleeve-cap-usd", default="50")
+    slots.add_argument("--max-equity-fraction", default="0.5")
+    slots.add_argument("--per-position-cap-usd", default="5")
+    slots.add_argument("--now-utc")
+    slots.set_defaults(func=_reconcile_manager_slots)
+
+    candidate_score = subparsers.add_parser(
+        "score-manager-candidates",
+        help="Score candidate rows against the current 20-slot board, budget, slippage, payoff velocity, and sizing tier.",
+    )
+    candidate_score.add_argument("--direct-truth-json", required=True, type=Path)
+    candidate_score.add_argument("--candidate-source-json", required=True, type=Path)
+    candidate_score.add_argument("--account-id")
+    candidate_score.add_argument("--target-slot-count", type=int, default=20)
+    candidate_score.add_argument("--now-utc")
+    candidate_score.set_defaults(func=_score_manager_candidates)
+
+    holder_scan = subparsers.add_parser(
+        "scan-top-holders",
+        help="Summarize Yes/No top-holder rows and promote high-profit profiles.",
+    )
+    holder_scan.add_argument("--market-title", required=True)
+    holder_scan.add_argument("--market-slug")
+    holder_scan.add_argument("--source-url")
+    holder_scan.add_argument("--yes-holders-json", type=Path)
+    holder_scan.add_argument("--no-holders-json", type=Path)
+    holder_scan.add_argument("--min-profit-usd", default="10000")
+    holder_scan.add_argument("--now-utc")
+    holder_scan.set_defaults(func=_scan_top_holders)
+
+    profile_observations = subparsers.add_parser(
+        "normalize-profile-observations",
+        help="Normalize known/new winning-profile research into durable observation rows.",
+    )
+    profile_observations.add_argument("--profile-studies-json", required=True, type=Path)
+    profile_observations.add_argument("--now-utc")
+    profile_observations.set_defaults(func=_normalize_profile_observations)
+
+    deep_pass = subparsers.add_parser(
+        "plan-manager-deep-pass",
+        help="Build the 20-slot deep-pass plan from direct truth, risk/return scoring, and candidate rows.",
+    )
+    deep_pass.add_argument("--direct-truth-json", required=True, type=Path)
+    deep_pass.add_argument("--candidate-source-json", type=Path)
+    deep_pass.add_argument("--account-id")
+    deep_pass.add_argument("--target-slot-count", type=int, default=20)
+    deep_pass.add_argument("--now-utc")
+    deep_pass.set_defaults(func=_plan_manager_deep_pass)
+
+    grid_gate = subparsers.add_parser(
+        "review-grid-eligibility",
+        help="Apply the 30-day portfolio grid eligibility gate without starting a service.",
+    )
+    grid_gate.add_argument("--market-title", required=True)
+    grid_gate.add_argument("--market-slug")
+    grid_gate.add_argument("--token-id")
+    grid_gate.add_argument("--thirty-day-range-percent")
+    grid_gate.add_argument("--days-to-resolution", type=int)
+    grid_gate.add_argument("--stable-thesis", action="store_true")
+    grid_gate.add_argument("--spread-cents")
+    grid_gate.add_argument("--depth-usd")
+    grid_gate.add_argument("--near-binary-catalyst", action="store_true")
+    grid_gate.add_argument("--explicit-service-spawn-approval", action="store_true")
+    grid_gate.add_argument("--review-json", type=Path)
+    grid_gate.add_argument("--now-utc")
+    grid_gate.set_defaults(func=_review_grid_eligibility)
 
     manager_order = subparsers.add_parser(
         "portfolio-manager-order",
@@ -306,6 +399,181 @@ def _plan_manager_action(args: argparse.Namespace, output: TextIO) -> int:
     json.dump(asdict(plan), output, indent=2, sort_keys=True)
     output.write("\n")
     return 0
+
+
+def _reconcile_manager_slots(args: argparse.Namespace, output: TextIO) -> int:
+    board = build_20_slot_board(
+        _read_required_json_file(args.direct_truth_json),
+        account_id=args.account_id,
+        target_slot_count=args.target_slot_count,
+        codex_sleeve_cap_usd=args.codex_sleeve_cap_usd,
+        max_equity_fraction=args.max_equity_fraction,
+        per_position_cap_usd=args.per_position_cap_usd,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(board.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _score_manager_candidates(args: argparse.Namespace, output: TextIO) -> int:
+    board = build_20_slot_board(
+        _read_required_json_file(args.direct_truth_json),
+        account_id=args.account_id,
+        target_slot_count=args.target_slot_count,
+        generated_at_utc=args.now_utc,
+    )
+    queue = score_portfolio_candidates(
+        _read_candidate_rows(args.candidate_source_json),
+        board,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(queue.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _scan_top_holders(args: argparse.Namespace, output: TextIO) -> int:
+    scan = build_top_holder_scan(
+        market_title=args.market_title,
+        market_slug=args.market_slug,
+        yes_holders=_read_holder_rows(args.yes_holders_json),
+        no_holders=_read_holder_rows(args.no_holders_json),
+        source_url=args.source_url,
+        min_profit_usd=args.min_profit_usd,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(scan.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _normalize_profile_observations(args: argparse.Namespace, output: TextIO) -> int:
+    payload = _read_required_json_file(args.profile_studies_json)
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, list):
+        raise ValueError("--profile-studies-json must contain a 'profiles' list")
+    observations: list[dict[str, Any]] = []
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            continue
+        profile_name = str(profile.get("profile") or profile.get("name") or profile.get("handle") or "").strip()
+        if not profile_name:
+            continue
+        base = {
+            "profile_name": profile_name,
+            "source_url": profile.get("source_url"),
+            "category": profile.get("category"),
+            "market_hint": profile.get("market_hint"),
+            "mimic_decision": profile.get("mimic_decision"),
+            "observed_at_utc": args.now_utc,
+        }
+        observations.append(
+            {
+                **base,
+                "observation_type": "profile_summary",
+                "insight": profile.get("insight"),
+                "active_position_count": len(profile.get("active_positions") or []),
+                "recent_trade_count": len(profile.get("recent_trades") or []),
+                "observation_json": dict(profile),
+            }
+        )
+        for key, observation_type in (("active_positions", "active_position"), ("recent_trades", "recent_trade")):
+            rows = profile.get(key)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                observations.append(
+                    {
+                        **base,
+                        "observation_type": observation_type,
+                        "market_title": row.get("title") or row.get("market_title"),
+                        "market_slug": row.get("market_slug") or row.get("slug"),
+                        "side": row.get("outcome") or row.get("side"),
+                        "token_id": row.get("token_id") or row.get("asset"),
+                        "price": row.get("price") or row.get("current_price"),
+                        "visible_pnl": row.get("visible_pnl"),
+                        "visible_position_value": row.get("visible_position_value"),
+                        "delta_assessment": row.get("delta_assessment"),
+                        "observation_json": dict(row),
+                    }
+                )
+    json.dump(
+        {
+            "schema_version": "global_portfolio_profile_observations_v1",
+            "generated_at_utc": args.now_utc,
+            "observation_count": len(observations),
+            "observations": observations,
+        },
+        output,
+        indent=2,
+        sort_keys=True,
+    )
+    output.write("\n")
+    return 0
+
+
+def _plan_manager_deep_pass(args: argparse.Namespace, output: TextIO) -> int:
+    plan = build_deep_pass_plan(
+        _read_required_json_file(args.direct_truth_json),
+        candidate_rows=_read_candidate_rows(args.candidate_source_json),
+        account_id=args.account_id,
+        target_slot_count=args.target_slot_count,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(plan.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _review_grid_eligibility(args: argparse.Namespace, output: TextIO) -> int:
+    review = build_grid_eligibility_review(
+        market_title=args.market_title,
+        market_slug=args.market_slug,
+        token_id=args.token_id,
+        thirty_day_range_percent=args.thirty_day_range_percent,
+        days_to_resolution=args.days_to_resolution,
+        stable_thesis=args.stable_thesis,
+        spread_cents=args.spread_cents,
+        depth_usd=args.depth_usd,
+        near_binary_catalyst=args.near_binary_catalyst,
+        explicit_service_spawn_approval=args.explicit_service_spawn_approval,
+        review_json=_read_json_file(args.review_json),
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(review.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _read_candidate_rows(path: Path | None) -> list[dict[str, Any]]:
+    payload = _read_json_any_file(path)
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [dict(item) for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("candidates", "candidate_rows", "entries", "markets"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [dict(item) for item in rows if isinstance(item, dict)]
+    raise ValueError("--candidate-source-json must contain a list or an object with candidates/candidate_rows")
+
+
+def _read_holder_rows(path: Path | None) -> list[dict[str, Any]]:
+    payload = _read_json_any_file(path)
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [dict(item) for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("holders", "yes_holders", "no_holders", "items"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [dict(item) for item in rows if isinstance(item, dict)]
+    raise ValueError("holder JSON must contain a list or an object with holder rows")
 
 
 def _read_recent_action_history(path: Path | None) -> dict[str, Any] | None:

@@ -80,6 +80,16 @@ If an automation needs new behavior, edit the repo contract first, then reduce t
 6. Keep Obsidian builder and backlog ingestor active after source-of-truth docs are current.
 7. Use GitHub Actions for remote regression evidence; do not treat CI success as live-order permission.
 
+## Dirty Worktree / Fresh Lock Rule
+
+Dirty worktree state is actionable, not passive status noise.
+
+- If dirty files are unowned by an active lock, the next governance/dev pass must claim the smallest coherent cleanup slice, validate, commit/push, or create an exact blocker.
+- If dirty files are fully owned by one fresh active lock, the owning issue is the route. The next relevant automation must advance that issue toward validation, commit/push, split/release, or an explicit blocker comment. It must not repeatedly report "dirty worktree blocks unrelated work" without moving the owning issue.
+- If unrelated implementation is blocked only because the shared worktree is dirty but its files do not overlap the fresh lock, `master-janus-manager` or `oversight-devloop` should either finish/split the owning lock or route the unrelated work into a separate clean worktree/issue slice.
+- If a fresh lock remains active across multiple manager/dev-loop passes with no new commit, validation result, split, release, or blocker change, classify it `YELLOW` automation stagnation. After the stale threshold, classify it as stale-lock cleanup.
+- A lock is complete only after its owned dirty files are committed/pushed or deliberately released with documented remaining blockers and no silent local-only source-of-truth drift.
+
 ## Hard Prohibitions
 
 - Oversight, research, Obsidian, performance-review, and GitHub Actions lanes must not place, cancel, replace, submit, sign, broadcast, redeem, or start live-money workers.

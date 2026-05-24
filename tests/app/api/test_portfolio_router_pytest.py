@@ -1174,6 +1174,164 @@ def _unused_fake_db_connection():
     yield _UnusedFakeConnection()
 
 
+def test_portfolio_manager_slots_reconcile_endpoint_dry_run_returns_slot_deficit_pytest() -> None:
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/slots/reconcile",
+            json={
+                "account_id": ACCOUNT_ID,
+                "dry_run": True,
+                "direct_truth_snapshot": {
+                    "equity_usd": "113.76",
+                    "cash_usd": "99.66",
+                    "open_positions": [
+                        {
+                            "market_title": "Global market",
+                            "market_slug": "global-market",
+                            "outcome": "Yes",
+                            "token_id": "token-global",
+                            "size": "5",
+                            "current_price": "0.40",
+                            "current_value_usd": "2.00",
+                        },
+                        {
+                            "market_title": "Will the Oklahoma City Thunder win the 2026 NBA Finals?",
+                            "market_slug": "nba-finals-okc-2026",
+                            "outcome": "Yes",
+                            "token_id": "token-covered",
+                            "size": "2",
+                            "current_price": "0.50",
+                        },
+                    ],
+                },
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    board = payload["slot_board"]
+    assert payload["live_order_impact"] == "read-only"
+    assert board["managed_slot_count"] == 1
+    assert board["empty_slot_count"] == 19
+    assert board["covered_market_ignored_count"] == 1
+    assert payload["no_order_side_effects"]["orders_prepared"] is False
+
+
+def test_portfolio_manager_deep_pass_endpoint_dry_run_selects_candidate_without_order_side_effects_pytest() -> None:
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/deep-pass",
+            json={
+                "account_id": ACCOUNT_ID,
+                "dry_run": True,
+                "direct_truth_snapshot": {
+                    "equity_usd": "113.76",
+                    "cash_usd": "99.66",
+                    "open_positions": [],
+                },
+                "candidate_rows": [
+                    {
+                        "source": "frontend",
+                        "market_title": "Global candidate",
+                        "market_slug": "global-candidate",
+                        "token_id": "token-candidate",
+                        "janus_catalog_mapped": True,
+                        "strategy_style": "quick_trade",
+                        "direct_orderbook": {
+                            "spread_cents": 1,
+                            "depth_usd": 30,
+                            "liquidity_capacity_usd": 30,
+                            "price_impact_1000_usd_cents": 5,
+                        },
+                        "proposed_notional_usd": "2.50",
+                        "proposed_price": "0.20",
+                        "expected_return_cents": "8",
+                        "expected_hold_days": 7,
+                    }
+                ],
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    plan = payload["deep_pass_plan"]
+    assert plan["status"] == "slot_deficit_candidate_ready"
+    assert plan["selected_candidate"]["market_slug"] == "global-candidate"
+    assert plan["selected_candidate"]["strategy_style"] == "quick_trade"
+    assert plan["selected_candidate"]["sizing_tier"] == "micro_only"
+    assert "scale_limited_quick_trade" in plan["selected_candidate"]["risk_return_flags"]
+    assert plan["required_order_path"] == "portfolio-manager-order"
+    assert payload["no_order_side_effects"]["orders_placed"] is False
+
+
+def test_portfolio_manager_top_holder_scan_endpoint_dry_run_promotes_both_sides_pytest() -> None:
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/top-holder-scans",
+            json={
+                "dry_run": True,
+                "market_title": "US-Iran nuclear deal before 2027?",
+                "market_slug": "us-iran-nuclear-deal-before-2027",
+                "yes_holders": [{"username": "ScottyNooo", "profit_loss_usd": 680590, "shares": 23.2}],
+                "no_holders": [{"username": "ImJustKen", "profit_loss_usd": 531838, "shares": 12.1}],
+                "min_profit_usd": 100000,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    scan = payload["top_holder_scan"]
+    assert scan["yes_holders_seen"] == 1
+    assert scan["no_holders_seen"] == 1
+    assert scan["high_profit_profile_count"] == 2
+    assert payload["no_order_side_effects"]["orders_placed"] is False
+
+
+def test_portfolio_manager_grid_eligibility_endpoint_dry_run_blocks_without_service_approval_pytest() -> None:
+    client = TestClient(create_app())
+    client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection
+
+    try:
+        response = client.post(
+            "/v1/portfolio/manager/grid-eligibility-reviews",
+            json={
+                "dry_run": True,
+                "market_title": "Oscillating market",
+                "market_slug": "oscillating-market",
+                "thirty_day_range_percent": 12,
+                "days_to_resolution": 45,
+                "stable_thesis": True,
+                "spread_cents": 1,
+                "depth_usd": 20,
+                "explicit_service_spawn_approval": False,
+            },
+        )
+    finally:
+        client.app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    review = payload["grid_eligibility_review"]
+    assert review["status"] == "blocked_missing_grid_gates"
+    assert "explicit_service_spawn_approval_missing" in review["blockers"]
+    assert payload["no_order_side_effects"]["live_worker_started"] is False
+
+
 def test_portfolio_manager_action_ledger_endpoint_dry_run_records_no_order_side_effects_pytest() -> None:
     class FakeConnection:
         pass
@@ -1544,7 +1702,8 @@ def test_portfolio_manager_order_management_rejects_non_dry_run_pytest() -> None
     assert "execution_approved=true" in response.json()["error"]["message"]
 
 
-def test_portfolio_manager_order_management_live_path_requires_runtime_flag_pytest() -> None:
+def test_portfolio_manager_order_management_live_path_requires_runtime_flag_pytest(monkeypatch) -> None:
+    monkeypatch.delenv("JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED", raising=False)
     plan = _ready_manager_action_plan_fixture()
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = _unused_fake_db_connection

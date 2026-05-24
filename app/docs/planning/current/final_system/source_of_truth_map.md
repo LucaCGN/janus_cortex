@@ -68,6 +68,8 @@ The authoritative roster is:
 
 All recurring Janus CI/CD lanes should be normal cron-style Codex app automations with explicit repo roots. Pinned-chat heartbeat automations are not valid for durable Janus automation governance because they can miss automation memory/JSON outputs after app or thread failures.
 
+Dirty worktree ownership is part of source-of-truth health. A dirty patch fully covered by a fresh lock belongs to that issue and must be advanced, split, committed, pushed, or explicitly blocked by the relevant automation; it should not become a repeated passive blocker for unrelated work. A dirty patch without an active owning lock is process drift and should be claimed or cleaned before unrelated implementation.
+
 Core lanes:
 
 | Automation | Cadence | Scope | Hard boundary |
