@@ -51,8 +51,9 @@ The controller automation should read these anchor files on every material pass:
 20. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
 21. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
 22. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-23. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-24. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+23. `app/docs/planning/current/final_system/backlog/live_runtime_scope_map_2026-05-24.md`
+24. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+25. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -69,6 +70,18 @@ As of 2026-05-20, the Codex app automation layer is split into five lanes so por
 | `janus-obsidian-builder` | 6 hours | Curated Obsidian memory, indexes, profile/trade rationale navigation, source links, and note hygiene. | No execution, no automation schedule edits, no repo contract rewrites unless explicitly issue-backed. |
 
 Historical automation ids in `C:\Users\lnoni\.codex\automations` may remain for continuity, but the displayed names/prompts should match this topology. If a crash or time-machine restore reverts prompts, restore these five lanes before running portfolio or development loops again.
+
+Observed config drift 2026-05-24: the repo docs define `oversight-portfolio`, but the local automation directory inspection showed `janus-loop-oversight-console`, `janus-master-controller`, `janus-master-controller-2` without `automation.toml`, `janus-obsidian-builder`, `janus-portfolio-manager`, and `oversight-devloop`. Before relying on portfolio oversight, verify that the actual Codex automation config exists and matches the portfolio-only prompt. This drift does not change Janus runtime authority; it is an automation setup task.
+
+Planned current-scope expansion before crypto/options:
+
+| Planned automation | Issue | Scope | Authority |
+|---|---|---|---|
+| `janus-performance-review` | [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | Daily/project-chief review of live results, missed signals, strategy responsiveness, pregame accuracy, issue progress, and next development priorities. | Read-only trading; may create/update issues, backlog, docs, and Obsidian summaries. |
+| `nba-pregame-research` | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | NBA pregame research as structured optional priors. | Research only; never a liveness dependency. |
+| `wnba-pregame-research` | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | WNBA pregame research as structured optional priors. | Research only; never a liveness dependency. |
+| issue lifecycle health pass | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Anti-stagnation scoring for repeated comments, stale blockers, unclosed work, and oversized issues. | Governance only; no trading. |
+| Obsidian backlog repair | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repair note-to-backlog promotion so curated notes become bounded issue candidates without becoming runtime truth. | Curation/governance only; no trading. |
 
 ## Runtime State Anchors
 
@@ -186,6 +199,10 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | open | WNBA shadow-to-controlled-min-size live test readiness route. |
 | [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | open | Parent architecture and implementation route for independent Janus covered-market live trading runtime, live signal aggregation, degraded-mode operation, event risk budgets, and issue/backlog reset. |
 | [#64](https://github.com/LucaCGN/janus_cortex/issues/64)-[#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P0/P1 | open | Child implementation slices for normalized live snapshots, signal schema, aggregation arbitration, event budgets/sleeves, deterministic fallback, runtime controls, and postgame signal-performance review. |
+| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | open | Project-chief performance review and development-planning automation that turns live/postgame results into next-day issues, config changes, and closures. |
+| [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | P1 | open | Formalize NBA/WNBA pregame research agents as optional priors with expiry and no liveness dependency. |
+| [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | P1 | open | Harden issue lifecycle anti-stagnation and closure governance for repeated comments, stale blockers, and oversized issues. |
+| [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | open | Repair Obsidian-to-backlog ingestion and curation workflow so note insights become issue candidates with acceptance criteria. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |

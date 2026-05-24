@@ -91,6 +91,10 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Planned/sprint | Preserve deterministic fallback when pregame or LLM inputs fail. |
 | [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Planned backlog | Add runtime control endpoints for event config and signal toggles. |
 | [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P1 | Planned backlog | Add postgame signal performance review and missed-signal replay. |
+| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Planned backlog | Add project-chief performance review and development-planning automation for daily return-focused system improvement. |
+| [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | P1 | Planned backlog | Formalize NBA/WNBA pregame research agents as optional priors with expiry and no liveness dependency. |
+| [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | P1 | Planned/sprint | Harden issue lifecycle anti-stagnation and closure governance for repeated comments, stale blockers, oversized issues, and missing validation/closure. |
+| [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | Planned backlog | Repair Obsidian-to-backlog ingestion and curation workflow so notes become bounded issue candidates rather than execution authority. |
 | [#57](https://github.com/LucaCGN/janus_cortex/issues/57) | P0 | Closed foundation | Spurs/Thunder final settlement and residual Thunder direct-CLOB exposure reconciled. |
 | [#58](https://github.com/LucaCGN/janus_cortex/issues/58) | P0 | Closed foundation | Resolved-market redeem workflow and unredeemed residual tolerance implemented so settled positions do not block new live readiness after direct-truth classification. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
@@ -136,6 +140,17 @@ Routing rules:
 | `#46/#47/#48` | Keep as profile/future-domain incubation, not covered-market live authority. |
 
 Implementation children created from `#63`: `#64` data adapters, `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, `#69` runtime control endpoints, and `#70` postgame signal-performance review. Each child issue must retain acceptance criteria and file/module ownership before code begins.
+
+Current-scope expansion created 2026-05-24:
+
+| Issue | Role |
+|---|---|
+| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | Adds the project-chief loop that reviews strategy responsiveness, pregame accuracy, signal performance, issue progress, and next development priorities after #70 artifacts exist. |
+| [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | Converts NBA/WNBA pregame research into structured optional priors; missing/stale priors cannot block Janus runtime liveness. |
+| [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Gives `oversight-devloop` a concrete issue-health and anti-stagnation contract so issues with repeated comments must close, split, or get a real blocker. |
+| [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repairs Obsidian backlog ingestion while preserving the rule that Obsidian is curated memory, not runtime execution truth. |
+
+Do not expand crypto options or new model domains beyond research issue [#47](https://github.com/LucaCGN/janus_cortex/issues/47) until the current basketball runtime has normalized snapshots, persisted signals, aggregation arbitration, runtime controls, postgame replay, and daily performance-review governance.
 
 | From | To | Required Evidence |
 |---|---|---|
