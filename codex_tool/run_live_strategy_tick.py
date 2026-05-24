@@ -3608,15 +3608,26 @@ def _resolve_wnba_game_from_cdn(
 
 def _wnba_slug_alias(value: Any) -> str:
     normalized = str(value or "").strip().lower()
+    compact = "".join(ch for ch in normalized if ch.isalnum())
     aliases = {
+        "connecticut": "con",
+        "connecticutsun": "con",
         "por": "pdx",
         "portland": "pdx",
         "portlandfire": "pdx",
         "fire": "pdx",
         "indiana": "ind",
         "fever": "ind",
+        "lasvegas": "lva",
+        "lasvegasaces": "lva",
+        "aces": "lva",
+        "lv": "lva",
+        "losangeles": "las",
+        "losangelessparks": "las",
+        "sparks": "las",
+        "la": "las",
     }
-    return aliases.get(normalized, normalized)
+    return aliases.get(normalized, aliases.get(compact, normalized))
 
 
 def _jsonable_mapping(item: dict[str, Any]) -> dict[str, Any]:
