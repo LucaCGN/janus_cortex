@@ -17,6 +17,8 @@ This document gives the master controller and follow-on agents a concise way to 
 
 This is a source-of-truth map, not live trading authority. Direct CLOB truth, Janus DB/API, runtime artifacts, runtime handoffs, and event-specific integrity gates still outrank it.
 
+Forward target note: issue [#63](https://github.com/LucaCGN/janus_cortex/issues/63) and `architecture/janus_core_live_trading_runtime.md` define the next Janus covered-market runtime boundary. This current map remains the "what exists now" map; `#63` defines how to evolve it so pregame Codex automation and internal LLM availability are not liveness dependencies.
+
 ## Current Shape
 
 Janus is currently a single-repo FastAPI modular monolith with repo-local runtime state.
@@ -90,6 +92,7 @@ Observed during the 2026-05-18 `#40` controller pass:
 | Portfolio mirror stale or mismatched | Direct CLOB can still govern live safety if direct truth is clean. | Ledger/review can continue with mirror quarantine noted. | Treating mirror as live authority, performance claims from mirror alone. |
 | Internal LLM unavailable or budget-blocked | Deterministic/ML lanes, existing StrategyPlanJSON evaluation, Codex fallback drafting. | Janus should expose Codex-required state and reason codes; see `#41`. | Raw LLM order execution, unreviewed LLM plan adoption, frontier default use. |
 | Codex unavailable | App-owned deterministic/runtime lanes can run if all Janus gates pass. | Repo/docs/issue/Obsidian automation stops until Codex returns. | Codex fallback strategy drafting and controller development work. |
+| Pregame Codex automation missing, paused, or stale | App-owned deterministic/ML runtime can continue with default event config and stored priors if feed/CLOB/worker/risk gates pass. | Runtime must record missing-pregame prior as a degraded input. | Treating missing pregame automation as a global live-trading disable. |
 | StrategyPlanJSON missing | Data refresh, integrity, planning, issue-backed development, global portfolio management/scouting outside Janus-controlled live events. | Live monitor reports strategy-plan gate blockers. | Live strategy execution and live readiness GREEN. |
 | Live worker stopped | Data refresh, integrity, planning, postgame, development. | Live monitor can report worker blocker. | Janus-controlled live execution. |
 | Controller queue unavailable | Read-only inspection and no-op summaries. | Manual review of locks can happen with caveat. | Any write scope that needs code/docs/handoff/GitHub/Obsidian mutation. |
@@ -145,6 +148,7 @@ No new GitHub issue is required from this map. The material implementation gaps 
 | Profit-ratcheted risk ladder calibration from mapped account/DB histories | `#44` |
 | Global portfolio target/rebuy ledger and watchlist schema | `#45` |
 | Codex tooling split into Janus wrappers and independent Polymarket execution fallback | `#53` |
+| Independent Janus covered-market live runtime and signal aggregation redesign | `#63` |
 
 ## Controller Use
 

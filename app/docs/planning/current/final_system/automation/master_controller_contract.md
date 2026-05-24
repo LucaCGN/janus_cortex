@@ -13,6 +13,8 @@ The automation itself should remain stable. Behavior changes should come from ed
 
 The master controller is no longer the portfolio oversight lane. Portfolio strategy quality, trade-rationale lifecycle drift, and winning-profile/action quality are monitored by `oversight-portfolio`; the active global portfolio actions themselves belong to `janus-portfolio-manager`. Development-loop health, stale repeated comments, issue splitting/closure, dirty-worktree cleanup, and anti-stagnation checks belong to `oversight-devloop`. The master controller should still observe those lanes when they block Janus live readiness, but it should not spend repeated passes acting as their primary reviewer.
 
+The master controller must also distinguish Janus covered-market live runtime work from Codex global portfolio work. Issue [#63](https://github.com/LucaCGN/janus_cortex/issues/63) owns the Janus FastAPI/live-worker/signal-aggregation redesign. Issues [#56](https://github.com/LucaCGN/janus_cortex/issues/56) and [#59](https://github.com/LucaCGN/janus_cortex/issues/59) remain global portfolio-manager routes and must not be used to block or absorb NBA/WNBA covered-market runtime implementation.
+
 ## Core Principle
 
 Use Codex for reasoning, coding, debugging, review, and orchestration. Do not use Codex chat memory as the system memory.
@@ -152,6 +154,17 @@ If internal LLM is unavailable or cost-blocked:
 3. Codex may be invoked as fallback strategy crafter.
 4. Codex output must be converted into StrategyPlanJSON or reviewed action artifacts.
 5. Janus validators and order-manager paths still apply unless the user performs manual external intervention.
+
+## Pregame Research Dependency Rule
+
+Pregame Codex/NBA/WNBA research automations should produce useful priors, player/team context, and candidate signal configs. They are not a required live-trading dependency.
+
+If pregame research is missing, stale, paused, or crashed, Janus must enter degraded mode rather than global live-disable:
+
+1. Use stored priors and default event config.
+2. Continue deterministic/ML signal producers whose feed, CLOB, risk, worker, kill-switch, and order-path gates are green.
+3. Disable only the missing research/LLM signal source and record the degraded input in the runtime artifact.
+4. Fail closed only when a required runtime gate is red, such as stale feed, missing direct CLOB, no current event mapping, no worker heartbeat, kill-switch active, risk cap exhausted, or order-path preflight failure.
 
 ## Development Rule
 

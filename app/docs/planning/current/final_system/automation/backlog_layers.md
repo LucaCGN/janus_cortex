@@ -83,6 +83,14 @@ Follow-up issues should use GitHub issue types when available, plus the `type:*`
 | [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | Planned/sprint | Prove portfolio-manager real-call reconciliation before operational activation. |
 | [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | Active/sprint | Execute the next NBA playoff min-size live trade through Janus StrategyPlan/evaluate/execute/live-worker gates or record the exact blocker before the live window ends. |
 | [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | Active/sprint | Promote WNBA from passive/shadow capture to controlled min-size live test readiness with a WNBA StrategyPlan, direct CLOB evidence, and explicit gate/blocker proof. |
+| [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | Active/sprint | Build the independent Janus covered-market live trading runtime and signal aggregation system so pregame Codex/LLM availability is not a liveness dependency. |
+| [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | P0 | Planned/sprint | Normalize NBA/WNBA live snapshots and feed adapter parity. |
+| [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | P0 | Planned/sprint | Implement live signal schema and persistence. |
+| [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | P0 | Planned/sprint | Build signal aggregation arbitration and blocker artifacts. |
+| [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | P0 | Planned/sprint | Implement event risk budget and sleeve manager. |
+| [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Planned/sprint | Preserve deterministic fallback when pregame or LLM inputs fail. |
+| [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Planned backlog | Add runtime control endpoints for event config and signal toggles. |
+| [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P1 | Planned backlog | Add postgame signal performance review and missed-signal replay. |
 | [#57](https://github.com/LucaCGN/janus_cortex/issues/57) | P0 | Closed foundation | Spurs/Thunder final settlement and residual Thunder direct-CLOB exposure reconciled. |
 | [#58](https://github.com/LucaCGN/janus_cortex/issues/58) | P0 | Closed foundation | Resolved-market redeem workflow and unredeemed residual tolerance implemented so settled positions do not block new live readiness after direct-truth classification. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
@@ -112,6 +120,22 @@ It should track:
 The controller should not start duplicate work if a matching active queue item exists.
 
 ## Promotion Rules
+
+### Janus Core Live Runtime Split - 2026-05-24
+
+Issue `#63` is the parent for Janus covered-market live runtime redesign. It does not replace the global portfolio-manager issues.
+
+Routing rules:
+
+| Issue family | Routing under `#63` |
+|---|---|
+| `#61/#62` | Keep as NBA/WNBA event-readiness evidence routes until the new runtime can execute and review controlled min-size trades. |
+| `#55` | Keep as research/backtest evidence feeding signal confidence and timing config. |
+| `#42/#44` | Keep as support for exchange minimums, order exceptions, risk budget, and bankroll scaling. |
+| `#56/#59` | Keep scoped to Codex global portfolio-manager. Do not use them as Janus NBA/WNBA live-runtime owners. |
+| `#46/#47/#48` | Keep as profile/future-domain incubation, not covered-market live authority. |
+
+Implementation children created from `#63`: `#64` data adapters, `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, `#69` runtime control endpoints, and `#70` postgame signal-performance review. Each child issue must retain acceptance criteria and file/module ownership before code begins.
 
 | From | To | Required Evidence |
 |---|---|---|

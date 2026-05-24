@@ -47,10 +47,12 @@ The controller automation should read these anchor files on every material pass:
 16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
 17. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
 18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-19. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
-20. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-21. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-22. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+19. `app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md`
+20. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
+21. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
+22. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+23. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+24. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -182,6 +184,8 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#60](https://github.com/LucaCGN/janus_cortex/issues/60) | P1 | closed | WNBA sustained active-window passive CLOB/trade capture and audit integration completed; future WNBA live-promotion is #62. |
 | [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | open | Next NBA playoff min-size live trade route through Janus StrategyPlan/evaluate/execute/live-worker gates. |
 | [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | open | WNBA shadow-to-controlled-min-size live test readiness route. |
+| [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | open | Parent architecture and implementation route for independent Janus covered-market live trading runtime, live signal aggregation, degraded-mode operation, event risk budgets, and issue/backlog reset. |
+| [#64](https://github.com/LucaCGN/janus_cortex/issues/64)-[#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P0/P1 | open | Child implementation slices for normalized live snapshots, signal schema, aggregation arbitration, event budgets/sleeves, deterministic fallback, runtime controls, and postgame signal-performance review. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |
