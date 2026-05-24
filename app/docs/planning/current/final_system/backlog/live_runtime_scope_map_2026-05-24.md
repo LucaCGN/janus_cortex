@@ -52,7 +52,7 @@ Still missing for the full diagram:
 |---|---|---|
 | `janus-master-dev` | Partially. It can implement and repair issue-backed runtime slices. | Keep it as executor only; do not make it the performance-review strategist. |
 | `oversight-devloop` | Partially. It monitors no-progress loops. | Add #73 issue-health scoring and stale/comment-loop interventions. |
-| `janus-portfolio-manager` | Separate from Janus covered-market runtime. | Keep scoped to global portfolio #56/#59; do not use for NBA/WNBA covered-market live execution. |
+| `janus-portfolio-manager` | Separate from Janus covered-market runtime. | Keep scoped to global portfolio foundations from closed #56/#59 and active portfolio follow-ups; do not use for NBA/WNBA covered-market live execution. |
 | `oversight-portfolio` | Portfolio-specific only. | Keep separate from sports live runtime and project-chief review. |
 | `janus-obsidian-builder` | Supports memory and curation. | Repair backlog ingestion under #74; still no execution authority. |
 | Planned `janus-performance-review` | Missing. | Add under #71 after #70 has first artifact schema. |
@@ -108,8 +108,8 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 
 | Issue | Boundary |
 |---|---|
-| #56 | Global portfolio-manager action loop and grid scanner. |
-| #59 | Portfolio-manager real-call reconciliation. |
+| #56 | Closed global portfolio-manager action loop, grid scanner, and 20-slot governance foundation. |
+| #59 | Closed portfolio-manager real-call reconciliation foundation. |
 | #46 | Winning profile hypotheses. |
 | #48 | Geopolitics/economics/culture future-domain monitoring. |
 
@@ -149,7 +149,7 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 
 - Close or split #61/#62 after today's live-window evidence.
 - Keep #55/#42/#44 only if they feed concrete runtime config or tests.
-- Keep #56/#59 separate for portfolio manager.
+- Keep closed #56/#59 foundations separate for portfolio manager; use new focused issues for future portfolio drift or expansion.
 - Keep #47 deferred until current loop is stable.
 
 ## Acceptance For This Map

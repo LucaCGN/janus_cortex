@@ -32,9 +32,9 @@ The portfolio manager must also route through the correct Codex tool surface:
 - Janus-facing work uses Janus API/runtime wrappers, currently `codex_tool/*` and target `codex_tools/janus/*`.
 - Direct Polymarket fallback work uses target `codex_tools/polymarket/*`, not Janus API, when Janus is degraded and the independent execution gate is implemented and approved.
 - The target split is governed by `automation/codex_tooling_contract.md` and GitHub issue `#53`.
-- Concrete Janus portfolio order-management adapter implementation was completed in GitHub issue `#54`; real-call activation and post-confirmation direct-CLOB reconciliation proof are tracked separately in GitHub issue `#59`.
+- Concrete Janus portfolio order-management adapter implementation was completed in GitHub issue `#54`; the first supervised real-call activation and post-confirmation direct-CLOB reconciliation proof was completed in GitHub issue `#59`.
 - Resolved-market redemption and unredeemed residual tolerance are tracked separately in GitHub issue `#58`.
-- Active portfolio-manager action planning and gated grid-service spawn planning are tracked in GitHub issue `#56`.
+- Active portfolio-manager action planning and gated grid-service spawn planning foundations were completed in GitHub issue `#56`; new drift or expansion needs a focused follow-up issue.
 
 ## Scope Boundary
 
@@ -141,7 +141,7 @@ After mandatory safety/direct-truth checks, at least one of these outcomes must 
 
 If execution gates block the selected action, the result is not ordinary `no_material_change`; it is a blocked required action with the exact missing gate. The automation should fix or route the blocker rather than repeatedly reporting passive monitoring.
 
-During temporary 5-minute testing cadence, the manager must also suppress unchanged repeated dry-runs. Pass the latest prior manager action plan or equivalent recent-action list to `codex_tools/polymarket plan-manager-action --recent-actions-json <path>` when available. If the same token/market/action/price/size evidence is unchanged, select the next safe existing-position action or new-event candidate instead of repeating the same dry-run. Repetition is allowed only when direct truth changed, the target/order filled or disappeared, or a reviewed `#59` non-dry-run window is open.
+During temporary 5-minute testing cadence, the manager must also suppress unchanged repeated dry-runs. Pass the latest prior manager action plan or equivalent recent-action list to `codex_tools/polymarket plan-manager-action --recent-actions-json <path>` when available. If the same token/market/action/price/size evidence is unchanged, select the next safe existing-position action or new-event candidate instead of repeating the same dry-run. Repetition is allowed only when direct truth changed, the target/order filled or disappeared, or a reviewed non-dry-run window is open under current portfolio gates.
 
 A completed micro-position fill may create a follow-up target/stop/rebuy candidate for the next pass, but it must not become the whole next pass by default. The next pass must rerun the full portfolio loop: fresh direct account/order/trade truth, all material existing-position classifications, frontend catalog scouting, winning-profile delta watch, profile mimic/reject decisions, cross-league basketball scan, and grid/scalp review. The new fill's target candidate competes with all other existing-position, new-event, profile-mimic, and grid candidates. It should be selected only if it remains the best action after that full scan; otherwise it is carried forward as target policy state.
 
@@ -261,7 +261,7 @@ The portfolio manager is intended to become trading-capable, but it may only pla
 
 If any gate is missing, the pass must fall back to management planning: update the watchlist, write the blocker, and create or update the relevant GitHub issue.
 
-Current state: base `#53` tooling is preview-first for independent direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter. `#59` proved dry-run readiness and runtime kill-switch clearance, and `codex_tools/polymarket portfolio-manager-order` now exposes the concrete Codex CLI call to that Janus path for one-shot limit orders. Operational non-dry-run activation still requires an explicitly reviewed runtime with `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, reviewer approval metadata, fresh direct truth, and post-confirmation direct-CLOB reconciliation. `#56` owns active portfolio-manager candidate/action planning, frontend/profile discovery enforcement, one-shot order routing from selected actions, and gated grid-service spawn planning. Independent direct fallback remains plan-only until separately approved.
+Current state: base `#53` tooling is preview-first for independent direct fallback. The Janus portfolio-manager order-management path from `#54` is implemented behind the `janus_portfolio_order_management` execution path and `janus_portfolio_manager_order_management_v1` adapter. Closed `#59` proved the first supervised real-call path with dry-run readiness, runtime activation, kill-switch clearance, approved non-dry-run Janus order-management calls, external CLOB ids, direct post-call rechecks, and Janus order reconciliation. `codex_tools/polymarket portfolio-manager-order` exposes the concrete Codex CLI call to that Janus path for one-shot limit orders. Every future non-dry-run action still requires same-pass reviewed runtime state with `JANUS_PORTFOLIO_MANAGER_ORDER_MANAGEMENT_ENABLED=true`, reviewer approval metadata, fresh direct truth, a complete action proof bundle, and post-confirmation direct-CLOB reconciliation. Closed `#56` completed active portfolio-manager candidate/action planning, frontend/profile discovery enforcement, one-shot order routing from selected actions, gated grid-service spawn planning, and 20-slot governance. Independent direct fallback remains plan-only until separately approved.
 
 Before expecting a non-dry-run portfolio action, the automation must run or inspect:
 
@@ -275,9 +275,9 @@ When that live preflight is ready, dry-run is only the immediate same-pass smoke
 
 Redemption is not covered by the normal portfolio order-management proof bundle. A redeem preview or execution plan must follow the `Resolved-Market Redemption Gate` in `automation/codex_tooling_contract.md` and issue `#58`. Until that path is implemented, portfolio-manager passes should output settlement management plans and residual classifications only.
 
-### Concrete `#54`/`#59` Proof Bundle
+### Concrete Portfolio Proof Bundle
 
-For `#54` implementation and `#59` activation proof, boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management call only when its gate snapshot carries these concrete proof fields:
+The closed `#54`/`#59` foundations define the proof standard for future portfolio-manager actions. Boolean gate claims are not enough. A portfolio-manager action plan can be treated as ready for the approved order-management call only when its gate snapshot carries these concrete proof fields:
 
 - `approved_execution_path`: either `janus_portfolio_order_management` or `independent_polymarket_fallback`.
 - `adapter_name`: the exact adapter/tool path being selected, such as `janus_portfolio_manager_order_management_v1`; include `adapter_version` when available.

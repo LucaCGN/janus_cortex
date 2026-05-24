@@ -2,7 +2,7 @@
 
 Status: active source-of-truth contract
 Created: 2026-05-20
-Owning issues: `#55`, `#59`, `#60`
+Owning/foundation issues: `#55`, closed `#59`, closed `#60`
 Tooling: `python codex_tool/live_activation_preflight.py`
 
 ## Purpose

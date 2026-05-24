@@ -107,7 +107,7 @@ High-frequency services must be supervised as independent running services with 
 - `live-monitor-analyst` may use `codex_tools/polymarket/` only for urgent protect/close/cancel/replace actions during a Janus runtime break, and only under the independent Polymarket execution gate.
 - `master-controller` may inspect tool availability, create issues, route blockers, and no-op. It must not execute orders itself.
 - `development-agent` owns implementation under `#53`.
-- `#56` owns active-manager action planning, frontend/profile discovery enforcement, and gated grid/scalping service spawn hardening after the `#53` foundation.
+- Closed `#56` completed active-manager action planning, frontend/profile discovery enforcement, and gated grid/scalping service spawn hardening after the `#53` foundation. New tooling drift or expansion needs a focused follow-up issue.
 
 ## Implementation Acceptance
 
