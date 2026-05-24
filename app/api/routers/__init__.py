@@ -7,6 +7,7 @@ from app.api.routers.ops import router as ops_router
 from app.api.routers.portfolio import router as portfolio_router
 from app.api.routers.sync import router as sync_router
 from app.api.routers.system_registry import router as system_registry_router
+from app.api.routers.wnba_read import router as wnba_read_router
 
 __all__ = [
     "analysis_studio_router",
@@ -18,4 +19,5 @@ __all__ = [
     "portfolio_router",
     "sync_router",
     "system_registry_router",
+    "wnba_read_router",
 ]

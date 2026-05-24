@@ -38,6 +38,7 @@ class LiveStrategyWorkerConfig:
     orderbook_sample_interval_sec: float = 0.5
     min_size: float = 5.0
     min_buy_notional_usd: float = 1.0
+    max_buy_notional_usd: float | None = None
     share_precision: int = 3
     auto_protect_manual_positions: bool = True
     manual_target_delta_cents: float = 5.0
@@ -69,6 +70,7 @@ class LiveStrategyWorkerConfig:
             ),
             min_size=_env_float("JANUS_LIVE_STRATEGY_WORKER_MIN_SIZE", 5.0),
             min_buy_notional_usd=_env_float("JANUS_LIVE_STRATEGY_WORKER_MIN_BUY_NOTIONAL_USD", 1.0),
+            max_buy_notional_usd=_env_optional_float("JANUS_LIVE_STRATEGY_WORKER_MAX_BUY_NOTIONAL_USD"),
             share_precision=_env_int("JANUS_LIVE_STRATEGY_WORKER_SHARE_PRECISION", 3),
             auto_protect_manual_positions=_env_bool(
                 "JANUS_LIVE_STRATEGY_WORKER_AUTO_PROTECT_MANUAL_POSITIONS",
@@ -109,6 +111,7 @@ class LiveStrategyWorkerConfig:
             "orderbook_sample_interval_sec": self.orderbook_sample_interval_sec,
             "min_size": self.min_size,
             "min_buy_notional_usd": self.min_buy_notional_usd,
+            "max_buy_notional_usd": self.max_buy_notional_usd,
             "share_precision": self.share_precision,
             "auto_protect_manual_positions": self.auto_protect_manual_positions,
             "manual_target_delta_cents": self.manual_target_delta_cents,
@@ -436,11 +439,12 @@ def _build_command(
         str(config.min_size),
         "--min-buy-notional-usd",
         str(config.min_buy_notional_usd),
-        "--share-precision",
-        str(config.share_precision),
         "--manual-target-delta-cents",
         str(config.manual_target_delta_cents),
     ]
+    if config.max_buy_notional_usd is not None:
+        command.extend(["--max-buy-notional-usd", str(config.max_buy_notional_usd)])
+    command.extend(["--share-precision", str(config.share_precision)])
     for event_id in event_ids:
         command.extend(["--event-id", event_id])
     if config.execute:
@@ -592,6 +596,16 @@ def _env_float(name: str, default: float) -> float:
         return float(os.getenv(name, ""))
     except ValueError:
         return default
+
+
+def _env_optional_float(name: str) -> float | None:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def _safe_float(value: Any, default: float) -> float:

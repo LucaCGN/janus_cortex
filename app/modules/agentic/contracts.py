@@ -198,6 +198,7 @@ class LiveStrategyWorkerRequest(BaseModel):
     orderbook_sample_interval_sec: float | None = Field(default=None, ge=0.0, le=10.0)
     min_size: float | None = Field(default=None, gt=0.0)
     min_buy_notional_usd: float | None = Field(default=None, ge=0.0)
+    max_buy_notional_usd: float | None = Field(default=None, gt=0.0)
     share_precision: int | None = Field(default=None, ge=0, le=6)
     auto_protect_manual_positions: bool | None = None
     manual_target_delta_cents: float | None = Field(default=None, ge=0.0, le=100.0)

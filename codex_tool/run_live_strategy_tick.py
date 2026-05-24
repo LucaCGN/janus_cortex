@@ -71,6 +71,7 @@ def main() -> None:
     parser.add_argument("--orderbook-sample-interval-sec", type=float, default=0.5)
     parser.add_argument("--min-size", type=float, default=5.0)
     parser.add_argument("--min-buy-notional-usd", type=float, default=1.0)
+    parser.add_argument("--max-buy-notional-usd", type=float, default=None)
     parser.add_argument("--share-precision", type=int, default=3)
     parser.add_argument(
         "--auto-protect-manual-positions",
@@ -116,6 +117,7 @@ def main() -> None:
         orderbook_sample_interval_sec=args.orderbook_sample_interval_sec,
         min_size=args.min_size,
         min_buy_notional_usd=args.min_buy_notional_usd,
+        max_buy_notional_usd=args.max_buy_notional_usd,
         share_precision=args.share_precision,
         auto_protect_manual_positions=args.auto_protect_manual_positions,
         manual_target_delta_cents=args.manual_target_delta_cents,
@@ -140,6 +142,7 @@ def run_tick(
     orderbook_sample_interval_sec: float,
     min_size: float,
     min_buy_notional_usd: float,
+    max_buy_notional_usd: float | None = None,
     share_precision: int,
     auto_protect_manual_positions: bool,
     manual_target_delta_cents: float,
@@ -192,6 +195,7 @@ def run_tick(
             integrity_snapshot=integrity_snapshot,
             min_size=min_size,
             min_buy_notional_usd=min_buy_notional_usd,
+            max_buy_notional_usd=max_buy_notional_usd,
             share_precision=share_precision,
             auto_protect_manual_positions=auto_protect_manual_positions,
             manual_target_delta_cents=manual_target_delta_cents,
@@ -213,6 +217,7 @@ def run_tick(
             "mode": "operator_minimum_order",
             "min_size": min_size,
             "min_buy_notional_usd": min_buy_notional_usd,
+            "max_buy_notional_usd": max_buy_notional_usd,
             "share_precision": share_precision,
         },
         "integrity_ready_for_live_minimum_orders": ready_for_live,
@@ -239,6 +244,7 @@ def _run_event_tick(
     integrity_snapshot: dict[str, Any],
     min_size: float,
     min_buy_notional_usd: float,
+    max_buy_notional_usd: float | None = None,
     share_precision: int,
     auto_protect_manual_positions: bool,
     manual_target_delta_cents: float,
@@ -288,13 +294,10 @@ def _run_event_tick(
     game = _resolve_game(api_root, event_id, session_date)
     live_state: dict[str, Any] = {}
     if game.get("game_id"):
-        api_json(
-            api_root,
-            "POST",
-            f"/v1/sync/nba/live/{game['game_id']}",
-            {"include_live_snapshots": True, "include_play_by_play": True},
+        live_state = _sync_and_fetch_live_state(
+            api_root=api_root,
+            game=game,
         )
-        live_state = api_json(api_root, "GET", f"/v1/nba/games/{game['game_id']}/live")
 
     outcome_specs: list[dict[str, Any]] = []
     market_outcome_refs: dict[str, dict[str, str]] = {}
@@ -461,6 +464,7 @@ def _run_event_tick(
             "mode": "operator_minimum_order",
             "min_size": min_size,
             "min_buy_notional_usd": min_buy_notional_usd,
+            "max_buy_notional_usd": max_buy_notional_usd,
             "share_precision": share_precision,
         },
     }
@@ -3524,6 +3528,28 @@ def _resolve_game(api_root: str, event_id: str, session_date: str) -> dict[str, 
         }
 
     return {"event_id": event_id, "resolved": False, "reason": "event_id_not_parseable"}
+
+
+def _sync_and_fetch_live_state(*, api_root: str, game: dict[str, Any]) -> dict[str, Any]:
+    game_id = str(game.get("game_id") or "").strip()
+    if not game_id:
+        return {}
+    league = str(game.get("league") or "").strip().lower()
+    if league == "wnba":
+        api_json(
+            api_root,
+            "POST",
+            f"/v1/sync/wnba/live/{game_id}",
+            {"include_live_snapshots": True, "include_boxscore": True, "include_play_by_play": True},
+        )
+        return api_json(api_root, "GET", f"/v1/wnba/games/{game_id}/live")
+    api_json(
+        api_root,
+        "POST",
+        f"/v1/sync/nba/live/{game_id}",
+        {"include_live_snapshots": True, "include_play_by_play": True},
+    )
+    return api_json(api_root, "GET", f"/v1/nba/games/{game_id}/live")
 
 
 def _resolve_catalog_linked_nba_game_id(api_root: str, event_id: str) -> str | None:

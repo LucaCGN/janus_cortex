@@ -297,6 +297,19 @@ def _resolve_order_size(
         min_buy_notional_buffer = MIN_BUY_NOTIONAL_BUFFER_USD
     min_buy_notional_buffer = max(0.0, min_buy_notional_buffer)
     effective_min_buy_notional = min_buy_notional + min_buy_notional_buffer
+    requested_size = _safe_float(order_payload.get("size"))
+    requested_mode = str(
+        order_payload.get("sizing_mode")
+        or order_payload.get("size_policy")
+        or order_payload.get("sizing_policy")
+        or ""
+    ).strip().lower()
+    respect_plan_size = bool(order_payload.get("respect_plan_size")) or requested_mode in {
+        "plan_size",
+        "strategy_plan_size",
+        "fixed_shares",
+        "fixed_size",
+    }
     metadata = {
         "source": "operator_policy",
         "mode": policy.get("mode") or "operator_minimum_order",
@@ -305,13 +318,16 @@ def _resolve_order_size(
         "min_buy_notional_buffer_usd": min_buy_notional_buffer,
         "effective_min_buy_notional_usd": effective_min_buy_notional,
         "max_buy_notional_usd": _safe_float(policy.get("max_buy_notional_usd") or policy.get("max_notional_usd")),
-        "llm_requested_size": _safe_float(order_payload.get("size")),
+        "llm_requested_size": requested_size,
+        "respect_plan_size": respect_plan_size,
         "llm_strategy_budget_usd": strategy_budget_usd,
     }
     if side != "buy":
         return _safe_float(order_payload.get("size")), metadata
     if price <= 0.0:
         return None, metadata
+    if respect_plan_size and requested_size is not None:
+        return requested_size, metadata
     minimum_notional_size = effective_min_buy_notional / price
     precision = int(_safe_float(policy.get("share_precision")) or 3)
     factor = 10**max(0, precision)

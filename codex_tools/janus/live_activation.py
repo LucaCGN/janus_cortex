@@ -144,6 +144,7 @@ def build_sports_live_config(env: dict[str, str]) -> dict[str, Any]:
         "max_intents": env_int(env, "JANUS_LIVE_TEST_MAX_INTENTS", default=0),
         "min_size": env_float(env, "JANUS_LIVE_TEST_MIN_SIZE", default=5.0),
         "min_buy_notional_usd": env_float(env, "JANUS_LIVE_TEST_MIN_BUY_NOTIONAL_USD", default=1.0),
+        "max_buy_notional_usd": env_float(env, "JANUS_LIVE_TEST_MAX_BUY_NOTIONAL_USD", default=10.0),
         "source": str(env.get("JANUS_LIVE_TEST_SOURCE", "codex-live-activation-preflight")).strip(),
     }
 
@@ -192,6 +193,12 @@ def evaluate_sports_live_activation(
         (config.get("min_buy_notional_usd") or 0) >= 1,
         config.get("min_buy_notional_usd"),
         blocker="JANUS_LIVE_TEST_MIN_BUY_NOTIONAL_USD must be >= 1",
+    )
+    add(
+        "maximum_notional_policy",
+        (config.get("max_buy_notional_usd") or 0) >= (config.get("min_buy_notional_usd") or 0),
+        config.get("max_buy_notional_usd"),
+        blocker="JANUS_LIVE_TEST_MAX_BUY_NOTIONAL_USD must be >= JANUS_LIVE_TEST_MIN_BUY_NOTIONAL_USD",
     )
     add(
         "execute_flag_live_mode",
@@ -367,6 +374,8 @@ def build_sports_live_next_commands(config: dict[str, Any]) -> dict[str, str]:
             str(config.get("min_size") or 5),
             "--min-buy-notional-usd",
             str(config.get("min_buy_notional_usd") or 1),
+            "--max-buy-notional-usd",
+            str(config.get("max_buy_notional_usd") or 10),
         ]
     )
     rehearsal = list(base)
@@ -526,6 +535,8 @@ def _build_worker_tick_command(config: dict[str, Any], *, execute: bool) -> str:
             str(config.get("min_size") or 5),
             "--min-buy-notional-usd",
             str(config.get("min_buy_notional_usd") or 1),
+            "--max-buy-notional-usd",
+            str(config.get("max_buy_notional_usd") or 10),
         ]
     )
     if execute:

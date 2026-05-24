@@ -18,6 +18,7 @@ from app.api.routers import (
     portfolio_router,
     sync_router,
     system_registry_router,
+    wnba_read_router,
 )
 from app.modules.agentic.live_strategy_worker import get_live_strategy_worker
 
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(portfolio_router)
     app.include_router(sync_router)
     app.include_router(nba_read_router)
+    app.include_router(wnba_read_router)
 
     @app.get("/")
     def root() -> dict[str, Any]:

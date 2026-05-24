@@ -100,6 +100,28 @@ It must not place, cancel, replace, submit, sign, broadcast, or redeem orders di
 
 Execution still belongs to Janus StrategyPlan evaluate/execute/live-worker/order-management gates.
 
+## StrategyPlan Bridge Requirements
+
+When the live runtime needs an executable plan and no reviewed pregame plan is available, the bridge must build or adopt a current StrategyPlan instead of leaving the event monitor-only.
+
+Minimum executable bridge contract:
+
+- direct Polymarket catalog import/mapping for the event URL;
+- catalog UUID `market_id` and `outcome_id`, plus token ids, in every order intent;
+- `price_policy=current_ask` or another explicit dynamic policy, not stale screenshot/frontend prices;
+- `size_policy=plan_size` only when operator sizing gates include a max notional cap;
+- `max_buy_notional_usd` on the live tick/worker path for per-event budget control;
+- target, stop, rebuy/revision, feed freshness, spread, clock, and score-gap rules;
+- 5-share grid/scalp sleeve and, when allowed by budget, separate 5-share core hold sleeve;
+- no direct execution by the bridge itself.
+
+The current bootstrap implementation is `codex_tool/build_live_strategy_plan.py`. It supports:
+
+- `selected_outcome`: one selected side split into grid/core sleeves when `total_shares >= 10`;
+- `responsive_both_sides`: one grid sleeve for each moneyline side when no selected side exists.
+
+Live runtime operators should use this bridge to replace monitor-only fallback plans before a live window if the normal pregame planner is missing, paused, or stale.
+
 ## Postgame Feedback
 
 Every live event should persist:

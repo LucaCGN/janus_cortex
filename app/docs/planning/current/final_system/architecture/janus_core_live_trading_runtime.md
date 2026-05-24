@@ -104,6 +104,25 @@ As of 2026-05-24, `codex_tool/run_live_strategy_tick.py` implements the first `#
 
 The fallback is intentionally non-executable: `shadow_only=true`, `entry_disabled=true`, `must_not_place_orders=true`, `budget_usd=0`, and `max_positions=0`. It removes the liveness dependency on pregame Codex automation, but live orders still require an event-specific executable StrategyPlan with direct market/outcome/token mapping, event-scoped inventory proof, risk budget, target/stop/rebuy rules, and normal Janus execute/live-worker gates.
 
+### Implemented Executable Plan Bootstrap Slice
+
+As of 2026-05-24, `codex_tool/build_live_strategy_plan.py` implements the first `#63/#67` executable-plan bridge. It imports a Polymarket NBA/WNBA event URL into Janus catalog truth, maps the moneyline market/outcomes to catalog UUIDs and token ids, builds a validated StrategyPlanJSON, and can submit that plan as the current event plan.
+
+The bootstrapper does not place orders. Execution remains behind `evaluate_strategy_plan`, live-worker, direct CLOB/account truth, kill-switch, runtime activation, and order-management gates.
+
+Supported live-test plan shapes:
+
+| Mode | Use | Sleeve behavior |
+|---|---|---|
+| `selected_outcome` | Operator/Codex has selected the team/side to test. | Splits `10` shares into 5-share grid/scalp plus 5-share core hold when gates allow. |
+| `responsive_both_sides` | No side is selected but both moneyline sides should be available to signals. | Creates one 5-share grid/scalp sleeve per outcome, capped by operator notional gates. |
+
+The live tick and worker now accept `max_buy_notional_usd`, and the evaluator can respect StrategyPlan `size_policy=plan_size` while still enforcing minimum size, minimum buy notional, and maximum buy notional. This prevents the prior failure mode where every buy collapsed to a minimum-order heuristic and made parallel sleeve testing impossible.
+
+### Implemented WNBA Live Adapter Slice
+
+As of 2026-05-24, WNBA event ticks route through WNBA-specific live sync and read endpoints before evaluation. NBA still uses NBA endpoints. This removes the previous NBA-only live-state dependency for WNBA covered-market tests, while preserving fail-closed behavior if WNBA scoreboard/play-by-play, CLOB, or orderbook freshness is missing.
+
 ## Issue Routing
 
 `#63` owns the architecture and implementation route for Janus core live trading.

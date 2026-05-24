@@ -144,6 +144,15 @@ class NbaGameLiveSyncRequest(BaseModel):
     include_play_by_play: bool = True
 
 
+class WnbaGameLiveSyncRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    season: str = "2026"
+    include_live_snapshots: bool = True
+    include_boxscore: bool = True
+    include_play_by_play: bool = True
+
+
 class NbaSeasonSyncRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

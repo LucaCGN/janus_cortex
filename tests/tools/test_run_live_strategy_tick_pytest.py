@@ -159,6 +159,57 @@ def test_wnba_slug_aliases_cover_current_live_window_teams_pytest() -> None:
     assert live_tick._wnba_slug_alias("DAL") == "dal"
 
 
+def test_sync_and_fetch_live_state_routes_wnba_to_wnba_endpoints_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"api_root": api_root, "method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/wnba/games/1022600044/live":
+            return {"game_id": "1022600044", "latest_snapshot": {"period": 2, "home_score": 32, "away_score": 24}}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._sync_and_fetch_live_state(
+        api_root="http://test",
+        game={"league": "wnba", "game_id": "1022600044"},
+    )
+
+    assert result["game_id"] == "1022600044"
+    assert [call["path"] for call in calls] == [
+        "/v1/sync/wnba/live/1022600044",
+        "/v1/wnba/games/1022600044/live",
+    ]
+    assert calls[0]["payload"] == {
+        "include_live_snapshots": True,
+        "include_boxscore": True,
+        "include_play_by_play": True,
+    }
+
+
+def test_sync_and_fetch_live_state_keeps_nba_on_nba_endpoints_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"api_root": api_root, "method": method, "path": path, "payload": payload, "kwargs": kwargs})
+        if path == "/v1/nba/games/0042500314/live":
+            return {"game_id": "0042500314", "latest_snapshot": {"period": 1, "home_score": 0, "away_score": 0}}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._sync_and_fetch_live_state(
+        api_root="http://test",
+        game={"league": "nba", "game_id": "0042500314"},
+    )
+
+    assert result["game_id"] == "0042500314"
+    assert [call["path"] for call in calls] == [
+        "/v1/sync/nba/live/0042500314",
+        "/v1/nba/games/0042500314/live",
+    ]
+
+
 def test_resolve_game_uses_catalog_link_for_uuid_event_pytest(monkeypatch) -> None:
     event_uuid = "8da3c71c-1926-5f97-8473-7c742c7156b8"
     calls: list[dict[str, Any]] = []

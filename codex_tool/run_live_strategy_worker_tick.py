@@ -26,6 +26,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
             "orderbook_sample_interval_sec": args.orderbook_sample_interval_sec,
             "min_size": args.min_size,
             "min_buy_notional_usd": args.min_buy_notional_usd,
+            "max_buy_notional_usd": args.max_buy_notional_usd,
             "share_precision": args.share_precision,
             "manual_target_delta_cents": args.manual_target_delta_cents,
             "timeout_seconds": args.timeout_seconds,
@@ -49,6 +50,7 @@ except ModuleNotFoundError:  # pragma: no cover - direct script execution
         parser.add_argument("--orderbook-sample-interval-sec", type=float, default=None)
         parser.add_argument("--min-size", type=float, default=None)
         parser.add_argument("--min-buy-notional-usd", type=float, default=None)
+        parser.add_argument("--max-buy-notional-usd", type=float, default=None)
         parser.add_argument("--share-precision", type=int, default=None)
         parser.add_argument("--manual-target-delta-cents", type=float, default=None)
         parser.add_argument("--timeout-seconds", type=float, default=None)

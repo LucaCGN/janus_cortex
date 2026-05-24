@@ -39,6 +39,7 @@ def build_live_strategy_tick_parser(description: str) -> ArgumentParser:
     parser.add_argument("--orderbook-sample-interval-sec", type=float, default=0.5)
     parser.add_argument("--min-size", type=float, default=5.0)
     parser.add_argument("--min-buy-notional-usd", type=float, default=1.0)
+    parser.add_argument("--max-buy-notional-usd", type=float, default=None)
     parser.add_argument("--share-precision", type=int, default=3)
     parser.add_argument(
         "--auto-protect-manual-positions",
@@ -87,6 +88,7 @@ def build_live_strategy_tick_kwargs(args: Namespace) -> dict[str, Any]:
         "orderbook_sample_interval_sec": args.orderbook_sample_interval_sec,
         "min_size": args.min_size,
         "min_buy_notional_usd": args.min_buy_notional_usd,
+        "max_buy_notional_usd": args.max_buy_notional_usd,
         "share_precision": args.share_precision,
         "auto_protect_manual_positions": args.auto_protect_manual_positions,
         "manual_target_delta_cents": args.manual_target_delta_cents,

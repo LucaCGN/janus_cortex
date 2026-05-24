@@ -87,7 +87,11 @@ def _infer_event_probe_from_url(payload: EventImportUrlRequest) -> EventProbeCon
         raise HTTPException(status_code=422, detail="Could not parse event slug from URL.")
     slug = pieces[-1]
 
-    if "/sports/nba/" in payload.url:
+    if slug.startswith("wnba-") or "/sports/wnba/" in payload.url:
+        event_type_code = "sports_wnba_game"
+        history_mode = payload.history_mode or "rolling_recent"
+        history_market_selector = payload.history_market_selector or "moneyline"
+    elif "/sports/nba/" in payload.url:
         event_type_code = "sports_nba_game"
         history_mode = payload.history_mode or "rolling_recent"
         history_market_selector = payload.history_market_selector or "moneyline"

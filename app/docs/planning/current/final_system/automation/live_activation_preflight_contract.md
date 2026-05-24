@@ -37,6 +37,7 @@ Live readiness requires:
 - `JANUS_LIVE_TEST_MAX_INTENTS>0`
 - `JANUS_LIVE_TEST_MIN_SIZE>=5`
 - `JANUS_LIVE_TEST_MIN_BUY_NOTIONAL_USD>=1`
+- `JANUS_LIVE_TEST_MAX_BUY_NOTIONAL_USD>=JANUS_LIVE_TEST_MIN_BUY_NOTIONAL_USD`
 - either `JANUS_LIVE_TEST_ENABLE_LLM_DISPATCH=true` or `JANUS_LIVE_TEST_CODEX_REVIEWED_FALLBACK_ENABLED=true`
 - probed worker runtime is running/enabled and matches `execute`, `live_money`, account, and target event scope
 

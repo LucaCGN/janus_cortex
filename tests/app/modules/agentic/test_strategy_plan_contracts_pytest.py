@@ -457,6 +457,115 @@ def test_operator_minimum_buy_size_uses_notional_buffer_pytest() -> None:
     assert result.intents[0].metadata["sizing_policy"]["effective_min_buy_notional_usd"] == 1.01
 
 
+def test_operator_policy_can_respect_plan_size_with_notional_cap_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-sas-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="sas-core-hold",
+                family="core_hold_live_validation",
+                side="Spurs",
+                budget_usd=10.0,
+                entry_rules={
+                    "outcome_id": "outcome-sas",
+                    "token_id": "token-sas",
+                    "side": "buy",
+                    "size": 10,
+                    "size_policy": "plan_size",
+                    "price_policy": "current_ask",
+                    "max_price": 0.45,
+                    "price_band": [0.05, 0.45],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 12,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 1},
+                stop_rules={"max_adverse_cents": 4},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.31,
+            "best_bid": 0.30,
+            "best_ask": 0.31,
+            "score_gap": -4,
+            "scoreboard_age_seconds": 1,
+        },
+        portfolio_state={
+            "operator_sizing_policy": {
+                "mode": "operator_minimum_order",
+                "min_size": 5,
+                "min_buy_notional_usd": 1,
+                "max_buy_notional_usd": 10,
+                "share_precision": 3,
+            }
+        },
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].size == 10
+    assert result.intents[0].metadata["required_notional_usd"] == 3.1
+    assert result.intents[0].metadata["sizing_policy"]["respect_plan_size"] is True
+
+
+def test_operator_policy_blocks_plan_size_above_buy_notional_cap_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-sas-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="sas-oversized-core",
+                family="core_hold_live_validation",
+                side="Spurs",
+                budget_usd=20.0,
+                entry_rules={
+                    "outcome_id": "outcome-sas",
+                    "token_id": "token-sas",
+                    "side": "buy",
+                    "size": 25,
+                    "size_policy": "plan_size",
+                    "price_policy": "current_ask",
+                    "max_price": 0.45,
+                    "price_band": [0.05, 0.45],
+                    "allow_ultra_low_underdog": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 12,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 1},
+                stop_rules={"max_adverse_cents": 4},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.41,
+            "best_bid": 0.40,
+            "best_ask": 0.41,
+            "score_gap": -4,
+            "scoreboard_age_seconds": 1,
+        },
+        portfolio_state={
+            "operator_sizing_policy": {
+                "mode": "operator_minimum_order",
+                "min_size": 5,
+                "min_buy_notional_usd": 1,
+                "max_buy_notional_usd": 10,
+                "share_precision": 3,
+            }
+        },
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "operator_sizing_notional_exceeded"
+    assert result.blockers[0]["required_notional_usd"] == 10.25
+
+
 def test_strategy_plan_evaluator_allows_sub_10c_explicit_micro_grid_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-det-cle",

@@ -23,6 +23,7 @@ from app.api.models import (
     PolymarketPricesSyncRequest,
     PolymarketSyncRequest,
     SyncTriggerResponse,
+    WnbaGameLiveSyncRequest,
 )
 from app.data.databases.repositories import JanusUpsertRepository
 from app.data.databases.seed_packs.polymarket_event_seed_pack import (
@@ -50,6 +51,7 @@ from app.data.pipelines.daily.polymarket.consolidate_closed_positions import (
     consolidate_closed_positions_for_wallet,
 )
 from app.data.pipelines.daily.polymarket.sync_portfolio import run_portfolio_mirror_sync
+from app.data.pipelines.daily.wnba.sync_postgres import run_wnba_live_game_sync
 
 
 router = APIRouter(prefix="/v1/sync", tags=["sync"])
@@ -534,6 +536,23 @@ def _run_nba_live_game_sync(
     summary = run_nba_live_game_sync(
         game_id=game_id,
         include_live_snapshots=payload.include_live_snapshots,
+        include_play_by_play=payload.include_play_by_play,
+    )
+    return to_jsonable(summary.__dict__)
+
+
+def _run_wnba_live_game_sync(
+    connection: PsycopgConnection,
+    *,
+    game_id: str,
+    payload: WnbaGameLiveSyncRequest,
+) -> dict[str, Any]:
+    _ = connection
+    summary = run_wnba_live_game_sync(
+        game_id=game_id,
+        season=payload.season,
+        include_live_snapshots=payload.include_live_snapshots,
+        include_boxscore=payload.include_boxscore,
         include_play_by_play=payload.include_play_by_play,
     )
     return to_jsonable(summary.__dict__)
@@ -1161,6 +1180,27 @@ def sync_nba_live_game(
         connection,
         job_code="sync_nba_live_game",
         description="Sync nba live snapshot and play-by-play for a single game",
+        runner=_runner,
+    )
+
+
+@router.post(
+    "/wnba/live/{game_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=SyncTriggerResponse,
+)
+def sync_wnba_live_game(
+    game_id: str,
+    payload: WnbaGameLiveSyncRequest,
+    connection: PsycopgConnection = Depends(get_db_connection),
+) -> SyncTriggerResponse:
+    def _runner() -> dict[str, Any]:
+        return _run_wnba_live_game_sync(connection, game_id=game_id, payload=payload)
+
+    return _with_job_run(
+        connection,
+        job_code="sync_wnba_live_game",
+        description="Sync WNBA live snapshot, boxscore, and play-by-play for a single game",
         runner=_runner,
     )
 
