@@ -79,10 +79,18 @@ def test_responsive_both_sides_live_plan_builds_one_grid_sleeve_per_outcome_pyte
     validated = StrategyPlan.model_validate(plan)
 
     assert validated.context_summary["planning_mode"] == "responsive_both_sides"
-    assert len(validated.active_strategies) == 2
+    assert validated.context_summary["wnba_controlled_entry_fallback"] is True
+    assert len(validated.active_strategies) == 4
     assert {item.entry_rules["outcome_label"] for item in validated.active_strategies} == {"Spurs", "Thunder"}
-    assert all(item.family == "price_stability_micro_grid" for item in validated.active_strategies)
-    assert all(item.entry_rules["max_spread_cents"] == 2.0 for item in validated.active_strategies)
+    grid_strategies = [item for item in validated.active_strategies if item.family == "price_stability_micro_grid"]
+    controlled_strategies = [
+        item for item in validated.active_strategies if item.family == "wnba_controlled_min_size_entry_v1"
+    ]
+    assert len(grid_strategies) == 2
+    assert len(controlled_strategies) == 2
+    assert all(item.entry_rules["max_spread_cents"] == 2.0 for item in grid_strategies)
+    assert all(item.entry_rules["max_spread_cents"] == 6.0 for item in controlled_strategies)
+    assert all(item.entry_rules["controlled_entry_requires_grid_spread_blocker"] is True for item in controlled_strategies)
 
 
 def test_wnba_event_import_payload_uses_moneyline_catalog_probe_pytest() -> None:

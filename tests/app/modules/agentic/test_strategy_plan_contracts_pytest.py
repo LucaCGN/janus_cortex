@@ -1,12 +1,22 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from app.modules.agentic.contracts import ActiveStrategy, StrategyPlan
 from app.modules.agentic.engine import evaluate_strategy_plan
+
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+WNBA_2026_05_24_PLAN_PATHS = [
+    REPO_ROOT / "local/shared/artifacts/strategy-plans/2026-05-24/wnba-phx-atl-2026-05-24/current.json",
+    REPO_ROOT / "local/shared/artifacts/strategy-plans/2026-05-24/wnba-dal-nyl-2026-05-24/current.json",
+    REPO_ROOT / "local/shared/artifacts/strategy-plans/2026-05-24/wnba-wsh-sea-2026-05-24/current.json",
+]
 
 
 def test_strategy_plan_accepts_multi_strategy_executable_json_pytest() -> None:
@@ -444,6 +454,206 @@ def test_strategy_plan_evaluator_uses_current_ask_price_policy_pytest() -> None:
     assert result.intents[0].price == 0.21
     assert result.intents[0].metadata["entry_rules"]["resolved_price_policy"] == "current_ask"
     assert result.intents[0].metadata["exit_rules"]["target_price"] == 0.231
+
+
+def test_wnba_controlled_entry_fires_after_matching_grid_spread_blocker_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="wnba-dal-nyl-2026-05-24",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="dallas-grid",
+                family="price_stability_micro_grid",
+                side="Dallas",
+                budget_usd=10.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-dal",
+                    "token_id": "token-dal",
+                    "side": "buy",
+                    "size": 5,
+                    "price_policy": "current_ask",
+                    "max_price": 0.45,
+                    "price_band": [0.03, 0.45],
+                    "max_spread_cents": 2,
+                    "max_scoreboard_age_seconds": 45,
+                    "max_orderbook_age_seconds": 45,
+                    "max_abs_score_gap": 18,
+                    "min_clock_remaining_seconds": 60,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 1},
+                stop_rules={"max_adverse_cents": 3},
+            ),
+            ActiveStrategy(
+                strategy_id="dallas-controlled-fill",
+                family="wnba_controlled_min_size_entry_v1",
+                side="Dallas",
+                budget_usd=10.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-dal",
+                    "token_id": "token-dal",
+                    "side": "buy",
+                    "size": 5,
+                    "price_policy": "current_ask",
+                    "max_price": 0.45,
+                    "price_band": [0.03, 0.45],
+                    "max_spread_cents": 6,
+                    "max_scoreboard_age_seconds": 45,
+                    "max_orderbook_age_seconds": 45,
+                    "max_abs_score_gap": 18,
+                    "min_clock_remaining_seconds": 60,
+                    "controlled_entry_requires_grid_spread_blocker": True,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 2},
+                stop_rules={"max_adverse_cents": 4},
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "best_bid": 0.18,
+            "best_ask": 0.22,
+            "price": 0.22,
+            "spread_cents": 4,
+            "score_gap": 2,
+            "period": 2,
+            "clock": "PT05M00.00S",
+            "scoreboard_age_seconds": 3,
+            "orderbook_age_seconds": 2,
+        },
+        portfolio_state={"open_positions": 0, "open_orders": 0, "pending_intents": 0},
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].strategy_id == "dallas-controlled-fill"
+    assert result.intents[0].strategy_family == "wnba_controlled_min_size_entry_v1"
+    assert result.intents[0].price == 0.22
+    assert result.blockers[0]["strategy_id"] == "dallas-grid"
+    assert result.blockers[0]["reason"] == "orderbook_spread_too_wide"
+
+
+def test_wnba_controlled_entry_caps_event_to_one_candidate_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="wnba-dal-nyl-2026-05-24",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="dallas-grid",
+                family="price_stability_micro_grid",
+                side="Dallas",
+                entry_rules={
+                    "outcome_id": "outcome-dal",
+                    "token_id": "token-dal",
+                    "side": "buy",
+                    "size": 5,
+                    "price": 0.22,
+                    "max_spread_cents": 2,
+                },
+            ),
+            ActiveStrategy(
+                strategy_id="dallas-controlled-fill",
+                family="wnba_controlled_min_size_entry_v1",
+                side="Dallas",
+                budget_usd=10.0,
+                entry_rules={
+                    "outcome_id": "outcome-dal",
+                    "token_id": "token-dal",
+                    "side": "buy",
+                    "size": 5,
+                    "price": 0.22,
+                    "max_spread_cents": 6,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 2},
+                stop_rules={"max_adverse_cents": 4},
+            ),
+            ActiveStrategy(
+                strategy_id="new-york-grid",
+                family="price_stability_micro_grid",
+                side="New York",
+                entry_rules={
+                    "outcome_id": "outcome-nyl",
+                    "token_id": "token-nyl",
+                    "side": "buy",
+                    "size": 5,
+                    "price": 0.22,
+                    "max_spread_cents": 2,
+                },
+            ),
+            ActiveStrategy(
+                strategy_id="new-york-controlled-fill",
+                family="wnba_controlled_min_size_entry_v1",
+                side="New York",
+                budget_usd=10.0,
+                entry_rules={
+                    "outcome_id": "outcome-nyl",
+                    "token_id": "token-nyl",
+                    "side": "buy",
+                    "size": 5,
+                    "price": 0.22,
+                    "max_spread_cents": 6,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 2},
+                stop_rules={"max_adverse_cents": 4},
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"spread_cents": 4},
+        portfolio_state={"open_positions": 0, "open_orders": 0, "pending_intents": 0},
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].strategy_id == "dallas-controlled-fill"
+    assert any(blocker["reason"] == "controlled_entry_event_limit_reached" for blocker in result.blockers)
+
+
+def test_wnba_controlled_entry_augments_three_2026_05_24_plans_pytest() -> None:
+    for path in WNBA_2026_05_24_PLAN_PATHS:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["valid_until_utc"] = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        grid = payload["active_strategies"][0]
+        controlled = {
+            **grid,
+            "strategy_id": f"{grid['strategy_id']}-controlled-fill",
+            "family": "wnba_controlled_min_size_entry_v1",
+            "sleeve_id": f"{grid['sleeve_id']}-controlled-fill",
+            "sleeve_role": "controlled_fill",
+            "entry_rules": {
+                **grid["entry_rules"],
+                "max_spread_cents": 6.0,
+                "controlled_entry_requires_grid_spread_blocker": True,
+                "reason": "controlled_fill_test_after_grid_spread_block",
+            },
+            "exit_rules": {"target_policy": "micro_grid_scaled", "min_target_cents": 2.0, "target_return_fraction": 0.10},
+            "stop_rules": {"max_adverse_cents": 4.0},
+        }
+        payload["active_strategies"] = [grid, controlled]
+        plan = StrategyPlan.model_validate(payload)
+
+        result = evaluate_strategy_plan(
+            plan,
+            market_state={
+                "best_bid": 0.18,
+                "best_ask": 0.22,
+                "price": 0.22,
+                "spread_cents": 4.0,
+                "score_gap": 2,
+                "period": 2,
+                "clock": "PT05M00.00S",
+                "scoreboard_age_seconds": 3,
+                "orderbook_age_seconds": 2,
+            },
+            portfolio_state={"open_positions": 0, "open_orders": 0, "pending_intents": 0},
+        )
+
+        assert result.intent_count == 1, path
+        assert result.intents[0].strategy_family == "wnba_controlled_min_size_entry_v1"
+        assert result.blockers[0]["reason"] == "orderbook_spread_too_wide"
 
 
 def test_strategy_plan_evaluator_blocks_dynamic_price_above_max_pytest() -> None:

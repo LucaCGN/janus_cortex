@@ -12,6 +12,9 @@ MIN_BUY_NOTIONAL_USD = 1.0
 MIN_BUY_NOTIONAL_BUFFER_USD = 0.01
 UNDERDOG_WATCH_ONLY_PRICE = 0.19
 UNDERDOG_SUB_10C_PRICE = 0.10
+WNBA_CONTROLLED_ENTRY_FAMILY = "wnba_controlled_min_size_entry_v1"
+WNBA_CONTROLLED_ENTRY_MAX_INTENTS = 1
+GRID_SPREAD_BLOCKER_REASONS = {"orderbook_spread_required", "orderbook_spread_too_wide"}
 
 
 def evaluate_strategy_plan(
@@ -26,6 +29,8 @@ def evaluate_strategy_plan(
     portfolio_state = dict(portfolio_state or {})
     blockers: list[dict[str, Any]] = []
     intents: list[OrderIntent] = []
+    strategies_by_id = {strategy.strategy_id: strategy for strategy in plan.active_strategies}
+    controlled_entry_intents = 0
     now = datetime.now(timezone.utc)
 
     if plan.valid_until_utc is not None and plan.valid_until_utc <= now:
@@ -44,6 +49,15 @@ def evaluate_strategy_plan(
         shadow_flags = dict(strategy.shadow_flags or {})
         if bool(shadow_flags.get("shadow_only")):
             blockers.append({"strategy_id": strategy.strategy_id, "reason": "shadow_only"})
+            continue
+        controlled_entry_blocker = _wnba_controlled_entry_blocker(
+            strategy,
+            blockers=blockers,
+            strategies_by_id=strategies_by_id,
+            controlled_entry_intents=controlled_entry_intents,
+        )
+        if controlled_entry_blocker is not None:
+            blockers.append({"strategy_id": strategy.strategy_id, **controlled_entry_blocker})
             continue
         rule_gate = _rules_blocker(
             strategy.entry_rules,
@@ -185,6 +199,8 @@ def evaluate_strategy_plan(
                 },
             )
         )
+        if _is_wnba_controlled_entry_strategy(strategy):
+            controlled_entry_intents += 1
 
     blockers = _attach_sleeve_metadata(plan, blockers)
     return StrategyPlanEvaluationResult(
@@ -196,6 +212,74 @@ def evaluate_strategy_plan(
         blockers=blockers,
         sleeve_states=_build_sleeve_states(plan, intents=intents, blockers=blockers),
     )
+
+
+def _wnba_controlled_entry_blocker(
+    strategy: Any,
+    *,
+    blockers: list[dict[str, Any]],
+    strategies_by_id: dict[str, Any],
+    controlled_entry_intents: int,
+) -> dict[str, Any] | None:
+    if not _is_wnba_controlled_entry_strategy(strategy):
+        return None
+    if controlled_entry_intents >= WNBA_CONTROLLED_ENTRY_MAX_INTENTS:
+        return {
+            "reason": "controlled_entry_event_limit_reached",
+            "family": WNBA_CONTROLLED_ENTRY_FAMILY,
+            "max_controlled_entry_intents": WNBA_CONTROLLED_ENTRY_MAX_INTENTS,
+        }
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    requires_grid_spread_blocker = entry_rules.get("requires_grid_spread_blocker")
+    if requires_grid_spread_blocker is None:
+        requires_grid_spread_blocker = entry_rules.get("controlled_entry_requires_grid_spread_blocker")
+    if requires_grid_spread_blocker is None:
+        requires_grid_spread_blocker = True
+    if bool(requires_grid_spread_blocker) and not _has_matching_grid_spread_blocker(
+        blockers,
+        strategies_by_id=strategies_by_id,
+        entry_rules=entry_rules,
+    ):
+        return {
+            "reason": "controlled_entry_requires_grid_spread_blocker",
+            "required_blockers": sorted(GRID_SPREAD_BLOCKER_REASONS),
+            "fallback_family": "price_stability_micro_grid",
+        }
+    if not _has_target_policy(dict(getattr(strategy, "exit_rules", {}) or {}), entry_rules):
+        return {"reason": "controlled_entry_target_policy_required"}
+    if not _has_stop_policy(dict(getattr(strategy, "stop_rules", {}) or {}), entry_rules):
+        return {"reason": "controlled_entry_stop_policy_required"}
+    return None
+
+
+def _is_wnba_controlled_entry_strategy(strategy: Any) -> bool:
+    return str(getattr(strategy, "family", "") or "").strip().lower() == WNBA_CONTROLLED_ENTRY_FAMILY
+
+
+def _has_matching_grid_spread_blocker(
+    blockers: list[dict[str, Any]],
+    *,
+    strategies_by_id: dict[str, Any],
+    entry_rules: dict[str, Any],
+) -> bool:
+    token_id = str(entry_rules.get("token_id") or "").strip()
+    outcome_id = str(entry_rules.get("outcome_id") or "").strip()
+    for blocker in blockers:
+        if str(blocker.get("reason") or "") not in GRID_SPREAD_BLOCKER_REASONS:
+            continue
+        blocked_strategy = strategies_by_id.get(str(blocker.get("strategy_id") or ""))
+        if blocked_strategy is None:
+            continue
+        if str(getattr(blocked_strategy, "family", "") or "").strip().lower() != "price_stability_micro_grid":
+            continue
+        blocked_rules = dict(getattr(blocked_strategy, "entry_rules", {}) or {})
+        blocked_token = str(blocked_rules.get("token_id") or "").strip()
+        blocked_outcome = str(blocked_rules.get("outcome_id") or "").strip()
+        if token_id and blocked_token and token_id == blocked_token:
+            return True
+        if outcome_id and blocked_outcome and outcome_id == blocked_outcome:
+            return True
+    return False
 
 
 def _extract_order_payload(entry_rules: dict[str, Any]) -> dict[str, Any]:

@@ -68,6 +68,8 @@ def build_live_strategy_plan_from_catalog(
     max_orderbook_age_seconds: float = 45.0,
     max_abs_score_gap: float = 18.0,
     min_clock_remaining_seconds: float = 60.0,
+    include_wnba_controlled_entry: bool = True,
+    wnba_controlled_max_spread_cents: float = 6.0,
     valid_minutes: float = 960.0,
     generated_at_utc: datetime | None = None,
 ) -> dict[str, Any]:
@@ -77,6 +79,7 @@ def build_live_strategy_plan_from_catalog(
     market_id = str(market["market_id"])
     selected_outcomes = select_plan_outcomes(outcomes or [], mode=mode, outcome_label=outcome_label)
     strategies: list[ActiveStrategy] = []
+    normalized_league = league.strip().lower()
 
     if _normalize_mode(mode) == "responsive_both_sides":
         for item in selected_outcomes:
@@ -101,6 +104,28 @@ def build_live_strategy_plan_from_catalog(
                     max_adverse_cents=3.0,
                 )
             )
+            if normalized_league == "wnba" and include_wnba_controlled_entry:
+                strategies.append(
+                    _build_strategy(
+                        event_id=event_id,
+                        market_id=market_id,
+                        outcome=item,
+                        shares=grid_leg_shares,
+                        budget_usd=max_buy_notional_usd,
+                        family="wnba_controlled_min_size_entry_v1",
+                        sleeve_role="controlled_fill",
+                        min_entry_price=min_entry_price,
+                        max_entry_price=max_entry_price,
+                        max_spread_cents=wnba_controlled_max_spread_cents,
+                        max_scoreboard_age_seconds=max_scoreboard_age_seconds,
+                        max_orderbook_age_seconds=max_orderbook_age_seconds,
+                        max_abs_score_gap=max_abs_score_gap,
+                        min_clock_remaining_seconds=min_clock_remaining_seconds,
+                        target_cents=2.0,
+                        target_return_fraction=0.10,
+                        max_adverse_cents=4.0,
+                    )
+                )
     else:
         selected = selected_outcomes[0]
         grid_shares = min(grid_leg_shares, total_shares)
@@ -125,6 +150,28 @@ def build_live_strategy_plan_from_catalog(
                 max_adverse_cents=3.0,
             )
         )
+        if normalized_league == "wnba" and include_wnba_controlled_entry:
+            strategies.append(
+                _build_strategy(
+                    event_id=event_id,
+                    market_id=market_id,
+                    outcome=selected,
+                    shares=grid_shares,
+                    budget_usd=max_buy_notional_usd,
+                    family="wnba_controlled_min_size_entry_v1",
+                    sleeve_role="controlled_fill",
+                    min_entry_price=min_entry_price,
+                    max_entry_price=max_entry_price,
+                    max_spread_cents=wnba_controlled_max_spread_cents,
+                    max_scoreboard_age_seconds=max_scoreboard_age_seconds,
+                    max_orderbook_age_seconds=max_orderbook_age_seconds,
+                    max_abs_score_gap=max_abs_score_gap,
+                    min_clock_remaining_seconds=min_clock_remaining_seconds,
+                    target_cents=2.0,
+                    target_return_fraction=0.10,
+                    max_adverse_cents=4.0,
+                )
+            )
         core_shares = total_shares - grid_shares
         if core_shares >= 5.0:
             strategies.append(
@@ -157,7 +204,7 @@ def build_live_strategy_plan_from_catalog(
         plan_owner="system",
         context_summary={
             "schema_version": LIVE_PLAN_BOOTSTRAP_SCHEMA_VERSION,
-            "league": league.strip().lower(),
+            "league": normalized_league,
             "event_url": event_url,
             "catalog_event_id": catalog_event.get("event_id"),
             "catalog_event_slug": catalog_event.get("canonical_slug"),
@@ -165,6 +212,7 @@ def build_live_strategy_plan_from_catalog(
             "planning_mode": _normalize_mode(mode),
             "max_event_notional_usd": max_buy_notional_usd,
             "minimum_parallel_sleeve": "5-share grid plus 5-share core when total_shares >= 10",
+            "wnba_controlled_entry_fallback": bool(normalized_league == "wnba" and include_wnba_controlled_entry),
             "execution_boundary": "plan-only; Janus evaluate/execute/live-worker gates own all orders",
         },
         active_strategies=strategies,
@@ -247,6 +295,8 @@ def build_live_strategy_plan_with_api(args: Namespace) -> dict[str, Any]:
         max_orderbook_age_seconds=args.max_orderbook_age_seconds,
         max_abs_score_gap=args.max_abs_score_gap,
         min_clock_remaining_seconds=args.min_clock_remaining_seconds,
+        include_wnba_controlled_entry=not args.disable_wnba_controlled_entry,
+        wnba_controlled_max_spread_cents=args.wnba_controlled_max_spread_cents,
         valid_minutes=args.valid_minutes,
     )
     if args.output_path:
@@ -323,6 +373,8 @@ def build_live_plan_parser(description: str) -> ArgumentParser:
     parser.add_argument("--max-orderbook-age-seconds", type=float, default=45.0)
     parser.add_argument("--max-abs-score-gap", type=float, default=18.0)
     parser.add_argument("--min-clock-remaining-seconds", type=float, default=60.0)
+    parser.add_argument("--disable-wnba-controlled-entry", action="store_true")
+    parser.add_argument("--wnba-controlled-max-spread-cents", type=float, default=6.0)
     parser.add_argument("--valid-minutes", type=float, default=960.0)
     parser.add_argument("--stream-enabled", action="store_true")
     parser.add_argument("--stream-sample-count", type=int, default=3)
@@ -391,6 +443,17 @@ def _build_strategy(
             "allow_ultra_low_underdog": True,
             "allow_sub_10c_underdog_grid": True,
             "reason": f"{sleeve_role}_controlled_live_test",
+            **(
+                {
+                    "controlled_entry_mode": "current_ask_fill_proof",
+                    "controlled_entry_requires_grid_spread_blocker": True,
+                    "fallback_after_family": "price_stability_micro_grid",
+                    "max_controlled_entry_intents": 1,
+                    "requires_post_call_direct_clob_reconciliation": True,
+                }
+                if family == "wnba_controlled_min_size_entry_v1"
+                else {}
+            ),
         },
         exit_rules={
             "target_required": True,
