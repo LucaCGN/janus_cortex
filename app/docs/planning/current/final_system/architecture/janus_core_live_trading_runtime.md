@@ -131,8 +131,8 @@ Existing issues are reclassified:
 
 | Issue | New role under `#63` |
 |---|---|
-| `#61` | NBA live execution evidence and blocker route. |
-| `#62` | WNBA controlled minimum-size promotion evidence and blocker route. |
+| `#61` | Completed NBA OKC/SAS live execution foundation; future NBA runtime gaps route to focused #63/#70/#55 tasks. |
+| `#62` | Active WNBA controlled minimum-size promotion evidence and blocker route. |
 | `#55` | Entry timing, fillability, and event-start expiry research feeding signal confidence. |
 | `#42` | Polymarket minimum-order and market-order exception support. |
 | `#44` | Risk ladder and account/bankroll calibration support. |
@@ -143,14 +143,14 @@ Implementation child issues:
 
 | Issue | Scope |
 |---|---|
-| [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | NBA/WNBA live adapter parity and normalized snapshot tests. |
-| [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | Signal producer schema and persistence. |
-| [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | Aggregator conflict/risk/cooldown arbitration and blocker artifacts. |
-| [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | Event budget and sleeve manager. |
-| [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | Deterministic fallback when pregame/LLM is missing. |
-| [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | Runtime control endpoints for signal producer activation and event config changes. |
-| [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | Postgame signal-performance review and missed-signal replay. |
+| [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | Closed foundation: NBA/WNBA normalized snapshot review and live-tick adoption. |
+| [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | Closed foundation: signal producer schema and artifact persistence. |
+| [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | Closed foundation: aggregator conflict/risk/cooldown arbitration and blocker artifacts. |
+| [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | Closed foundation: event budget and sleeve helper. |
+| [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | Closed foundation: deterministic fallback when pregame/LLM is missing. |
+| [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | Closed foundation: runtime control endpoints for signal producer activation and event config changes. |
+| [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | Open follow-up: postgame signal-performance review, missed-signal replay, and no-bid/min-price calibration. |
 
 ## Acceptance Check
 
-This contract is satisfied when future code implements the normalized snapshot, signal, aggregation, event-budget, and StrategyPlan bridge surfaces with tests and runtime artifacts. Until then, this file is a planning authority and issue-routing contract, not live-order permission.
+This contract remains open until the implemented normalized snapshot, signal, aggregation, event-budget, runtime-control, and StrategyPlan bridge foundations are adopted by the live worker as the ordinary covered-market runtime path with lot-level target management and postgame learning evidence. This file is a planning authority and issue-routing contract, not live-order permission.

@@ -55,6 +55,19 @@ The aggregator must:
 7. Select sleeve action: core hold, grid/scalp, rebuy, reduce/stop, or monitor.
 8. Emit a StrategyPlan revision or an execution blocker artifact.
 
+## Gate Scope
+
+Strategy gates are local to the signal source or sleeve that owns them.
+
+A score-gap limit, band-retest rule, spread threshold, no-bid condition, LLM-cost limit, or strategy-level max/min should not become a global no-trade result unless it is a live-money safety gate shared by every sleeve. The aggregator should preserve the local blocker and continue evaluating independent signals that still have valid feed, CLOB, inventory, budget, and risk evidence.
+
+Examples:
+
+- A band/grid sleeve blocked by `score_gap_outside_range` does not automatically block a core-hold reduce signal.
+- A no-bid/min-price lottery component blocked as replay-only does not block ordinary target replacement for an existing filled lot.
+- A missing or stale LLM revision is advisory unless the selected sleeve explicitly requires LLM review.
+- A global kill switch, stale direct CLOB truth, missing token mapping, or event budget exhaustion blocks every live execution candidate.
+
 ## Event Control Config
 
 Each live event should expose mutable config that Codex, internal LLM, operator, or Janus runtime can update through approved endpoints:
@@ -86,6 +99,18 @@ Rules to test:
 5. In high-volatility mode, buy signals should target support retests after downward impulses and sell signals should target the next upper band or a bounded cent/profit target.
 
 The component must use direct CLOB/orderbook and score-clock evidence, not delayed chart pixels.
+
+## No-Bid And Min-Price Lottery Component
+
+Low-price comeback and hype-bounce behavior is a candidate component, not a live default.
+
+Rules:
+
+1. No-bid or ask-only periods must be recorded as a distinct fillability regime.
+2. A 1c-4c price range is not automatically an edge; replay must prove that fills can occur before targetable rebounds and that duplicate cooldown does not erase the opportunity.
+3. Subcent/min-price behavior should stay `replay_only` until postgame evidence promotes it through event-control config with explicit caps.
+4. Live promotion requires a component-specific cap, cooldown, target policy, and final-score outcome accounting.
+5. While replay-only, this component can emit `monitor`, `blocked`, or `review_candidate` signals but cannot suppress other sleeves or place live order intents.
 
 ## Execution Boundary
 
@@ -121,6 +146,26 @@ The current bootstrap implementation is `codex_tool/build_live_strategy_plan.py`
 - `responsive_both_sides`: one grid sleeve for each moneyline side when no selected side exists.
 
 Live runtime operators should use this bridge to replace monitor-only fallback plans before a live window if the normal pregame planner is missing, paused, or stale.
+
+## Lot-Level Target Management
+
+Sports-live execution must manage filled lots and sleeve targets, not just a single event-level position flag.
+
+Every reconciled fill should have:
+
+- source: Janus, operator/manual, or imported external;
+- event id, token id, outcome, side, share count, price, timestamp, and external order/trade id when available;
+- sleeve assignment: grid/scalp, core hold, rebuy, reduce/stop, or imported/manual;
+- weighted basis for the sleeve and for the aggregate event position;
+- target, stop, rebuy, or monitor policy;
+- current direct CLOB coverage: matching open sell orders, filled targets, stale targets, and target-missing shares.
+
+Target coverage must be evaluated from fresh direct CLOB account truth:
+
+- Open sell orders below or unrelated to the current weighted basis do not make a sleeve target-covered.
+- Manual/operator fills must be reconciled before Janus computes new target ladders.
+- Target replacement should cancel/replace only through approved Janus order-management gates and only when event controls allow it.
+- If a strategy wants both grid and core exposure, the system should be able to target only the grid lot while holding the core lot.
 
 ## Postgame Feedback
 

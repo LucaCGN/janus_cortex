@@ -14,7 +14,7 @@ This roster separates app-owned live execution, Codex development, oversight, re
 
 | Automation | Kind | Cadence | Status | Primary issues | Authority |
 |---|---|---:|---|---|---|
-| `janus-master-dev` (`janus-master-controller`) | cron | 15m | active | #61, #62, #63-#70, #55, #42, #44 | Issue-backed development/live-readiness executor. May patch code/docs/tests and update issues after queue claim. Janus live actions only through approved Janus StrategyPlan/live-worker gates. |
+| `janus-master-dev` (`janus-master-controller`) | cron | 15m | active | #62, #63-#70, #55, #42, #44 | Issue-backed development/live-readiness executor. May patch code/docs/tests and update issues after queue claim. Janus live actions only through approved Janus StrategyPlan/live-worker gates. Closed #61 remains NBA live-test foundation evidence, not an active primary route. |
 | `master-janus-manager` | cron | 1h | active | #73, #63, #71, #74 | Automation-system manager. Reviews last runs across all Codex lanes, detects prompt/memory/source-of-truth drift, and enforces GitHub issues, repo docs, and Obsidian as durable CI/CD truth. No trading or worker starts. |
 | `oversight-devloop` | cron | 30m | active | #73, all active P0/P1 | Dev-loop oversight and anti-stagnation. Splits/closes/routes issues, checks dirty worktree and queue locks. No trading or worker starts. |
 | `oversight-portfolio` (`janus-loop-oversight-console`) | cron | 1h | active | closed #56/#59 foundations; active portfolio follow-ups | Portfolio-manager oversight only. Reviews strategy/action/rationale drift. No orders, redemptions, or services. |
