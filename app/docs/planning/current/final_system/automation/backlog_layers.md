@@ -98,7 +98,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | Active/sprint | Execute the next NBA playoff min-size live trade through Janus StrategyPlan/evaluate/execute/live-worker gates or record the exact blocker before the live window ends. |
 | [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | Active/sprint | Promote WNBA from passive/shadow capture to controlled min-size live test readiness with a WNBA StrategyPlan, direct CLOB evidence, and explicit gate/blocker proof. |
 | [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | Active/sprint | Build the independent Janus covered-market live trading runtime and signal aggregation system so pregame Codex/LLM availability is not a liveness dependency. |
-| [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | P0 | Planned/sprint | Normalize NBA/WNBA live snapshots and feed adapter parity. |
+| [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | P0 | Closed foundation | Normalized NBA/WNBA live snapshot review and live-tick runtime adoption implemented in `340db2f` and `e87515f`; future HTTP/readback adoption needs a focused follow-up if #63 requires it. |
 | [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | P0 | Closed foundation | Live signal schema and persistence implemented in `ddbf6e0`; future schema changes need focused follow-up scope. |
 | [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | P0 | Closed foundation | Signal aggregation arbitration and blocker artifacts implemented in `039bfe4`; future live-worker adoption work needs focused follow-up scope. |
 | [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | P0 | Closed foundation | Event risk budget and sleeve manager implemented in `57da4ce`; future calibration belongs to risk/postgame/performance-review routing. |
@@ -155,7 +155,7 @@ Routing rules:
 | `#56/#59` | Closed Codex global portfolio-manager foundations. Do not use them as Janus NBA/WNBA live-runtime owners or as open umbrellas for future status comments; create focused follow-up issues for new portfolio drift or expansion. |
 | `#46/#47/#48` | Keep as profile/future-domain incubation, not covered-market live authority. |
 
-Implementation children created from `#63`: `#64` data adapters and `#70` postgame signal-performance review remain open; `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, and `#69` runtime control endpoints are closed foundations. New adoption, calibration, or regression work should use focused follow-up tasks instead of reopening closed children.
+Implementation children created from `#63`: `#70` postgame signal-performance review remains open; `#64` normalized live snapshots/feed parity, `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, and `#69` runtime control endpoints are closed foundations. New adoption, calibration, or regression work should use focused follow-up tasks instead of reopening closed children.
 
 Current-scope expansion created 2026-05-24:
 
