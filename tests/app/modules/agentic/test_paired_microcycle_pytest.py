@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from app.modules.agentic.paired_microcycle import build_paired_microcycle_evidence
+from app.modules.agentic.paired_microcycle import (
+    build_paired_microcycle_evidence,
+    build_paired_microcycle_readback_score,
+    write_paired_microcycle_readback_score,
+)
 
 
 EVENT_ID = "nba-okc-sas-2026-05-24"
@@ -105,8 +109,24 @@ def test_paired_microcycle_sell_fill_creates_rebuy_candidate_pytest() -> None:
         direct_clob={
             "current_token_trades": {
                 "trades": [
-                    {"id": "trade-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "janus-buy-1"},
-                    {"id": "trade-sell", "asset": "token-okc", "side": "sell", "size": 5, "price": 0.09, "order_id": "janus-sell-1"},
+                    {
+                        "id": "trade-buy",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 5,
+                        "price": 0.04,
+                        "order_id": "janus-buy-1",
+                        "timestamp_utc": "2026-05-25T01:00:00Z",
+                    },
+                    {
+                        "id": "trade-sell",
+                        "asset": "token-okc",
+                        "side": "sell",
+                        "size": 5,
+                        "price": 0.09,
+                        "order_id": "janus-sell-1",
+                        "timestamp_utc": "2026-05-25T01:03:30Z",
+                    },
                 ]
             },
         },
@@ -121,6 +141,18 @@ def test_paired_microcycle_sell_fill_creates_rebuy_candidate_pytest() -> None:
     assert cycle.rebuy_leg is not None
     assert cycle.rebuy_leg.status == "waiting"
     assert cycle.reason_codes == ["sell_fill_allows_rebuy_review"]
+
+    score = build_paired_microcycle_readback_score(evidence, final_prices_by_token={"token-okc": 0.0})
+    row = score.scores[0]
+    assert score.realized_cycle_count == 1
+    assert score.missed_transition_count == 1
+    assert score.latency_scored_count == 1
+    assert score.net_realized_pnl_usd == 0.25
+    assert row.realized_pnl_usd == 0.25
+    assert row.final_mark_pnl_usd is None
+    assert row.latency_seconds == 210.0
+    assert row.fillability_status == "rebuy_review_ready"
+    assert row.missed_transition_codes == ["rebuy_review_pending_after_sell_fill"]
 
 
 def test_paired_microcycle_manual_fill_import_and_stale_target_replacement_pytest() -> None:
@@ -181,3 +213,91 @@ def test_paired_microcycle_blocks_rebuy_when_event_budget_exhausted_pytest() -> 
     assert cycle.rebuy_leg is not None
     assert cycle.rebuy_leg.status == "blocked"
     assert cycle.reason_codes == ["event_budget_exhausted"]
+
+
+def test_paired_microcycle_readback_scores_unfilled_sell_and_final_mark_pytest() -> None:
+    evidence = build_paired_microcycle_evidence(
+        event_id=EVENT_ID,
+        plan=_plan(),
+        known_external_order_ids={"janus-buy-1"},
+        direct_clob={
+            "open_orders": {
+                "orders": [
+                    {
+                        "id": "target-sell",
+                        "asset": "token-okc",
+                        "side": "sell",
+                        "status": "open",
+                        "size": 5,
+                        "price": 0.09,
+                    },
+                ]
+            },
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "trade-buy",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 5,
+                        "price": 0.04,
+                        "order_id": "janus-buy-1",
+                    },
+                ]
+            },
+        },
+    )
+
+    score = build_paired_microcycle_readback_score(evidence, final_prices_by_token={"token-okc": 0.0})
+    row = score.scores[0]
+    assert score.realized_cycle_count == 0
+    assert score.missed_transition_count == 1
+    assert score.fillability_block_count == 1
+    assert score.net_realized_pnl_usd == 0.0
+    assert score.net_final_mark_pnl_usd == -0.2
+    assert row.fillability_status == "paired_sell_open_unfilled"
+    assert row.open_sell_shares == 5
+    assert row.final_mark_pnl_usd == -0.2
+    assert row.missed_transition_codes == [
+        "paired_sell_unfilled_before_readback",
+        "duplicate_buy_blocked_while_cycle_unresolved",
+    ]
+
+
+def test_paired_microcycle_readback_score_persists_json_markdown_and_index_pytest(tmp_path) -> None:
+    evidence = build_paired_microcycle_evidence(
+        event_id=EVENT_ID,
+        plan=_plan(),
+        known_external_order_ids={"janus-buy-1"},
+        direct_clob={
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "trade-buy",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 5,
+                        "price": 0.04,
+                        "order_id": "janus-buy-1",
+                    },
+                ]
+            }
+        },
+    )
+    score = build_paired_microcycle_readback_score(evidence, final_prices_by_token={"token-okc": 0.0})
+
+    result = write_paired_microcycle_readback_score(
+        score,
+        day="2026-05-25",
+        artifact_root=tmp_path / "artifacts",
+        report_dir=tmp_path / "reports",
+    )
+
+    json_path = tmp_path / "artifacts" / "sports-live-paired-microcycle" / "2026-05-25"
+    assert result["status"] == "stored"
+    assert (json_path / "paired_microcycle_readback_scores.jsonl").exists()
+    markdown = (tmp_path / "reports").glob("paired_microcycle_readback_score_*.md")
+    text = next(markdown).read_text(encoding="utf-8")
+    assert "Paired Microcycle Readback Score" in text
+    assert "paired_sell_missing_after_buy_fill" in text
+    assert "no order, cancel, replace" in text
