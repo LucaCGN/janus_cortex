@@ -109,7 +109,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | P1 | Planned backlog | Formalize NBA/WNBA pregame research agents as optional priors with expiry and no liveness dependency. |
 | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | P1 | Planned/sprint | Harden issue lifecycle anti-stagnation and closure governance for repeated comments, stale blockers, oversized issues, and missing validation/closure. |
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | Planned backlog | Repair Obsidian-to-backlog ingestion and curation workflow so notes become bounded issue candidates rather than execution authority. |
-| [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | P1 | Active/sprint | Reconcile the 2026-05-24T18:06Z portfolio-manager artifact-only pass, memory ownership, and future queue claim/release discipline without reopening closed #56/#59. |
+| [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | P1 | Closed foundation | Reconciled the 2026-05-24T18:06Z portfolio-manager artifact-only pass, memory ownership, and future queue claim/release discipline without reopening closed #56/#59. Future portfolio drift, scaling, grid-service expansion, or order-path regression needs a focused follow-up issue. |
 | [#57](https://github.com/LucaCGN/janus_cortex/issues/57) | P0 | Closed foundation | Spurs/Thunder final settlement and residual Thunder direct-CLOB exposure reconciled. |
 | [#58](https://github.com/LucaCGN/janus_cortex/issues/58) | P0 | Closed foundation | Resolved-market redeem workflow and unredeemed residual tolerance implemented so settled positions do not block new live readiness after direct-truth classification. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
@@ -164,7 +164,7 @@ Current-scope expansion created 2026-05-24:
 | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | Converts NBA/WNBA pregame research into structured optional priors; missing/stale priors cannot block Janus runtime liveness. |
 | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Gives `oversight-devloop` a concrete issue-health and anti-stagnation contract so issues with repeated comments must close, split, or get a real blocker. |
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repairs Obsidian backlog ingestion while preserving the rule that Obsidian is curated memory, not runtime execution truth. |
-| [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | Tracks the portfolio-manager artifact-only pass reconciliation and the next queue claim/release proof for durable portfolio-manager writes. |
+| [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | Closed after the next portfolio-manager run proved queue claim/release discipline for durable portfolio-manager writes. |
 
 Do not expand crypto options or new model domains beyond research issue [#47](https://github.com/LucaCGN/janus_cortex/issues/47) until the current basketball runtime has normalized snapshots, persisted signals, aggregation arbitration, runtime controls, postgame replay, and daily performance-review governance.
 

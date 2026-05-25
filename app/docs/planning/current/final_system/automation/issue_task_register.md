@@ -67,7 +67,7 @@ Update this register only when task decomposition, next executable step, blocker
 | Task id | Issue | Status | Owner lane | Next executable step | Evidence / blocker |
 |---|---:|---|---|---|---|
 | JIT-73-01 | #73 | active | oversight-devloop / master-janus-manager | Require issue-task-register review in controller docs and use it to prevent comment-only loops. | This register is the current implementation slice. |
-| JIT-75-01 | #75 | blocked | janus-portfolio-manager / oversight-portfolio | Wait for next portfolio-manager run to prove queue claim/release discipline or record an exact blocker; then close #75 if proof is adequate. | 18:06Z artifact set was reconciled in memory/docs, but original queue claim was missing. |
+| JIT-75-01 | #75 | done | janus-portfolio-manager / oversight-portfolio | Closed after portfolio-manager proved queue claim/release discipline; keep future portfolio drift or expansion out of closed #75. | Queue lock `janus-portfolio-manager-20260525T000504Z-deep-pass` released at `2026-05-25T00:34:38Z` with durable memory, runtime artifacts, and Obsidian portfolio updates. |
 | JIT-71-01 | #71 | ready | janus-performance-review | Verify first scheduled performance-review memory/artifact, then connect it to #70 outputs and issue task updates. | New lane exists; first durable memory still pending in latest checks. |
 | JIT-74-01 | #74 | defer | obsidian-backlog-ingestor / janus-obsidian-builder | Run backlog-ingestor dry run after live/core runtime priorities quiet down; list candidate Obsidian notes with acceptance criteria. | P2; no live blocker. |
 
