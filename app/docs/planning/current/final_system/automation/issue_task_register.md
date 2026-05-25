@@ -55,7 +55,7 @@ Update this register only when task decomposition, next executable step, blocker
 
 | Task id | Issue | Status | Owner lane | Next executable step | Evidence / blocker |
 |---|---:|---|---|---|---|
-| JIT-70-01 | #70 | ready | janus-postgame-signal-review / janus-performance-review | Generate a structured postgame signal-performance artifact for the 2026-05-24 NBA/WNBA window: fired triggers, blocked triggers, missed signals, stale books, LLM budget failures, and no-order decisions. | Needed before changing thresholds or closing #61/#62. |
+| JIT-70-01 | #70 | review | janus-postgame-signal-review / janus-performance-review | Use the completed 2026-05-24T2328Z artifact to route replay/config work; rerun only after WSH/SEA or OKC/SAS reaches final, or after a new replay/config issue is created. | `postgame_signal_review_2026-05-24T2328Z.md` and GitHub #70 comment identify the WNBA `score_gap` null blocker plus Atlanta/Dallas replay candidates. |
 | JIT-68-01 | #68 | ready | janus-master-dev | Implement degraded deterministic fallback so `llm_event_budget_exceeded` or missing pregame priors disable only the LLM/research source, not approved deterministic/ML signal evaluation. | WNBA live ticks repeatedly failed closed on LLM budget/revision availability while runtime/CLOB gates were green. |
 | JIT-65-01 | #65 | ready | janus-master-dev | Add a typed live signal schema/persistence path for deterministic scoreboard/CLOB, LLM, Codex/operator, and blocked/missed signals. | Required foundation for aggregator replay and postgame scoring. |
 | JIT-66-01 | #66 | ready | janus-master-dev | Build aggregation arbitration over persisted live signals, current inventory, score state, CLOB movement, cooldowns, and blockers. | Current system records microstructure and blockers but does not emit an actionable merged decision. |
@@ -87,12 +87,11 @@ Update this register only when task decomposition, next executable step, blocker
 
 When the current live window is no longer active, work should proceed in this order unless fresh runtime evidence changes priorities:
 
-1. Complete JIT-70-01 postgame signal-performance artifact.
-2. Implement JIT-68-01 deterministic fallback.
-3. Implement JIT-65-01 signal schema/persistence.
-4. Implement JIT-66-01 aggregation arbitration.
-5. Validate JIT-67-01 sleeve/risk transitions.
-6. Implement JIT-69-01 runtime event-control endpoints.
-7. Use JIT-71-01 project-chief review to score results and update this register.
+1. Use JIT-70-01 evidence to implement JIT-68-01 deterministic fallback / score-gap normalization.
+2. Implement JIT-65-01 signal schema/persistence.
+3. Implement JIT-66-01 aggregation arbitration.
+4. Validate JIT-67-01 sleeve/risk transitions.
+5. Implement JIT-69-01 runtime event-control endpoints.
+6. Use JIT-71-01 project-chief review to score results and update this register.
 
 Portfolio and future-domain tasks should not preempt this stack unless they expose a direct live-money safety issue.
