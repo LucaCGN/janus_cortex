@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from app.api.db import to_jsonable
-from app.modules.agentic.contracts import StrategyPlan
+from app.modules.agentic.contracts import LiveSignal, StrategyPlan
 from app.modules.agentic.repository import (
     get_agentic_database_status,
     resolve_catalog_event_strategy_plan_aliases,
@@ -47,6 +47,11 @@ def ops_artifact_root(day: str | None = None) -> Path:
     return artifacts_root() / "ops" / session_date(day)
 
 
+def live_signal_root(day: str | None = None, *, root: Path | None = None) -> Path:
+    base_root = root if root is not None else artifacts_root()
+    return base_root / "live-signals" / session_date(day)
+
+
 def _json_default(value: Any) -> Any:
     return to_jsonable(value)
 
@@ -76,6 +81,53 @@ def read_json(path: Path) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     return payload if isinstance(payload, dict) else {"items": payload}
+
+
+def write_live_signals(
+    signals: list[LiveSignal],
+    *,
+    day: str | None = None,
+    root: Path | None = None,
+    source: str = "janus",
+) -> dict[str, Any]:
+    resolved_day = session_date(day)
+    written: list[dict[str, Any]] = []
+    for signal in signals:
+        payload = signal.model_dump(mode="json")
+        event_dir = live_signal_root(resolved_day, root=root) / _safe_name(signal.event_id)
+        path = event_dir / f"{signal.signal_id}.json"
+        write_json(path, payload)
+        append_jsonl(
+            live_signal_root(resolved_day, root=root) / "live_signals.jsonl",
+            {
+                "recorded_at_utc": utc_now().isoformat(),
+                "session_date": resolved_day,
+                "source": source,
+                "signal_id": signal.signal_id,
+                "event_id": signal.event_id,
+                "signal_type": signal.signal_type,
+                "signal_source": signal.source,
+                "execution_boundary": signal.execution_boundary,
+                "path": str(path),
+            },
+        )
+        written.append(
+            {
+                "signal_id": signal.signal_id,
+                "event_id": signal.event_id,
+                "signal_type": signal.signal_type,
+                "signal_source": signal.source,
+                "path": str(path),
+            }
+        )
+    return {
+        "status": "stored",
+        "schema_version": "live_signal_artifact_batch_v1",
+        "session_date": resolved_day,
+        "signal_count": len(signals),
+        "signals": written,
+        "jsonl_path": str(live_signal_root(resolved_day, root=root) / "live_signals.jsonl"),
+    }
 
 
 def append_pregame_research(
@@ -300,7 +352,9 @@ __all__ = [
     "build_ops_status",
     "load_current_strategy_plan",
     "load_current_strategy_plan_for_event",
+    "live_signal_root",
     "record_ops_stage",
+    "write_live_signals",
     "write_json",
     "write_strategy_plan",
     "write_text",

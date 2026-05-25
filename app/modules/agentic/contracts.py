@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -36,6 +38,11 @@ LLMRuntimeTriggerType = Literal[
 ]
 LLMModelTier = Literal["nano", "mini", "frontier"]
 LLMRuntimeStatus = Literal["detected_only", "skipped_unavailable", "called", "response_recorded"]
+LiveSignalSource = Literal["deterministic", "ml", "llm", "codex", "operator", "feed"]
+LiveSignalType = Literal["buy", "sell", "rebuy", "reduce", "hold", "block", "activate", "deactivate", "monitor"]
+LiveSignalExecutionBoundary = Literal["evidence_only"]
+
+_LIVE_SIGNAL_NAMESPACE = uuid.UUID("6e4f5fdc-16ee-4fb8-a76d-06c24aef89ec")
 
 
 class ActiveStrategy(BaseModel):
@@ -80,6 +87,112 @@ class StrategyPlan(BaseModel):
         if len(strategy_ids) != len(set(strategy_ids)):
             raise ValueError("active_strategies strategy_id values must be unique")
         return self
+
+
+class LiveSignalFreshness(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_timestamp_utc: datetime | None = None
+    observed_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    latency_ms: float | None = Field(default=None, ge=0.0)
+    stale: bool = False
+
+
+class LiveSignalPriceBand(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    current_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    lower_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    upper_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    target_price: float | None = Field(default=None, ge=0.0, le=1.0)
+    band_role: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_band_order(self) -> "LiveSignalPriceBand":
+        if self.lower_price is not None and self.upper_price is not None and self.lower_price > self.upper_price:
+            raise ValueError("lower_price cannot exceed upper_price")
+        return self
+
+
+class LiveSignalRiskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    sleeve_id: str | None = None
+    sleeve_role: str | None = None
+    requested_notional_usd: float | None = Field(default=None, ge=0.0)
+    requested_shares: float | None = Field(default=None, ge=0.0)
+    max_price: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class LiveSignalFalsification(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    condition_codes: list[str] = Field(default_factory=list)
+    expires_at_utc: datetime | None = None
+    notes: str | None = None
+
+
+class LiveSignal(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "live_signal_v1"
+    signal_id: str | None = None
+    event_id: str = Field(min_length=1)
+    market_id: str | None = None
+    outcome_id: str | None = None
+    market_token_id: str | None = None
+    source: LiveSignalSource
+    signal_type: LiveSignalType
+    side: str | None = None
+    emitted_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    price_band: LiveSignalPriceBand | None = None
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    confidence_source: str | None = None
+    freshness: LiveSignalFreshness = Field(default_factory=LiveSignalFreshness)
+    reason_codes: list[str] = Field(default_factory=list)
+    risk_request: LiveSignalRiskRequest | None = None
+    falsification: LiveSignalFalsification | None = None
+    evidence_paths: list[str] = Field(default_factory=list)
+    payload: dict[str, Any] = Field(default_factory=dict)
+    execution_boundary: LiveSignalExecutionBoundary = "evidence_only"
+
+    @model_validator(mode="after")
+    def _normalize_and_identify(self) -> "LiveSignal":
+        self.reason_codes = _unique_signal_strings(self.reason_codes)
+        self.evidence_paths = _unique_signal_strings(self.evidence_paths)
+        if not str(self.signal_id or "").strip():
+            self.signal_id = self.stable_signal_id()
+        return self
+
+    def stable_signal_id(self) -> str:
+        identity = {
+            "schema_version": self.schema_version,
+            "event_id": self.event_id,
+            "market_id": self.market_id,
+            "outcome_id": self.outcome_id,
+            "market_token_id": self.market_token_id,
+            "source": self.source,
+            "signal_type": self.signal_type,
+            "side": self.side,
+            "price_band": self.price_band.model_dump(mode="json") if self.price_band is not None else None,
+            "confidence": self.confidence,
+            "confidence_source": self.confidence_source,
+            "freshness": {
+                "source_timestamp_utc": (
+                    self.freshness.source_timestamp_utc.isoformat()
+                    if self.freshness.source_timestamp_utc is not None
+                    else None
+                ),
+                "latency_ms": self.freshness.latency_ms,
+                "stale": self.freshness.stale,
+            },
+            "reason_codes": self.reason_codes,
+            "risk_request": self.risk_request.model_dump(mode="json") if self.risk_request is not None else None,
+            "falsification": self.falsification.model_dump(mode="json") if self.falsification is not None else None,
+            "evidence_paths": self.evidence_paths,
+        }
+        encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"))
+        return f"lsig-{uuid.uuid5(_LIVE_SIGNAL_NAMESPACE, encoded)}"
 
 
 class LLMRuntimeTrigger(BaseModel):
@@ -436,6 +549,14 @@ class StrategyPlanEvaluationResult(BaseModel):
 
 __all__ = [
     "ActiveStrategy",
+    "LiveSignal",
+    "LiveSignalExecutionBoundary",
+    "LiveSignalFalsification",
+    "LiveSignalFreshness",
+    "LiveSignalPriceBand",
+    "LiveSignalRiskRequest",
+    "LiveSignalSource",
+    "LiveSignalType",
     "LLMModelRoutingDecision",
     "LLMModelTier",
     "LLMRevisionRequest",
@@ -463,3 +584,15 @@ __all__ = [
     "WatchlistEvent",
     "WatchlistRequest",
 ]
+
+
+def _unique_signal_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        normalized = str(value or "").strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(normalized)
+    return unique

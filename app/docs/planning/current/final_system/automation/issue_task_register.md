@@ -58,7 +58,7 @@ Update this register only when task decomposition, next executable step, blocker
 |---|---:|---|---|---|---|
 | JIT-70-01 | #70 | review | janus-postgame-signal-review / janus-performance-review | Use the completed 2026-05-24T2328Z artifact to route replay/config work; rerun only after WSH/SEA or OKC/SAS reaches final, or after a new replay/config issue is created. | `postgame_signal_review_2026-05-24T2328Z.md` and GitHub #70 comment identify the WNBA `score_gap` null blocker plus Atlanta/Dallas replay candidates. |
 | JIT-68-01 | #68 | done | janus-master-dev | Closed after deterministic fallback evidence proved LLM/research unavailability is not a deterministic sleeve live blocker when required runtime gates are green. | Implemented in `codex_tool/run_live_strategy_tick.py`: LLM revision unavailability is advisory unless the plan/sleeve explicitly requires LLM review; stale local pending rows expire after event start when direct CLOB has no matching open/fill. Validated with live-tick and StrategyPlan regression tests plus the 2026-05-25T01Z #61 live window. |
-| JIT-65-01 | #65 | ready | janus-master-dev | Add a typed live signal schema/persistence path for deterministic scoreboard/CLOB, LLM, Codex/operator, and blocked/missed signals. | Required foundation for aggregator replay and postgame scoring. |
+| JIT-65-01 | #65 | done | janus-master-dev | Typed live signal schema and runtime artifact persistence path implemented; keep #65 open only if reviewer wants DB-backed storage before #66. | Added `LiveSignal` contracts and `write_live_signals` artifact persistence, with deterministic/Codex sample artifacts under `local/shared/artifacts/live-signals/2026-05-25/`; validation passed `python -m pytest tests/app/modules/agentic/test_live_signal_contracts_pytest.py tests/app/modules/agentic/test_strategy_plan_contracts_pytest.py -q` (`31 passed`) and `python -m compileall app/modules/agentic/contracts.py app/modules/agentic/store.py`. |
 | JIT-66-01 | #66 | ready | janus-master-dev | Build aggregation arbitration over persisted live signals, current inventory, score state, CLOB movement, cooldowns, and blockers. | Current system records microstructure and blockers but does not emit an actionable merged decision. |
 | JIT-67-01 | #67 | ready | janus-master-dev | Add tests and runtime examples for event risk cap and sleeve transitions: grid scalp, core hold, rebuy, reduce/stop, monitor-only. | Runtime has two-sleeve plans and $10 cap, but transition logic still needs validation. |
 | JIT-69-01 | #69 | ready | janus-master-dev | Define and implement safe event-control read/update endpoints for signal toggles and parameters. | Needed for Codex/operator/LLM to adjust gates without code edits or chat memory. |
@@ -91,10 +91,9 @@ When the current live window is no longer active, work should proceed in this or
 
 1. Use the next WNBA pregame route under #62 to generate/adopt a current controlled-entry StrategyPlan and validate preflight gates before any live worker start.
 2. Use JIT-70-01 evidence to route replay/config work from the NBA/WNBA postgame docs.
-3. Implement JIT-65-01 signal schema/persistence.
-4. Implement JIT-66-01 aggregation arbitration.
-5. Validate JIT-67-01 sleeve/risk transitions.
-6. Implement JIT-69-01 runtime event-control endpoints.
-7. Use JIT-71-01 project-chief review to score results and update this register.
+3. Implement JIT-66-01 aggregation arbitration.
+4. Validate JIT-67-01 sleeve/risk transitions.
+5. Implement JIT-69-01 runtime event-control endpoints.
+6. Use JIT-71-01 project-chief review to score results and update this register.
 
 Portfolio and future-domain tasks should not preempt this stack unless they expose a direct live-money safety issue.
