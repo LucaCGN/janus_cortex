@@ -65,6 +65,35 @@ class EntryTimingCasePolicyResult(BaseModel):
     evidence_note: str
 
 
+class EntryTimingPricePathReplay(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    event_id: str
+    side: str
+    outcome_label: str | None = None
+    outcome_id: str | None = None
+    source_tick_path: str | None = None
+    observed_tick_count: int = 0
+    priced_tick_count: int = 0
+    entry_price: float | None = None
+    first_observed_at_utc: str | None = None
+    last_observed_at_utc: str | None = None
+    min_ask: float | None = None
+    max_ask: float | None = None
+    first_entry_fill_at_utc: str | None = None
+    first_entry_fill_price: float | None = None
+    entry_fill_observed: bool = False
+    stability_window_tick_count: int = 0
+    stability_first_fill_at_utc: str | None = None
+    stability_fill_observed: bool = False
+    event_start_expired_order_count: int = 0
+    order_lifecycle_status: str
+    duplicate_cooldown_status: str
+    blockers: list[str] = Field(default_factory=list)
+    evidence_note: str
+
+
 class EntryTimingSideBySidePolicySummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -97,6 +126,7 @@ class EntryTimingMatrix(BaseModel):
     policy_summaries: list[EntryTimingPolicySummary] = Field(default_factory=list)
     side_by_side_results: list[EntryTimingCasePolicyResult] = Field(default_factory=list)
     side_by_side_policy_summaries: list[EntryTimingSideBySidePolicySummary] = Field(default_factory=list)
+    price_path_replays: list[EntryTimingPricePathReplay] = Field(default_factory=list)
     acceptance_progress: dict[str, Any] = Field(default_factory=dict)
     next_actions: list[str] = Field(default_factory=list)
     hard_prohibitions: list[str] = Field(
@@ -121,16 +151,30 @@ def latest_replay_fixture_backtest_path(day: str | None = None, *, artifact_root
     return paths[0] if paths else None
 
 
+def latest_live_worker_ticks_path(day: str | None = None, *, artifact_root: Path | None = None) -> Path | None:
+    root = (artifact_root if artifact_root is not None else artifacts_root()) / "live-strategy-worker"
+    path = root / session_date(day) / "ticks.jsonl"
+    if path.exists():
+        return path
+    if not root.exists():
+        return None
+    paths = sorted(root.glob("*/ticks.jsonl"), key=lambda item: item.stat().st_mtime, reverse=True)
+    return paths[0] if paths else None
+
+
 def build_entry_timing_matrix_from_fixture_backtest(
     backtest: dict[str, Any],
     *,
     source_path: str | None = None,
     day: str | None = None,
+    live_worker_ticks_path: Path | None = None,
 ) -> EntryTimingMatrix:
     resolved_day = session_date(day or backtest.get("session_date"))
     rows = [_row_from_result(result) for result in backtest.get("results", []) if isinstance(result, dict)]
     rows.extend(_baseline_rows())
-    side_by_side_results = _side_by_side_results(rows)
+    price_path_replays = _price_path_replays(rows, tick_path=live_worker_ticks_path)
+    replay_by_case = {replay.case_id: replay for replay in price_path_replays}
+    side_by_side_results = _side_by_side_results(rows, replay_by_case)
     summaries = _policy_summaries(rows)
     return EntryTimingMatrix(
         session_date=resolved_day,
@@ -139,8 +183,9 @@ def build_entry_timing_matrix_from_fixture_backtest(
         policy_summaries=summaries,
         side_by_side_results=side_by_side_results,
         side_by_side_policy_summaries=_side_by_side_policy_summaries(side_by_side_results),
-        acceptance_progress=_acceptance_progress(rows, side_by_side_results, backtest),
-        next_actions=_next_actions(rows),
+        price_path_replays=price_path_replays,
+        acceptance_progress=_acceptance_progress(rows, side_by_side_results, price_path_replays, backtest),
+        next_actions=_next_actions(rows, price_path_replays),
     )
 
 
@@ -148,6 +193,7 @@ def build_entry_timing_matrix(
     *,
     day: str | None = None,
     fixture_backtest_path: Path | None = None,
+    live_worker_ticks_path: Path | None = None,
     artifact_root: Path | None = None,
 ) -> EntryTimingMatrix:
     path = fixture_backtest_path or latest_replay_fixture_backtest_path(day, artifact_root=artifact_root)
@@ -158,7 +204,8 @@ def build_entry_timing_matrix(
             next_actions=["Generate #70 postgame_replay_fixture_backtest_v1 before updating the entry-timing matrix."],
         )
     backtest = json.loads(path.read_text(encoding="utf-8"))
-    return build_entry_timing_matrix_from_fixture_backtest(backtest, source_path=str(path), day=day)
+    tick_path = live_worker_ticks_path or latest_live_worker_ticks_path(day or backtest.get("session_date"), artifact_root=artifact_root)
+    return build_entry_timing_matrix_from_fixture_backtest(backtest, source_path=str(path), day=day, live_worker_ticks_path=tick_path)
 
 
 def write_entry_timing_matrix(
@@ -178,6 +225,7 @@ def write_entry_timing_matrix(
             "session_date": matrix.session_date,
             "row_count": len(matrix.rows),
             "side_by_side_result_count": len(matrix.side_by_side_results),
+            "price_path_replay_count": len(matrix.price_path_replays),
             "eligible_case_count": matrix.acceptance_progress.get("eligible_case_count", 0),
             "blocked_case_count": matrix.acceptance_progress.get("blocked_case_count", 0),
             "path": str(json_path),
@@ -226,6 +274,14 @@ def render_entry_timing_matrix_markdown(matrix: EntryTimingMatrix, *, json_path:
             f"cancelled_or_expired=`{summary.cancelled_or_expired_count}`, missed_entry=`{summary.missed_entry_count}`, "
             f"adverse_selection=`{summary.adverse_selection_count}`, net_final_pnl=`{summary.net_final_score_pnl_usd:.4f}`, "
             f"missed_entry_cost=`{summary.missed_entry_cost_usd:.4f}`, recommendation=`{summary.recommendation}`"
+        )
+    lines.extend(["", "## Price-Path And Order-Lifecycle Replay"])
+    for replay in matrix.price_path_replays:
+        lines.append(
+            f"- `{replay.case_id}`: ticks=`{replay.observed_tick_count}`, priced=`{replay.priced_tick_count}`, "
+            f"entry_fill=`{replay.entry_fill_observed}`, stability_fill=`{replay.stability_fill_observed}`, "
+            f"min_ask=`{replay.min_ask}`, lifecycle=`{replay.order_lifecycle_status}`, "
+            f"blockers=`{','.join(replay.blockers) or 'none'}`"
         )
     lines.extend(["", "## Acceptance Progress"])
     for key, value in matrix.acceptance_progress.items():
@@ -327,7 +383,10 @@ def _policy_summaries(rows: list[EntryTimingRow]) -> list[EntryTimingPolicySumma
     return summaries
 
 
-def _side_by_side_results(rows: list[EntryTimingRow]) -> list[EntryTimingCasePolicyResult]:
+def _side_by_side_results(
+    rows: list[EntryTimingRow],
+    replay_by_case: dict[str, EntryTimingPricePathReplay] | None = None,
+) -> list[EntryTimingCasePolicyResult]:
     source_rows = [row for row in rows if row.issue_source == "#70"]
     results: list[EntryTimingCasePolicyResult] = []
     policies = [
@@ -336,13 +395,18 @@ def _side_by_side_results(rows: list[EntryTimingRow]) -> list[EntryTimingCasePol
         "post_q1_entry",
         "post_q1_plus_market_stability_confirmation",
     ]
+    replay_by_case = replay_by_case or {}
     for row in source_rows:
         for policy in policies:
-            results.append(_case_policy_result(row, policy))
+            results.append(_case_policy_result(row, policy, replay_by_case.get(row.source_case_id)))
     return results
 
 
-def _case_policy_result(row: EntryTimingRow, policy: str) -> EntryTimingCasePolicyResult:
+def _case_policy_result(
+    row: EntryTimingRow,
+    policy: str,
+    replay: EntryTimingPricePathReplay | None = None,
+) -> EntryTimingCasePolicyResult:
     positive_edge = row.final_score_pnl_usd > 0 and row.recommendation != "negative_bucket_quarantine"
     negative_edge = row.final_score_pnl_usd < 0 or row.recommendation == "negative_bucket_quarantine"
     blockers = list(row.blockers)
@@ -377,26 +441,42 @@ def _case_policy_result(row: EntryTimingRow, policy: str) -> EntryTimingCasePoli
             blockers.append("first_live_fillability_missing")
         basis = "observed_or_fixture_low_band_window"
     elif policy == "post_q1_entry":
-        filled = fillable and row.score_context_status == "available" and row.timing_policy != "late_game_min_price_add"
+        filled = (
+            replay.entry_fill_observed
+            if replay is not None
+            else fillable and row.score_context_status == "available" and row.timing_policy != "late_game_min_price_add"
+        )
         final_pnl = row.final_score_pnl_usd if filled else 0.0
         missed_entry = positive_edge and not filled
         missed_cost = row.final_score_pnl_usd if missed_entry else 0.0
         adverse_selection = filled and negative_edge
         target_fill_pnl = None
-        if row.timing_policy in {"immediate_live_low_band_rebound", "first_live_window_after_event_start"}:
+        if replay is None and row.timing_policy in {"immediate_live_low_band_rebound", "first_live_window_after_event_start"}:
             blockers.append("post_q1_price_path_proxy_only")
+        if replay is not None and not replay.entry_fill_observed:
+            blockers.append("post_q1_price_path_entry_not_observed")
         if row.timing_policy == "late_game_min_price_add":
             blockers.append("post_q1_entry_not_applicable_to_late_game_min_price_case")
-        basis = "post_q1_proxy_from_score_context_and_final_result"
+        basis = "price_path_replay_at_entry_price" if replay is not None else "post_q1_proxy_from_score_context_and_final_result"
     else:
-        filled = False
-        missed_entry = positive_edge
-        missed_cost = row.final_score_pnl_usd if positive_edge else 0.0
+        filled = bool(replay and replay.stability_fill_observed)
+        final_pnl = row.final_score_pnl_usd if filled else 0.0
+        missed_entry = positive_edge and not filled
+        missed_cost = row.final_score_pnl_usd if missed_entry else 0.0
+        adverse_selection = filled and negative_edge
         avoided_loss = abs(row.final_score_pnl_usd) if negative_edge else 0.0
         target_fill_pnl = None
-        blockers = sorted(set(blockers + ["market_stability_confirmation_not_replayed", "post_q1_stability_price_path_missing"]))
-        basis = "stability_confirmation_gap"
-        note = "Post-Q1 stability remains monitor-only until price-path and stability-window replay exist."
+        if replay is None:
+            blockers = sorted(set(blockers + ["market_stability_confirmation_not_replayed", "post_q1_stability_price_path_missing"]))
+            basis = "stability_confirmation_gap"
+            note = "Post-Q1 stability remains monitor-only until price-path and stability-window replay exist."
+        elif not replay.stability_fill_observed:
+            blockers = sorted(set(blockers + ["post_q1_stability_fill_not_observed"]))
+            basis = "price_path_replay_no_stability_fill"
+            note = "Price-path replay did not show enough consecutive stable entry-price ticks for this case."
+        else:
+            basis = "price_path_replay_stability_window"
+            note = "Price-path replay found a consecutive stable entry-price window; this is research evidence only."
 
     return EntryTimingCasePolicyResult(
         case_id=row.source_case_id,
@@ -451,6 +531,7 @@ def _side_by_side_policy_summaries(
 def _acceptance_progress(
     rows: list[EntryTimingRow],
     side_by_side_results: list[EntryTimingCasePolicyResult],
+    price_path_replays: list[EntryTimingPricePathReplay],
     backtest: dict[str, Any],
 ) -> dict[str, Any]:
     eligible_rows = [row.row_id for row in rows if not row.blockers and row.recommendation != "negative_bucket_quarantine"]
@@ -469,20 +550,232 @@ def _acceptance_progress(
         "side_by_side_policy_count": len({result.timing_policy for result in side_by_side_results}),
         "side_by_side_result_count": len(side_by_side_results),
         "separates_return_fill_missed_entry_adverse_selection_and_expiry": bool(side_by_side_results),
+        "includes_real_price_path_replay": bool(price_path_replays),
+        "price_path_replay_case_count": len(price_path_replays),
+        "price_path_entry_fill_case_count": sum(1 for replay in price_path_replays if replay.entry_fill_observed),
+        "price_path_stability_fill_case_count": sum(1 for replay in price_path_replays if replay.stability_fill_observed),
+        "includes_order_lifecycle_replay": any(replay.event_start_expired_order_count > 0 for replay in price_path_replays),
+        "order_lifecycle_replay_case_count": sum(1 for replay in price_path_replays if replay.event_start_expired_order_count > 0),
         "strategy_template_promotion_allowed": False,
         "includes_live_promotion": False,
         "live_promotion_allowed": False,
     }
 
 
-def _next_actions(rows: list[EntryTimingRow]) -> list[str]:
+def _next_actions(rows: list[EntryTimingRow], price_path_replays: list[EntryTimingPricePathReplay] | None = None) -> list[str]:
     eligible = [row for row in rows if not row.blockers and row.recommendation != "negative_bucket_quarantine"]
+    replay_note = (
+        "Use real price-path replay results to separate immediate entry, post-Q1 entry, and stability-confirmed entry; keep order-lifecycle gaps as blockers."
+        if price_path_replays
+        else "Backfill side-by-side pregame, immediate-live, post-Q1, and post-Q1-stability replay windows before StrategyPlan template changes."
+    )
     return [
         f"Use {len(eligible)} positive low-band rows as #55 entry-timing candidates, not live authority.",
-        "Backfill side-by-side pregame, immediate-live, post-Q1, and post-Q1-stability replay windows before StrategyPlan template changes.",
+        replay_note,
         "Keep Q4 subpenny/min-price buys quarantined until duplicate cooldown and final-score edge are independently positive.",
         "Route any eventual signal enablement through #69 event-control readbacks and Janus live gates.",
     ]
+
+
+def _price_path_replays(rows: list[EntryTimingRow], *, tick_path: Path | None) -> list[EntryTimingPricePathReplay]:
+    if tick_path is None or not tick_path.exists():
+        return []
+    source_rows = [row for row in rows if row.issue_source == "#70"]
+    if not source_rows:
+        return []
+    ticks = _load_live_worker_ticks(tick_path)
+    outcome_labels = _outcome_label_map(ticks)
+    series = _orderbook_series(ticks, outcome_labels)
+    replays: list[EntryTimingPricePathReplay] = []
+    for row in source_rows:
+        replays.append(_price_path_replay_for_row(row, tick_path=tick_path, series=series))
+    return replays
+
+
+def _load_live_worker_ticks(tick_path: Path) -> list[dict[str, Any]]:
+    ticks: list[dict[str, Any]] = []
+    for line in tick_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            ticks.append(value)
+    return ticks
+
+
+def _outcome_label_map(ticks: list[dict[str, Any]]) -> dict[tuple[str, str], str]:
+    labels: dict[tuple[str, str], str] = {}
+    for tick in ticks:
+        stdout = tick.get("stdout") if isinstance(tick.get("stdout"), dict) else {}
+        for event in stdout.get("events", []):
+            if not isinstance(event, dict):
+                continue
+            event_id = str(event.get("event_id") or "")
+            trace = event.get("llm_runtime_trace") if isinstance(event.get("llm_runtime_trace"), dict) else {}
+            plan = (trace.get("revision_request") or {}).get("current_plan") if isinstance(trace.get("revision_request"), dict) else {}
+            if not isinstance(plan, dict):
+                continue
+            for strategy in plan.get("active_strategies", []):
+                if not isinstance(strategy, dict):
+                    continue
+                entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+                outcome_id = entry_rules.get("outcome_id")
+                outcome_label = entry_rules.get("outcome_label") or strategy.get("side")
+                if event_id and outcome_id and outcome_label:
+                    labels[(event_id, str(outcome_id))] = str(outcome_label)
+    return labels
+
+
+def _orderbook_series(
+    ticks: list[dict[str, Any]],
+    outcome_labels: dict[tuple[str, str], str],
+) -> dict[tuple[str, str], dict[str, Any]]:
+    series: dict[tuple[str, str], dict[str, Any]] = {}
+    for tick in ticks:
+        stdout = tick.get("stdout") if isinstance(tick.get("stdout"), dict) else {}
+        tick_time = tick.get("finished_at_utc") or tick.get("started_at_utc")
+        for event in stdout.get("events", []):
+            if not isinstance(event, dict):
+                continue
+            event_id = str(event.get("event_id") or "")
+            portfolio_state = event.get("portfolio_state") if isinstance(event.get("portfolio_state"), dict) else {}
+            expired_count = int(portfolio_state.get("event_start_expired_order_count") or 0)
+            for outcome_id, orderbook in (event.get("orderbook_results") or {}).items():
+                if not isinstance(orderbook, dict):
+                    continue
+                label = outcome_labels.get((event_id, str(outcome_id)))
+                if not label:
+                    continue
+                key = (event_id, _normalize_label(label))
+                bucket = series.setdefault(
+                    key,
+                    {
+                        "event_id": event_id,
+                        "outcome_label": label,
+                        "outcome_id": str(outcome_id),
+                        "event_start_expired_order_count": 0,
+                        "points": [],
+                    },
+                )
+                bucket["event_start_expired_order_count"] = max(bucket["event_start_expired_order_count"], expired_count)
+                bucket["points"].append(
+                    {
+                        "observed_at_utc": str(tick_time) if tick_time else None,
+                        "best_bid": _float_or_none(orderbook.get("best_bid")),
+                        "best_ask": _float_or_none(orderbook.get("best_ask")),
+                        "spread": _float_or_none(orderbook.get("spread")),
+                    }
+                )
+    return series
+
+
+def _price_path_replay_for_row(
+    row: EntryTimingRow,
+    *,
+    tick_path: Path,
+    series: dict[tuple[str, str], dict[str, Any]],
+) -> EntryTimingPricePathReplay:
+    bucket = _matching_series(row, series)
+    if bucket is None:
+        return EntryTimingPricePathReplay(
+            case_id=row.source_case_id,
+            event_id=row.event_id,
+            side=row.side,
+            source_tick_path=str(tick_path),
+            entry_price=row.entry_price,
+            order_lifecycle_status="price_path_missing",
+            duplicate_cooldown_status=_duplicate_cooldown_status(row),
+            blockers=["price_path_missing_for_case"],
+            evidence_note="No matching outcome price path was found in the live-worker tick artifact.",
+        )
+    points = [point for point in bucket["points"] if isinstance(point, dict)]
+    priced = [point for point in points if point.get("best_ask") is not None]
+    entry_fills = [point for point in priced if row.entry_price is not None and point["best_ask"] <= row.entry_price]
+    stability_window = _first_stability_window(priced, row.entry_price)
+    blockers = list(row.blockers)
+    if not entry_fills:
+        blockers.append("entry_price_not_seen_in_real_price_path")
+    if not stability_window:
+        blockers.append("stability_entry_window_not_seen_in_real_price_path")
+    expired_count = int(bucket.get("event_start_expired_order_count") or 0)
+    lifecycle_status = "event_start_expired_orders_observed" if expired_count else "no_resting_order_lifecycle_evidence_observed"
+    asks = [point["best_ask"] for point in priced if point.get("best_ask") is not None]
+    return EntryTimingPricePathReplay(
+        case_id=row.source_case_id,
+        event_id=row.event_id,
+        side=row.side,
+        outcome_label=str(bucket.get("outcome_label")) if bucket.get("outcome_label") else None,
+        outcome_id=str(bucket.get("outcome_id")) if bucket.get("outcome_id") else None,
+        source_tick_path=str(tick_path),
+        observed_tick_count=len(points),
+        priced_tick_count=len(priced),
+        entry_price=row.entry_price,
+        first_observed_at_utc=str(points[0].get("observed_at_utc")) if points else None,
+        last_observed_at_utc=str(points[-1].get("observed_at_utc")) if points else None,
+        min_ask=round(min(asks), 4) if asks else None,
+        max_ask=round(max(asks), 4) if asks else None,
+        first_entry_fill_at_utc=str(entry_fills[0].get("observed_at_utc")) if entry_fills else None,
+        first_entry_fill_price=round(float(entry_fills[0]["best_ask"]), 4) if entry_fills else None,
+        entry_fill_observed=bool(entry_fills),
+        stability_window_tick_count=len(stability_window),
+        stability_first_fill_at_utc=str(stability_window[0].get("observed_at_utc")) if stability_window else None,
+        stability_fill_observed=bool(stability_window),
+        event_start_expired_order_count=expired_count,
+        order_lifecycle_status=lifecycle_status,
+        duplicate_cooldown_status=_duplicate_cooldown_status(row),
+        blockers=sorted(set(blockers)),
+        evidence_note=(
+            f"Observed {len(priced)} priced ticks for {bucket.get('outcome_label')} from live-worker ticks; "
+            f"entry_fill_observed={bool(entry_fills)}, stability_fill_observed={bool(stability_window)}."
+        ),
+    )
+
+
+def _matching_series(row: EntryTimingRow, series: dict[tuple[str, str], dict[str, Any]]) -> dict[str, Any] | None:
+    wanted = _normalize_label(row.side)
+    for (event_id, label), bucket in series.items():
+        if event_id == row.event_id and (wanted == label or wanted in label or label in wanted):
+            return bucket
+    return None
+
+
+def _first_stability_window(points: list[dict[str, Any]], entry_price: float | None, *, min_ticks: int = 3) -> list[dict[str, Any]]:
+    if entry_price is None:
+        return []
+    window: list[dict[str, Any]] = []
+    for point in points:
+        ask = point.get("best_ask")
+        spread = point.get("spread")
+        stable = ask is not None and ask <= entry_price and (spread is None or spread <= 0.02)
+        if stable:
+            window.append(point)
+            if len(window) >= min_ticks:
+                return window[-min_ticks:]
+        else:
+            window = []
+    return []
+
+
+def _duplicate_cooldown_status(row: EntryTimingRow) -> str:
+    if "duplicate_intent_cooldown_required" in row.blockers:
+        return "cooldown_required"
+    return "cooldown_not_blocking_fixture"
+
+
+def _float_or_none(value: Any) -> float | None:
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_label(value: str) -> str:
+    normalized = "".join(ch.lower() if ch.isalnum() else " " for ch in value)
+    noise = {"the", "team"}
+    return " ".join(part for part in normalized.split() if part not in noise)
 
 
 def _timing_policy_for_case(case_id: str) -> str:

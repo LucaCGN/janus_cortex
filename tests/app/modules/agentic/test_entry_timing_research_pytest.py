@@ -132,3 +132,109 @@ def test_entry_timing_matrix_reads_latest_fixture_and_persists_outputs_pytest(tm
     assert "Entry Timing Matrix" in markdown
     assert "Side-By-Side Policy Summaries" in markdown
     assert "post_q1_plus_market_stability_confirmation" in render_entry_timing_matrix_markdown(matrix)
+
+
+def test_entry_timing_matrix_uses_live_worker_price_path_replay_pytest(tmp_path) -> None:
+    ticks_path = tmp_path / "ticks.jsonl"
+    _write_live_worker_ticks(ticks_path)
+
+    matrix = build_entry_timing_matrix_from_fixture_backtest(
+        _fixture_backtest_payload(),
+        source_path="fixture.json",
+        live_worker_ticks_path=ticks_path,
+    )
+
+    assert matrix.acceptance_progress["includes_real_price_path_replay"] is True
+    assert matrix.acceptance_progress["price_path_replay_case_count"] == 4
+    assert matrix.acceptance_progress["price_path_entry_fill_case_count"] == 4
+    assert matrix.acceptance_progress["price_path_stability_fill_case_count"] == 3
+    assert matrix.acceptance_progress["includes_order_lifecycle_replay"] is True
+    seattle = next(replay for replay in matrix.price_path_replays if replay.case_id == "wnba-wsh-sea-seattle-q1-rebound")
+    assert seattle.entry_fill_observed is True
+    assert seattle.stability_fill_observed is False
+    assert "stability_entry_window_not_seen_in_real_price_path" in seattle.blockers
+    thunder = next(replay for replay in matrix.price_path_replays if replay.case_id == "nba-okc-sas-thunder-q4-subpenny-negative")
+    assert thunder.event_start_expired_order_count == 3
+    assert thunder.order_lifecycle_status == "event_start_expired_orders_observed"
+    post_q1 = [
+        result
+        for result in matrix.side_by_side_results
+        if result.timing_policy == "post_q1_entry" and result.case_id == "wnba-phx-atl-atlanta-comeback-low-band"
+    ][0]
+    assert post_q1.evaluation_basis == "price_path_replay_at_entry_price"
+    assert "post_q1_price_path_proxy_only" not in post_q1.blockers
+    stability = {summary.timing_policy: summary for summary in matrix.side_by_side_policy_summaries}
+    assert stability["post_q1_plus_market_stability_confirmation"].filled_case_count == 3
+
+
+def _write_live_worker_ticks(path) -> None:
+    strategies = {
+        "wnba-phx-atl-2026-05-24": ("atl-id", "Atlanta Dream"),
+        "wnba-dal-nyl-2026-05-24": ("dal-id", "Dallas Wings"),
+        "wnba-wsh-sea-2026-05-24": ("sea-id", "Seattle Storm"),
+        "nba-okc-sas-2026-05-24": ("okc-id", "Thunder"),
+    }
+    prices = [
+        {
+            "wnba-phx-atl-2026-05-24": 0.31,
+            "wnba-dal-nyl-2026-05-24": 0.23,
+            "wnba-wsh-sea-2026-05-24": 0.26,
+            "nba-okc-sas-2026-05-24": 0.005,
+        },
+        {
+            "wnba-phx-atl-2026-05-24": 0.30,
+            "wnba-dal-nyl-2026-05-24": 0.22,
+            "wnba-wsh-sea-2026-05-24": 0.26,
+            "nba-okc-sas-2026-05-24": 0.005,
+        },
+        {
+            "wnba-phx-atl-2026-05-24": 0.29,
+            "wnba-dal-nyl-2026-05-24": 0.21,
+            "wnba-wsh-sea-2026-05-24": 0.27,
+            "nba-okc-sas-2026-05-24": 0.005,
+        },
+    ]
+    lines = []
+    for index, tick_prices in enumerate(prices):
+        events = []
+        for event_id, ask in tick_prices.items():
+            outcome_id, label = strategies[event_id]
+            events.append(
+                {
+                    "event_id": event_id,
+                    "llm_runtime_trace": {
+                        "revision_request": {
+                            "current_plan": {
+                                "active_strategies": [
+                                    {
+                                        "side": label,
+                                        "entry_rules": {
+                                            "outcome_id": outcome_id,
+                                            "outcome_label": label,
+                                        },
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    "orderbook_results": {
+                        outcome_id: {
+                            "best_bid": round(ask - 0.01, 4),
+                            "best_ask": ask,
+                            "spread": 0.01,
+                        }
+                    },
+                    "portfolio_state": {
+                        "event_start_expired_order_count": 3 if event_id == "nba-okc-sas-2026-05-24" else 0
+                    },
+                }
+            )
+        lines.append(
+            json.dumps(
+                {
+                    "finished_at_utc": f"2026-05-25T00:0{index}:00+00:00",
+                    "stdout": {"events": events},
+                }
+            )
+        )
+    path.write_text("\n".join(lines), encoding="utf-8")

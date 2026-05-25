@@ -16,12 +16,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a read-only Janus entry-timing research matrix.")
     parser.add_argument("--session-date", default=None)
     parser.add_argument("--fixture-backtest-path", default=None)
+    parser.add_argument("--live-worker-ticks-path", default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
     matrix = build_entry_timing_matrix(
         day=args.session_date,
         fixture_backtest_path=Path(args.fixture_backtest_path) if args.fixture_backtest_path else None,
+        live_worker_ticks_path=Path(args.live_worker_ticks_path) if args.live_worker_ticks_path else None,
     )
     result = write_entry_timing_matrix(matrix)
     if args.json:
