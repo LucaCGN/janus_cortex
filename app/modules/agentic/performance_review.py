@@ -46,6 +46,7 @@ class ProjectChiefReview(BaseModel):
     strategy_score_deltas: list[dict[str, Any]] = Field(default_factory=list)
     missed_opportunity_summary: list[dict[str, Any]] = Field(default_factory=list)
     technical_blockers: list[dict[str, Any]] = Field(default_factory=list)
+    superseded_findings: list[dict[str, Any]] = Field(default_factory=list)
     config_recommendations: list[dict[str, Any]] = Field(default_factory=list)
     issue_actions: list[ProjectChiefRecommendation] = Field(default_factory=list)
     next_priority_queue: list[ProjectChiefRecommendation] = Field(default_factory=list)
@@ -69,10 +70,14 @@ def build_project_chief_review(
     report_limit: int = 3,
     reports_dir: Path | None = None,
     artifact_root: Path | None = None,
+    issue_task_register_path: Path | None = None,
 ) -> ProjectChiefReview:
     resolved_day = session_date(day)
     postgame_reports = _latest_postgame_reports(reports_dir or reports_root() / "daily-live-validation", report_limit)
     event_controls = _latest_event_control_paths(artifact_root or artifacts_root(), resolved_day)
+    register_state = _issue_task_register_state(
+        _read_text(issue_task_register_path or _default_issue_task_register_path())
+    )
 
     input_artifacts = [
         ProjectChiefReviewInput(
@@ -92,16 +97,17 @@ def build_project_chief_review(
     )
 
     texts = [(path, _read_text(path)) for path in postgame_reports]
-    missed = _missed_opportunities(texts)
-    blockers = _technical_blockers(texts)
-    issue_actions = _issue_actions(missed, blockers, event_controls)
+    missed = _missed_opportunities(texts, register_state)
+    blockers, superseded = _technical_blockers(texts, register_state)
+    issue_actions = _issue_actions(missed, blockers, event_controls, register_state)
     return ProjectChiefReview(
         session_date=resolved_day,
         input_artifacts=input_artifacts,
         strategy_score_deltas=_strategy_score_deltas(missed, blockers),
         missed_opportunity_summary=missed,
         technical_blockers=blockers,
-        config_recommendations=_config_recommendations(missed, blockers, event_controls),
+        superseded_findings=superseded,
+        config_recommendations=_config_recommendations(missed, blockers, event_controls, register_state),
         issue_actions=issue_actions,
         next_priority_queue=issue_actions[:5],
     )
@@ -157,6 +163,13 @@ def render_project_chief_review_markdown(review: ProjectChiefReview, *, json_pat
     lines.extend(_bullet_lines(f"`{item['event_id']}`: {item['summary']}" for item in review.missed_opportunity_summary))
     lines.extend(["", "## Technical Blockers"])
     lines.extend(_bullet_lines(f"`{item['blocker']}` -> {item['next_action']}" for item in review.technical_blockers))
+    lines.extend(["", "## Superseded Findings"])
+    lines.extend(
+        _bullet_lines(
+            f"`{item['finding']}` suppressed by `{item['resolution']}` from `{item['evidence_path']}`"
+            for item in review.superseded_findings
+        )
+    )
     lines.extend(["", "## Next Priority Queue"])
     lines.extend(_bullet_lines(f"{item.issue} `{item.priority}`: {item.action}" for item in review.next_priority_queue))
     lines.extend(["", "## Hard Prohibitions"])
@@ -177,7 +190,7 @@ def _latest_event_control_paths(root: Path, day: str) -> list[Path]:
     return sorted(event_control_root.glob("*/current.json"))
 
 
-def _missed_opportunities(texts: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+def _missed_opportunities(texts: list[tuple[Path, str]], register_state: dict[str, Any]) -> list[dict[str, Any]]:
     missed: list[dict[str, Any]] = []
     for path, text in texts:
         lower = text.lower()
@@ -205,7 +218,11 @@ def _missed_opportunities(texts: list[tuple[Path, str]]) -> list[dict[str, Any]]
                     "evidence_paths": [str(path)],
                 }
             )
-        if "okc/sas" in lower and "unresolved" in lower:
+        if (
+            "okc/sas" in lower
+            and "unresolved" in lower
+            and not _resolved(register_state, "nba_thunder_exposure_reconciliation")
+        ):
             missed.append(
                 {
                     "event_id": "nba-okc-sas-2026-05-24",
@@ -216,44 +233,58 @@ def _missed_opportunities(texts: list[tuple[Path, str]]) -> list[dict[str, Any]]
     return _dedupe_by_event(missed)
 
 
-def _technical_blockers(texts: list[tuple[Path, str]]) -> list[dict[str, Any]]:
+def _technical_blockers(
+    texts: list[tuple[Path, str]],
+    register_state: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     blockers: list[dict[str, Any]] = []
+    superseded: list[dict[str, Any]] = []
     for path, text in texts:
         lower = text.lower()
         if "score_gap" in lower:
-            blockers.append(
-                {
-                    "blocker": "wnba_score_gap_null",
-                    "next_action": "repair WNBA outcome-level score-gap normalization and replay the three final WNBA candidates",
-                    "issue": "#70",
-                    "evidence_paths": [str(path)],
-                }
-            )
+            if _resolved(register_state, "wnba_score_gap_null"):
+                superseded.append(_superseded("wnba_score_gap_null", path, "JIT-70-03"))
+            else:
+                blockers.append(
+                    {
+                        "blocker": "wnba_score_gap_null",
+                        "next_action": "repair WNBA outcome-level score-gap normalization and replay the three final WNBA candidates",
+                        "issue": "#70",
+                        "evidence_paths": [str(path)],
+                    }
+                )
         if "http 500" in lower or "typeerror" in lower:
-            blockers.append(
-                {
-                    "blocker": "event_review_bundle_export_http_500",
-                    "next_action": "fix review-bundle export TypeError before using bundle output as project-chief input",
-                    "issue": "#70",
-                    "evidence_paths": [str(path)],
-                }
-            )
+            if _resolved(register_state, "event_review_bundle_export_http_500"):
+                superseded.append(_superseded("event_review_bundle_export_http_500", path, "JIT-70-02"))
+            else:
+                blockers.append(
+                    {
+                        "blocker": "event_review_bundle_export_http_500",
+                        "next_action": "fix review-bundle export TypeError before using bundle output as project-chief input",
+                        "issue": "#70",
+                        "evidence_paths": [str(path)],
+                    }
+                )
         if "unresolved direct thunder exposure" in lower or "unresolved thunder exposure" in lower:
-            blockers.append(
-                {
-                    "blocker": "nba_thunder_exposure_reconciliation",
-                    "next_action": "finish #61 direct CLOB target/fill/position attribution before fresh NBA live enablement",
-                    "issue": "#61",
-                    "evidence_paths": [str(path)],
-                }
-            )
-    return _dedupe_by_key(blockers, "blocker")
+            if _resolved(register_state, "nba_thunder_exposure_reconciliation"):
+                superseded.append(_superseded("nba_thunder_exposure_reconciliation", path, "JIT-70-06"))
+            else:
+                blockers.append(
+                    {
+                        "blocker": "nba_thunder_exposure_reconciliation",
+                        "next_action": "finish #61 direct CLOB target/fill/position attribution before fresh NBA live enablement",
+                        "issue": "#61",
+                        "evidence_paths": [str(path)],
+                    }
+                )
+    return _dedupe_by_key(blockers, "blocker"), _dedupe_superseded(superseded)
 
 
 def _issue_actions(
     missed: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
     event_controls: list[Path],
+    register_state: dict[str, Any],
 ) -> list[ProjectChiefRecommendation]:
     actions: list[ProjectChiefRecommendation] = []
     if any(item.get("blocker") == "wnba_score_gap_null" for item in blockers):
@@ -276,7 +307,10 @@ def _issue_actions(
                 evidence_paths=_evidence_for(blockers, "event_review_bundle_export_http_500"),
             )
         )
-    if any(item["event_id"].startswith("wnba-") for item in missed):
+    if any(item["event_id"].startswith("wnba-") for item in missed) and not _resolved(
+        register_state,
+        "wnba_low_band_replay_synchronized",
+    ):
         actions.append(
             ProjectChiefRecommendation(
                 issue="#55",
@@ -341,13 +375,19 @@ def _config_recommendations(
     missed: list[dict[str, Any]],
     blockers: list[dict[str, Any]],
     event_controls: list[Path],
+    register_state: dict[str, Any],
 ) -> list[dict[str, Any]]:
     recommendations = []
     if missed:
+        replay_done = _resolved(register_state, "wnba_low_band_replay_synchronized")
         recommendations.append(
             {
                 "config_surface": "event-control replay candidate set",
-                "recommendation": "replay Atlanta, Dallas, and Seattle WNBA candidates with deterministic signals enabled and LLM optional",
+                "recommendation": (
+                    "preserve existing #55/#70 replay conclusions and avoid reopening old score-gap/null blockers"
+                    if replay_done
+                    else "replay Atlanta, Dallas, and Seattle WNBA candidates with deterministic signals enabled and LLM optional"
+                ),
                 "evidence_paths": sorted({path for item in missed for path in item.get("evidence_paths", [])}),
             }
         )
@@ -390,6 +430,56 @@ def _read_text(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+def _default_issue_task_register_path() -> Path:
+    return Path(__file__).resolve().parents[3] / "app" / "docs" / "planning" / "current" / "final_system" / "automation" / "issue_task_register.md"
+
+
+def _issue_task_register_state(text: str) -> dict[str, Any]:
+    done_tasks: set[str] = set()
+    for line in text.splitlines():
+        parts = [part.strip() for part in line.strip().strip("|").split("|")]
+        if len(parts) < 3:
+            continue
+        task_id, _issue, status = parts[:3]
+        if task_id.startswith("JIT-") and status == "done":
+            done_tasks.add(task_id)
+    return {
+        "done_tasks": done_tasks,
+        "resolved_findings": {
+            "event_review_bundle_export_http_500": {"JIT-70-02"},
+            "wnba_score_gap_null": {"JIT-70-03"},
+            "nba_thunder_exposure_reconciliation": {"JIT-70-06", "JIT-61-01"},
+            "wnba_low_band_replay_synchronized": {"JIT-55-05", "JIT-70-05"},
+        },
+    }
+
+
+def _resolved(register_state: dict[str, Any], finding: str) -> bool:
+    done_tasks = register_state.get("done_tasks", set())
+    required = register_state.get("resolved_findings", {}).get(finding, set())
+    return any(task in done_tasks for task in required)
+
+
+def _superseded(finding: str, path: Path, resolution: str) -> dict[str, Any]:
+    return {
+        "finding": finding,
+        "resolution": resolution,
+        "evidence_path": str(path),
+    }
+
+
+def _dedupe_superseded(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[dict[str, Any]] = []
+    for item in items:
+        key = (str(item.get("finding", "")), str(item.get("evidence_path", "")))
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    return unique
 
 
 def _dedupe_by_event(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
