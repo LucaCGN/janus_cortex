@@ -1589,6 +1589,7 @@ def _build_event_review_bundle(
         connection,
         payload,
         event_ids=[event_id],
+        day=resolved_day,
     )
     decision_timeline = _build_event_review_decision_timeline(
         event_id=event_id,

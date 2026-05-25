@@ -1246,15 +1246,21 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
             "items": [{"event_id": event_ids[0], "status": "live_evidence_present", "blockers": [], "warnings": []}],
         },
     )
-    monkeypatch.setattr(
-        ops_router,
-        "_build_postgame_portfolio_pnl_attribution",
-        lambda connection, payload, *, event_ids: {
+    captured_pnl_attribution_days: list[str | None] = []
+
+    def fake_postgame_portfolio_pnl_attribution(connection, payload, *, event_ids, day):
+        captured_pnl_attribution_days.append(day)
+        return {
             "status": "ready",
             "source": "pytest",
             "event_count": len(event_ids),
             "items": [{"event_id": event_ids[0], "pnl_attribution": {"pnl_attribution_ready": True}}],
-        },
+        }
+
+    monkeypatch.setattr(
+        ops_router,
+        "_build_postgame_portfolio_pnl_attribution",
+        fake_postgame_portfolio_pnl_attribution,
     )
 
     def fake_db_connection():
@@ -1288,6 +1294,7 @@ def test_event_review_bundle_endpoint_aggregates_review_sources_pytest(tmp_path,
     assert payload["runtime_evidence"]["market_event"]["title"] == "Test event"
     assert payload["llm_runtime_status"]["status"] == "recorded"
     assert payload["portfolio_pnl_attribution"]["status"] == "ready"
+    assert captured_pnl_attribution_days == ["2026-05-10"]
     microstructure = payload["market_microstructure"]
     assert microstructure["favorite_underdog_inversion_count"] == 3
     assert microstructure["price_inversion_point_count"] == 4
