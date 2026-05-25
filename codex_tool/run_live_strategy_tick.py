@@ -38,6 +38,7 @@ from app.modules.agentic.signal_aggregation import (
     aggregate_live_signals,
 )
 from app.modules.agentic.store import write_live_signal_aggregation_decision
+from app.modules.agentic.target_management import build_target_management_evidence
 from codex_tools.polymarket.settlement import classify_documented_residual_positions
 
 try:
@@ -580,6 +581,16 @@ def _run_event_tick(
         portfolio_state["pending_intents_unavailable"] = True
         portfolio_state["pending_intents_error"] = pending_intents.get("error")
 
+    target_management_evidence = build_target_management_evidence(
+        event_id=event_id,
+        plan=plan,
+        direct_clob=event_direct_clob_state,
+        known_external_order_ids=set(known_order_ids["external_order_ids"]) if known_order_ids["ok"] else None,
+        min_size=min_size,
+        default_target_delta_cents=manual_target_delta_cents,
+    ).model_dump(mode="json")
+    portfolio_state["target_management"] = target_management_evidence
+
     direct_trade_persistence = _persist_direct_trade_watch_observations(
         api_root=api_root,
         event_id=event_id,
@@ -606,6 +617,7 @@ def _run_event_tick(
     }
     if market_outcome_lookup_error:
         market_state["market_outcome_lookup_error"] = market_outcome_lookup_error
+    market_state["target_management"] = target_management_evidence
     normalized_live_snapshot = build_normalized_live_snapshot(
         event_id=event_id,
         league=_event_league(event_id=event_id, game=game),
