@@ -145,7 +145,7 @@ Existing issues are reclassified:
 
 | Issue | New role under `#63` |
 |---|---|
-| `#61` | Completed NBA OKC/SAS live execution foundation; future NBA runtime gaps route to focused #63/#70/#55 tasks. |
+| `#61` | Completed NBA OKC/SAS live execution foundation; future NBA runtime gaps route to focused #63 follow-ups and closed #55/#70 evidence instead of reopening old buckets. |
 | `#62` | Active WNBA controlled minimum-size promotion evidence and blocker route. |
 | `#55` | Entry timing, fillability, and event-start expiry research feeding signal confidence. |
 | `#42` | Polymarket minimum-order and market-order exception support. |
@@ -163,7 +163,7 @@ Implementation child issues:
 | [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | Closed foundation: event budget and sleeve helper. |
 | [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | Closed foundation: deterministic fallback when pregame/LLM is missing. |
 | [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | Closed foundation: runtime control endpoints for signal producer activation and event config changes. |
-| [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | Open follow-up: postgame signal-performance review, missed-signal replay, and no-bid/min-price calibration. |
+| [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | Closed foundation: postgame signal-performance review, missed-signal replay, no-bid/min-price quarantine, and project-chief readback synchronization. |
 
 ## Acceptance Check
 

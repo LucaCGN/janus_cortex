@@ -15,12 +15,12 @@ The diagram is treated as a system design, not as a new standalone strategy. Str
 |---|---|---|---|
 | `Pregame Planning Aggregation` | Pregame planning exists conceptually and StrategyPlan bootstrap now covers missing plans. | NBA/WNBA pregame research must become structured optional priors with expiry and no liveness dependency. | #72 |
 | `Janus System Eye` | Live worker, StrategyPlan gate, event-scoped inventory proof, CLOB sampling, LLM trace persistence, live preflight, normalized snapshots, and first aggregation artifacts exist. | Needs live-worker adoption of aggregation/budget decisions so independent sleeve blockers stay local. | #63 |
-| `Game Flow` checkpoints | Worker ticks every 30s, StrategyPlan sleeves evaluate live state, and runtime controls can persist event config/readbacks. | Quarter/HT/score-run/material-price-change checkpoints need fuller signal-producer adoption in the worker. | #63, #70 |
-| Colored deterministic/ML/LLM/Codex/operator triggers | Typed live signal schema, artifacts, LLM traces, operator/Codex issue loops, and deterministic gate/blocker evidence exist. | Trigger outputs need worker-level aggregation adoption and postgame scorecards. | #63, #70 |
-| `Position Closed / Outside Human In Loop Interference Detected` | Event-scoped inventory and direct CLOB truth are checked. | Manual trades and operator interventions need reconciliation into event review and signal scoring. | #70, #71 |
-| `Post Game Review Phase` | Narrative postgame docs exist; #70 is open. | Needs structured fired/blocked/missed signal replay, sleeve PnL, latency/fillability review, and config recommendations. | #70 |
+| `Game Flow` checkpoints | Worker ticks every 30s, StrategyPlan sleeves evaluate live state, runtime controls can persist event config/readbacks, and #70 added postgame replay/config review. | Quarter/HT/score-run/material-price-change checkpoints need fuller signal-producer adoption in the worker. | #63 / focused follow-up |
+| Colored deterministic/ML/LLM/Codex/operator triggers | Typed live signal schema, artifacts, LLM traces, operator/Codex issue loops, deterministic gate/blocker evidence, and #70 postgame scorecard foundation exist. | Trigger outputs need worker-level aggregation adoption for new signal families. | #63 / focused follow-up |
+| `Position Closed / Outside Human In Loop Interference Detected` | Event-scoped inventory and direct CLOB truth are checked; #70 added replay/config review evidence for the 2026-05-24 cases. | Future manual-trade/operator-intervention scoring should be a focused #63/#71 follow-up if fresh evidence requires it. | #71 / focused #63 follow-up |
+| `Post Game Review Phase` | Structured postgame signal review, missed-signal replay, no-bid/min-price quarantine, and project-chief readback sync are implemented as a closed #70 foundation. | Future new missed-signal families need a focused follow-up instead of reopening #70. | #71 / focused #63 follow-up |
 | `System Dev Review Loop` | `oversight-devloop` and `janus-master-dev` exist. | Needs project-chief daily performance review that ranks return-improving work and feeds issues. | #71 |
-| Bottom-up reliability stack | Deterministic gates and ML/replay history exist in pieces. | Need explicit promotion ladder: deterministic/ML backtest -> internal research -> Codex review -> runtime config. | #65, #66, #70, #71 |
+| Bottom-up reliability stack | Deterministic gates, ML/replay history, and #70 replay/config review evidence exist in pieces. | Need explicit promotion ladder: deterministic/ML backtest -> internal research -> Codex review -> runtime config for new signal families. | #65, #66, #71 / focused follow-up |
 
 ## Current App State
 
@@ -60,7 +60,7 @@ Still missing for the full diagram:
 | `janus-portfolio-manager` | Separate from Janus covered-market runtime. | Keep scoped to global portfolio foundations from closed #56/#59 and active portfolio follow-ups; do not use for NBA/WNBA covered-market live execution. |
 | `oversight-portfolio` | Portfolio-specific only. | Keep separate from sports live runtime and project-chief review. |
 | `janus-obsidian-builder` | Supports memory and curation. | Repair backlog ingestion under #74; still no execution authority. |
-| `janus-performance-review` | Implemented as the project-chief review lane. | Keep it read-only and feed #70/#55/#69 recommendation routing. |
+| `janus-performance-review` | Implemented as the project-chief review lane. | Keep it read-only and feed #69/#71 recommendation routing from closed #55/#70 evidence. |
 | Planned NBA/WNBA pregame research | Missing as structured automation contracts. | Add under #72 as optional priors, not execution gates. |
 
 ## Current Scope Before Crypto Options
@@ -86,11 +86,11 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 
 | Issue | Role |
 |---|---|
-| #61 | Closed NBA OKC/SAS live execution foundation; future NBA gaps route through #63/#70/#55. |
+| #61 | Closed NBA OKC/SAS live execution foundation; future NBA gaps route through focused #63 work using closed #55/#70 evidence. |
 | #62 | Active WNBA live promotion evidence route. |
 | #63 | Active parent for live-worker adoption of aggregation, event budgets, target coverage, and degraded-mode runtime behavior. |
-| #70 | Active postgame signal performance, missed-signal replay, and no-bid/min-price calibration route. |
-| #77 | Active paired microcycle order engine route for grid/scalp sleeves. |
+| #70 | Closed foundation for postgame signal performance, missed-signal replay, and no-bid/min-price calibration. |
+| #77 | Closed foundation for paired microcycle evidence and readback scoring. |
 | #71 | Project-chief performance review and development-planning automation. |
 | #72 | NBA/WNBA pregame research agents as optional priors. |
 | #73 | Issue lifecycle anti-stagnation and closure governance. |
@@ -124,7 +124,7 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 ### Phase A - Stabilize Today's Live Loop
 
 - Keep #62 live-worker evidence fresh during the next WNBA window.
-- Treat #61 as completed NBA live-test evidence unless a focused #63/#70/#55 follow-up is created.
+- Treat #61 as completed NBA live-test evidence unless a focused #63 follow-up is created from closed #55/#70 evidence.
 - Confirm current event scope and stale fallback cleanup.
 - Preserve `max_buy_notional_usd=10`, 5-share legs, and event-scoped inventory proof.
 - If live orders do not happen, record the exact strategy blocker before the window ends.
@@ -141,7 +141,7 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 
 ### Phase C - Build The Learning Loop
 
-- #70 postgame performance review artifact and replay.
+- Closed #70 postgame performance review artifact and replay foundation; use #71/project-chief plus focused #63 follow-ups for new gaps.
 - #71 project-chief automation.
 - #72 structured pregame priors.
 - #73 issue anti-stagnation report.
@@ -150,7 +150,7 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 ### Phase D - Promote Or Defer Existing Issues
 
 - Keep #61 closed and use #62 for the next WNBA live lifecycle evidence.
-- Split future NBA runtime gaps into focused #63/#70/#55 tasks rather than reopening #61.
+- Split future NBA runtime gaps into focused #63 tasks using closed #55/#70 evidence rather than reopening #61 or #70.
 - Keep #55/#42/#44 only if they feed concrete runtime config or tests.
 - Keep closed #56/#59 foundations separate for portfolio manager; use new focused issues for future portfolio drift or expansion.
 - Keep #47 deferred until current loop is stable.
