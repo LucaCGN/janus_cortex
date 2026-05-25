@@ -564,11 +564,15 @@ def test_auto_protect_direct_position_replaces_event_start_expired_target_withou
     assert result["candidate_strategy_plan_required"] is False
 
 
-def test_auto_protect_direct_position_does_not_target_strategy_owned_live_entry_pytest(monkeypatch) -> None:
+def test_auto_protect_direct_position_targets_strategy_owned_live_entry_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 
     def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
         calls.append({"path": path, "payload": payload})
+        if path == "/v1/portfolio/orders":
+            return {"ok": True, "status": "submitted", "external_order_id": "0xtarget"}
+        if path == "/v1/operator/interventions/reconcile":
+            return {"ok": True, "status": "recorded"}
         return {"ok": True}
 
     monkeypatch.setattr(live_tick, "api_json", fake_api_json)
@@ -585,7 +589,7 @@ def test_auto_protect_direct_position_does_not_target_strategy_owned_live_entry_
                 {
                     "strategy_id": "sas-q4-live-test",
                     "family": "price_stability_micro_grid",
-                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas"},
+                    "entry_rules": {"token_id": "token-sas", "outcome_id": "outcome-sas", "size": 5.0},
                     "exit_rules": {
                         "target_policy": "micro_grid_scaled",
                         "target_return_fraction": 0.08,
@@ -602,7 +606,7 @@ def test_auto_protect_direct_position_does_not_target_strategy_owned_live_entry_
                         "avg_price": 0.78,
                         "event_slug": "nba-sas-okc-2026-05-18",
                         "outcome": "Spurs",
-                        "size": 5.008,
+                        "size": 10.0,
                     }
                 ]
             },
@@ -617,23 +621,22 @@ def test_auto_protect_direct_position_does_not_target_strategy_owned_live_entry_
         enabled=True,
     )
 
-    assert calls == []
-    assert result["submitted_orders"] == []
-    assert result["recommended_orders"] == [
-        {
-            "reason": "strategy_owned_position_requires_plan_target_review",
-            "token_id": "token-sas",
-            "outcome_label": "Spurs",
-            "position_size": 5.008,
-            "open_sell_size": 0.0,
-            "uncovered_size": 5.008,
-            "matched_strategy_id": "sas-q4-live-test",
-            "matched_strategy_family": "price_stability_micro_grid",
-        }
-    ]
-    assert result["position_reactions"][0]["action"] == "strategy_owned_position_target_review_required"
-    assert result["position_reactions"][0]["revision_request"]["reason"] == "strategy_owned_position_target_review_required"
-    assert result["candidate_strategy_plan_required"] is True
+    order_calls = [call for call in calls if call["path"] == "/v1/portfolio/orders"]
+    intervention_calls = [call for call in calls if call["path"] == "/v1/operator/interventions/reconcile"]
+    assert result["submitted_orders"] == [{"ok": True, "status": "submitted", "external_order_id": "0xtarget"}]
+    assert result["intervention_records"] == [{"ok": True, "status": "recorded"}]
+    assert len(order_calls) == 1
+    assert len(intervention_calls) == 1
+    order_payload = order_calls[0]["payload"]
+    assert order_payload["side"] == "sell"
+    assert order_payload["limit_price"] == 0.8424
+    assert order_payload["size"] == 5.0
+    assert order_payload["metadata_json"]["reaction_type"] == "strategy_plan_target"
+    assert order_payload["metadata_json"]["target_size"] == 5.0
+    assert result["position_reactions"][0]["action"] == "place_strategy_plan_target_order"
+    assert result["position_reactions"][0]["revision_request"]["reason"] == "strategy_plan_target_order"
+    assert result["position_reactions"][0]["skip_llm_revision_trigger"] is True
+    assert result["candidate_strategy_plan_required"] is False
 
 
 def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_pytest(monkeypatch) -> None:

@@ -1013,12 +1013,14 @@ def _position_target_price_from_plan(
     avg_price: float,
     default_target_delta_cents: float,
     outcome_state: dict[str, Any] | None = None,
+    open_sell_size: float | None = None,
 ) -> dict[str, Any]:
     strategy = _position_strategy_from_plan(
         plan=plan,
         token_id=token_id,
         outcome_id=outcome_id,
         outcome_state=outcome_state,
+        open_sell_size=open_sell_size,
     )
     if strategy is not None:
         exit_rules = strategy.get("exit_rules") if isinstance(strategy.get("exit_rules"), dict) else {}
@@ -1093,6 +1095,25 @@ def _strategy_sleeve_metadata(strategy: dict[str, Any] | None) -> dict[str, Any]
         if str(value or "").strip():
             metadata[key] = value
     return metadata
+
+
+def _strategy_entry_size(strategy: dict[str, Any] | None) -> float | None:
+    if not isinstance(strategy, dict):
+        return None
+    entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
+    return _float(entry_rules.get("size") or entry_rules.get("shares") or strategy.get("size"))
+
+
+def _strategy_target_required(strategy: dict[str, Any] | None) -> bool:
+    if not isinstance(strategy, dict):
+        return False
+    exit_rules = strategy.get("exit_rules") if isinstance(strategy.get("exit_rules"), dict) else {}
+    if exit_rules.get("target_required") is False:
+        return False
+    if exit_rules.get("target_required") is True:
+        return True
+    family = str(strategy.get("family") or "").strip()
+    return family in {"price_stability_micro_grid", "core_hold_live_validation"}
 
 
 def _scaled_micro_grid_target_price(entry_price: float, rules: dict[str, Any]) -> float | None:
@@ -1229,6 +1250,7 @@ def _auto_protect_direct_positions(
                 token_id=token_id,
                 outcome_id=str(outcome_ref["outcome_id"]),
                 outcome_state=outcome_state,
+                open_sell_size=open_sell_size,
             )
             if outcome_ref is not None
             else None
@@ -1281,10 +1303,13 @@ def _auto_protect_direct_positions(
             and not deterministic_target_replacement
             and matched_strategy_family not in {"operator_position_management", "operator_order_management"}
         )
+        deterministic_plan_target = bool(strategy_owned_position and _strategy_target_required(matched_strategy))
         position_reaction = {
             "action": (
                 "replace_event_start_expired_target_order"
                 if deterministic_target_replacement
+                else "place_strategy_plan_target_order"
+                if deterministic_plan_target
                 else "strategy_owned_position_target_review_required"
                 if strategy_owned_position
                 else "adopt_operator_position"
@@ -1295,12 +1320,14 @@ def _auto_protect_direct_positions(
             "open_sell_size": open_sell_size,
             "uncovered_size": uncovered_size,
             "no_new_entry": True,
-            "requires_strategy_plan_revision": not deterministic_target_replacement,
-            "skip_llm_revision_trigger": deterministic_target_replacement,
+            "requires_strategy_plan_revision": not (deterministic_target_replacement or deterministic_plan_target),
+            "skip_llm_revision_trigger": deterministic_target_replacement or deterministic_plan_target,
             "revision_request": {
                 "reason": (
                     "event_start_target_order_expired"
                     if deterministic_target_replacement
+                    else "strategy_plan_target_order"
+                    if deterministic_plan_target
                     else "strategy_owned_position_target_review_required"
                     if strategy_owned_position
                     else "operator_intervention_detected"
@@ -1365,7 +1392,7 @@ def _auto_protect_direct_positions(
                 }
             )
             continue
-        if strategy_owned_position:
+        if strategy_owned_position and not deterministic_plan_target:
             reaction["recommended_orders"].append(
                 {
                     "reason": "strategy_owned_position_requires_plan_target_review",
@@ -1386,8 +1413,30 @@ def _auto_protect_direct_positions(
             avg_price=avg_price,
             default_target_delta_cents=target_delta_cents,
             outcome_state=outcome_state,
+            open_sell_size=open_sell_size,
         )
         target_price = target_resolution["target_price"]
+        target_size = _position_target_size_from_plan(
+            plan=plan,
+            token_id=token_id,
+            outcome_id=str(outcome_ref["outcome_id"]),
+            strategy=matched_strategy,
+            uncovered_size=uncovered_size,
+            open_sell_size=open_sell_size,
+            outcome_state=outcome_state,
+        )
+        if target_size < min_size:
+            reaction["recommended_orders"].append(
+                {
+                    "reason": "target_size_below_minimum",
+                    "token_id": token_id,
+                    "uncovered_size": uncovered_size,
+                    "target_size": target_size,
+                    "minimum_size": min_size,
+                    "matched_strategy_id": target_resolution.get("strategy_id"),
+                }
+            )
+            continue
         order_payload = {
             "account_id": account_id,
             "market_id": str(outcome_ref["market_id"]),
@@ -1396,12 +1445,16 @@ def _auto_protect_direct_positions(
             "order_type": "limit",
             "time_in_force": "gtc",
             "limit_price": target_price,
-            "size": round(uncovered_size, 6),
+            "size": target_size,
             "metadata_json": {
                 "source": source,
                 "event_id": event_id,
-                "reason": "automatic target for uncovered direct CLOB position",
-                "reaction_type": "operator_intervention_target",
+                "reason": (
+                    "automatic target for strategy-owned direct CLOB position"
+                    if deterministic_plan_target
+                    else "automatic target for uncovered direct CLOB position"
+                ),
+                "reaction_type": "strategy_plan_target" if deterministic_plan_target else "operator_intervention_target",
                 "reaction_owner": "janus_internal_reactor_v0",
                 "event_start_order_expiry": deterministic_target_replacement,
                 "missing_plan_target_order_ids": missing_plan_target_ids,
@@ -1417,6 +1470,7 @@ def _auto_protect_direct_positions(
                 "sleeve": target_resolution.get("sleeve") or {},
                 "position_size": position_size,
                 "open_sell_size": open_sell_size,
+                "target_size": target_size,
                 "no_new_entry_until_revision": True,
                 "revision_request": position_reaction["revision_request"],
             },
@@ -1626,17 +1680,78 @@ def _position_strategy_from_plan(
     token_id: str,
     outcome_id: str,
     outcome_state: dict[str, Any] | None = None,
+    open_sell_size: float | None = None,
 ) -> dict[str, Any] | None:
+    matches = _position_strategies_from_plan(
+        plan=plan,
+        token_id=token_id,
+        outcome_id=outcome_id,
+        outcome_state=outcome_state,
+    )
+    if not matches:
+        return None
+    if open_sell_size is None:
+        return matches[0]
+    covered_size = max(0.0, open_sell_size)
+    for strategy in matches:
+        entry_size = _strategy_entry_size(strategy)
+        if entry_size is None or entry_size <= 0.0:
+            return strategy
+        if covered_size >= entry_size - 1e-9:
+            covered_size -= entry_size
+            continue
+        return strategy
+    return matches[-1]
+
+
+def _position_strategies_from_plan(
+    *,
+    plan: dict[str, Any],
+    token_id: str,
+    outcome_id: str,
+    outcome_state: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     matches: list[tuple[tuple[bool, int, int], dict[str, Any]]] = []
     for index, strategy in enumerate(strategy for strategy in plan.get("active_strategies") or [] if isinstance(strategy, dict)):
         entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
         if _strategy_matches_token(entry_rules, token_id=token_id, outcome_id=outcome_id):
             shadow_only = bool((strategy.get("shadow_flags") or {}).get("shadow_only"))
             matches.append(((shadow_only, _strategy_period_rank(entry_rules, outcome_state), -index), strategy))
-    if not matches:
-        return None
     matches.sort(key=lambda item: item[0])
-    return matches[0][1]
+    return [item[1] for item in matches]
+
+
+def _position_target_size_from_plan(
+    *,
+    plan: dict[str, Any],
+    token_id: str,
+    outcome_id: str,
+    strategy: dict[str, Any] | None,
+    uncovered_size: float,
+    open_sell_size: float,
+    outcome_state: dict[str, Any] | None = None,
+) -> float:
+    if not isinstance(strategy, dict):
+        return round(uncovered_size, 6)
+    target_strategy_id = str(strategy.get("strategy_id") or "").strip()
+    covered_before_strategy = max(0.0, open_sell_size)
+    for candidate in _position_strategies_from_plan(
+        plan=plan,
+        token_id=token_id,
+        outcome_id=outcome_id,
+        outcome_state=outcome_state,
+    ):
+        entry_size = _strategy_entry_size(candidate)
+        candidate_id = str(candidate.get("strategy_id") or "").strip()
+        if candidate is strategy or (target_strategy_id and candidate_id == target_strategy_id):
+            if entry_size is None or entry_size <= 0.0:
+                return round(uncovered_size, 6)
+            covered_within_strategy = min(max(0.0, covered_before_strategy), entry_size)
+            remaining_strategy_size = max(0.0, entry_size - covered_within_strategy)
+            return round(min(uncovered_size, remaining_strategy_size), 6)
+        if entry_size is not None and entry_size > 0.0:
+            covered_before_strategy = max(0.0, covered_before_strategy - entry_size)
+    return round(uncovered_size, 6)
 
 
 def _strategy_period_rank(entry_rules: dict[str, Any], outcome_state: dict[str, Any] | None) -> int:
