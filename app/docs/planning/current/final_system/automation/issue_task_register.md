@@ -48,8 +48,8 @@ Update this register only when task decomposition, next executable step, blocker
 
 | Task id | Issue | Status | Owner lane | Next executable step | Evidence / blocker |
 |---|---:|---|---|---|---|
-| JIT-62-01 | #62 | active | janus-master-dev | Finish the 2026-05-24 WNBA live monitor through final state; capture final score/clock, event-scoped CLOB inventory, intents, blockers, and direct flatness/order proof. | Latest handoff shows WSH/SEA no-order with `llm_revision_unavailable` / `llm_event_budget_exceeded`; current-event inventory flat. |
-| JIT-61-01 | #61 | active | janus-master-dev | Keep NBA OKC/SAS under app-owned live worker through start and live phases; capture first live scoreboard transition and any order/fill/blocker evidence. | Pregame blocker remains `scoreboard_freshness_required`; worker and preflight are green. |
+| JIT-62-01 | #62 | active | janus-master-dev | Finish the 2026-05-24 WNBA live monitor through final state; capture final score/clock, event-scoped CLOB inventory, intents, blockers, and direct flatness/order proof. | WNBA scoped games were already final by the 2026-05-25T01Z manual validation window; no live WNBA order could still be executed. Carry forward as a pre-start worker/adoption timing fix, not an LLM/fallback blocker. |
+| JIT-61-01 | #61 | active | janus-master-dev | Keep NBA OKC/SAS under app-owned live worker through start and live phases; capture first live scoreboard transition and any order/fill/blocker evidence. | 2026-05-25T01Z manual validation fixed stale pending-intent expiry and strategy-owned target protection, then live worker executed 10 Thunder shares at 0.22 and submitted two 5-share sell targets at 0.275 and 0.242. Continue monitoring fills/final state. |
 
 ### Immediate Post-Live Development Stack
 
