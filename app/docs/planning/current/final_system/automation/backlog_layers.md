@@ -105,7 +105,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Closed foundation | Deterministic fallback/degraded-mode behavior implemented and live-validated; future regressions should open a focused #63 child follow-up instead of reopening this slice. |
 | [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Closed foundation | Runtime event-control endpoints for event config and signal toggles implemented in `a86818e`. |
 | [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P1 | Planned backlog | Add postgame signal performance review and missed-signal replay. |
-| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Planned backlog | Add project-chief performance review and development-planning automation for daily return-focused system improvement. |
+| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Closed foundation | Project-chief performance review contract, deterministic artifact generator, and first daily review artifact implemented; future improvements should route through #70/#55/#69 recommendations or focused follow-up tasks. |
 | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | P1 | Planned backlog | Formalize NBA/WNBA pregame research agents as optional priors with expiry and no liveness dependency. |
 | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | P1 | Planned/sprint | Harden issue lifecycle anti-stagnation and closure governance for repeated comments, stale blockers, oversized issues, and missing validation/closure. |
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | Planned backlog | Repair Obsidian-to-backlog ingestion and curation workflow so notes become bounded issue candidates rather than execution authority. |
@@ -161,7 +161,7 @@ Current-scope expansion created 2026-05-24:
 
 | Issue | Role |
 |---|---|
-| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | Adds the project-chief loop that reviews strategy responsiveness, pregame accuracy, signal performance, issue progress, and next development priorities after #70 artifacts exist. |
+| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | Closed foundation for the project-chief loop that reviews strategy responsiveness, pregame accuracy, signal performance, issue progress, and next development priorities after #70 artifacts exist. |
 | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | Converts NBA/WNBA pregame research into structured optional priors; missing/stale priors cannot block Janus runtime liveness. |
 | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Gives `oversight-devloop` a concrete issue-health and anti-stagnation contract so issues with repeated comments must close, split, or get a real blocker. |
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repairs Obsidian backlog ingestion while preserving the rule that Obsidian is curated memory, not runtime execution truth. |
