@@ -42,6 +42,47 @@ class EntryTimingPolicySummary(BaseModel):
     blocker_codes: list[str] = Field(default_factory=list)
 
 
+class EntryTimingCasePolicyResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    event_id: str
+    league: str
+    side: str
+    timing_policy: str
+    timing_bucket: str
+    evaluation_basis: str
+    filled: bool
+    fillable: bool
+    cancelled_or_expired: bool
+    missed_entry: bool
+    adverse_selection: bool
+    target_fill_pnl_usd: float | None
+    final_score_pnl_usd: float
+    missed_entry_cost_usd: float
+    avoided_loss_usd: float
+    blockers: list[str] = Field(default_factory=list)
+    evidence_note: str
+
+
+class EntryTimingSideBySidePolicySummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    timing_policy: str
+    evaluated_case_count: int
+    filled_case_count: int
+    fill_rate: float
+    cancelled_or_expired_count: int
+    missed_entry_count: int
+    adverse_selection_count: int
+    net_target_fill_pnl_usd: float
+    net_final_score_pnl_usd: float
+    missed_entry_cost_usd: float
+    avoided_loss_usd: float
+    recommendation: str
+    blocker_codes: list[str] = Field(default_factory=list)
+
+
 class EntryTimingMatrix(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -54,6 +95,8 @@ class EntryTimingMatrix(BaseModel):
     source_artifacts: list[str] = Field(default_factory=list)
     rows: list[EntryTimingRow] = Field(default_factory=list)
     policy_summaries: list[EntryTimingPolicySummary] = Field(default_factory=list)
+    side_by_side_results: list[EntryTimingCasePolicyResult] = Field(default_factory=list)
+    side_by_side_policy_summaries: list[EntryTimingSideBySidePolicySummary] = Field(default_factory=list)
     acceptance_progress: dict[str, Any] = Field(default_factory=dict)
     next_actions: list[str] = Field(default_factory=list)
     hard_prohibitions: list[str] = Field(
@@ -87,13 +130,16 @@ def build_entry_timing_matrix_from_fixture_backtest(
     resolved_day = session_date(day or backtest.get("session_date"))
     rows = [_row_from_result(result) for result in backtest.get("results", []) if isinstance(result, dict)]
     rows.extend(_baseline_rows())
+    side_by_side_results = _side_by_side_results(rows)
     summaries = _policy_summaries(rows)
     return EntryTimingMatrix(
         session_date=resolved_day,
         source_artifacts=[source_path] if source_path else [],
         rows=rows,
         policy_summaries=summaries,
-        acceptance_progress=_acceptance_progress(rows, backtest),
+        side_by_side_results=side_by_side_results,
+        side_by_side_policy_summaries=_side_by_side_policy_summaries(side_by_side_results),
+        acceptance_progress=_acceptance_progress(rows, side_by_side_results, backtest),
         next_actions=_next_actions(rows),
     )
 
@@ -131,6 +177,7 @@ def write_entry_timing_matrix(
             "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
             "session_date": matrix.session_date,
             "row_count": len(matrix.rows),
+            "side_by_side_result_count": len(matrix.side_by_side_results),
             "eligible_case_count": matrix.acceptance_progress.get("eligible_case_count", 0),
             "blocked_case_count": matrix.acceptance_progress.get("blocked_case_count", 0),
             "path": str(json_path),
@@ -171,6 +218,14 @@ def render_entry_timing_matrix_markdown(matrix: EntryTimingMatrix, *, json_path:
             f"- `{summary.timing_policy}`: eligible=`{summary.eligible_case_count}`, "
             f"blocked=`{summary.blocked_case_count}`, net_final_pnl=`{summary.net_final_score_pnl_usd:.4f}`, "
             f"recommendation=`{summary.recommendation}`"
+        )
+    lines.extend(["", "## Side-By-Side Policy Summaries"])
+    for summary in matrix.side_by_side_policy_summaries:
+        lines.append(
+            f"- `{summary.timing_policy}`: cases=`{summary.evaluated_case_count}`, fill_rate=`{summary.fill_rate:.2f}`, "
+            f"cancelled_or_expired=`{summary.cancelled_or_expired_count}`, missed_entry=`{summary.missed_entry_count}`, "
+            f"adverse_selection=`{summary.adverse_selection_count}`, net_final_pnl=`{summary.net_final_score_pnl_usd:.4f}`, "
+            f"missed_entry_cost=`{summary.missed_entry_cost_usd:.4f}`, recommendation=`{summary.recommendation}`"
         )
     lines.extend(["", "## Acceptance Progress"])
     for key, value in matrix.acceptance_progress.items():
@@ -272,7 +327,132 @@ def _policy_summaries(rows: list[EntryTimingRow]) -> list[EntryTimingPolicySumma
     return summaries
 
 
-def _acceptance_progress(rows: list[EntryTimingRow], backtest: dict[str, Any]) -> dict[str, Any]:
+def _side_by_side_results(rows: list[EntryTimingRow]) -> list[EntryTimingCasePolicyResult]:
+    source_rows = [row for row in rows if row.issue_source == "#70"]
+    results: list[EntryTimingCasePolicyResult] = []
+    policies = [
+        "pregame_resting_limit_order",
+        "first_live_window_after_event_start",
+        "post_q1_entry",
+        "post_q1_plus_market_stability_confirmation",
+    ]
+    for row in source_rows:
+        for policy in policies:
+            results.append(_case_policy_result(row, policy))
+    return results
+
+
+def _case_policy_result(row: EntryTimingRow, policy: str) -> EntryTimingCasePolicyResult:
+    positive_edge = row.final_score_pnl_usd > 0 and row.recommendation != "negative_bucket_quarantine"
+    negative_edge = row.final_score_pnl_usd < 0 or row.recommendation == "negative_bucket_quarantine"
+    blockers = list(row.blockers)
+    filled = False
+    fillable = row.fillability_status == "passed"
+    cancelled_or_expired = False
+    missed_entry = False
+    adverse_selection = False
+    target_fill_pnl = row.target_fill_pnl_usd
+    final_pnl = 0.0
+    missed_cost = 0.0
+    avoided_loss = 0.0
+    basis = "derived_from_fixture_row"
+    note = row.evidence_note
+
+    if policy == "pregame_resting_limit_order":
+        cancelled_or_expired = True
+        missed_entry = positive_edge
+        missed_cost = row.final_score_pnl_usd if positive_edge else 0.0
+        avoided_loss = abs(row.final_score_pnl_usd) if negative_edge else 0.0
+        target_fill_pnl = None
+        blockers = ["event_start_expiry_assumed", "no_live_score_context"]
+        basis = "expiry_stress_case"
+        note = "Pregame resting order is treated as expired/cancelled at event start until order-lifecycle replay proves otherwise."
+    elif policy == "first_live_window_after_event_start":
+        filled = fillable
+        final_pnl = row.final_score_pnl_usd if filled else 0.0
+        adverse_selection = filled and negative_edge
+        if not filled:
+            missed_entry = positive_edge
+            missed_cost = row.final_score_pnl_usd if positive_edge else 0.0
+            blockers.append("first_live_fillability_missing")
+        basis = "observed_or_fixture_low_band_window"
+    elif policy == "post_q1_entry":
+        filled = fillable and row.score_context_status == "available" and row.timing_policy != "late_game_min_price_add"
+        final_pnl = row.final_score_pnl_usd if filled else 0.0
+        missed_entry = positive_edge and not filled
+        missed_cost = row.final_score_pnl_usd if missed_entry else 0.0
+        adverse_selection = filled and negative_edge
+        target_fill_pnl = None
+        if row.timing_policy in {"immediate_live_low_band_rebound", "first_live_window_after_event_start"}:
+            blockers.append("post_q1_price_path_proxy_only")
+        if row.timing_policy == "late_game_min_price_add":
+            blockers.append("post_q1_entry_not_applicable_to_late_game_min_price_case")
+        basis = "post_q1_proxy_from_score_context_and_final_result"
+    else:
+        filled = False
+        missed_entry = positive_edge
+        missed_cost = row.final_score_pnl_usd if positive_edge else 0.0
+        avoided_loss = abs(row.final_score_pnl_usd) if negative_edge else 0.0
+        target_fill_pnl = None
+        blockers = sorted(set(blockers + ["market_stability_confirmation_not_replayed", "post_q1_stability_price_path_missing"]))
+        basis = "stability_confirmation_gap"
+        note = "Post-Q1 stability remains monitor-only until price-path and stability-window replay exist."
+
+    return EntryTimingCasePolicyResult(
+        case_id=row.source_case_id,
+        event_id=row.event_id,
+        league=row.league,
+        side=row.side,
+        timing_policy=policy,
+        timing_bucket=_timing_bucket_for_policy(policy),
+        evaluation_basis=basis,
+        filled=filled,
+        fillable=fillable,
+        cancelled_or_expired=cancelled_or_expired,
+        missed_entry=missed_entry,
+        adverse_selection=adverse_selection,
+        target_fill_pnl_usd=target_fill_pnl,
+        final_score_pnl_usd=round(final_pnl, 4),
+        missed_entry_cost_usd=round(missed_cost, 4),
+        avoided_loss_usd=round(avoided_loss, 4),
+        blockers=sorted(set(blockers)),
+        evidence_note=note,
+    )
+
+
+def _side_by_side_policy_summaries(
+    results: list[EntryTimingCasePolicyResult],
+) -> list[EntryTimingSideBySidePolicySummary]:
+    summaries: list[EntryTimingSideBySidePolicySummary] = []
+    for policy in sorted({result.timing_policy for result in results}):
+        policy_results = [result for result in results if result.timing_policy == policy]
+        filled = [result for result in policy_results if result.filled]
+        target_values = [result.target_fill_pnl_usd for result in policy_results if result.target_fill_pnl_usd is not None and result.filled]
+        summaries.append(
+            EntryTimingSideBySidePolicySummary(
+                timing_policy=policy,
+                evaluated_case_count=len(policy_results),
+                filled_case_count=len(filled),
+                fill_rate=round(len(filled) / len(policy_results), 4) if policy_results else 0.0,
+                cancelled_or_expired_count=sum(1 for result in policy_results if result.cancelled_or_expired),
+                missed_entry_count=sum(1 for result in policy_results if result.missed_entry),
+                adverse_selection_count=sum(1 for result in policy_results if result.adverse_selection),
+                net_target_fill_pnl_usd=round(sum(target_values), 4),
+                net_final_score_pnl_usd=round(sum(result.final_score_pnl_usd for result in policy_results), 4),
+                missed_entry_cost_usd=round(sum(result.missed_entry_cost_usd for result in policy_results), 4),
+                avoided_loss_usd=round(sum(result.avoided_loss_usd for result in policy_results), 4),
+                recommendation=_side_by_side_recommendation(policy, policy_results),
+                blocker_codes=sorted({blocker for result in policy_results for blocker in result.blockers}),
+            )
+        )
+    return summaries
+
+
+def _acceptance_progress(
+    rows: list[EntryTimingRow],
+    side_by_side_results: list[EntryTimingCasePolicyResult],
+    backtest: dict[str, Any],
+) -> dict[str, Any]:
     eligible_rows = [row.row_id for row in rows if not row.blockers and row.recommendation != "negative_bucket_quarantine"]
     blocked_rows = [row.row_id for row in rows if row.row_id not in eligible_rows]
     return {
@@ -285,6 +465,11 @@ def _acceptance_progress(rows: list[EntryTimingRow], backtest: dict[str, Any]) -
         "blocked_row_ids": blocked_rows,
         "includes_fillability": True,
         "includes_event_start_cancellation_bucket": True,
+        "includes_side_by_side_policy_windows": bool(side_by_side_results),
+        "side_by_side_policy_count": len({result.timing_policy for result in side_by_side_results}),
+        "side_by_side_result_count": len(side_by_side_results),
+        "separates_return_fill_missed_entry_adverse_selection_and_expiry": bool(side_by_side_results),
+        "strategy_template_promotion_allowed": False,
         "includes_live_promotion": False,
         "live_promotion_allowed": False,
     }
@@ -342,6 +527,20 @@ def _summary_recommendation(policy: str, eligible: list[EntryTimingRow], blocked
     if eligible and not blocked:
         return "candidate_for_deeper_replay"
     return "monitor_only_until_blockers_clear"
+
+
+def _side_by_side_recommendation(policy: str, results: list[EntryTimingCasePolicyResult]) -> str:
+    if policy == "pregame_resting_limit_order":
+        return "avoid_until_event_start_expiry_replay_proves_resting_order_survival"
+    if policy == "post_q1_plus_market_stability_confirmation":
+        return "preferred_control_policy_but_blocked_until_stability_price_path_replay"
+    if any(result.adverse_selection for result in results):
+        return "candidate_with_negative_bucket_quarantine"
+    if any(result.blockers for result in results):
+        return "proxy_only_until_price_path_replay"
+    if any(result.missed_entry for result in results):
+        return "monitor_only_until_missed_entry_cost_is_replayed"
+    return "candidate_for_deeper_replay_no_live_promotion"
 
 
 def _bullet_lines(items: Any) -> list[str]:

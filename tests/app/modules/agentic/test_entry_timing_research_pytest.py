@@ -88,6 +88,9 @@ def test_entry_timing_matrix_builds_rows_without_live_promotion_pytest() -> None
     assert matrix.trading_boundary == "read_only_research_no_live_promotion"
     assert matrix.acceptance_progress["eligible_case_count"] == 3
     assert matrix.acceptance_progress["live_promotion_allowed"] is False
+    assert matrix.acceptance_progress["includes_side_by_side_policy_windows"] is True
+    assert matrix.acceptance_progress["side_by_side_policy_count"] == 4
+    assert matrix.acceptance_progress["separates_return_fill_missed_entry_adverse_selection_and_expiry"] is True
     assert {row.timing_policy for row in matrix.rows} >= {
         "pregame_resting_limit_order",
         "first_live_window_after_event_start",
@@ -100,6 +103,13 @@ def test_entry_timing_matrix_builds_rows_without_live_promotion_pytest() -> None
     pregame = next(row for row in matrix.rows if row.timing_policy == "pregame_resting_limit_order")
     assert "event_start_expiry_not_scored" in pregame.blockers
     assert "do_not_start_live_money_workers" in matrix.hard_prohibitions
+    side_by_side = {summary.timing_policy: summary for summary in matrix.side_by_side_policy_summaries}
+    assert side_by_side["pregame_resting_limit_order"].cancelled_or_expired_count == 4
+    assert side_by_side["pregame_resting_limit_order"].missed_entry_count == 3
+    assert side_by_side["pregame_resting_limit_order"].avoided_loss_usd == 3.03
+    assert side_by_side["first_live_window_after_event_start"].filled_case_count == 4
+    assert side_by_side["first_live_window_after_event_start"].adverse_selection_count == 1
+    assert side_by_side["post_q1_plus_market_stability_confirmation"].filled_case_count == 0
 
 
 def test_entry_timing_matrix_reads_latest_fixture_and_persists_outputs_pytest(tmp_path) -> None:
@@ -117,6 +127,8 @@ def test_entry_timing_matrix_reads_latest_fixture_and_persists_outputs_pytest(tm
     index_path = root / "entry-timing-research" / "2026-05-25" / "entry_timing_matrices.jsonl"
     index_row = json.loads(index_path.read_text(encoding="utf-8").splitlines()[0])
     assert index_row["eligible_case_count"] == 3
+    assert index_row["side_by_side_result_count"] == 16
     markdown = list((tmp_path / "reports").glob("entry_timing_matrix_*.md"))[0].read_text(encoding="utf-8")
     assert "Entry Timing Matrix" in markdown
+    assert "Side-By-Side Policy Summaries" in markdown
     assert "post_q1_plus_market_stability_confirmation" in render_entry_timing_matrix_markdown(matrix)
