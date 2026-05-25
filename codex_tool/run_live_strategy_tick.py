@@ -3363,14 +3363,34 @@ def _scoreboard_state(outcome_label: str | None, *, game: dict[str, Any], live_s
         }
     home_score = _float(latest.get("home_score"))
     away_score = _float(latest.get("away_score"))
-    label = str(outcome_label or "").strip().lower()
-    home_names = {str(game.get("home_team_name") or "").lower(), str(game.get("home_team_slug") or "").lower()}
-    away_names = {str(game.get("away_team_name") or "").lower(), str(game.get("away_team_slug") or "").lower()}
+    label_aliases = _team_label_aliases(outcome_label)
+    home_names = _team_label_aliases(
+        game.get("home_team_name"),
+        game.get("home_team_slug"),
+        game.get("home_team_tricode"),
+        latest.get("home_team_name"),
+        latest.get("home_team_slug"),
+        latest.get("home_team_tricode"),
+        latest_payload.get("home_team_name"),
+        latest_payload.get("home_team_slug"),
+        latest_payload.get("home_team_tricode"),
+    )
+    away_names = _team_label_aliases(
+        game.get("away_team_name"),
+        game.get("away_team_slug"),
+        game.get("away_team_tricode"),
+        latest.get("away_team_name"),
+        latest.get("away_team_slug"),
+        latest.get("away_team_tricode"),
+        latest_payload.get("away_team_name"),
+        latest_payload.get("away_team_slug"),
+        latest_payload.get("away_team_tricode"),
+    )
     score_gap = None
     if home_score is not None and away_score is not None:
-        if label in home_names:
+        if _team_aliases_match(label_aliases, home_names):
             score_gap = home_score - away_score
-        elif label in away_names:
+        elif _team_aliases_match(label_aliases, away_names):
             score_gap = away_score - home_score
     snapshot_time = _parse_dt(latest.get("captured_at") or latest.get("updated_at") or latest.get("snapshot_time"))
     captured_age_seconds = _age_seconds(snapshot_time)
@@ -3395,6 +3415,36 @@ def _scoreboard_state(outcome_label: str | None, *, game: dict[str, Any], live_s
         "home_score": home_score,
         "away_score": away_score,
     }
+
+
+def _team_label_aliases(*values: Any) -> set[str]:
+    aliases: set[str] = set()
+    for value in values:
+        normalized = str(value or "").strip().lower()
+        compact = "".join(ch for ch in normalized if ch.isalnum())
+        for item in (normalized, compact, _wnba_slug_alias(normalized), _wnba_slug_alias(compact)):
+            if item:
+                aliases.add(item)
+        for token in normalized.replace("-", " ").split():
+            if len(token) >= 3:
+                aliases.add(_wnba_slug_alias(token))
+    return aliases
+
+
+def _team_aliases_match(left: set[str], right: set[str]) -> bool:
+    if not left or not right:
+        return False
+    if left & right:
+        return True
+    for left_alias in left:
+        if len(left_alias) < 3:
+            continue
+        for right_alias in right:
+            if len(right_alias) < 3:
+                continue
+            if left_alias in right_alias or right_alias in left_alias:
+                return True
+    return False
 
 
 def _scoreboard_stall_seconds(live_state: dict[str, Any], *, latest: dict[str, Any]) -> float | None:
@@ -3981,12 +4031,39 @@ def _wnba_slug_alias(value: Any) -> str:
     aliases = {
         "connecticut": "con",
         "connecticutsun": "con",
+        "sun": "con",
+        "atlanta": "atl",
+        "atlantadream": "atl",
+        "dream": "atl",
+        "phoenix": "phx",
+        "phoenixmercury": "phx",
+        "mercury": "phx",
+        "dallas": "dal",
+        "dallaswings": "dal",
+        "wings": "dal",
+        "newyork": "nyl",
+        "newyorkliberty": "nyl",
+        "liberty": "nyl",
+        "ny": "nyl",
+        "seattle": "sea",
+        "seattlestorm": "sea",
+        "storm": "sea",
         "por": "pdx",
         "portland": "pdx",
         "portlandfire": "pdx",
         "fire": "pdx",
+        "chicago": "chi",
+        "chicagosky": "chi",
+        "sky": "chi",
         "indiana": "ind",
+        "indianafever": "ind",
         "fever": "ind",
+        "minnesota": "min",
+        "minnesotalynx": "min",
+        "lynx": "min",
+        "goldenstate": "gsv",
+        "goldenstatevalkyries": "gsv",
+        "valkyries": "gsv",
         "lasvegas": "lva",
         "lasvegasaces": "lva",
         "aces": "lva",

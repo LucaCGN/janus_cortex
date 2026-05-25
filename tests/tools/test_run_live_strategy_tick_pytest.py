@@ -137,6 +137,51 @@ def test_scoreboard_state_does_not_mark_timeout_pause_as_stale_pytest() -> None:
     assert state["scoreboard_age_seconds"] < 10
 
 
+@pytest.mark.parametrize(
+    ("outcome_label", "home_name", "away_name", "home_slug", "away_slug", "home_score", "away_score", "expected_gap"),
+    [
+        ("Atlanta", "Phoenix Mercury", "Atlanta Dream", "PHX", "ATL", 80, 82, 2),
+        ("Dallas", "Dallas Wings", "New York Liberty", "DAL", "NYL", 91, 76, 15),
+        ("Seattle", "Washington Mystics", "Seattle Storm", "WAS", "SEA", 14, 7, -7),
+        ("Seattle", "Washington Mystics", "Seattle Storm", "WAS", "SEA", 24, 26, 2),
+    ],
+)
+def test_scoreboard_state_derives_wnba_score_gap_from_team_aliases_pytest(
+    outcome_label: str,
+    home_name: str,
+    away_name: str,
+    home_slug: str,
+    away_slug: str,
+    home_score: int,
+    away_score: int,
+    expected_gap: int,
+) -> None:
+    state = live_tick._scoreboard_state(
+        outcome_label,
+        game={
+            "home_team_name": home_name,
+            "home_team_slug": home_slug,
+            "away_team_name": away_name,
+            "away_team_slug": away_slug,
+            "game_status": 2,
+            "period": 1,
+            "game_clock": "PT06M56.00S",
+        },
+        live_state={
+            "latest_snapshot": {
+                "captured_at": datetime.now(timezone.utc).isoformat(),
+                "period": 1,
+                "game_clock": "PT06M56.00S",
+                "home_score": home_score,
+                "away_score": away_score,
+            },
+        },
+    )
+
+    assert state["score_gap"] == expected_gap
+    assert state["scoreboard_age_seconds"] < 10
+
+
 def test_outcome_label_from_strategy_ignores_trade_side_pytest() -> None:
     assert live_tick._outcome_label_from_strategy({"side": "buy"}, {"side": "buy"}) is None
     assert (
@@ -151,6 +196,10 @@ def test_outcome_label_from_strategy_ignores_trade_side_pytest() -> None:
 def test_wnba_slug_aliases_cover_current_live_window_teams_pytest() -> None:
     assert live_tick._wnba_slug_alias("CON") == "con"
     assert live_tick._wnba_slug_alias("Connecticut Sun") == "con"
+    assert live_tick._wnba_slug_alias("Atlanta Dream") == "atl"
+    assert live_tick._wnba_slug_alias("Phoenix Mercury") == "phx"
+    assert live_tick._wnba_slug_alias("New York Liberty") == "nyl"
+    assert live_tick._wnba_slug_alias("Seattle Storm") == "sea"
     assert live_tick._wnba_slug_alias("LV") == "lva"
     assert live_tick._wnba_slug_alias("Las Vegas Aces") == "lva"
     assert live_tick._wnba_slug_alias("LA") == "las"
