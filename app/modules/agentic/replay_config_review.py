@@ -106,6 +106,53 @@ class ReplayFixtureBacktest(BaseModel):
     )
 
 
+class NoBidMinPriceLotteryStudyCase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    event_id: str
+    league: str
+    side: str
+    observed_entry_price: float
+    observed_target_price: float | None
+    observed_shares: float
+    entry_fillability_status: str
+    exit_fillability_status: str
+    human_observed_rebound_status: str
+    reproducible_edge_status: str
+    final_score_pnl_usd: float
+    target_fill_pnl_usd: float | None
+    duplicate_cooldown_passed: bool
+    no_bid_or_ask_only_period: bool
+    blockers: list[str] = Field(default_factory=list)
+    event_control_recommendation: dict[str, Any] = Field(default_factory=dict)
+    evidence_note: str
+
+
+class NoBidMinPriceLotteryStudy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "no_bid_min_price_lottery_study_v1"
+    session_date: str
+    generated_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    issue: str = "#70"
+    related_issues: list[str] = Field(default_factory=lambda: ["#55", "#61", "#63", "#69"])
+    trading_boundary: str = "read_only_replay_no_runtime_mutation"
+    source_backtest_schema_version: str = "postgame_replay_fixture_backtest_v1"
+    source_case_count: int = 0
+    cases: list[NoBidMinPriceLotteryStudyCase] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    next_actions: list[str] = Field(default_factory=list)
+    hard_prohibitions: list[str] = Field(
+        default_factory=lambda: [
+            "do_not_place_cancel_replace_submit_sign_broadcast_redeem_orders",
+            "do_not_start_live_money_workers",
+            "do_not_update_event_control_current_json_from_this_artifact",
+            "do_not_promote_no_bid_min_price_lottery_without_independent_positive_replay",
+        ]
+    )
+
+
 def replay_config_review_root(day: str | None = None, *, root: Path | None = None) -> Path:
     base_root = root if root is not None else artifacts_root()
     return base_root / "postgame-replay-config-review" / session_date(day)
@@ -196,6 +243,59 @@ def build_replay_fixture_backtest(review: ReplayConfigReview) -> ReplayFixtureBa
         summary=summary,
         next_actions=_fixture_backtest_next_actions(summary),
     )
+
+
+def build_no_bid_min_price_lottery_study(backtest: ReplayFixtureBacktest) -> NoBidMinPriceLotteryStudy:
+    cases = [
+        _build_no_bid_case(result, fixture)
+        for result in backtest.results
+        if (fixture := _fixture_for_case(result.case_id)) is not None and _is_no_bid_min_price_case(result)
+    ]
+    summary = _no_bid_study_summary(cases)
+    return NoBidMinPriceLotteryStudy(
+        session_date=backtest.session_date,
+        source_case_count=len(backtest.results),
+        cases=cases,
+        summary=summary,
+        next_actions=_no_bid_study_next_actions(summary),
+    )
+
+
+def write_no_bid_min_price_lottery_study(
+    study: NoBidMinPriceLotteryStudy,
+    *,
+    artifact_root: Path | None = None,
+    report_dir: Path | None = None,
+) -> dict[str, Any]:
+    timestamp = study.generated_at_utc.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    root = replay_config_review_root(study.session_date, root=artifact_root)
+    json_path = root / f"no_bid_min_price_lottery_study_{timestamp}.json"
+    write_json(json_path, study.model_dump(mode="json"))
+    append_jsonl(
+        root / "no_bid_min_price_lottery_studies.jsonl",
+        {
+            "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session_date": study.session_date,
+            "source_case_count": study.source_case_count,
+            "study_case_count": len(study.cases),
+            "reproducible_positive_case_count": study.summary.get("reproducible_positive_case_count", 0),
+            "quarantined_case_count": study.summary.get("quarantined_case_count", 0),
+            "path": str(json_path),
+        },
+    )
+    markdown_path = (report_dir or reports_root() / "daily-live-validation") / (
+        f"no_bid_min_price_lottery_study_{timestamp}.md"
+    )
+    write_text(markdown_path, render_no_bid_min_price_lottery_study_markdown(study, json_path=str(json_path)))
+    return {
+        "status": "stored",
+        "schema_version": "no_bid_min_price_lottery_study_write_result_v1",
+        "session_date": study.session_date,
+        "source_case_count": study.source_case_count,
+        "study_case_count": len(study.cases),
+        "json_path": str(json_path),
+        "markdown_path": str(markdown_path),
+    }
 
 
 def write_replay_fixture_backtest(
@@ -290,6 +390,39 @@ def render_replay_fixture_backtest_markdown(
     lines.extend(_bullet_lines(backtest.next_actions))
     lines.extend(["", "## Hard Prohibitions"])
     lines.extend(_bullet_lines(f"`{item}`" for item in backtest.hard_prohibitions))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_no_bid_min_price_lottery_study_markdown(
+    study: NoBidMinPriceLotteryStudy,
+    *,
+    json_path: str | None = None,
+) -> str:
+    lines = [
+        f"# No-Bid Min-Price Lottery Study - {study.session_date}",
+        "",
+        f"- generated_at_utc: `{study.generated_at_utc.isoformat()}`",
+        f"- issue: `{study.issue}`",
+        f"- trading_boundary: `{study.trading_boundary}`",
+        f"- source_case_count: `{study.source_case_count}`",
+    ]
+    if json_path:
+        lines.append(f"- json_artifact: `{json_path}`")
+    lines.extend(["", "## Cases"])
+    for case in study.cases:
+        lines.append(
+            f"- `{case.case_id}` `{case.reproducible_edge_status}`: entry_fillability="
+            f"`{case.entry_fillability_status}`, exit_fillability=`{case.exit_fillability_status}`, "
+            f"human_rebound=`{case.human_observed_rebound_status}`, final_pnl="
+            f"`{case.final_score_pnl_usd:.4f}`, blockers=`{','.join(case.blockers) or 'none'}`"
+        )
+    lines.extend(["", "## Summary"])
+    for key, value in study.summary.items():
+        lines.append(f"- {key}: `{value}`")
+    lines.extend(["", "## Next Actions"])
+    lines.extend(_bullet_lines(study.next_actions))
+    lines.extend(["", "## Hard Prohibitions"])
+    lines.extend(_bullet_lines(f"`{item}`" for item in study.hard_prohibitions))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -587,6 +720,114 @@ def _fixture_backtest_next_actions(summary: dict[str, Any]) -> list[str]:
     if summary.get("quarantined_case_count", 0):
         actions.append("Keep #61 residual Thunder reconciliation separate from fixture replay scoring.")
     return actions
+
+
+def _is_no_bid_min_price_case(result: ReplayFixtureBacktestResult) -> bool:
+    case_id = result.case_id.lower()
+    return (
+        "subpenny" in case_id
+        or "min-price" in case_id
+        or result.recommendation == "quarantine_until_independent_replay_proves_edge"
+    )
+
+
+def _build_no_bid_case(
+    result: ReplayFixtureBacktestResult,
+    fixture: ReplayFixture,
+) -> NoBidMinPriceLotteryStudyCase:
+    entry_fillability_status = "entry_fillable_from_observed_direct_clob" if result.fillability_passed else "entry_unproven"
+    human_observed_rebound_status = (
+        "hype_rebound_observed_but_exit_unproven"
+        if result.target_fill_pnl_usd is not None and result.target_fill_pnl_usd > 0
+        else "no_rebound_observed"
+    )
+    reproducible_blockers = list(dict.fromkeys([*result.blockers, "independent_positive_replay_missing"]))
+    if result.target_fill_pnl_usd is not None and result.target_fill_pnl_usd > 0:
+        reproducible_blockers.append("target_fill_observed_as_theoretical_not_reconciled_exit")
+    if result.final_score_pnl_usd <= 0 and "final_score_negative_edge" not in reproducible_blockers:
+        reproducible_blockers.append("final_score_negative_edge")
+    exit_fillability_status = (
+        "target_exit_unproven_no_live_reconciled_fill"
+        if result.target_fill_pnl_usd is not None and result.target_fill_pnl_usd > 0
+        else "target_exit_missing"
+    )
+    reproducible_edge_status = "quarantine_disabled"
+    return NoBidMinPriceLotteryStudyCase(
+        case_id=result.case_id,
+        event_id=result.event_id,
+        league=result.league,
+        side=result.side,
+        observed_entry_price=fixture.entry_price,
+        observed_target_price=fixture.target_price,
+        observed_shares=fixture.shares,
+        entry_fillability_status=entry_fillability_status,
+        exit_fillability_status=exit_fillability_status,
+        human_observed_rebound_status=human_observed_rebound_status,
+        reproducible_edge_status=reproducible_edge_status,
+        final_score_pnl_usd=result.final_score_pnl_usd,
+        target_fill_pnl_usd=result.target_fill_pnl_usd,
+        duplicate_cooldown_passed=result.duplicate_cooldown_passed,
+        no_bid_or_ask_only_period=fixture.entry_price <= 0.01,
+        blockers=reproducible_blockers,
+        event_control_recommendation={
+            "event_control_action": "quarantine_disabled",
+            "runtime_mutation_allowed": False,
+            "live_promotion_allowed": False,
+            "recommended_signal_toggles": {
+                "late_game_min_price_add": False,
+                "no_bid_min_price_lottery_v1": False,
+                "q4_subpenny_hype_bounce": False,
+            },
+            "recommended_parameters": {
+                "min_price_lottery_allowed": False,
+                "max_entry_price": fixture.entry_price,
+                "max_event_notional_usd": 0.0,
+                "duplicate_intent_cooldown_required": True,
+                "required_positive_replay_case_count": 3,
+            },
+            "required_gates": [
+                "direct_clob_entry_and_exit_fillability_replay",
+                "duplicate_intent_cooldown_replay",
+                "positive_final_score_or_target_exit_edge",
+                "event_control_readback_review",
+                "fresh_strategy_plan_json",
+                "explicit_operator_and_janus_approval",
+            ],
+        },
+        evidence_note=(
+            f"{result.evidence_note} This study treats the apparent target rebound as human-observed "
+            "hype only until independent replay proves both entry and exit fillability."
+        ),
+    )
+
+
+def _no_bid_study_summary(cases: list[NoBidMinPriceLotteryStudyCase]) -> dict[str, Any]:
+    reproducible = [case.case_id for case in cases if case.reproducible_edge_status == "reproducible_positive_edge"]
+    quarantined = [case.case_id for case in cases if case.reproducible_edge_status == "quarantine_disabled"]
+    return {
+        "study_case_count": len(cases),
+        "human_observed_rebound_count": sum(
+            1 for case in cases if case.human_observed_rebound_status == "hype_rebound_observed_but_exit_unproven"
+        ),
+        "reproducible_positive_case_count": len(reproducible),
+        "reproducible_positive_case_ids": reproducible,
+        "quarantined_case_count": len(quarantined),
+        "quarantined_case_ids": quarantined,
+        "runtime_mutation_allowed": False,
+        "live_promotion_allowed": False,
+        "strategy_confidence": "negative_control_quarantine",
+    }
+
+
+def _no_bid_study_next_actions(summary: dict[str, Any]) -> list[str]:
+    if not summary.get("study_case_count"):
+        return ["No no-bid/min-price cases found; rerun after a postgame artifact records one."]
+    return [
+        "Keep no_bid_min_price_lottery_v1 disabled in event-control and StrategyPlan templates.",
+        "Require independent direct-CLOB replay showing entry fillability, exit fillability, cooldown behavior, and positive edge before unquarantine.",
+        "Use #69 only for readback/recommendation review; do not mutate event-control current.json from this artifact.",
+        "Keep WNBA low-band rebound review separate from NBA no-bid/min-price lottery behavior.",
+    ]
 
 
 def _read_text(path: Path) -> str:
