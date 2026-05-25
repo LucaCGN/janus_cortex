@@ -72,6 +72,15 @@ Current implementation:
 - `app/modules/agentic/sleeve_trigger_binding.py` emits `sleeve_trigger_binding_evidence_v1`;
 - `codex_tool/run_live_strategy_tick.py` stores the binding evidence in `market_state["sleeve_trigger_binding"]` and `live_signal_aggregation["sleeve_trigger_binding"]`;
 - `app/modules/agentic/signal_aggregation.py` preserves `sleeve_id`, `sleeve_group`, `sleeve_role`, `strategy_id`, `strategy_family`, `cycle_id`, `trigger_type`, and `trigger_source` on order-intent candidates.
+- `app/modules/agentic/engine.py` can promote `live_signal_aggregation.decision.order_intent_candidates` into Janus `OrderIntent`s during StrategyPlan evaluate/execute, with duplicate protection against normal StrategyPlan intents.
+
+Promotion rules:
+
+- `buy` and `rebuy` candidates become buy limit intents.
+- `sell` and `reduce` candidates become sell limit intents.
+- required fields are event/market/outcome/token, sleeve, side, price, size, and reason metadata.
+- minimum size, minimum buy notional, max buy notional, `max_intents`, and global live gates still apply.
+- candidates matching an already-created StrategyPlan intent for the same token/side/sleeve/cycle are blocked as duplicates, not submitted twice.
 
 ## Gate Scope
 

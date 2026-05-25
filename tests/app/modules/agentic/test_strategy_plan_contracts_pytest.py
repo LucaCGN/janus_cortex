@@ -104,6 +104,109 @@ def test_strategy_plan_evaluator_compiles_valid_order_intent_pytest() -> None:
     assert result.intents[0].metadata["required_notional_usd"] == 1.0
 
 
+def test_strategy_plan_evaluator_promotes_live_aggregation_candidate_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "live_signal_aggregation": {
+                "decision": {
+                    "order_intent_candidates": [
+                        {
+                            "event_id": "event-1",
+                            "signal_type": "sell",
+                            "side": "Thunder",
+                            "market_id": "market-1",
+                            "outcome_id": "outcome-okc",
+                            "market_token_id": "token-okc",
+                            "sleeve_id": "okc-q4-grid",
+                            "sleeve_group": "okc",
+                            "sleeve_role": "grid_scalp",
+                            "strategy_id": "okc-q4-band-grid-v1",
+                            "strategy_family": "band_grid",
+                            "cycle_id": "cycle-okc",
+                            "trigger_type": "paired_microcycle_next_leg",
+                            "trigger_source": "paired_microcycle",
+                            "requested_shares": 5,
+                            "max_price": 0.04,
+                            "reason_codes": ["filled_buy_requires_paired_sell"],
+                        }
+                    ]
+                }
+            }
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].side == "sell"
+    assert result.intents[0].price == 0.04
+    assert result.intents[0].size == 5
+    assert result.intents[0].sleeve_id == "okc-q4-grid"
+    assert result.intents[0].metadata["source"] == "live_signal_aggregation"
+    assert result.intents[0].metadata["cycle_id"] == "cycle-okc"
+    assert result.intents[0].metadata["trigger_type"] == "paired_microcycle_next_leg"
+
+
+def test_strategy_plan_evaluator_dedupes_live_aggregation_candidate_matching_plan_intent_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="grid-1",
+                family="resistance_band_rebound_grid",
+                side="Thunder",
+                sleeve_id="okc-grid",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "side": "buy",
+                    "price": 0.2,
+                    "size": 5,
+                },
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "live_signal_aggregation": {
+                "decision": {
+                    "order_intent_candidates": [
+                        {
+                            "event_id": "event-1",
+                            "signal_type": "buy",
+                            "side": "Thunder",
+                            "market_id": "market-1",
+                            "outcome_id": "outcome-okc",
+                            "market_token_id": "token-okc",
+                            "sleeve_id": "okc-grid",
+                            "strategy_id": "grid-1",
+                            "strategy_family": "resistance_band_rebound_grid",
+                            "requested_shares": 5,
+                            "max_price": 0.2,
+                        }
+                    ]
+                }
+            }
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].reason == "strategy_plan_entry"
+    assert result.blocked_count == 1
+    assert result.blockers[0]["reason"] == "aggregation_candidate_duplicate_intent"
+
+
 def test_strategy_plan_evaluator_blocks_stale_orderbook_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-1",

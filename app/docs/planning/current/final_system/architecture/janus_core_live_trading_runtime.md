@@ -144,6 +144,7 @@ Current behavior:
 3. Paired microcycle `rebuy_candidate` rows become sleeve-scoped rebuy signals.
 4. Paired microcycle `sell_open_waiting` rows emit local sleeve blockers so the same cycle does not keep buying while its paired sell is unresolved.
 5. Aggregation order-intent candidates retain `sleeve_id`, `sleeve_group`, `sleeve_role`, `strategy_id`, `strategy_family`, `cycle_id`, `trigger_type`, and `trigger_source`.
+6. StrategyPlan evaluate/execute can promote aggregation candidates into Janus `OrderIntent`s after deduping any normal StrategyPlan intent for the same token/side/sleeve/cycle.
 
 This keeps score-gap, band, microcycle, and LLM/review triggers from becoming detached from the sleeve that owns them. It also prevents a single local strategy gate from suppressing unrelated sleeves when global Janus safety gates are green.
 

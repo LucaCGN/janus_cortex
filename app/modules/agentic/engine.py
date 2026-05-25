@@ -202,6 +202,17 @@ def evaluate_strategy_plan(
         if _is_wnba_controlled_entry_strategy(strategy):
             controlled_entry_intents += 1
 
+    aggregation_result = _order_intents_from_live_signal_aggregation(
+        plan,
+        market_state=market_state,
+        portfolio_state=portfolio_state,
+        dry_run=dry_run,
+        existing_intents=intents,
+        max_remaining=max(0, max_intents - len(intents)),
+    )
+    intents.extend(aggregation_result["intents"])
+    blockers.extend(aggregation_result["blockers"])
+
     blockers = _attach_sleeve_metadata(plan, blockers)
     return StrategyPlanEvaluationResult(
         event_id=plan.event_id,
@@ -212,6 +223,219 @@ def evaluate_strategy_plan(
         blockers=blockers,
         sleeve_states=_build_sleeve_states(plan, intents=intents, blockers=blockers),
     )
+
+
+def _order_intents_from_live_signal_aggregation(
+    plan: StrategyPlan,
+    *,
+    market_state: dict[str, Any],
+    portfolio_state: dict[str, Any],
+    dry_run: bool,
+    existing_intents: list[OrderIntent],
+    max_remaining: int,
+) -> dict[str, list[Any]]:
+    decision = _live_signal_aggregation_decision(market_state)
+    candidates = decision.get("order_intent_candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return {"intents": [], "blockers": []}
+
+    intents: list[OrderIntent] = []
+    blockers: list[dict[str, Any]] = []
+    seen_keys = {_intent_dedupe_key(intent) for intent in existing_intents}
+    sizing_policy = _operator_sizing_policy(portfolio_state) or {}
+    min_size = _safe_float(sizing_policy.get("min_size") or sizing_policy.get("minimum_size")) or MIN_ORDER_SIZE
+    min_buy_notional = _safe_float(sizing_policy.get("min_buy_notional_usd") or sizing_policy.get("minimum_buy_notional_usd")) or MIN_BUY_NOTIONAL_USD
+    max_buy_notional = _safe_float(sizing_policy.get("max_buy_notional_usd") or sizing_policy.get("max_notional_usd"))
+
+    for index, candidate in enumerate(candidates):
+        if len(intents) >= max_remaining:
+            blockers.append({"scope": "live_signal_aggregation", "reason": "max_intents_reached", "candidate_index": index})
+            continue
+        if not isinstance(candidate, dict):
+            blockers.append({"scope": "live_signal_aggregation", "reason": "invalid_candidate_shape", "candidate_index": index})
+            continue
+
+        side = _candidate_order_side(candidate)
+        token_id = _clean_text(candidate.get("market_token_id") or candidate.get("token_id"))
+        outcome_id = _clean_text(candidate.get("outcome_id"))
+        price = _safe_float(candidate.get("max_price") or candidate.get("price"))
+        size = _candidate_size(candidate, price=price)
+        strategy_id = _clean_text(candidate.get("strategy_id")) or f"live-signal-aggregation-{index + 1}"
+        sleeve_id = _clean_text(candidate.get("sleeve_id")) or strategy_id
+        dedupe_key = (token_id, side, sleeve_id, _clean_text(candidate.get("cycle_id")))
+        if dedupe_key in seen_keys:
+            blockers.append(
+                {
+                    "scope": "live_signal_aggregation",
+                    "reason": "aggregation_candidate_duplicate_intent",
+                    "strategy_id": strategy_id,
+                    "sleeve_id": sleeve_id,
+                    "token_id": token_id,
+                    "side": side,
+                }
+            )
+            continue
+
+        missing = [
+            field
+            for field, value in (
+                ("market_token_id", token_id),
+                ("outcome_id", outcome_id),
+                ("side", side),
+                ("price", price),
+                ("size", size),
+            )
+            if value in {None, ""}
+        ]
+        if missing:
+            blockers.append(
+                {
+                    "scope": "live_signal_aggregation",
+                    "reason": "aggregation_candidate_missing_order_fields",
+                    "strategy_id": strategy_id,
+                    "missing": missing,
+                }
+            )
+            continue
+        if side not in {"buy", "sell"}:
+            blockers.append({"scope": "live_signal_aggregation", "reason": "invalid_side", "strategy_id": strategy_id, "side": side})
+            continue
+        if price is None or not 0.0 <= price <= 1.0:
+            blockers.append({"scope": "live_signal_aggregation", "reason": "invalid_price", "strategy_id": strategy_id, "price": price})
+            continue
+        if size is None or size <= 0.0:
+            blockers.append({"scope": "live_signal_aggregation", "reason": "invalid_size", "strategy_id": strategy_id, "size": size})
+            continue
+        if size < min_size:
+            blockers.append(
+                {
+                    "scope": "live_signal_aggregation",
+                    "reason": "minimum_size_not_met",
+                    "strategy_id": strategy_id,
+                    "size": size,
+                    "minimum_size": min_size,
+                }
+            )
+            continue
+
+        notional = price * size
+        if side == "buy" and notional < min_buy_notional:
+            blockers.append(
+                {
+                    "scope": "live_signal_aggregation",
+                    "reason": "minimum_buy_notional_not_met",
+                    "strategy_id": strategy_id,
+                    "minimum_buy_notional_usd": min_buy_notional,
+                    "required_notional_usd": round(notional, 6),
+                }
+            )
+            continue
+        if side == "buy" and max_buy_notional is not None and notional > max_buy_notional + 1e-9:
+            blockers.append(
+                {
+                    "scope": "live_signal_aggregation",
+                    "reason": "operator_sizing_notional_exceeded",
+                    "strategy_id": strategy_id,
+                    "max_buy_notional_usd": max_buy_notional,
+                    "required_notional_usd": round(notional, 6),
+                }
+            )
+            continue
+
+        intent = OrderIntent(
+            intent_id=f"{plan.event_id}|{strategy_id}|aggregation|{len(existing_intents) + len(intents) + 1}",
+            event_id=plan.event_id,
+            market_id=_clean_text(candidate.get("market_id")) or plan.market_id,
+            outcome_id=str(outcome_id),
+            token_id=str(token_id),
+            strategy_id=str(strategy_id),
+            strategy_family=_clean_text(candidate.get("strategy_family")) or "live_signal_aggregation",
+            sleeve_id=sleeve_id,
+            sleeve_group=_clean_text(candidate.get("sleeve_group")),
+            sleeve_role=_clean_text(candidate.get("sleeve_role")),
+            side=side,  # type: ignore[arg-type]
+            order_type="limit",
+            price=price,
+            size=size,
+            time_in_force="gtc",
+            dry_run=dry_run,
+            reason=_aggregation_reason(candidate),
+            metadata={
+                "source": "live_signal_aggregation",
+                "aggregation_candidate": candidate,
+                "required_notional_usd": round(notional, 6),
+                "sizing_policy": {
+                    "source": "live_signal_aggregation",
+                    "min_size": min_size,
+                    "min_buy_notional_usd": min_buy_notional,
+                    "max_buy_notional_usd": max_buy_notional,
+                },
+                "sleeve": {
+                    "sleeve_id": sleeve_id,
+                    "sleeve_group": _clean_text(candidate.get("sleeve_group")),
+                    "sleeve_role": _clean_text(candidate.get("sleeve_role")),
+                },
+                "cycle_id": _clean_text(candidate.get("cycle_id")),
+                "trigger_type": _clean_text(candidate.get("trigger_type")),
+                "trigger_source": _clean_text(candidate.get("trigger_source")),
+            },
+        )
+        seen_keys.add(dedupe_key)
+        intents.append(intent)
+    return {"intents": intents, "blockers": blockers}
+
+
+def _live_signal_aggregation_decision(market_state: dict[str, Any]) -> dict[str, Any]:
+    aggregation = market_state.get("live_signal_aggregation")
+    if not isinstance(aggregation, dict):
+        return {}
+    decision = aggregation.get("decision")
+    return decision if isinstance(decision, dict) else {}
+
+
+def _candidate_order_side(candidate: dict[str, Any]) -> str | None:
+    signal_type = str(candidate.get("signal_type") or "").strip().lower()
+    explicit_side = str(candidate.get("order_side") or candidate.get("side_action") or "").strip().lower()
+    if explicit_side in {"buy", "sell"}:
+        return explicit_side
+    if signal_type in {"buy", "rebuy"}:
+        return "buy"
+    if signal_type in {"sell", "reduce"}:
+        return "sell"
+    return None
+
+
+def _candidate_size(candidate: dict[str, Any], *, price: float | None) -> float | None:
+    size = _safe_float(candidate.get("requested_shares") or candidate.get("size"))
+    if size is not None:
+        return size
+    notional = _safe_float(candidate.get("requested_notional_usd") or candidate.get("notional_usd"))
+    if notional is not None and price is not None and price > 0.0:
+        return notional / price
+    return None
+
+
+def _aggregation_reason(candidate: dict[str, Any]) -> str:
+    reasons = candidate.get("reason_codes")
+    if isinstance(reasons, list):
+        for reason in reasons:
+            text = _clean_text(reason)
+            if text:
+                return f"live_signal_aggregation:{text}"
+    signal_type = _clean_text(candidate.get("signal_type")) or "intent"
+    return f"live_signal_aggregation:{signal_type}"
+
+
+def _intent_dedupe_key(intent: OrderIntent) -> tuple[str | None, str | None, str | None, str | None]:
+    cycle_id = None
+    if isinstance(intent.metadata, dict):
+        cycle_id = _clean_text(intent.metadata.get("cycle_id"))
+    return (_clean_text(intent.token_id), _clean_text(intent.side), _clean_text(intent.sleeve_id), cycle_id)
+
+
+def _clean_text(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def _wnba_controlled_entry_blocker(
