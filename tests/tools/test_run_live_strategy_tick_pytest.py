@@ -639,6 +639,83 @@ def test_auto_protect_direct_position_targets_strategy_owned_live_entry_pytest(m
     assert result["candidate_strategy_plan_required"] is False
 
 
+def test_auto_protect_direct_position_targets_excess_manual_size_when_flagged_pytest(monkeypatch) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        calls.append({"path": path, "payload": payload})
+        if path == "/v1/portfolio/orders":
+            return {"ok": True, "status": "submitted", "external_order_id": "0xmanualtarget"}
+        if path == "/v1/operator/interventions/reconcile":
+            return {"ok": True, "status": "recorded"}
+        return {"ok": True}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    result = live_tick._auto_protect_direct_positions(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="nba-okc-sas-2026-05-24",
+        plan={
+            "market_id": "market-1",
+            "event_id": "nba-okc-sas-2026-05-24",
+            "active_strategies": [
+                {
+                    "strategy_id": "okc-weighted-exit-5c",
+                    "family": "operator_weighted_position_exit",
+                    "side": "Thunder",
+                    "entry_rules": {
+                        "token_id": "token-okc",
+                        "outcome_id": "outcome-okc",
+                        "size": 5.0,
+                    },
+                    "exit_rules": {
+                        "target_required": True,
+                        "target_price": 0.05,
+                        "cover_excess_uncovered_position": True,
+                    },
+                }
+            ],
+        },
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {
+                        "asset": "token-okc",
+                        "avg_price": 0.0407,
+                        "event_slug": "nba-okc-sas-2026-05-24",
+                        "outcome": "Thunder",
+                        "size": 176.6666,
+                    }
+                ]
+            },
+            "open_orders": {
+                "orders": [
+                    {"asset": "token-okc", "side": "sell", "status": "open", "size": 5.0, "price": 0.24},
+                    {"asset": "token-okc", "side": "sell", "status": "open", "size": 5.0, "price": 0.28},
+                ]
+            },
+        },
+        execute=True,
+        live_money=True,
+        integrity_ready=True,
+        source="pytest",
+        min_size=5.0,
+        target_delta_cents=5.0,
+        enabled=True,
+    )
+
+    order_calls = [call for call in calls if call["path"] == "/v1/portfolio/orders"]
+    assert len(order_calls) == 1
+    order_payload = order_calls[0]["payload"]
+    assert order_payload["side"] == "sell"
+    assert order_payload["limit_price"] == 0.05
+    assert order_payload["size"] == 166.6666
+    assert order_payload["metadata_json"]["target_size"] == 166.6666
+    assert result["recommended_orders"][0]["size"] == 166.6666
+    assert result["submitted_orders"] == [{"ok": True, "status": "submitted", "external_order_id": "0xmanualtarget"}]
+
+
 def test_auto_protect_direct_position_emits_adverse_review_when_stop_rules_trip_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 

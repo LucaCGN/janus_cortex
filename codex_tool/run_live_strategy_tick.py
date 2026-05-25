@@ -1748,6 +1748,17 @@ def _position_target_size_from_plan(
                 return round(uncovered_size, 6)
             covered_within_strategy = min(max(0.0, covered_before_strategy), entry_size)
             remaining_strategy_size = max(0.0, entry_size - covered_within_strategy)
+            exit_rules = strategy.get("exit_rules") if isinstance(strategy.get("exit_rules"), dict) else {}
+            if (
+                remaining_strategy_size <= 1e-9
+                and uncovered_size > 1e-9
+                and bool(
+                    exit_rules.get("cover_excess_uncovered_position")
+                    or exit_rules.get("target_uncovered_operator_size")
+                    or exit_rules.get("target_excess_uncovered_position")
+                )
+            ):
+                return round(uncovered_size, 6)
             return round(min(uncovered_size, remaining_strategy_size), 6)
         if entry_size is not None and entry_size > 0.0:
             covered_before_strategy = max(0.0, covered_before_strategy - entry_size)
@@ -3223,7 +3234,7 @@ def _open_sell_size_for_token(open_orders: list[dict[str, Any]], token_id: str) 
     for order in open_orders:
         side = str(order.get("side") or "").lower()
         status = str(order.get("status") or "").lower()
-        order_token = str(order.get("token_id") or order.get("asset_id") or "").strip()
+        order_token = str(order.get("token_id") or order.get("asset_id") or order.get("asset") or "").strip()
         if side == "sell" and order_token == token_id and status in {"live", "open", "submitted"}:
             total += _float(order.get("size")) or 0.0
     return total

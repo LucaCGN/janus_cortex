@@ -429,10 +429,15 @@ def _ultra_low_underdog_blocker(
     max_scoreboard_age = _safe_float(
         entry_rules.get("max_scoreboard_age_seconds") or entry_rules.get("max_live_scoreboard_age_seconds")
     )
-    scoreboard_age = _safe_float(
-        market_state.get("scoreboard_age_seconds")
-        if "scoreboard_age_seconds" in market_state
-        else market_state.get("scoreboard_age")
+    scoreboard_age = _first_float(
+        market_state,
+        (
+            "scoreboard_captured_age_seconds",
+            "scoreboard_snapshot_age_seconds",
+            "scoreboard_capture_age_seconds",
+            "scoreboard_age_seconds",
+            "scoreboard_age",
+        ),
     )
     if max_scoreboard_age is None or scoreboard_age is None or scoreboard_age > max_scoreboard_age:
         missing.append("fresh_scoreboard")
@@ -536,7 +541,16 @@ def _rules_blocker(
         return {"reason": "orderbook_stale", "orderbook_age_seconds": orderbook_age, "max_orderbook_age_seconds": max_orderbook_age}
 
     max_scoreboard_age = _safe_float(entry_rules.get("max_scoreboard_age_seconds") or entry_rules.get("max_live_scoreboard_age_seconds"))
-    scoreboard_age = _first_float(strategy_state, ("scoreboard_age_seconds", "scoreboard_age"))
+    scoreboard_age = _first_float(
+        strategy_state,
+        (
+            "scoreboard_captured_age_seconds",
+            "scoreboard_snapshot_age_seconds",
+            "scoreboard_capture_age_seconds",
+            "scoreboard_age_seconds",
+            "scoreboard_age",
+        ),
+    )
     if max_scoreboard_age is not None and scoreboard_age is None:
         return {"reason": "scoreboard_freshness_required", "max_scoreboard_age_seconds": max_scoreboard_age}
     if max_scoreboard_age is not None and scoreboard_age is not None and scoreboard_age > max_scoreboard_age:

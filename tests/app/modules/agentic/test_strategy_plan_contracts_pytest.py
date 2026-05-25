@@ -121,6 +121,45 @@ def test_strategy_plan_evaluator_blocks_stale_orderbook_pytest() -> None:
     assert result.blockers[0]["reason"] == "orderbook_stale"
 
 
+def test_strategy_plan_evaluator_uses_scoreboard_capture_age_before_score_stall_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-sas-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="okc-ultra-low-adddown",
+                family="ultra_low_underdog_add_down_grid",
+                side="Thunder",
+                budget_usd=3.0,
+                entry_rules={
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "side": "buy",
+                    "price": 0.2,
+                    "size": 5,
+                    "price_band": [0.19, 0.21],
+                    "max_scoreboard_age_seconds": 45,
+                    "max_abs_score_gap": 25,
+                },
+                exit_rules={"target_policy": "micro_grid_scaled", "min_target_cents": 1},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "price": 0.2,
+            "score_gap": -20,
+            "scoreboard_age_seconds": 145,
+            "scoreboard_captured_age_seconds": 4,
+        },
+    )
+
+    assert result.intent_count == 1
+    assert result.blocked_count == 0
+
+
 def test_strategy_plan_evaluator_blocks_market_orders_and_too_small_buys_pytest() -> None:
     market_plan = StrategyPlan(
         event_id="event-1",
@@ -601,7 +640,12 @@ def test_strategy_plan_evaluator_allows_sub_10c_explicit_micro_grid_pytest() -> 
 
     result = evaluate_strategy_plan(
         plan,
-        market_state={"price": 0.05, "score_gap": -12, "scoreboard_age_seconds": 1},
+        market_state={
+            "price": 0.05,
+            "score_gap": -12,
+            "scoreboard_age_seconds": 145,
+            "scoreboard_captured_age_seconds": 4,
+        },
     )
 
     assert result.intent_count == 1
