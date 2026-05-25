@@ -930,3 +930,67 @@ def test_strategy_plan_evaluator_reports_sleeve_states_and_garbage_time_blocks_o
         ("lal-late-default", "blocked", ["garbage_time_no_new_entry"], 0),
         ("okc-q4-clutch", "intent_created", [], 1),
     ]
+
+
+def test_strategy_score_gap_gate_blocks_only_that_sleeve_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-sas-okc",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="sas-close-game-only",
+                family="score_gap_sensitive_grid",
+                side="Spurs",
+                sleeve_id="sas-close-gap",
+                sleeve_group="sas",
+                sleeve_role="score_gap_sensitive",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-sas",
+                    "token_id": "token-sas",
+                    "side": "buy",
+                    "price": 0.24,
+                    "size": 5,
+                    "price_band": [0.2, 0.3],
+                    "max_abs_score_gap": 4,
+                },
+            ),
+            ActiveStrategy(
+                strategy_id="sas-band-grid",
+                family="price_stability_micro_grid",
+                side="Spurs",
+                sleeve_id="sas-band-grid",
+                sleeve_group="sas",
+                sleeve_role="price_band_only",
+                budget_usd=2.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-sas",
+                    "token_id": "token-sas",
+                    "side": "buy",
+                    "price": 0.24,
+                    "size": 5,
+                    "price_band": [0.2, 0.3],
+                },
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "score_gap": 8,
+            "strategy_states": {
+                "sas-close-game-only": {"price": 0.24},
+                "sas-band-grid": {"price": 0.24},
+            },
+        },
+        portfolio_state={"open_positions": 0, "open_orders": 0},
+    )
+
+    assert result.intent_count == 1
+    assert result.blocked_count == 1
+    assert result.blockers[0]["reason"] == "score_gap_outside_rule"
+    assert result.blockers[0]["sleeve_id"] == "sas-close-gap"
+    assert result.intents[0].strategy_id == "sas-band-grid"

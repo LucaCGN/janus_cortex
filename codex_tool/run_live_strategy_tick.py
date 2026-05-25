@@ -473,7 +473,11 @@ def _run_event_tick(
         integrity = context.get("integrity") or {}
         direct_clob = integrity.get("direct_clob") if isinstance(integrity, dict) else None
     direct_clob_state = direct_clob if isinstance(direct_clob, dict) else {}
-    event_direct_clob_state = _event_scoped_direct_clob(direct_clob_state, plan) if direct_clob_state else {}
+    event_direct_clob_state = (
+        _event_scoped_direct_clob(direct_clob_state, plan, outcome_refs=market_outcome_refs)
+        if direct_clob_state
+        else {}
+    )
     if event_direct_clob_state:
         raw_event_open_position_count = event_direct_clob_state.get(
             "raw_event_open_position_count",
@@ -656,6 +660,7 @@ def _run_event_tick(
         llm_runtime_trace,
         persistence=llm_runtime_persistence,
         dispatch_enabled=enable_llm_dispatch,
+        plan=plan,
     )
     shadow = api_json(
         api_root,
@@ -681,7 +686,7 @@ def _run_event_tick(
             live_blocked_by.append("integrity_not_ready_for_live_minimum_orders")
         if direct_trade_persistence.get("ok") is False:
             live_blocked_by.append("direct_clob_trade_persistence_failed")
-        llm_blocker = _llm_runtime_live_blocker(llm_runtime_trace)
+        llm_blocker = _llm_runtime_live_blocker(llm_runtime_trace, plan=plan)
         if llm_blocker:
             live_blocked_by.append(llm_blocker)
         if not live_blocked_by:
@@ -843,8 +848,11 @@ def _llm_runtime_status_summary(
     *,
     persistence: dict[str, Any],
     dispatch_enabled: bool,
+    plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     response = trace.revision_response
+    revision_blocker = _llm_runtime_revision_blocker(trace)
+    live_blocker = _llm_runtime_live_blocker(trace, plan=plan)
     return {
         "trace_id": trace.trace_id,
         "event_id": trace.event_id,
@@ -858,17 +866,94 @@ def _llm_runtime_status_summary(
         "skipped_reason": response.skipped_reason if response else None,
         "persisted": bool(persistence.get("ok")) and persistence.get("status") == "persisted",
         "artifact_path": persistence.get("path"),
-        "live_blocker": _llm_runtime_live_blocker(trace),
+        "revision_blocker": revision_blocker,
+        "live_blocker": live_blocker,
+        "deterministic_fallback_allowed": revision_blocker is not None and live_blocker is None,
     }
 
 
-def _llm_runtime_live_blocker(trace: LLMRuntimeTrace) -> str | None:
+def _llm_runtime_revision_blocker(trace: LLMRuntimeTrace) -> str | None:
     if not any(trigger.requires_revision for trigger in trace.triggers):
         return None
     response = trace.revision_response
     if response is None or response.status != "response_recorded":
         return "llm_revision_unavailable"
     return "llm_revision_review_required"
+
+
+def _llm_runtime_live_blocker(trace: LLMRuntimeTrace, *, plan: dict[str, Any] | None = None) -> str | None:
+    blocker = _llm_runtime_revision_blocker(trace)
+    if blocker is None:
+        return None
+    if not _plan_requires_llm_revision_before_execution(plan):
+        return None
+    return blocker
+
+
+def _plan_requires_llm_revision_before_execution(plan: dict[str, Any] | None) -> bool:
+    if not isinstance(plan, dict):
+        return False
+    if _truthy_flag(
+        plan,
+        (
+            "execution_requires_llm_revision",
+            "requires_llm_revision_before_execution",
+            "llm_revision_required_before_execution",
+        ),
+    ):
+        return True
+    context = plan.get("context_summary") if isinstance(plan.get("context_summary"), dict) else {}
+    if _truthy_flag(
+        context,
+        (
+            "execution_requires_llm_revision",
+            "requires_llm_revision_before_execution",
+            "llm_revision_required_before_execution",
+        ),
+    ):
+        return True
+    for strategy in plan.get("active_strategies") or []:
+        if not isinstance(strategy, dict):
+            continue
+        if _strategy_requires_llm_revision_before_execution(strategy):
+            return True
+    return False
+
+
+def _strategy_requires_llm_revision_before_execution(strategy: dict[str, Any]) -> bool:
+    if _truthy_flag(
+        strategy,
+        (
+            "execution_requires_llm_revision",
+            "requires_llm_revision_before_execution",
+            "llm_revision_required_before_execution",
+        ),
+    ):
+        return True
+    for key in ("entry_rules", "exit_rules", "stop_rules", "shadow_flags", "metadata"):
+        values = strategy.get(key) if isinstance(strategy.get(key), dict) else {}
+        if _truthy_flag(
+            values,
+            (
+                "execution_requires_llm_revision",
+                "requires_llm_revision_before_execution",
+                "llm_revision_required_before_execution",
+            ),
+        ):
+            return True
+    return False
+
+
+def _truthy_flag(values: dict[str, Any], keys: tuple[str, ...]) -> bool:
+    for key in keys:
+        raw = values.get(key)
+        if isinstance(raw, str):
+            if raw.strip().lower() in {"1", "true", "yes", "y", "on", "required"}:
+                return True
+            continue
+        if bool(raw):
+            return True
+    return False
 
 
 def _submit_candidate_strategy_plan(
@@ -2379,13 +2464,17 @@ def _pending_intent_summary(
             "signal_id": metadata.get("signal_id"),
             "source": "portfolio.orders",
         }
-        if event_start_order_expiry and external_order_id:
+        if event_start_order_expiry:
             event_start_expired_orders.append(
                 {
                     **order_summary,
                     "event_start_utc": event_start_order_expiry["event_start_utc"],
                     "detected_at_utc": event_start_order_expiry["detected_at_utc"],
-                    "reason": "direct_clob_missing_after_event_start",
+                    "reason": (
+                        "direct_clob_missing_after_event_start"
+                        if external_order_id
+                        else "local_pending_without_external_after_event_start"
+                    ),
                 }
             )
             continue
@@ -2764,15 +2853,32 @@ def _missing_plan_target_order_ids(
     return sorted(set(missing))
 
 
-def _plan_token_ids(plan: dict[str, Any]) -> set[str]:
+def _plan_token_ids(plan: dict[str, Any], *, outcome_refs: dict[str, dict[str, str]] | None = None) -> set[str]:
     token_ids: set[str] = set()
     for strategy in plan.get("active_strategies") or []:
         if not isinstance(strategy, dict):
             continue
-        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
-        token_id = str(entry_rules.get("token_id") or "").strip()
-        if token_id:
-            token_ids.add(token_id)
+        for section_key in ("entry_rules", "exit_rules", "stop_rules", "shadow_flags", "metadata"):
+            values = strategy.get(section_key) if isinstance(strategy.get(section_key), dict) else {}
+            token_id = str(values.get("token_id") or values.get("asset_id") or values.get("clob_token_id") or "").strip()
+            if token_id:
+                token_ids.add(token_id)
+    for collection_key in ("market_outcomes", "outcomes", "sampled_outcomes"):
+        for item in plan.get(collection_key) or []:
+            if not isinstance(item, dict):
+                continue
+            token_id = str(item.get("token_id") or item.get("asset_id") or item.get("clob_token_id") or "").strip()
+            if token_id:
+                token_ids.add(token_id)
+    if outcome_refs:
+        for key, ref in outcome_refs.items():
+            normalized_key = str(key or "").strip()
+            if normalized_key.isdigit():
+                token_ids.add(normalized_key)
+            if isinstance(ref, dict):
+                token_id = str(ref.get("token_id") or "").strip()
+                if token_id:
+                    token_ids.add(token_id)
     return token_ids
 
 
@@ -2811,14 +2917,19 @@ def _direct_item_event_slug(item: dict[str, Any]) -> str | None:
     return value or None
 
 
-def _event_scoped_direct_clob(direct_clob: dict[str, Any], plan: dict[str, Any]) -> dict[str, Any]:
+def _event_scoped_direct_clob(
+    direct_clob: dict[str, Any],
+    plan: dict[str, Any],
+    *,
+    outcome_refs: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any]:
     """Return direct CLOB truth filtered to the current event.
 
     Integrity checks are account-scoped, but a live event tick must not let an
     unrelated open futures position suppress a current-game strategy. The scope
     must still include sibling outcome tokens for the same condition/event.
     """
-    token_ids = _plan_token_ids(plan)
+    token_ids = _plan_token_ids(plan, outcome_refs=outcome_refs)
     if not token_ids:
         return dict(direct_clob)
     event_slugs = _plan_event_slugs(plan)

@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from app.modules.agentic.contracts import StrategyPlan
+from app.modules.agentic.contracts import LLMRuntimeTrace, StrategyPlan
 from codex_tool import run_live_strategy_tick as live_tick
 
 
@@ -1423,6 +1423,27 @@ def test_event_scoped_direct_clob_includes_sibling_outcome_inventory_pytest() ->
     assert scoped["current_token_trade_count"] == 1
 
 
+def test_event_scoped_direct_clob_uses_runtime_outcome_refs_pytest() -> None:
+    scoped = live_tick._event_scoped_direct_clob(
+        {
+            "open_order_count": 2,
+            "open_orders": {
+                "orders": [
+                    {"id": "0xsas", "market": "condition-game", "token_id": "token-sas", "side": "BUY"},
+                    {"id": "0xother", "market": "condition-other", "token_id": "token-other", "side": "BUY"},
+                ]
+            },
+            "open_positions": {"positions": []},
+        },
+        {"context_summary": {"event_slug": "nba-sas-okc-2026-05-18"}, "active_strategies": []},
+        outcome_refs={"outcome-sas": {"token_id": "token-sas"}},
+    )
+
+    assert scoped["event_open_order_count"] == 1
+    assert scoped["open_orders"]["orders"][0]["id"] == "0xsas"
+    assert scoped["event_token_ids"] == ["token-sas"]
+
+
 def test_mirror_direct_open_orders_for_tick_posts_reviewed_capture_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 
@@ -1561,6 +1582,49 @@ def test_pending_intent_summary_marks_missing_submitted_order_expired_after_even
     assert summary["event_start_expired_order_count"] == 1
     assert summary["event_start_expired_orders"][0]["external_order_id"] == "0xsubmitted"
     assert summary["event_start_expired_orders"][0]["reason"] == "direct_clob_missing_after_event_start"
+
+
+def test_pending_intent_summary_expires_local_pending_without_external_after_event_start_pytest(monkeypatch) -> None:
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        assert path == "/v1/portfolio/orders"
+        return {
+            "ok": True,
+            "items": [
+                {
+                    "order_id": "local-order-2",
+                    "external_order_id": None,
+                    "event_slug": "nba-sas-okc-2026-05-18",
+                    "market_id": "market-1",
+                    "outcome_id": "outcome-sas",
+                    "side": "buy",
+                    "status": "submitted",
+                    "size": 5.0,
+                    "limit_price": 0.30,
+                    "metadata_json": {"strategy_id": "sas-live"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    summary = live_tick._pending_intent_summary(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "context_summary": {
+                "event_slug": "nba-sas-okc-2026-05-18",
+                "game_start_utc": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+            },
+        },
+        direct_clob={"open_orders": {"orders": []}, "current_token_trades": {"trades": []}},
+    )
+
+    assert summary["pending_intent_count"] == 0
+    assert summary["event_start_expired_order_count"] == 1
+    assert summary["event_start_expired_orders"][0]["external_order_id"] is None
+    assert summary["event_start_expired_orders"][0]["reason"] == "local_pending_without_external_after_event_start"
 
 
 def test_known_portfolio_order_ids_include_current_strategy_plan_ids_pytest(monkeypatch) -> None:
@@ -2217,12 +2281,21 @@ def test_event_tick_passes_player_status_shocks_to_strategy_evaluation_pytest(mo
     assert result["llm_runtime_trace"]["revision_response"]["trace_metadata"]["order_endpoint_call_allowed"] is False
     assert result["llm_runtime_persistence"]["status"] == "persisted"
     assert result["llm_runtime_status"]["persisted"] is True
-    assert result["llm_runtime_status"]["live_blocker"] == "llm_revision_unavailable"
+    assert result["llm_runtime_status"]["revision_blocker"] == "llm_revision_unavailable"
+    assert result["llm_runtime_status"]["live_blocker"] is None
+    assert result["llm_runtime_status"]["deterministic_fallback_allowed"] is True
+    trace = LLMRuntimeTrace.model_validate(result["llm_runtime_trace"])
+    assert (
+        live_tick._llm_runtime_live_blocker(trace, plan={"execution_requires_llm_revision": True})
+        == "llm_revision_unavailable"
+    )
     assert (tmp_path / "llm-runtime" / "2026-05-10").exists()
     assert order_calls == []
     assert evaluate_calls[0]["payload"]["market_state"]["player_status_shock_count"] == 1
     assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_trigger_count"] == 1
     assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_status"]["response_status"] == "skipped_unavailable"
+    assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_status"]["revision_blocker"] == "llm_revision_unavailable"
+    assert evaluate_calls[0]["payload"]["market_state"]["llm_runtime_status"]["live_blocker"] is None
 
 
 def test_persist_orderbook_watch_ticks_records_sampled_outcomes_pytest(monkeypatch) -> None:
