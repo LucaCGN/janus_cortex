@@ -99,11 +99,11 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | Active/sprint | Promote WNBA from passive/shadow capture to controlled min-size live test readiness with a WNBA StrategyPlan, direct CLOB evidence, and explicit gate/blocker proof. |
 | [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | Active/sprint | Build the independent Janus covered-market live trading runtime and signal aggregation system so pregame Codex/LLM availability is not a liveness dependency. |
 | [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | P0 | Planned/sprint | Normalize NBA/WNBA live snapshots and feed adapter parity. |
-| [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | P0 | Planned/sprint | Implement live signal schema and persistence. |
-| [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | P0 | Planned/sprint | Build signal aggregation arbitration and blocker artifacts. |
-| [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | P0 | Planned/sprint | Implement event risk budget and sleeve manager. |
+| [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | P0 | Closed foundation | Live signal schema and persistence implemented in `ddbf6e0`; future schema changes need focused follow-up scope. |
+| [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | P0 | Closed foundation | Signal aggregation arbitration and blocker artifacts implemented in `039bfe4`; future live-worker adoption work needs focused follow-up scope. |
+| [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | P0 | Closed foundation | Event risk budget and sleeve manager implemented in `57da4ce`; future calibration belongs to risk/postgame/performance-review routing. |
 | [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Closed foundation | Deterministic fallback/degraded-mode behavior implemented and live-validated; future regressions should open a focused #63 child follow-up instead of reopening this slice. |
-| [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Planned backlog | Add runtime control endpoints for event config and signal toggles. |
+| [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Closed foundation | Runtime event-control endpoints for event config and signal toggles implemented in `a86818e`. |
 | [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P1 | Planned backlog | Add postgame signal performance review and missed-signal replay. |
 | [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Planned backlog | Add project-chief performance review and development-planning automation for daily return-focused system improvement. |
 | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | P1 | Planned backlog | Formalize NBA/WNBA pregame research agents as optional priors with expiry and no liveness dependency. |
@@ -155,7 +155,7 @@ Routing rules:
 | `#56/#59` | Closed Codex global portfolio-manager foundations. Do not use them as Janus NBA/WNBA live-runtime owners or as open umbrellas for future status comments; create focused follow-up issues for new portfolio drift or expansion. |
 | `#46/#47/#48` | Keep as profile/future-domain incubation, not covered-market live authority. |
 
-Implementation children created from `#63`: `#64` data adapters, `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, `#69` runtime control endpoints, and `#70` postgame signal-performance review. Each child issue must retain acceptance criteria and file/module ownership before code begins.
+Implementation children created from `#63`: `#64` data adapters and `#70` postgame signal-performance review remain open; `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, and `#69` runtime control endpoints are closed foundations. New adoption, calibration, or regression work should use focused follow-up tasks instead of reopening closed children.
 
 Current-scope expansion created 2026-05-24:
 
