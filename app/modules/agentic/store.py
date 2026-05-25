@@ -7,6 +7,7 @@ from typing import Any
 
 from app.api.db import to_jsonable
 from app.modules.agentic.contracts import LiveSignal, StrategyPlan
+from app.modules.agentic.signal_aggregation import LiveSignalAggregationDecision
 from app.modules.agentic.repository import (
     get_agentic_database_status,
     resolve_catalog_event_strategy_plan_aliases,
@@ -50,6 +51,11 @@ def ops_artifact_root(day: str | None = None) -> Path:
 def live_signal_root(day: str | None = None, *, root: Path | None = None) -> Path:
     base_root = root if root is not None else artifacts_root()
     return base_root / "live-signals" / session_date(day)
+
+
+def live_signal_aggregation_root(day: str | None = None, *, root: Path | None = None) -> Path:
+    base_root = root if root is not None else artifacts_root()
+    return base_root / "live-signal-aggregation" / session_date(day)
 
 
 def _json_default(value: Any) -> Any:
@@ -127,6 +133,46 @@ def write_live_signals(
         "signal_count": len(signals),
         "signals": written,
         "jsonl_path": str(live_signal_root(resolved_day, root=root) / "live_signals.jsonl"),
+    }
+
+
+def write_live_signal_aggregation_decision(
+    decision: LiveSignalAggregationDecision,
+    *,
+    day: str | None = None,
+    root: Path | None = None,
+    source: str = "janus",
+) -> dict[str, Any]:
+    resolved_day = session_date(day)
+    event_dir = live_signal_aggregation_root(resolved_day, root=root) / _safe_name(decision.event_id)
+    path = event_dir / f"{decision.decision_id}.json"
+    payload = decision.model_dump(mode="json")
+    write_json(path, payload)
+    append_jsonl(
+        live_signal_aggregation_root(resolved_day, root=root) / "aggregation_decisions.jsonl",
+        {
+            "recorded_at_utc": utc_now().isoformat(),
+            "session_date": resolved_day,
+            "source": source,
+            "decision_id": decision.decision_id,
+            "event_id": decision.event_id,
+            "decision_type": decision.decision_type,
+            "selected_signal_count": len(decision.selected_signal_ids),
+            "suppressed_signal_count": len(decision.suppressed_signal_ids),
+            "blocker_count": len(decision.blocker_artifacts),
+            "order_intent_candidate_count": len(decision.order_intent_candidates),
+            "path": str(path),
+        },
+    )
+    return {
+        "status": "stored",
+        "schema_version": "live_signal_aggregation_artifact_v1",
+        "session_date": resolved_day,
+        "event_id": decision.event_id,
+        "decision_id": decision.decision_id,
+        "decision_type": decision.decision_type,
+        "path": str(path),
+        "jsonl_path": str(live_signal_aggregation_root(resolved_day, root=root) / "aggregation_decisions.jsonl"),
     }
 
 
@@ -353,7 +399,9 @@ __all__ = [
     "load_current_strategy_plan",
     "load_current_strategy_plan_for_event",
     "live_signal_root",
+    "live_signal_aggregation_root",
     "record_ops_stage",
+    "write_live_signal_aggregation_decision",
     "write_live_signals",
     "write_json",
     "write_strategy_plan",
