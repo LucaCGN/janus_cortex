@@ -261,6 +261,159 @@ def test_sync_and_fetch_live_state_keeps_nba_on_nba_endpoints_pytest(monkeypatch
     ]
 
 
+def test_run_event_tick_includes_normalized_live_snapshot_pytest(monkeypatch) -> None:
+    evaluate_payloads: list[dict[str, Any]] = []
+
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        if path == "/v1/events/wnba-wsh-sea-2026-05-24/agent-context":
+            return {
+                "current_strategy_plan": {
+                    "market_id": "market-1",
+                    "active_strategies": [
+                        {
+                            "strategy_id": "seattle-grid",
+                            "family": "price_stability_micro_grid",
+                            "entry_rules": {
+                                "outcome_id": "seattle",
+                                "token_id": "token-sea",
+                                "outcome_label": "Seattle",
+                                "side": "buy",
+                            },
+                        }
+                    ],
+                }
+            }
+        if path == "/v1/events/wnba-wsh-sea-2026-05-24/strategy-plan/evaluate":
+            evaluate_payloads.append(payload or {})
+            return {"ok": True, "sleeve_states": []}
+        raise AssertionError(path)
+
+    class FakeTrace:
+        trigger_count = 0
+        triggers: list[Any] = []
+
+        def model_dump(self, mode: str = "python") -> dict[str, Any]:
+            return {"trace_id": "trace-1", "event_id": "wnba-wsh-sea-2026-05-24", "mode": mode}
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+    monkeypatch.setattr(
+        live_tick,
+        "_resolve_game",
+        lambda *args, **kwargs: {
+            "event_id": "wnba-wsh-sea-2026-05-24",
+            "league": "wnba",
+            "game_id": "1022600046",
+            "game_status_text": "Live",
+            "period": 1,
+            "game_clock": "PT06M56.00S",
+            "home_team_name": "Seattle Storm",
+            "home_team_slug": "SEA",
+            "home_score": 7,
+            "away_team_name": "Washington Mystics",
+            "away_team_slug": "WSH",
+            "away_score": 14,
+            "updated_at": "2026-05-25T06:40:00Z",
+        },
+    )
+    monkeypatch.setattr(
+        live_tick,
+        "_sync_and_fetch_live_state",
+        lambda *args, **kwargs: {
+            "latest_snapshot": {
+                "captured_at": "2026-05-25T06:40:05Z",
+                "period": 1,
+                "clock": "PT06M55.00S",
+                "home_score": 7,
+                "away_score": 14,
+            },
+            "recent_play_by_play": [{"timeActual": "2026-05-25T06:40:04Z"}],
+        },
+    )
+    monkeypatch.setattr(
+        live_tick,
+        "_fetch_direct_orderbook_latest",
+        lambda **kwargs: {
+            "ok": True,
+            "levels_count": 2,
+            "snapshot": {
+                "token_id": "token-sea",
+                "best_bid": 0.31,
+                "best_ask": 0.33,
+                "spread": 0.02,
+                "bid_depth": 5.0,
+                "ask_depth": 6.0,
+                "captured_at": "2026-05-25T06:40:06Z",
+            },
+        },
+    )
+    monkeypatch.setattr(live_tick, "_persist_orderbook_watch_ticks", lambda **kwargs: {"ok": True, "tick_count": 1})
+    monkeypatch.setattr(live_tick, "_mirror_direct_open_orders_for_tick", lambda **kwargs: {"ok": True, "status": "applied"})
+    monkeypatch.setattr(
+        live_tick,
+        "_pending_intent_summary",
+        lambda **kwargs: {
+            "ok": True,
+            "source": "pytest",
+            "pending_intent_count": 0,
+            "pending_buy_intent_count": 0,
+            "orders": [],
+            "event_start_expired_order_count": 0,
+            "event_start_expired_orders": [],
+        },
+    )
+    monkeypatch.setattr(
+        live_tick,
+        "_known_portfolio_order_external_ids",
+        lambda **kwargs: {"ok": True, "external_order_ids": [], "known_order_count": 0},
+    )
+    monkeypatch.setattr(live_tick, "_persist_direct_trade_watch_observations", lambda **kwargs: {"ok": True, "trade_count": 0})
+    monkeypatch.setattr(
+        live_tick,
+        "_auto_protect_direct_positions",
+        lambda **kwargs: {"candidate_strategy_plan_submission": {"submitted": False}, "submitted_orders": []},
+    )
+    monkeypatch.setattr(live_tick, "build_llm_runtime_trace", lambda **kwargs: FakeTrace())
+    monkeypatch.setattr(
+        live_tick,
+        "_llm_runtime_status_summary",
+        lambda *args, **kwargs: {"status": "detected_only", "trigger_count": 0},
+    )
+
+    result = live_tick._run_event_tick(
+        api_root="http://test",
+        session_date="2026-05-25",
+        event_id="wnba-wsh-sea-2026-05-24",
+        account_id="account-1",
+        source="pytest",
+        execute=False,
+        live_money=False,
+        max_intents=0,
+        orderbook_sample_count=1,
+        orderbook_sample_interval_sec=0.0,
+        integrity_ready=False,
+        integrity_snapshot={},
+        strategy_plan_gate={"status": "ready", "current_plan_count": 1, "current_plans": [{"market_id": "market-1"}]},
+        live_strategy_worker_status={"status": "stopped", "worker_thread_alive": False},
+        evidence_paths=["local/shared/artifacts/ops/live-monitor.json"],
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        share_precision=3,
+        auto_protect_manual_positions=False,
+        manual_target_delta_cents=5.0,
+    )
+
+    snapshot = result["normalized_live_snapshot"]
+    assert snapshot["schema_version"] == "normalized_live_snapshot_v1"
+    assert snapshot["event_id"] == "wnba-wsh-sea-2026-05-24"
+    assert snapshot["league"] == "wnba"
+    assert snapshot["game"]["period"] == 1
+    assert snapshot["game"]["clock"] == "PT06M55.00S"
+    assert snapshot["clob"][0]["best_bid"] == 0.31
+    assert snapshot["runtime"]["worker_status"] == "stopped"
+    assert snapshot["execution_boundary"] == "evidence_only"
+    assert snapshot == evaluate_payloads[0]["market_state"]["normalized_live_snapshot"]
+
+
 def test_resolve_game_uses_catalog_link_for_uuid_event_pytest(monkeypatch) -> None:
     event_uuid = "8da3c71c-1926-5f97-8473-7c742c7156b8"
     calls: list[dict[str, Any]] = []

@@ -17,6 +17,7 @@ from app.modules.agentic.llm_runtime import (
     build_llm_runtime_trace,
     process_llm_runtime_trace,
 )
+from app.modules.agentic.live_snapshot import build_normalized_live_snapshot
 from codex_tools.polymarket.settlement import classify_documented_residual_positions
 
 try:
@@ -193,6 +194,17 @@ def run_tick(
             orderbook_sample_interval_sec=orderbook_sample_interval_sec,
             integrity_ready=ready_for_live,
             integrity_snapshot=integrity_snapshot,
+            strategy_plan_gate=live_monitor.get("strategy_plan_gate")
+            if isinstance(live_monitor.get("strategy_plan_gate"), dict)
+            else {},
+            live_strategy_worker_status=live_monitor.get("live_strategy_worker_status")
+            if isinstance(live_monitor.get("live_strategy_worker_status"), dict)
+            else {},
+            evidence_paths=[
+                str(path)
+                for path in (integrity.get("path"), live_monitor.get("path"))
+                if path
+            ],
             min_size=min_size,
             min_buy_notional_usd=min_buy_notional_usd,
             max_buy_notional_usd=max_buy_notional_usd,
@@ -252,6 +264,9 @@ def _run_event_tick(
     enable_llm_dispatch: bool = False,
     llm_runtime_artifact_root: str | None = None,
     persist_llm_runtime_trace: bool = False,
+    strategy_plan_gate: dict[str, Any] | None = None,
+    live_strategy_worker_status: dict[str, Any] | None = None,
+    evidence_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     context = api_json(
         api_root,
@@ -569,6 +584,22 @@ def _run_event_tick(
     }
     if market_outcome_lookup_error:
         market_state["market_outcome_lookup_error"] = market_outcome_lookup_error
+    normalized_live_snapshot = build_normalized_live_snapshot(
+        event_id=event_id,
+        league=_event_league(event_id=event_id, game=game),
+        game=_normalized_snapshot_game_payload(game=game, live_state=live_state),
+        orderbooks=orderbook_results,
+        direct_clob=event_direct_clob_state,
+        strategy_plan_gate=strategy_plan_gate or {"status": "ready" if plan else "missing", "current_plan_count": 1 if plan else 0},
+        worker=_normalized_snapshot_worker_payload(
+            live_strategy_worker_status=live_strategy_worker_status or {},
+            execute=execute,
+            live_money=live_money,
+            enable_llm_dispatch=enable_llm_dispatch,
+        ),
+        evidence_paths=evidence_paths or [],
+    ).model_dump(mode="json")
+    market_state["normalized_live_snapshot"] = normalized_live_snapshot
     operator_reaction = _auto_protect_direct_positions(
         api_root=api_root,
         account_id=account_id,
@@ -728,6 +759,7 @@ def _run_event_tick(
         "llm_runtime_trace": llm_runtime_trace.model_dump(mode="json"),
         "llm_runtime_persistence": llm_runtime_persistence,
         "llm_runtime_status": market_state["llm_runtime_status"],
+        "normalized_live_snapshot": normalized_live_snapshot,
         "orderbook_results": _summarize_orderbooks(orderbook_results),
         "watch_persistence": watch_persistence,
         "degraded_missing_plan_fallback": missing_plan_fallback,
@@ -4101,6 +4133,72 @@ def _compact_live_state(live_state: dict[str, Any]) -> dict[str, Any]:
         "latest_snapshot": latest,
         "recent_play_by_play_count": len(live_state.get("recent_play_by_play") or []),
         "sync_summary": live_state.get("sync_summary"),
+    }
+
+
+def _event_league(*, event_id: str, game: dict[str, Any]) -> str:
+    league = str(game.get("league") or "").strip().lower()
+    if league == "wnba" or str(event_id or "").strip().lower().startswith("wnba-"):
+        return "wnba"
+    return "nba"
+
+
+def _normalized_snapshot_game_payload(*, game: dict[str, Any], live_state: dict[str, Any]) -> dict[str, Any]:
+    latest = live_state.get("latest_snapshot") if isinstance(live_state.get("latest_snapshot"), dict) else {}
+    payload = latest.get("payload_json") if isinstance(latest.get("payload_json"), dict) else {}
+    return {
+        **game,
+        "game_status_text": _first_value(
+            latest,
+            game,
+            ("game_status_text", "status_text", "gameStatusText", "status"),
+        )
+        or game.get("game_status_text"),
+        "period": _first_value(latest, game, ("period", "game_period")),
+        "clock": _first_value(latest, game, ("clock", "game_clock")),
+        "game_clock": _first_value(latest, game, ("game_clock", "clock")),
+        "home_score": _first_value(latest, game, ("home_score", "homeScore")),
+        "away_score": _first_value(latest, game, ("away_score", "awayScore")),
+        "updated_at": _first_value(latest, payload, ("captured_at", "updated_at", "snapshot_time", "timestamp")),
+        "play_by_play_timestamp_utc": _latest_play_by_play_timestamp(live_state),
+        "stats_timestamp_utc": _first_value(live_state, latest, ("boxscore_captured_at", "stats_timestamp_utc")),
+    }
+
+
+def _latest_play_by_play_timestamp(live_state: dict[str, Any]) -> str | None:
+    for row in live_state.get("recent_play_by_play") or []:
+        if not isinstance(row, dict):
+            continue
+        value = _first_value(
+            row,
+            row.get("payload_json") if isinstance(row.get("payload_json"), dict) else {},
+            ("captured_at", "timeActual", "timestamp", "created_at"),
+        )
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _normalized_snapshot_worker_payload(
+    *,
+    live_strategy_worker_status: dict[str, Any],
+    execute: bool,
+    live_money: bool,
+    enable_llm_dispatch: bool,
+) -> dict[str, Any]:
+    status = str(live_strategy_worker_status.get("status") or "unknown")
+    return {
+        "status": status,
+        "running": bool(
+            live_strategy_worker_status.get("running")
+            or live_strategy_worker_status.get("worker_thread_alive")
+            or status == "running"
+        ),
+        "execute": bool(live_strategy_worker_status.get("execute", execute)),
+        "live_money": bool(live_strategy_worker_status.get("live_money", live_money)),
+        "enable_llm_dispatch": bool(
+            live_strategy_worker_status.get("enable_llm_dispatch", enable_llm_dispatch)
+        ),
     }
 
 
