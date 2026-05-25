@@ -32,6 +32,7 @@ from app.modules.agentic.llm_runtime import (
     process_llm_runtime_trace,
 )
 from app.modules.agentic.live_snapshot import build_normalized_live_snapshot
+from app.modules.agentic.pregame_priors import build_optional_pregame_prior_evidence
 from app.modules.agentic.signal_aggregation import (
     LiveSignalAggregationControl,
     LiveSignalAggregationInventory,
@@ -636,6 +637,12 @@ def _run_event_tick(
     }
     if market_outcome_lookup_error:
         market_state["market_outcome_lookup_error"] = market_outcome_lookup_error
+    pregame_prior_evidence = build_optional_pregame_prior_evidence(
+        event_id=event_id,
+        league=_event_league(event_id=event_id, game=game),
+        day=session_date,
+    ).model_dump(mode="json")
+    market_state["pregame_prior"] = pregame_prior_evidence
     market_state["target_management"] = target_management_evidence
     market_state["paired_microcycle"] = paired_microcycle_evidence
     normalized_live_snapshot = build_normalized_live_snapshot(

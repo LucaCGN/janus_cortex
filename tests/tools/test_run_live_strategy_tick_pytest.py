@@ -1165,6 +1165,10 @@ def test_event_tick_submits_monitor_plan_when_current_plan_missing_pytest(monkey
         if path == "/v1/events/nba-sas-okc-2026-05-24/strategy-plan/evaluate":
             assert payload["market_state"]["sampled_outcomes"] == []
             assert payload["market_state"]["game"]["reason"] == "game_not_found"
+            assert payload["market_state"]["pregame_prior"]["status"] == "missing"
+            assert payload["market_state"]["pregame_prior"]["reason_codes"] == ["optional_prior_missing"]
+            assert payload["market_state"]["pregame_prior"]["liveness_blocking"] is False
+            assert payload["market_state"]["pregame_prior"]["live_disabled"] is False
             return {
                 "ok": True,
                 "intent_count": 0,
