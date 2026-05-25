@@ -65,6 +65,14 @@ class LiveSignalOrderIntentCandidate(BaseModel):
     market_id: str | None = None
     outcome_id: str | None = None
     market_token_id: str | None = None
+    sleeve_id: str | None = None
+    sleeve_role: str | None = None
+    sleeve_group: str | None = None
+    strategy_id: str | None = None
+    strategy_family: str | None = None
+    cycle_id: str | None = None
+    trigger_type: str | None = None
+    trigger_source: str | None = None
     requested_shares: float | None = Field(default=None, ge=0.0)
     requested_notional_usd: float | None = Field(default=None, ge=0.0)
     max_price: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -243,6 +251,7 @@ def _order_candidate(signals: list[LiveSignal]) -> LiveSignalOrderIntentCandidat
     reason_codes = _unique_strings([reason for signal in signals for reason in signal.reason_codes])
     evidence_paths = _unique_strings([path for signal in signals for path in signal.evidence_paths])
     signal_ids = [signal.signal_id or signal.stable_signal_id() for signal in signals]
+    payload = strongest.payload if isinstance(strongest.payload, dict) else {}
     return LiveSignalOrderIntentCandidate(
         event_id=strongest.event_id,
         signal_type=strongest.signal_type,
@@ -250,6 +259,14 @@ def _order_candidate(signals: list[LiveSignal]) -> LiveSignalOrderIntentCandidat
         market_id=strongest.market_id,
         outcome_id=strongest.outcome_id,
         market_token_id=strongest.market_token_id,
+        sleeve_id=risk.sleeve_id if risk is not None else _clean_payload(payload.get("sleeve_id")),
+        sleeve_role=risk.sleeve_role if risk is not None else _clean_payload(payload.get("sleeve_role")),
+        sleeve_group=_clean_payload(payload.get("sleeve_group")),
+        strategy_id=_clean_payload(payload.get("strategy_id")),
+        strategy_family=_clean_payload(payload.get("strategy_family")),
+        cycle_id=_clean_payload(payload.get("cycle_id")),
+        trigger_type=_clean_payload(payload.get("trigger_type")),
+        trigger_source=_clean_payload(payload.get("trigger_source")),
         requested_shares=requested_shares,
         requested_notional_usd=requested_notional_usd,
         max_price=max_price,
@@ -289,6 +306,11 @@ def _signal_sleeve_id(signal: LiveSignal) -> str | None:
         return _norm(signal.risk_request.sleeve_id)
     payload = signal.payload if isinstance(signal.payload, dict) else {}
     return _norm(str(payload.get("sleeve_id") or payload.get("strategy_id") or ""))
+
+
+def _clean_payload(value: Any) -> str | None:
+    text = str(value or "").strip()
+    return text or None
 
 
 def _candidate_blocking(blocker: LiveSignalBlockerArtifact) -> bool:

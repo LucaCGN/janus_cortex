@@ -55,6 +55,24 @@ The aggregator must:
 7. Select sleeve action: core hold, grid/scalp, rebuy, reduce/stop, or monitor.
 8. Emit a StrategyPlan revision or an execution blocker artifact.
 
+## Trigger-To-Sleeve Binding
+
+The live tick must bind triggers to sleeves before aggregation. This is the missing connection between the tick-loop trigger box and the sleeve model.
+
+Binding responsibilities:
+
+- convert StrategyPlan sleeve states into `buy`, `sell`, `block`, or `monitor` signals with `sleeve_id`, `sleeve_group`, `sleeve_role`, `strategy_id`, and strategy family metadata;
+- convert paired microcycle next-leg evidence into sleeve-scoped `sell` or `rebuy` signals with `cycle_id`, token, outcome, target price, and requested shares;
+- convert paired microcycle duplicate-buy protections into local sleeve `block` signals, not global event blockers;
+- preserve LLM/runtime triggers as monitor evidence unless a reviewed sleeve explicitly promotes them into an actionable signal;
+- carry binding metadata through aggregation into each order-intent candidate so Janus can tell which sleeve/cycle/trigger produced the next proposed action.
+
+Current implementation:
+
+- `app/modules/agentic/sleeve_trigger_binding.py` emits `sleeve_trigger_binding_evidence_v1`;
+- `codex_tool/run_live_strategy_tick.py` stores the binding evidence in `market_state["sleeve_trigger_binding"]` and `live_signal_aggregation["sleeve_trigger_binding"]`;
+- `app/modules/agentic/signal_aggregation.py` preserves `sleeve_id`, `sleeve_group`, `sleeve_role`, `strategy_id`, `strategy_family`, `cycle_id`, `trigger_type`, and `trigger_source` on order-intent candidates.
+
 ## Gate Scope
 
 Strategy gates are local to the signal source or sleeve that owns them.

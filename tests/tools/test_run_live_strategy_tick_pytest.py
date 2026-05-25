@@ -2391,9 +2391,14 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
     aggregation = result["live_signal_aggregation"]
     assert aggregation["schema_version"] == "live_worker_aggregation_evidence_v1"
     assert aggregation["signal_count"] == 2
+    assert aggregation["sleeve_trigger_binding"]["schema_version"] == "sleeve_trigger_binding_evidence_v1"
+    assert aggregation["sleeve_trigger_binding"]["strategy_state_binding_count"] == 2
     assert aggregation["decision"]["decision_type"] == "order_intent_candidate"
     assert aggregation["decision"]["order_intent_candidates"][0]["side"] == "Pistons"
+    assert aggregation["decision"]["order_intent_candidates"][0]["sleeve_id"] == "det-q1-underdog"
+    assert aggregation["decision"]["order_intent_candidates"][0]["trigger_type"] == "strategy_plan_sleeve_state"
     assert aggregation["decision"]["blocker_artifacts"][0]["detail"]["scope"] == "local_sleeve"
+    assert result["market_state"]["sleeve_trigger_binding"]["binding_count"] == 2
     assert aggregation["event_risk_budget"]["event_cap_usd"] == 10.0
     assert aggregation["persistence"]["status"] == "stored"
     assert persisted_decisions[0]["kwargs"]["day"] == "2026-05-11"

@@ -14,10 +14,6 @@ if str(_REPO_ROOT) not in sys.path:
 from app.modules.agentic.contracts import (
     ActiveStrategy,
     LLMRuntimeTrace,
-    LiveSignal,
-    LiveSignalFreshness,
-    LiveSignalPriceBand,
-    LiveSignalRiskRequest,
     StrategyPlan,
 )
 from app.modules.agentic.event_budget import (
@@ -37,6 +33,10 @@ from app.modules.agentic.signal_aggregation import (
     LiveSignalAggregationControl,
     LiveSignalAggregationInventory,
     aggregate_live_signals,
+)
+from app.modules.agentic.sleeve_trigger_binding import (
+    build_sleeve_trigger_binding_evidence,
+    live_signals_from_sleeve_trigger_bindings,
 )
 from app.modules.agentic.store import write_live_signal_aggregation_decision
 from app.modules.agentic.paired_microcycle import build_paired_microcycle_evidence
@@ -890,7 +890,7 @@ def _build_live_signal_aggregation_evidence(
     max_buy_notional_usd: float | None,
     persist: bool,
 ) -> dict[str, Any]:
-    signals = _live_signals_from_sleeve_states(
+    sleeve_trigger_binding = build_sleeve_trigger_binding_evidence(
         event_id=event_id,
         plan=plan,
         evaluation=evaluation,
@@ -898,6 +898,8 @@ def _build_live_signal_aggregation_evidence(
         min_size=min_size,
         source=source,
     )
+    market_state["sleeve_trigger_binding"] = sleeve_trigger_binding.model_dump(mode="json")
+    signals = live_signals_from_sleeve_trigger_bindings(sleeve_trigger_binding)
     budget_policy = EventRiskBudgetPolicy(absolute_event_cap_usd=max_buy_notional_usd or 10.0)
     position_notional = _event_position_notional(direct_clob)
     open_order_notional = _event_open_order_notional(direct_clob)
@@ -949,112 +951,13 @@ def _build_live_signal_aggregation_evidence(
         "schema_version": "live_worker_aggregation_evidence_v1",
         "status": "recorded" if signals else "no_signals",
         "signal_count": len(signals),
+        "sleeve_trigger_binding": sleeve_trigger_binding.model_dump(mode="json"),
         "decision": decision.model_dump(mode="json"),
         "event_risk_budget": budget.model_dump(mode="json"),
         "sleeve_transition_bundle": sleeve_bundle.model_dump(mode="json"),
         "persistence": persistence,
         "execution_boundary": "evidence_only",
     }
-
-
-def _live_signals_from_sleeve_states(
-    *,
-    event_id: str,
-    plan: dict[str, Any],
-    evaluation: dict[str, Any],
-    market_state: dict[str, Any],
-    min_size: float,
-    source: str,
-) -> list[LiveSignal]:
-    states = evaluation.get("sleeve_states") if isinstance(evaluation, dict) else None
-    strategies = {
-        str(strategy.get("strategy_id") or ""): strategy
-        for strategy in plan.get("active_strategies") or []
-        if isinstance(strategy, dict)
-    }
-    signals: list[LiveSignal] = []
-    now = datetime.now(timezone.utc)
-    for state in states or []:
-        if not isinstance(state, dict):
-            continue
-        strategy_id = str(state.get("strategy_id") or "").strip()
-        strategy = strategies.get(strategy_id, {})
-        entry_rules = strategy.get("entry_rules") if isinstance(strategy.get("entry_rules"), dict) else {}
-        status = str(state.get("status") or "").strip()
-        side = str(strategy.get("side") or entry_rules.get("outcome_label") or state.get("sleeve_side") or "").strip() or None
-        signal_type = _signal_type_from_sleeve_state(status, entry_rules)
-        outcome_id = str(entry_rules.get("outcome_id") or "").strip() or None
-        token_id = str(entry_rules.get("token_id") or "").strip() or None
-        strategy_state = _strategy_market_state_for_live_signal(
-            market_state=market_state,
-            outcome_id=outcome_id,
-            token_id=token_id,
-            strategy_id=strategy_id,
-        )
-        price = _first_float(
-            {**strategy_state, **entry_rules},
-            ("price", "current_price", "best_ask", "best_bid", "max_price"),
-        )
-        requested_shares = _first_float(entry_rules, ("size", "requested_shares")) or min_size
-        reason_codes = [str(reason) for reason in (state.get("blocker_reasons") or []) if str(reason).strip()]
-        if not reason_codes:
-            reason_codes = [f"strategy_plan_{status or 'monitor'}"]
-        sleeve_id = str(state.get("sleeve_id") or entry_rules.get("sleeve_id") or strategy_id).strip() or strategy_id
-        signals.append(
-            LiveSignal(
-                event_id=event_id,
-                market_id=str(entry_rules.get("market_id") or plan.get("market_id") or "").strip() or None,
-                outcome_id=outcome_id,
-                market_token_id=token_id,
-                source="deterministic",
-                signal_type=signal_type,
-                side=side,
-                emitted_at_utc=now,
-                price_band=LiveSignalPriceBand(current_price=price) if price is not None else None,
-                confidence=_confidence_from_sleeve_state(status),
-                confidence_source=f"{source}:strategy_plan_sleeve_state",
-                freshness=LiveSignalFreshness(source_timestamp_utc=now, stale=False),
-                reason_codes=reason_codes,
-                risk_request=LiveSignalRiskRequest(
-                    sleeve_id=sleeve_id,
-                    sleeve_role=str(state.get("sleeve_role") or entry_rules.get("sleeve_role") or "").strip() or None,
-                    requested_shares=requested_shares,
-                    max_price=price,
-                ),
-                evidence_paths=list(market_state.get("normalized_live_snapshot", {}).get("evidence_paths") or []),
-                payload={
-                    "aggregation_scope": "sleeve" if signal_type == "block" else "candidate",
-                    "sleeve_id": sleeve_id,
-                    "sleeve_group": state.get("sleeve_group"),
-                    "sleeve_role": state.get("sleeve_role"),
-                    "strategy_id": strategy_id,
-                    "strategy_family": state.get("strategy_family") or strategy.get("family"),
-                    "sleeve_status": status,
-                    "intent_count": state.get("intent_count"),
-                    "blocker_count": state.get("blocker_count"),
-                },
-            )
-        )
-    return signals
-
-
-def _signal_type_from_sleeve_state(status: str, entry_rules: dict[str, Any]) -> str:
-    if status == "intent_created":
-        side = str(entry_rules.get("side") or "buy").strip().lower()
-        return "sell" if side == "sell" else "buy"
-    if status == "blocked":
-        return "block"
-    return "monitor"
-
-
-def _confidence_from_sleeve_state(status: str) -> float | None:
-    if status == "intent_created":
-        return 0.72
-    if status == "blocked":
-        return 0.65
-    if status:
-        return 0.5
-    return None
 
 
 def _strategy_market_state_for_live_signal(

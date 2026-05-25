@@ -68,6 +68,7 @@ def test_aggregator_merges_confirming_buy_signals_into_one_candidate_pytest() ->
     assert len(decision.order_intent_candidates) == 1
     candidate = decision.order_intent_candidates[0]
     assert candidate.side == "Thunder"
+    assert candidate.sleeve_id == "okc-grid"
     assert candidate.supporting_signal_ids == decision.selected_signal_ids
     assert candidate.reason_codes == ["score_gap_inside_rule", "pbp_undervaluation"]
     assert set(candidate.evidence_paths) == {
@@ -117,6 +118,33 @@ def test_aggregator_keeps_sleeve_local_blocker_from_suppressing_independent_cand
     assert [(blocker.reason_code, blocker.detail["scope"], blocker.detail["candidate_blocking"]) for blocker in decision.blocker_artifacts] == [
         ("block_signal_present", "local_sleeve", False)
     ]
+
+
+def test_aggregator_carries_trigger_and_cycle_metadata_to_candidate_pytest() -> None:
+    signal = _signal()
+    signal.payload = {
+        "sleeve_group": "okc",
+        "strategy_id": "okc-q4-band-grid-v1",
+        "strategy_family": "band_grid",
+        "cycle_id": "cycle-okc",
+        "trigger_type": "paired_microcycle_next_leg",
+        "trigger_source": "paired_microcycle",
+    }
+
+    decision = aggregate_live_signals(
+        [signal],
+        event_id=EVENT_ID,
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    candidate = decision.order_intent_candidates[0]
+    assert candidate.sleeve_id == "okc-grid"
+    assert candidate.sleeve_group == "okc"
+    assert candidate.strategy_id == "okc-q4-band-grid-v1"
+    assert candidate.strategy_family == "band_grid"
+    assert candidate.cycle_id == "cycle-okc"
+    assert candidate.trigger_type == "paired_microcycle_next_leg"
+    assert candidate.trigger_source == "paired_microcycle"
 
 
 def test_aggregator_blocks_stale_signal_before_order_candidate_pytest() -> None:

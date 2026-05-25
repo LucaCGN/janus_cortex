@@ -119,9 +119,9 @@ Supported live-test plan shapes:
 
 The live tick and worker now accept `max_buy_notional_usd`, and the evaluator can respect StrategyPlan `size_policy=plan_size` while still enforcing minimum size, minimum buy notional, and maximum buy notional. This prevents the prior failure mode where every buy collapsed to a minimum-order heuristic and made parallel sleeve testing impossible.
 
-### Required Paired Microcycle Slice
+### Implemented Paired Microcycle Slice
 
-The next grid/scalp runtime slice is #77: paired microcycle order handling.
+As of 2026-05-25, #77 implements paired microcycle evidence and readback scoring. It does not submit orders by itself; it gives the live tick a per-sleeve cycle state that can be bound into aggregation.
 
 The target behavior is not "buy whenever low-price signals appear." It is:
 
@@ -132,6 +132,20 @@ The target behavior is not "buy whenever low-price signals appear." It is:
 5. allow multiple concurrent cycles only when they are distinct by band/sleeve and event controls allow parallel cycles.
 
 This is the missing execution link between resistance-band/retest signals and actual 1c-3c interval trading.
+
+### Implemented Trigger-To-Sleeve Binding Slice
+
+As of 2026-05-25, `app/modules/agentic/sleeve_trigger_binding.py` connects the live tick trigger surface to the sleeve model before aggregation.
+
+Current behavior:
+
+1. StrategyPlan sleeve states become sleeve-scoped live signals.
+2. Paired microcycle `sell_candidate` and `sell_stale_replace` rows become sleeve-scoped sell signals.
+3. Paired microcycle `rebuy_candidate` rows become sleeve-scoped rebuy signals.
+4. Paired microcycle `sell_open_waiting` rows emit local sleeve blockers so the same cycle does not keep buying while its paired sell is unresolved.
+5. Aggregation order-intent candidates retain `sleeve_id`, `sleeve_group`, `sleeve_role`, `strategy_id`, `strategy_family`, `cycle_id`, `trigger_type`, and `trigger_source`.
+
+This keeps score-gap, band, microcycle, and LLM/review triggers from becoming detached from the sleeve that owns them. It also prevents a single local strategy gate from suppressing unrelated sleeves when global Janus safety gates are green.
 
 ### Implemented WNBA Live Adapter Slice
 
