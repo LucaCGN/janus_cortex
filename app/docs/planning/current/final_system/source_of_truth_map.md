@@ -228,7 +228,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | open | Repair Obsidian-to-backlog ingestion and curation workflow so note insights become issue candidates with acceptance criteria. |
 | [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | P1 | closed | Portfolio-manager artifact-only pass ownership reconciled; next portfolio-manager run proved queue claim/release discipline with durable memory, artifacts, and Obsidian updates. |
 | [#76](https://github.com/LucaCGN/janus_cortex/issues/76) | P0 | closed | Maduro filled-position target coverage restored with approved portfolio-manager target maintenance; Colorado Avalanche reconciled closed/no-active-position. |
-| [#77](https://github.com/LucaCGN/janus_cortex/issues/77) | P0 | open | Paired sports-live microcycle order engine for grid/scalp sleeves: filled buy -> paired sell, filled sell -> reviewed rebuy, no infinite same-cycle buys. |
+| [#77](https://github.com/LucaCGN/janus_cortex/issues/77) | P0 | closed | Paired sports-live microcycle evidence and readback scoring implemented; future promotion remains behind Janus StrategyPlan/live-worker/order-management gates. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |
