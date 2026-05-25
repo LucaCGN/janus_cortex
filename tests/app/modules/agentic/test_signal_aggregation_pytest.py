@@ -92,6 +92,33 @@ def test_aggregator_blocks_conflicting_signals_pytest() -> None:
     assert {blocker.reason_code for blocker in decision.blocker_artifacts} == {"conflicting_actionable_signals"}
 
 
+def test_aggregator_keeps_sleeve_local_blocker_from_suppressing_independent_candidate_pytest() -> None:
+    blocked_sleeve = _signal(
+        signal_type="block",
+        side="Spurs",
+        token="token-spurs",
+        reason="score_gap_outside_range",
+    )
+    blocked_sleeve.risk_request = LiveSignalRiskRequest(sleeve_id="sas-grid", requested_shares=5, max_price=0.54)
+    blocked_sleeve.payload = {"aggregation_scope": "sleeve", "sleeve_id": "sas-grid"}
+
+    decision = aggregate_live_signals(
+        [
+            _signal(source="deterministic", signal_type="buy", side="Thunder", token="token-thunder"),
+            blocked_sleeve,
+        ],
+        event_id=EVENT_ID,
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert decision.decision_type == "order_intent_candidate"
+    assert len(decision.order_intent_candidates) == 1
+    assert decision.order_intent_candidates[0].side == "Thunder"
+    assert [(blocker.reason_code, blocker.detail["scope"], blocker.detail["candidate_blocking"]) for blocker in decision.blocker_artifacts] == [
+        ("block_signal_present", "local_sleeve", False)
+    ]
+
+
 def test_aggregator_blocks_stale_signal_before_order_candidate_pytest() -> None:
     decision = aggregate_live_signals(
         [_signal(stale=True)],

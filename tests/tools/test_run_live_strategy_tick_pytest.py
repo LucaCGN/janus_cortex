@@ -2218,7 +2218,21 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
                     "price": 0.31,
                     "size": 5,
                 },
-            }
+            },
+            {
+                "strategy_id": "cle-favorite-monitor-v1",
+                "side": "Cavaliers",
+                "sleeve_id": "cle-q1-favorite",
+                "sleeve_group": "cle",
+                "sleeve_role": "standard_entry",
+                "entry_rules": {
+                    "outcome_id": "outcome-cle",
+                    "token_id": "token-cle",
+                    "side": "buy",
+                    "price": 0.67,
+                    "size": 5,
+                },
+            },
         ],
     }
 
@@ -2245,6 +2259,16 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
                     "captured_at": "2026-05-12T01:40:00+00:00",
                 },
             }
+        if path == "/v1/outcomes/outcome-cle/orderbook/latest":
+            return {
+                "ok": True,
+                "snapshot": {
+                    "best_bid": 0.66,
+                    "best_ask": 0.67,
+                    "spread": 0.01,
+                    "captured_at": "2026-05-12T01:40:00+00:00",
+                },
+            }
         if path == "/v1/portfolio/orders":
             return {"ok": True, "items": []}
         if path == "/v1/watchlists/sessions":
@@ -2266,12 +2290,32 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
                         "intent_count": 1,
                         "blocker_count": 0,
                         "blocker_reasons": [],
-                    }
+                    },
+                    {
+                        "sleeve_id": "cle-q1-favorite",
+                        "sleeve_group": "cle",
+                        "sleeve_role": "standard_entry",
+                        "strategy_id": "cle-favorite-monitor-v1",
+                        "status": "blocked",
+                        "intent_count": 0,
+                        "blocker_count": 1,
+                        "blocker_reasons": ["score_gap_outside_range"],
+                    },
                 ],
             }
         return {"ok": True}
 
     monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+    persisted_decisions: list[dict[str, Any]] = []
+
+    def fake_write_live_signal_aggregation_decision(decision, **kwargs):
+        persisted_decisions.append({"decision": decision.model_dump(mode="json"), "kwargs": kwargs})
+        return {
+            "status": "stored",
+            "path": "local/shared/artifacts/live-signal-aggregation/pytest.json",
+        }
+
+    monkeypatch.setattr(live_tick, "write_live_signal_aggregation_decision", fake_write_live_signal_aggregation_decision)
 
     result = live_tick._run_event_tick(
         api_root="http://test",
@@ -2319,6 +2363,7 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
         share_precision=3,
         auto_protect_manual_positions=True,
         manual_target_delta_cents=5.0,
+        persist_live_signal_aggregation=True,
     )
 
     evaluate_calls = [
@@ -2331,6 +2376,15 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
     assert result["strategy_sleeve_status"]["status"] == "recorded"
     assert result["strategy_sleeve_status"]["intent_sleeve_count"] == 1
     assert result["sleeve_states"][0]["sleeve_id"] == "det-q1-underdog"
+    aggregation = result["live_signal_aggregation"]
+    assert aggregation["schema_version"] == "live_worker_aggregation_evidence_v1"
+    assert aggregation["signal_count"] == 2
+    assert aggregation["decision"]["decision_type"] == "order_intent_candidate"
+    assert aggregation["decision"]["order_intent_candidates"][0]["side"] == "Pistons"
+    assert aggregation["decision"]["blocker_artifacts"][0]["detail"]["scope"] == "local_sleeve"
+    assert aggregation["event_risk_budget"]["event_cap_usd"] == 10.0
+    assert aggregation["persistence"]["status"] == "stored"
+    assert persisted_decisions[0]["kwargs"]["day"] == "2026-05-11"
     portfolio_state = evaluate_calls[0]["payload"]["portfolio_state"]
     assert portfolio_state["open_orders"] == 0
     assert portfolio_state["open_positions"] == 0

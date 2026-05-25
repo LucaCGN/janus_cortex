@@ -152,15 +152,25 @@ def aggregate_live_signals(
     selected_ids = [signal.signal_id or signal.stable_signal_id() for signal in selected]
     suppressed_ids = [signal.signal_id or signal.stable_signal_id() for signal in suppressed]
     actionable = [signal for signal in selected if signal.signal_type in _ACTIONABLE_TYPES]
+    candidate_group = _candidate_group(actionable)
     explicit_blocks = [signal for signal in selected if signal.signal_type == "block"]
-    if explicit_blocks:
-        blockers.append(_blocker("block_signal_present", explicit_blocks, {}))
+    for block_signal in explicit_blocks:
+        local_to_other_sleeve = _is_local_block_signal(block_signal, candidate_group)
+        blockers.append(
+            _blocker(
+                "block_signal_present",
+                [block_signal],
+                {
+                    "scope": "local_sleeve" if local_to_other_sleeve else "global",
+                    "candidate_blocking": not local_to_other_sleeve,
+                },
+            )
+        )
 
     conflict_groups = _conflict_groups(actionable)
     for group in conflict_groups:
         blockers.append(_blocker("conflicting_actionable_signals", group, {"conflict_key": _conflict_key(group[0])}))
 
-    candidate_group = _candidate_group(actionable)
     if candidate_group and candidate_group[0].signal_type in _BUY_TYPES and inventory.has_buy_blocking_exposure and not control.allow_inventory_adding:
         blockers.append(
             _blocker(
@@ -190,13 +200,16 @@ def aggregate_live_signals(
 
     blocker_artifacts = _dedupe_blockers(blockers)
     order_candidates: list[LiveSignalOrderIntentCandidate] = []
-    if candidate is not None and not blocker_artifacts and not conflict_groups:
+    candidate_blockers = [blocker for blocker in blocker_artifacts if _candidate_blocking(blocker)]
+    if candidate is not None and not candidate_blockers and not conflict_groups:
         order_candidates.append(candidate)
 
-    if blocker_artifacts:
+    if candidate_blockers:
         decision_type: AggregationDecisionType = "blocked"
     elif order_candidates:
         decision_type = "order_intent_candidate"
+    elif blocker_artifacts:
+        decision_type = "blocked"
     else:
         decision_type = "monitor_only"
 
@@ -254,6 +267,32 @@ def _candidate_group(actionable: list[LiveSignal]) -> list[LiveSignal]:
     for signal in actionable:
         groups.setdefault(_action_key(signal), []).append(signal)
     return sorted(groups.values(), key=lambda group: (len(group), max(signal.confidence or 0.0 for signal in group)), reverse=True)[0]
+
+
+def _is_local_block_signal(signal: LiveSignal, candidate_group: list[LiveSignal]) -> bool:
+    if not candidate_group:
+        return False
+    payload = signal.payload if isinstance(signal.payload, dict) else {}
+    scope = str(payload.get("aggregation_scope") or payload.get("scope") or "").strip().lower()
+    if scope not in {"local", "sleeve", "strategy", "local_sleeve"}:
+        return False
+    block_sleeve = _signal_sleeve_id(signal)
+    if not block_sleeve:
+        return False
+    candidate_sleeves = {_signal_sleeve_id(candidate) for candidate in candidate_group}
+    candidate_sleeves.discard(None)
+    return bool(candidate_sleeves) and block_sleeve not in candidate_sleeves
+
+
+def _signal_sleeve_id(signal: LiveSignal) -> str | None:
+    if signal.risk_request is not None and signal.risk_request.sleeve_id:
+        return _norm(signal.risk_request.sleeve_id)
+    payload = signal.payload if isinstance(signal.payload, dict) else {}
+    return _norm(str(payload.get("sleeve_id") or payload.get("strategy_id") or ""))
+
+
+def _candidate_blocking(blocker: LiveSignalBlockerArtifact) -> bool:
+    return blocker.detail.get("candidate_blocking") is not False
 
 
 def _conflict_groups(actionable: list[LiveSignal]) -> list[list[LiveSignal]]:
