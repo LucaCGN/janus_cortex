@@ -7,6 +7,7 @@ from pathlib import Path
 from app.modules.agentic.pregame_priors import (
     PregameResearchPrior,
     build_optional_pregame_prior_evidence,
+    write_pregame_prior_artifacts_from_research_bundle,
     write_pregame_prior_artifact,
 )
 
@@ -123,3 +124,99 @@ def test_expired_pregame_prior_is_stale_but_not_live_disabled_pytest(tmp_path: P
     assert "optional_prior_expired" in evidence.reason_codes
     assert evidence.liveness_blocking is False
     assert evidence.live_disabled is False
+
+
+def test_research_bundle_adoption_writes_per_event_prior_artifacts_pytest(tmp_path: Path) -> None:
+    bundle_path = tmp_path / "wnba_bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "wnba_optional_pregame_prior_v1",
+                "automation_id": "wnba-pregame-research",
+                "generated_at_utc": "2026-05-25T15:00:00Z",
+                "source_caveats": ["official_injury_pdf_used"],
+                "events": [
+                    {
+                        "event_slug": "wnba-por-nyl-2026-05-25",
+                        "teams": {
+                            "away": {"name": "Portland Fire"},
+                            "home": {"name": "New York Liberty"},
+                        },
+                        "prior_status": "provisional_optional_prior_injury_incomplete",
+                        "likely_regimes": ["favorite_no_chase", "underdog_monitor"],
+                        "risk_flags": ["official_new_york_availability_not_yet_submitted"],
+                        "candidate_signal_config": {
+                            "runtime_mutation_allowed": False,
+                            "monitor_only": ["nyl_official_availability_refresh"],
+                        },
+                        "freshness": {"hard_expire_utc": "2026-05-26T00:05:00Z"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = write_pregame_prior_artifacts_from_research_bundle(bundle_path, root=tmp_path)
+
+    assert result["status"] == "stored"
+    assert result["prior_count"] == 1
+    current_path = tmp_path / "pregame-priors" / "2026-05-25" / "wnba-por-nyl-2026-05-25" / "current.json"
+    payload = json.loads(current_path.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "pregame_research_prior_v1"
+    assert payload["event_id"] == "wnba-por-nyl-2026-05-25"
+    assert payload["league"] == "wnba"
+    assert payload["expires_at_utc"] == "2026-05-26T00:05:00Z"
+    assert payload["teams"] == ["Portland Fire", "New York Liberty"]
+    assert payload["likely_regimes"] == ["favorite_no_chase", "underdog_monitor"]
+    assert payload["risk_flags"] == ["official_new_york_availability_not_yet_submitted"]
+    assert payload["proposed_signal_config_changes"][0]["source"] == "candidate_signal_config"
+    assert "official_injury_pdf_used" in payload["source_caveats"]
+
+
+def test_research_bundle_adoption_normalizes_nba_regime_dicts_pytest(tmp_path: Path) -> None:
+    bundle_path = tmp_path / "nba_bundle.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "janus_optional_pregame_prior_v1",
+                "automation": "nba-pregame-research",
+                "generated_at_utc": "2026-05-25T15:00:00Z",
+                "session_date": "2026-05-25",
+                "events": [
+                    {
+                        "event_id": "nba-nyk-cle-2026-05-25",
+                        "league": "NBA",
+                        "teams": {"away": "New York Knicks", "home": "Cleveland Cavaliers"},
+                        "likely_regimes": [
+                            {
+                                "name": "knicks_closeout_control",
+                                "fit": "baseline",
+                                "description": "Knicks modest road favorite.",
+                            }
+                        ],
+                        "candidate_signal_config_changes": [
+                            {"path": "event-control-or-strategyplan", "recommendation": "monitor only"}
+                        ],
+                        "freshness": {
+                            "hard_expire_after_utc": "2026-05-26T01:00:00Z",
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = write_pregame_prior_artifacts_from_research_bundle(bundle_path, root=tmp_path)
+
+    assert result["status"] == "stored"
+    current_path = tmp_path / "pregame-priors" / "2026-05-25" / "nba-nyk-cle-2026-05-25" / "current.json"
+    payload = json.loads(current_path.read_text(encoding="utf-8"))
+    assert payload["league"] == "nba"
+    assert payload["likely_regimes"] == [
+        "knicks_closeout_control | baseline | Knicks modest road favorite."
+    ]
+    assert payload["proposed_signal_config_changes"] == [
+        {"path": "event-control-or-strategyplan", "recommendation": "monitor only"}
+    ]

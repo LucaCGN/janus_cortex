@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.modules.agentic.store import artifacts_root, session_date, write_json
 
@@ -76,6 +76,80 @@ def write_pregame_prior_artifact(
         "session_date": prior.session_date,
         "version_path": str(version_path),
         "current_path": str(current_path),
+    }
+
+
+def write_pregame_prior_artifacts_from_research_bundle(
+    bundle_path: Path | str,
+    *,
+    root: Path | None = None,
+    source: str | None = None,
+) -> dict[str, Any]:
+    path = Path(bundle_path)
+    bundle = _read_json(path)
+    if not isinstance(bundle, dict):
+        return {
+            "status": "invalid",
+            "schema_version": "pregame_research_prior_adoption_batch_v1",
+            "bundle_path": str(path),
+            "reason": "bundle_json_unreadable",
+            "prior_count": 0,
+            "priors": [],
+        }
+
+    events = bundle.get("events")
+    if not isinstance(events, list) or not events:
+        return {
+            "status": "skipped",
+            "schema_version": "pregame_research_prior_adoption_batch_v1",
+            "bundle_path": str(path),
+            "reason": "no_events",
+            "prior_count": 0,
+            "priors": [],
+        }
+
+    generated_at = _parse_dt(bundle.get("generated_at_utc")) or datetime.now(timezone.utc)
+    resolved_session_date = _text(bundle.get("session_date")) or generated_at.date().isoformat()
+    bundle_source = source or _text(bundle.get("automation")) or _text(bundle.get("automation_id")) or "pregame-research"
+    bundle_caveats = _string_list(bundle.get("source_caveats"))
+    written: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+
+    for item in events:
+        if not isinstance(item, dict):
+            failures.append({"reason": "event_not_object"})
+            continue
+        try:
+            prior = _prior_from_research_event(
+                item,
+                bundle_path=path,
+                generated_at=generated_at,
+                session_date=resolved_session_date,
+                source=bundle_source,
+                bundle_caveats=bundle_caveats,
+            )
+        except (TypeError, ValueError, ValidationError) as exc:
+            failures.append(
+                {
+                    "event_id": _event_id_from_research_event(item),
+                    "reason": "prior_validation_failed",
+                    "error": str(exc),
+                }
+            )
+            continue
+        written.append(write_pregame_prior_artifact(prior, root=root))
+
+    return {
+        "status": "stored" if written and not failures else "partial" if written else "failed",
+        "schema_version": "pregame_research_prior_adoption_batch_v1",
+        "bundle_path": str(path),
+        "input_schema_version": _text(bundle.get("schema_version")),
+        "session_date": resolved_session_date,
+        "source": bundle_source,
+        "prior_count": len(written),
+        "priors": written,
+        "failure_count": len(failures),
+        "failures": failures,
     }
 
 
@@ -159,6 +233,152 @@ def _find_prior_path(*, event_id: str, day: str, root: Path | None) -> Path | No
     return candidates[0] if candidates else None
 
 
+def _prior_from_research_event(
+    event: dict[str, Any],
+    *,
+    bundle_path: Path,
+    generated_at: datetime,
+    session_date: str,
+    source: str,
+    bundle_caveats: list[str],
+) -> PregameResearchPrior:
+    event_id = _event_id_from_research_event(event)
+    if not event_id:
+        raise ValueError("event_id or event_slug is required")
+    expires_at, expiry_defaulted = _expiry_from_research_event(event, generated_at=generated_at)
+    source_caveats = [
+        *bundle_caveats,
+        *_string_list(event.get("source_caveats")),
+        *_availability_caveats(event.get("availability") or event.get("availability_prior")),
+    ]
+    if expiry_defaulted:
+        source_caveats.append("prior_expiry_defaulted")
+    return PregameResearchPrior(
+        event_id=event_id,
+        league=_league_from_research_event(event, source=source),
+        session_date=session_date,
+        generated_at_utc=generated_at,
+        expires_at_utc=expires_at,
+        source=source,
+        teams=_teams_from_research_event(event),
+        likely_regimes=_regimes_from_research_event(event),
+        risk_flags=_string_list(event.get("risk_flags")),
+        proposed_signal_config_changes=_signal_config_changes_from_research_event(event),
+        source_caveats=_unique(source_caveats + [f"source_bundle:{bundle_path.as_posix()}"]),
+        notes=_notes_from_research_event(event),
+    )
+
+
+def _event_id_from_research_event(event: dict[str, Any]) -> str:
+    return _text(event.get("event_id")) or _text(event.get("event_slug")) or ""
+
+
+def _league_from_research_event(event: dict[str, Any], *, source: str) -> str:
+    league = _text(event.get("league"))
+    if league:
+        return league.lower()
+    normalized_source = source.lower()
+    if "wnba" in normalized_source:
+        return "wnba"
+    if "nba" in normalized_source:
+        return "nba"
+    return "basketball"
+
+
+def _teams_from_research_event(event: dict[str, Any]) -> list[str]:
+    teams = event.get("teams")
+    if isinstance(teams, list):
+        return _string_list(teams)
+    if not isinstance(teams, dict):
+        return []
+    result: list[str] = []
+    for key in ("away", "home"):
+        item = teams.get(key)
+        if isinstance(item, dict):
+            text = _text(item.get("name")) or _text(item.get("team")) or _text(item.get("tricode"))
+        else:
+            text = _text(item)
+        if text:
+            result.append(text)
+    return _unique(result)
+
+
+def _regimes_from_research_event(event: dict[str, Any]) -> list[str]:
+    regimes = event.get("likely_regimes")
+    if not isinstance(regimes, list):
+        return []
+    result: list[str] = []
+    for item in regimes:
+        if isinstance(item, dict):
+            name = _text(item.get("name"))
+            description = _text(item.get("description"))
+            fit = _text(item.get("fit"))
+            parts = [part for part in [name, fit, description] if part]
+            text = " | ".join(parts)
+        else:
+            text = _text(item)
+        if text:
+            result.append(text)
+    return _unique(result)
+
+
+def _signal_config_changes_from_research_event(event: dict[str, Any]) -> list[dict[str, Any]]:
+    changes = _dict_list(event.get("candidate_signal_config_changes"))
+    if changes:
+        return changes
+    candidate_config = event.get("candidate_signal_config")
+    if isinstance(candidate_config, dict):
+        return [{"source": "candidate_signal_config", **candidate_config}]
+    return []
+
+
+def _availability_caveats(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        caveats = _string_list(value.get("source_caveats"))
+        status = _text(value.get("status")) or _text(value.get("official_report_status"))
+        if status:
+            caveats.append(f"availability_status:{status}")
+        caveat = _text(value.get("caveat"))
+        if caveat:
+            caveats.append(caveat)
+        return caveats
+    if isinstance(value, str) and value.strip():
+        return [f"availability_prior:{value.strip()}"]
+    return []
+
+
+def _notes_from_research_event(event: dict[str, Any]) -> str | None:
+    parts = []
+    for key in ("prior_status", "series_context"):
+        text = _text(event.get(key))
+        if text:
+            parts.append(f"{key}: {text}")
+    boundary = event.get("execution_boundary")
+    if isinstance(boundary, dict):
+        parts.append(f"execution_boundary: {json.dumps(boundary, sort_keys=True)}")
+    return "\n".join(parts) or None
+
+
+def _expiry_from_research_event(event: dict[str, Any], *, generated_at: datetime) -> tuple[datetime, bool]:
+    freshness = event.get("freshness")
+    candidates: list[Any] = []
+    if isinstance(freshness, dict):
+        candidates.extend(
+            [
+                freshness.get("hard_expire_utc"),
+                freshness.get("hard_expire_after_utc"),
+                freshness.get("demote_after_utc"),
+                freshness.get("source_fresh_until_utc"),
+                freshness.get("market_fresh_until_utc"),
+            ]
+        )
+    for candidate in candidates:
+        parsed = _parse_dt(candidate)
+        if parsed is not None:
+            return parsed, False
+    return generated_at + timedelta(hours=8), True
+
+
 def _read_json(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -225,5 +445,6 @@ __all__ = [
     "PregameResearchPrior",
     "PregamePriorStatus",
     "build_optional_pregame_prior_evidence",
+    "write_pregame_prior_artifacts_from_research_bundle",
     "write_pregame_prior_artifact",
 ]
