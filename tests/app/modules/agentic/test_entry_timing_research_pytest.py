@@ -5,8 +5,10 @@ import json
 from app.modules.agentic.entry_timing_research import (
     build_entry_timing_matrix,
     build_entry_timing_matrix_from_fixture_backtest,
+    build_event_control_recommendation_pack,
     render_entry_timing_matrix_markdown,
     write_entry_timing_matrix,
+    write_event_control_recommendation_pack,
 )
 
 
@@ -165,6 +167,39 @@ def test_entry_timing_matrix_uses_live_worker_price_path_replay_pytest(tmp_path)
     assert "post_q1_price_path_proxy_only" not in post_q1.blockers
     stability = {summary.timing_policy: summary for summary in matrix.side_by_side_policy_summaries}
     assert stability["post_q1_plus_market_stability_confirmation"].filled_case_count == 3
+
+
+def test_entry_timing_event_control_recommendation_pack_is_read_only_pytest(tmp_path) -> None:
+    ticks_path = tmp_path / "ticks.jsonl"
+    _write_live_worker_ticks(ticks_path)
+    matrix = build_entry_timing_matrix_from_fixture_backtest(
+        _fixture_backtest_payload(),
+        source_path="fixture.json",
+        live_worker_ticks_path=ticks_path,
+    )
+
+    pack = build_event_control_recommendation_pack(matrix, source_matrix_path="matrix.json")
+    result = write_event_control_recommendation_pack(pack, artifact_root=tmp_path / "artifacts", report_dir=tmp_path / "reports")
+
+    assert pack.trading_boundary == "read_only_recommendations_no_runtime_control_mutation"
+    assert pack.summary["candidate_review_count"] == 3
+    assert pack.summary["quarantine_count"] == 1
+    assert pack.summary["runtime_mutation_allowed"] is False
+    assert pack.summary["live_promotion_allowed"] is False
+    assert "do_not_update_event_control_current_json_from_this_artifact" in pack.hard_prohibitions
+    atlanta = next(item for item in pack.recommendations if item.side == "Atlanta")
+    assert atlanta.event_control_action == "candidate_review_only"
+    assert atlanta.recommended_signal_toggles["wnba_low_band_rebound"] is True
+    assert atlanta.recommended_parameters["max_entry_price"] == 0.32
+    thunder = next(item for item in pack.recommendations if item.side == "Thunder")
+    assert thunder.event_control_action == "quarantine_disabled"
+    assert thunder.recommended_signal_toggles["q4_subpenny_hype_bounce"] is False
+    assert "final_score_negative_edge" in thunder.blockers
+    assert result["status"] == "stored"
+    markdown = list((tmp_path / "reports").glob("entry_timing_event_control_recommendation_pack_*.md"))[0].read_text(
+        encoding="utf-8"
+    )
+    assert "Entry Timing Event-Control Recommendation Pack" in markdown
 
 
 def _write_live_worker_ticks(path) -> None:

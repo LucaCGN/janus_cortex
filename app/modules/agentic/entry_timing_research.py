@@ -138,6 +138,50 @@ class EntryTimingMatrix(BaseModel):
     )
 
 
+class EventControlRecommendation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    recommendation_id: str
+    source_case_id: str
+    event_id: str
+    league: str
+    side: str
+    timing_policy: str
+    event_control_action: str
+    recommended_signal_toggles: dict[str, bool] = Field(default_factory=dict)
+    recommended_parameters: dict[str, Any] = Field(default_factory=dict)
+    entry_price: float | None = None
+    max_entry_price_ceiling: float | None = None
+    runtime_mutation_allowed: bool = False
+    live_promotion_allowed: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    required_gates: list[str] = Field(default_factory=list)
+    evidence_note: str
+
+
+class EventControlRecommendationPack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "entry_timing_event_control_recommendation_pack_v1"
+    session_date: str
+    generated_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    issue: str = "#55"
+    related_issues: list[str] = Field(default_factory=lambda: ["#69", "#70", "#61", "#62"])
+    trading_boundary: str = "read_only_recommendations_no_runtime_control_mutation"
+    source_matrix_path: str | None = None
+    recommendations: list[EventControlRecommendation] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    next_actions: list[str] = Field(default_factory=list)
+    hard_prohibitions: list[str] = Field(
+        default_factory=lambda: [
+            "do_not_update_event_control_current_json_from_this_artifact",
+            "do_not_place_cancel_replace_submit_sign_broadcast_redeem_orders",
+            "do_not_start_live_money_workers",
+            "do_not_promote_strategyplan_templates_without_operator_and_janus_gate_review",
+        ]
+    )
+
+
 def entry_timing_root(day: str | None = None, *, root: Path | None = None) -> Path:
     base_root = root if root is not None else artifacts_root()
     return base_root / "entry-timing-research" / session_date(day)
@@ -243,6 +287,75 @@ def write_entry_timing_matrix(
     }
 
 
+def build_event_control_recommendation_pack(
+    matrix: EntryTimingMatrix,
+    *,
+    source_matrix_path: str | None = None,
+) -> EventControlRecommendationPack:
+    recommendations = [_event_control_recommendation_for_row(row) for row in matrix.rows if row.issue_source == "#70"]
+    candidates = [item for item in recommendations if item.event_control_action == "candidate_review_only"]
+    quarantined = [item for item in recommendations if item.event_control_action == "quarantine_disabled"]
+    blocked = [item for item in recommendations if item.blockers and item.event_control_action != "quarantine_disabled"]
+    return EventControlRecommendationPack(
+        session_date=matrix.session_date,
+        source_matrix_path=source_matrix_path,
+        recommendations=recommendations,
+        summary={
+            "recommendation_count": len(recommendations),
+            "candidate_review_count": len(candidates),
+            "quarantine_count": len(quarantined),
+            "blocked_candidate_count": len(blocked),
+            "runtime_mutation_allowed": False,
+            "live_promotion_allowed": False,
+            "wnba_candidate_event_ids": sorted({item.event_id for item in candidates if item.league.upper() == "WNBA"}),
+            "quarantined_case_ids": [item.source_case_id for item in quarantined],
+            "source_matrix_live_promotion_allowed": matrix.acceptance_progress.get("live_promotion_allowed", False),
+        },
+        next_actions=[
+            "Review WNBA low-band candidates through #69 event-control readbacks before any runtime update.",
+            "Keep Thunder Q4 subpenny/min-price behavior disabled until duplicate cooldown and final-score edge blockers are cleared by independent replay.",
+            "Require fresh Janus StrategyPlan, feed, CLOB, worker, risk, kill-switch, and explicit operator/Janus gates before any live promotion.",
+        ],
+    )
+
+
+def write_event_control_recommendation_pack(
+    pack: EventControlRecommendationPack,
+    *,
+    artifact_root: Path | None = None,
+    report_dir: Path | None = None,
+) -> dict[str, Any]:
+    timestamp = pack.generated_at_utc.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    root = entry_timing_root(pack.session_date, root=artifact_root)
+    json_path = root / f"entry_timing_event_control_recommendation_pack_{timestamp}.json"
+    write_json(json_path, pack.model_dump(mode="json"))
+    append_jsonl(
+        root / "entry_timing_event_control_recommendation_packs.jsonl",
+        {
+            "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session_date": pack.session_date,
+            "recommendation_count": len(pack.recommendations),
+            "candidate_review_count": pack.summary.get("candidate_review_count", 0),
+            "quarantine_count": pack.summary.get("quarantine_count", 0),
+            "runtime_mutation_allowed": False,
+            "live_promotion_allowed": False,
+            "path": str(json_path),
+        },
+    )
+    markdown_path = (report_dir or reports_root() / "daily-live-validation") / (
+        f"entry_timing_event_control_recommendation_pack_{timestamp}.md"
+    )
+    write_text(markdown_path, render_event_control_recommendation_pack_markdown(pack, json_path=str(json_path)))
+    return {
+        "status": "stored",
+        "schema_version": "entry_timing_event_control_recommendation_pack_write_result_v1",
+        "session_date": pack.session_date,
+        "recommendation_count": len(pack.recommendations),
+        "json_path": str(json_path),
+        "markdown_path": str(markdown_path),
+    }
+
+
 def render_entry_timing_matrix_markdown(matrix: EntryTimingMatrix, *, json_path: str | None = None) -> str:
     lines = [
         f"# Entry Timing Matrix - {matrix.session_date}",
@@ -290,6 +403,39 @@ def render_entry_timing_matrix_markdown(matrix: EntryTimingMatrix, *, json_path:
     lines.extend(_bullet_lines(matrix.next_actions))
     lines.extend(["", "## Hard Prohibitions"])
     lines.extend(_bullet_lines(f"`{item}`" for item in matrix.hard_prohibitions))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_event_control_recommendation_pack_markdown(
+    pack: EventControlRecommendationPack,
+    *,
+    json_path: str | None = None,
+) -> str:
+    lines = [
+        f"# Entry Timing Event-Control Recommendation Pack - {pack.session_date}",
+        "",
+        f"- generated_at_utc: `{pack.generated_at_utc.isoformat()}`",
+        f"- issue: `{pack.issue}`",
+        f"- trading_boundary: `{pack.trading_boundary}`",
+    ]
+    if json_path:
+        lines.append(f"- json_artifact: `{json_path}`")
+    if pack.source_matrix_path:
+        lines.append(f"- source_matrix: `{pack.source_matrix_path}`")
+    lines.extend(["", "## Summary"])
+    for key, value in pack.summary.items():
+        lines.append(f"- {key}: `{value}`")
+    lines.extend(["", "## Recommendations"])
+    for item in pack.recommendations:
+        lines.append(
+            f"- `{item.recommendation_id}` `{item.event_control_action}`: {item.event_id} {item.side}, "
+            f"entry_price=`{item.entry_price}`, ceiling=`{item.max_entry_price_ceiling}`, "
+            f"blockers=`{','.join(item.blockers) or 'none'}`"
+        )
+    lines.extend(["", "## Next Actions"])
+    lines.extend(_bullet_lines(pack.next_actions))
+    lines.extend(["", "## Hard Prohibitions"])
+    lines.extend(_bullet_lines(f"`{item}`" for item in pack.hard_prohibitions))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -575,6 +721,73 @@ def _next_actions(rows: list[EntryTimingRow], price_path_replays: list[EntryTimi
         "Keep Q4 subpenny/min-price buys quarantined until duplicate cooldown and final-score edge are independently positive.",
         "Route any eventual signal enablement through #69 event-control readbacks and Janus live gates.",
     ]
+
+
+def _event_control_recommendation_for_row(row: EntryTimingRow) -> EventControlRecommendation:
+    required_gates = [
+        "fresh_strategy_plan_json",
+        "event_control_readback_review",
+        "direct_clob_event_inventory_clear",
+        "feed_and_orderbook_fresh",
+        "live_worker_scope_aligned",
+        "risk_budget_and_kill_switch_green",
+        "explicit_operator_and_janus_approval",
+    ]
+    if row.recommendation == "negative_bucket_quarantine" or row.timing_policy == "late_game_min_price_add":
+        return EventControlRecommendation(
+            recommendation_id=f"jit55-ec-{row.source_case_id}",
+            source_case_id=row.source_case_id,
+            event_id=row.event_id,
+            league=row.league,
+            side=row.side,
+            timing_policy=row.timing_policy,
+            event_control_action="quarantine_disabled",
+            recommended_signal_toggles={
+                "late_game_min_price_add": False,
+                "q4_subpenny_hype_bounce": False,
+                "no_bid_min_price_lottery_v1": False,
+            },
+            recommended_parameters={
+                "min_price_lottery_allowed": False,
+                "duplicate_intent_cooldown_required": True,
+            },
+            entry_price=row.entry_price,
+            max_entry_price_ceiling=row.entry_price,
+            blockers=sorted(set(row.blockers + ["negative_control_case"])),
+            required_gates=required_gates + ["independent_positive_replay_before_unquarantine"],
+            evidence_note=row.evidence_note,
+        )
+
+    action = "candidate_review_only" if row.league.upper() == "WNBA" and not row.blockers else "monitor_only_blocked"
+    ceiling = min(0.45, float(row.entry_price or 0.45))
+    return EventControlRecommendation(
+        recommendation_id=f"jit55-ec-{row.source_case_id}",
+        source_case_id=row.source_case_id,
+        event_id=row.event_id,
+        league=row.league,
+        side=row.side,
+        timing_policy=row.timing_policy,
+        event_control_action=action,
+        recommended_signal_toggles={
+            "deterministic_low_band_rebound": True,
+            "wnba_low_band_rebound": row.league.upper() == "WNBA",
+            "late_game_min_price_add": False,
+        },
+        recommended_parameters={
+            "max_entry_price": ceiling,
+            "wnba_max_price_ceiling": 0.45,
+            "max_signal_age_seconds": 180.0,
+            "cooldown_seconds": 90.0,
+            "min_confidence": 0.55,
+            "rebuy_review_required": True,
+            "allow_inventory_adding": False,
+        },
+        entry_price=row.entry_price,
+        max_entry_price_ceiling=ceiling,
+        blockers=sorted(set(row.blockers)),
+        required_gates=required_gates,
+        evidence_note=row.evidence_note,
+    )
 
 
 def _price_path_replays(rows: list[EntryTimingRow], *, tick_path: Path | None) -> list[EntryTimingPricePathReplay]:
