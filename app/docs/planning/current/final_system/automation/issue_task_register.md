@@ -50,7 +50,7 @@ Update this register only when task decomposition, next executable step, blocker
 |---|---:|---|---|---|---|
 | JIT-62-01 | #62 | done | janus-master-dev | Final-state WNBA live-monitor evidence captured; keep #62 open for the first controlled WNBA fill-confirmed minimum-size lifecycle. | Commit `c6029a5` added `app/docs/reference/postgame_evaluation_2026-05-24_wnba_live_gap.md`: all three scoped WNBA events ended flat with no positions, no orders, no direct trades, `pending_intents=0`, and final `orderbook_spread_required` blockers. |
 | JIT-61-01 | #61 | active | janus-master-dev | Keep NBA OKC/SAS under app-owned live worker through final/protect-only phases; validate, commit/push, split, or exactly block any dirty live-target follow-up patch before unrelated implementation. | 2026-05-25T01Z manual validation fixed stale pending-intent expiry and strategy-owned target protection, then live worker executed 10 Thunder shares at 0.22 and submitted sell targets. The 2026-05-25T02:45Z manager pass found an unowned dirty follow-up patch in live target-basis/tick-size code and tests; route it to #61 cleanup, not a passive blocker. |
-| JIT-62-02 | #62 | ready | janus-master-dev | Implement `wnba_controlled_min_size_entry_v1` and tests against the three 2026-05-24 WNBA StrategyPlans. | Next slice from `postgame_evaluation_2026-05-24_wnba_live_gap.md`: when ordinary grid mode blocks on spread, controlled-fill mode may emit at most one bounded WNBA order candidate if all non-liquidity gates are green. |
+| JIT-62-02 | #62 | done | janus-master-dev | Use the next WNBA pregame route to generate/adopt a current WNBA StrategyPlan with `wnba_controlled_min_size_entry_v1`, then validate it through rehearsal/live preflight before any live worker start. | Commit `c9541a7` added WNBA controlled-entry evaluator handling, WNBA live-plan fallback sleeves, and tests proving the fallback fires after matching grid spread blockers, caps to one event candidate, and augments the three 2026-05-24 WNBA StrategyPlans. GitHub #62 comment `4531234037` records validation. |
 
 ### Immediate Post-Live Development Stack
 
@@ -89,7 +89,7 @@ Update this register only when task decomposition, next executable step, blocker
 
 When the current live window is no longer active, work should proceed in this order unless fresh runtime evidence changes priorities:
 
-1. Implement JIT-62-02 WNBA controlled minimum-size entry fallback while #62 remains open.
+1. Use the next WNBA pregame route under #62 to generate/adopt a current controlled-entry StrategyPlan and validate preflight gates before any live worker start.
 2. Use JIT-70-01 evidence to route replay/config work from the NBA/WNBA postgame docs.
 3. Implement JIT-65-01 signal schema/persistence.
 4. Implement JIT-66-01 aggregation arbitration.
