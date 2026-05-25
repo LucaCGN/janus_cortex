@@ -385,7 +385,37 @@ def _scaled_micro_grid_target_price(entry_price: float, rules: dict[str, Any]) -
     target_move = max(min_move, fraction_move)
     if target_move <= 0.0:
         return None
-    return round(min(0.95, max(0.01, entry_price + target_move)), 4)
+    floor = _target_floor_price(rules) or 0.01
+    raw_target = min(0.95, max(floor, entry_price + target_move))
+    tick_size = _target_tick_size(rules)
+    if tick_size is not None:
+        decimals = max(0, min(6, len(f"{tick_size:.8f}".rstrip("0").split(".")[-1])))
+        return round(math.ceil((raw_target - 1e-12) / tick_size) * tick_size, decimals)
+    return round(raw_target, 4)
+
+
+def _target_tick_size(rules: dict[str, Any]) -> float | None:
+    tick = _safe_float(
+        rules.get("target_tick_size")
+        or rules.get("tick_size")
+        or rules.get("price_tick_size")
+        or rules.get("min_price_increment")
+    )
+    if tick is None or tick <= 0.0:
+        return None
+    return tick
+
+
+def _target_floor_price(rules: dict[str, Any]) -> float | None:
+    floor = _safe_float(
+        rules.get("min_target_price")
+        or rules.get("target_min_price")
+        or rules.get("target_floor_price")
+        or rules.get("minimum_target_price")
+    )
+    if floor is None or floor <= 0.0:
+        return None
+    return floor
 
 
 def _ultra_low_underdog_blocker(

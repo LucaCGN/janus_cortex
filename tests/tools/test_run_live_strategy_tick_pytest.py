@@ -1939,6 +1939,65 @@ def test_position_target_price_rounds_low_price_targets_up_to_cent_tick_pytest()
     assert target["target_delta_cents"] == pytest.approx(1.71)
 
 
+def test_position_target_price_allows_subcent_target_tick_when_strategy_requests_it_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "okc-q4-subpenny-hype-bounce",
+                    "family": "ultra_low_underdog_decimal_grid",
+                    "entry_rules": {"token_id": "token-okc"},
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "min_target_cents": 0.3,
+                        "target_return_fraction": 0.50,
+                        "min_target_price": 0.001,
+                        "target_tick_size": 0.001,
+                    },
+                }
+            ]
+        },
+        token_id="token-okc",
+        outcome_id="outcome-okc",
+        avg_price=0.004,
+        default_target_delta_cents=5.0,
+    )
+
+    assert target["target_price"] == 0.007
+    assert target["target_delta_cents"] == pytest.approx(0.3)
+
+
+def test_position_target_price_can_use_current_price_for_fresh_uncovered_lot_pytest() -> None:
+    target = live_tick._position_target_price_from_plan(
+        plan={
+            "active_strategies": [
+                {
+                    "strategy_id": "okc-q4-subpenny-hype-bounce",
+                    "family": "ultra_low_underdog_decimal_grid",
+                    "entry_rules": {"token_id": "token-okc"},
+                    "exit_rules": {
+                        "target_policy": "micro_grid_scaled",
+                        "target_basis": "current_price",
+                        "min_target_cents": 0.3,
+                        "target_return_fraction": 0.50,
+                        "min_target_price": 0.001,
+                        "target_tick_size": 0.001,
+                    },
+                }
+            ]
+        },
+        token_id="token-okc",
+        outcome_id="outcome-okc",
+        avg_price=0.0065,
+        default_target_delta_cents=5.0,
+        outcome_state={"price": 0.004},
+    )
+
+    assert target["target_price"] == 0.007
+    assert target["target_delta_cents"] == pytest.approx(0.05)
+    assert target["target_basis_price"] == 0.004
+
+
 def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     plan = {

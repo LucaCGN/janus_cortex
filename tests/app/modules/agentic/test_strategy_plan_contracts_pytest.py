@@ -351,6 +351,51 @@ def test_strategy_plan_evaluator_resolves_scaled_micro_grid_target_pytest() -> N
     assert result.intents[0].metadata["exit_rules"]["resolved_target_policy"] == "max_min_cents_or_return_fraction"
 
 
+def test_strategy_plan_evaluator_resolves_subcent_scaled_micro_grid_target_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-okc-sas",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="okc-q4-subpenny-hype-bounce",
+                family="ultra_low_underdog_decimal_grid",
+                side="Thunder",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "side": "buy",
+                    "price": 0.004,
+                    "size": 253,
+                    "price_band": [0.003, 0.014],
+                    "allow_ultra_low_underdog": True,
+                    "allow_sub_10c_underdog_grid": True,
+                    "max_scoreboard_age_seconds": 5,
+                    "max_abs_score_gap": 35,
+                },
+                exit_rules={
+                    "target_required": True,
+                    "target_policy": "micro_grid_scaled",
+                    "min_target_cents": 0.3,
+                    "target_return_fraction": 0.50,
+                    "min_target_price": 0.001,
+                    "target_tick_size": 0.001,
+                },
+                stop_rules={"max_adverse_cents": 2},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"price": 0.004, "score_gap": -20, "scoreboard_age_seconds": 1},
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].metadata["exit_rules"]["target_price"] == 0.007
+    assert result.intents[0].metadata["exit_rules"]["resolved_target_policy"] == "max_min_cents_or_return_fraction"
+
+
 def test_strategy_plan_evaluator_uses_current_ask_price_policy_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-lal-okc",

@@ -1025,13 +1025,24 @@ def _position_target_price_from_plan(
     if strategy is not None:
         exit_rules = strategy.get("exit_rules") if isinstance(strategy.get("exit_rules"), dict) else {}
         sleeve = _strategy_sleeve_metadata(strategy)
-        scaled_target = _scaled_micro_grid_target_price(avg_price, exit_rules)
+        target_basis_price = _target_basis_price(
+            avg_price=avg_price,
+            exit_rules=exit_rules,
+            outcome_state=outcome_state,
+        )
+        scaled_target = _scaled_micro_grid_target_price(target_basis_price, exit_rules)
         if scaled_target is not None:
-            scaled_target = _normalize_direct_sell_limit_price(scaled_target)
+            scaled_target = _normalize_direct_sell_limit_price(
+                scaled_target,
+                tick_size=_target_tick_size(exit_rules),
+                min_price=_target_floor_price(exit_rules),
+            )
             return {
                 "target_price": scaled_target,
                 "target_policy": "micro_grid_scaled",
                 "target_delta_cents": round((scaled_target - avg_price) * 100.0, 4),
+                "target_basis": exit_rules.get("target_basis"),
+                "target_basis_price": target_basis_price,
                 "strategy_id": strategy.get("strategy_id"),
                 "strategy_family": strategy.get("family"),
                 "sleeve": sleeve,
@@ -1042,7 +1053,11 @@ def _position_target_price_from_plan(
             }
         explicit_target = _float(exit_rules.get("target_price"))
         if explicit_target is not None:
-            target_price = _normalize_direct_sell_limit_price(explicit_target)
+            target_price = _normalize_direct_sell_limit_price(
+                explicit_target,
+                tick_size=_target_tick_size(exit_rules),
+                min_price=_target_floor_price(exit_rules),
+            )
             return {
                 "target_price": target_price,
                 "target_policy": "explicit_target_price",
@@ -1070,10 +1085,63 @@ def _position_target_price_from_plan(
     }
 
 
-def _normalize_direct_sell_limit_price(price: float) -> float:
+def _target_basis_price(
+    *,
+    avg_price: float,
+    exit_rules: dict[str, Any],
+    outcome_state: dict[str, Any] | None,
+) -> float:
+    basis = str(exit_rules.get("target_basis") or exit_rules.get("target_price_basis") or "").strip().lower()
+    if basis not in {"current_price", "entry_price", "latest_price", "market_price", "signal_price"}:
+        return avg_price
+    state = outcome_state if isinstance(outcome_state, dict) else {}
+    price = None
+    for key in ("price", "team_price", "current_price", "best_ask", "ask"):
+        price = _float(state.get(key))
+        if price is not None:
+            break
+    if price is None or price <= 0.0:
+        return avg_price
+    return price
+
+
+def _target_tick_size(rules: dict[str, Any]) -> float | None:
+    tick = _float(
+        rules.get("target_tick_size")
+        or rules.get("tick_size")
+        or rules.get("price_tick_size")
+        or rules.get("min_price_increment")
+    )
+    if tick is None or tick <= 0.0:
+        return None
+    return tick
+
+
+def _target_floor_price(rules: dict[str, Any]) -> float | None:
+    floor = _float(
+        rules.get("min_target_price")
+        or rules.get("target_min_price")
+        or rules.get("target_floor_price")
+        or rules.get("minimum_target_price")
+    )
+    if floor is None or floor <= 0.0:
+        return None
+    return floor
+
+
+def _normalize_direct_sell_limit_price(
+    price: float,
+    *,
+    tick_size: float | None = None,
+    min_price: float | None = None,
+) -> float:
     """Normalize protective target sells to CLOB tick sizes without lowering target."""
 
-    bounded = min(0.95, max(0.01, float(price)))
+    floor = min_price if min_price is not None else 0.01
+    bounded = min(0.95, max(floor, float(price)))
+    if tick_size is not None and tick_size > 0.0:
+        decimals = max(0, min(6, len(f"{tick_size:.8f}".rstrip("0").split(".")[-1])))
+        return round(math.ceil((bounded - 1e-12) / tick_size) * tick_size, decimals)
     if bounded < 0.10:
         return round(math.ceil((bounded - 1e-12) * 100.0) / 100.0, 2)
     return round(bounded, 4)
@@ -1144,7 +1212,13 @@ def _scaled_micro_grid_target_price(entry_price: float, rules: dict[str, Any]) -
     target_move = max(min_move, fraction_move)
     if target_move <= 0.0:
         return None
-    return round(min(0.95, max(0.01, entry_price + target_move)), 4)
+    floor = _target_floor_price(rules) or 0.01
+    raw_target = min(0.95, max(floor, entry_price + target_move))
+    tick_size = _target_tick_size(rules)
+    if tick_size is not None:
+        decimals = max(0, min(6, len(f"{tick_size:.8f}".rstrip("0").split(".")[-1])))
+        return round(math.ceil((raw_target - 1e-12) / tick_size) * tick_size, decimals)
+    return round(raw_target, 4)
 
 
 def _auto_protect_direct_positions(
