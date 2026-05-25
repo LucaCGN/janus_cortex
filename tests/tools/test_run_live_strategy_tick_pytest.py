@@ -1627,6 +1627,52 @@ def test_pending_intent_summary_expires_local_pending_without_external_after_eve
     assert summary["event_start_expired_orders"][0]["reason"] == "local_pending_without_external_after_event_start"
 
 
+def test_pending_intent_summary_expires_after_game_start_without_plan_start_pytest(monkeypatch) -> None:
+    def fake_api_json(api_root: str, method: str, path: str, payload: dict[str, Any] | None = None, **kwargs):
+        assert path == "/v1/portfolio/orders"
+        return {
+            "ok": True,
+            "items": [
+                {
+                    "order_id": "local-order-3",
+                    "external_order_id": "0xsubmitted",
+                    "event_slug": "nba-sas-okc-2026-05-18",
+                    "market_id": "market-1",
+                    "outcome_id": "outcome-sas",
+                    "side": "buy",
+                    "status": "submitted",
+                    "size": 5.0,
+                    "limit_price": 0.30,
+                    "metadata_json": {"strategy_id": "sas-live"},
+                }
+            ],
+        }
+
+    monkeypatch.setattr(live_tick, "api_json", fake_api_json)
+
+    summary = live_tick._pending_intent_summary(
+        api_root="http://test",
+        account_id="account-1",
+        event_id="8da3c71c-1926-5f97-8473-7c742c7156b8",
+        plan={
+            "market_id": "market-1",
+            "context_summary": {
+                "event_slug": "nba-sas-okc-2026-05-18",
+            },
+        },
+        direct_clob={"open_orders": {"orders": []}, "current_token_trades": {"trades": []}},
+        game={"game_status": 2, "game_status_text": "Q2"},
+    )
+
+    assert summary["pending_intent_count"] == 0
+    assert summary["pending_buy_intent_count"] == 0
+    assert summary["orders"] == []
+    assert summary["event_start_expired_order_count"] == 1
+    assert summary["event_start_expired_orders"][0]["external_order_id"] == "0xsubmitted"
+    assert summary["event_start_expired_orders"][0]["event_start_utc"]
+    assert summary["event_start_expired_orders"][0]["reason"] == "direct_clob_missing_after_event_start"
+
+
 def test_known_portfolio_order_ids_include_current_strategy_plan_ids_pytest(monkeypatch) -> None:
     def fake_api_json(api_root: str, method: str, path: str, **kwargs):
         assert path == "/v1/portfolio/orders"

@@ -524,6 +524,7 @@ def _run_event_tick(
         event_id=event_id,
         plan=plan,
         direct_clob=event_direct_clob_state,
+        game=game,
     )
     known_order_ids = _known_portfolio_order_external_ids(
         api_root=api_root,
@@ -2396,6 +2397,7 @@ def _pending_intent_summary(
     event_id: str,
     plan: dict[str, Any],
     direct_clob: dict[str, Any],
+    game: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     market_id = str(plan.get("market_id") or "").strip()
     source = "/v1/portfolio/orders"
@@ -2429,7 +2431,7 @@ def _pending_intent_summary(
     direct_filled_order_ids = _direct_filled_order_external_ids(direct_clob)
     pending_orders: list[dict[str, Any]] = []
     event_start_expired_orders: list[dict[str, Any]] = []
-    event_start_order_expiry = _event_start_order_expiry_active(plan)
+    event_start_order_expiry = _event_start_order_expiry_active(plan, game=game)
     for item in payload.get("items") or []:
         if not isinstance(item, dict):
             continue
@@ -2802,13 +2804,26 @@ def _plan_known_external_order_ids(plan: dict[str, Any]) -> set[str]:
     return ids
 
 
-def _event_start_utc(plan: dict[str, Any]) -> datetime | None:
+def _event_start_utc(plan: dict[str, Any], *, game: dict[str, Any] | None = None) -> datetime | None:
     context = plan.get("context_summary") if isinstance(plan.get("context_summary"), dict) else {}
+    game_values = []
+    if isinstance(game, dict):
+        raw = game.get("raw") if isinstance(game.get("raw"), dict) else {}
+        game_values = [
+            game.get("game_start_time"),
+            game.get("game_time_utc"),
+            game.get("gameTimeUTC"),
+            raw.get("gameTimeUTC"),
+            raw.get("gameEt"),
+        ]
     for value in (
+        *game_values,
         context.get("game_start_utc"),
         context.get("event_start_utc"),
+        context.get("game_start_time"),
         plan.get("game_start_utc"),
         plan.get("event_start_utc"),
+        plan.get("game_start_time"),
     ):
         parsed = _parse_dt(value)
         if parsed is not None:
@@ -2816,17 +2831,34 @@ def _event_start_utc(plan: dict[str, Any]) -> datetime | None:
     return None
 
 
-def _event_start_order_expiry_active(plan: dict[str, Any], *, now: datetime | None = None) -> dict[str, str] | None:
-    event_start = _event_start_utc(plan)
+def _event_start_order_expiry_active(
+    plan: dict[str, Any],
+    *,
+    game: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> dict[str, str] | None:
+    detected_at = now or datetime.now(timezone.utc)
+    event_start = _event_start_utc(plan, game=game)
+    if event_start is None and _game_has_started(game):
+        event_start = detected_at
     if event_start is None:
         return None
-    detected_at = now or datetime.now(timezone.utc)
     if detected_at < event_start:
         return None
     return {
         "event_start_utc": event_start.isoformat().replace("+00:00", "Z"),
         "detected_at_utc": detected_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
+
+
+def _game_has_started(game: dict[str, Any] | None) -> bool:
+    if not isinstance(game, dict):
+        return False
+    status = _int(game.get("game_status") or game.get("gameStatus"))
+    if status is not None and status >= 2:
+        return True
+    status_text = str(game.get("game_status_text") or game.get("gameStatusText") or "").strip().lower()
+    return bool(status_text and status_text not in {"scheduled", "pregame", "pre-game"})
 
 
 def _missing_plan_target_order_ids(
