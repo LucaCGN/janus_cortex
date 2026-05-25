@@ -16,6 +16,7 @@ from app.api.routers import (
     nba_read_router,
     ops_router,
     portfolio_router,
+    runtime_control_router,
     sync_router,
     system_registry_router,
     wnba_read_router,
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(nba_live_router)
     app.include_router(ops_router)
     app.include_router(portfolio_router)
+    app.include_router(runtime_control_router)
     app.include_router(sync_router)
     app.include_router(nba_read_router)
     app.include_router(wnba_read_router)
