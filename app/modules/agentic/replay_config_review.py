@@ -49,6 +49,63 @@ class ReplayConfigReview(BaseModel):
     )
 
 
+class ReplayFixture(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    entry_price: float
+    target_price: float | None = None
+    shares: float = 5.0
+    score_gap: int | None = None
+    spread: float
+    max_allowed_price: float
+    max_allowed_spread: float
+    final_side_won: bool
+    target_filled: bool = False
+    duplicate_intent_count: int = 1
+    evidence_note: str
+
+
+class ReplayFixtureBacktestResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    case_id: str
+    event_id: str
+    league: str
+    side: str
+    expected_direction: str
+    fillability_passed: bool
+    score_gap_available: bool
+    duplicate_cooldown_passed: bool
+    target_fill_pnl_usd: float | None
+    final_score_pnl_usd: float
+    recommendation: str
+    blockers: list[str] = Field(default_factory=list)
+    evidence_note: str
+
+
+class ReplayFixtureBacktest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "postgame_replay_fixture_backtest_v1"
+    session_date: str
+    generated_at_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    issue: str = "#70"
+    related_issues: list[str] = Field(default_factory=lambda: ["#55", "#69", "#61"])
+    trading_boundary: str = "read_only_no_orders_no_worker_starts"
+    source_case_count: int = 0
+    results: list[ReplayFixtureBacktestResult] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+    next_actions: list[str] = Field(default_factory=list)
+    hard_prohibitions: list[str] = Field(
+        default_factory=lambda: [
+            "do_not_place_cancel_replace_submit_sign_broadcast_redeem_orders",
+            "do_not_start_live_money_workers",
+            "do_not_promote_strategyplan_config_without_live_gate_review",
+        ]
+    )
+
+
 def replay_config_review_root(day: str | None = None, *, root: Path | None = None) -> Path:
     base_root = root if root is not None else artifacts_root()
     return base_root / "postgame-replay-config-review" / session_date(day)
@@ -107,6 +164,76 @@ def write_replay_config_review(
     }
 
 
+def build_replay_fixture_backtest(review: ReplayConfigReview) -> ReplayFixtureBacktest:
+    results: list[ReplayFixtureBacktestResult] = []
+    for case in review.replay_cases:
+        fixture = _fixture_for_case(case.case_id)
+        if fixture is None:
+            results.append(
+                ReplayFixtureBacktestResult(
+                    case_id=case.case_id,
+                    event_id=case.event_id,
+                    league=case.league,
+                    side=case.side,
+                    expected_direction=case.expected_direction,
+                    fillability_passed=False,
+                    score_gap_available=False,
+                    duplicate_cooldown_passed=False,
+                    target_fill_pnl_usd=None,
+                    final_score_pnl_usd=0.0,
+                    recommendation="needs_fixture_definition_before_config_promotion",
+                    blockers=["missing_fixture_definition"],
+                    evidence_note="No deterministic fixture was registered for this replay case.",
+                )
+            )
+            continue
+        results.append(_score_fixture(case, fixture))
+    summary = _fixture_backtest_summary(results)
+    return ReplayFixtureBacktest(
+        session_date=review.session_date,
+        source_case_count=len(review.replay_cases),
+        results=results,
+        summary=summary,
+        next_actions=_fixture_backtest_next_actions(summary),
+    )
+
+
+def write_replay_fixture_backtest(
+    backtest: ReplayFixtureBacktest,
+    *,
+    artifact_root: Path | None = None,
+    report_dir: Path | None = None,
+) -> dict[str, Any]:
+    timestamp = backtest.generated_at_utc.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    root = replay_config_review_root(backtest.session_date, root=artifact_root)
+    json_path = root / f"postgame_replay_fixture_backtest_{timestamp}.json"
+    write_json(json_path, backtest.model_dump(mode="json"))
+    append_jsonl(
+        root / "postgame_replay_fixture_backtests.jsonl",
+        {
+            "recorded_at_utc": datetime.now(timezone.utc).isoformat(),
+            "session_date": backtest.session_date,
+            "source_case_count": backtest.source_case_count,
+            "eligible_positive_case_count": backtest.summary.get("eligible_positive_case_count", 0),
+            "quarantined_case_count": backtest.summary.get("quarantined_case_count", 0),
+            "path": str(json_path),
+        },
+    )
+    markdown_path = (report_dir or reports_root() / "daily-live-validation") / (
+        f"postgame_replay_fixture_backtest_{timestamp}.md"
+    )
+    write_text(markdown_path, render_replay_fixture_backtest_markdown(backtest, json_path=str(json_path)))
+    return {
+        "status": "stored",
+        "schema_version": "postgame_replay_fixture_backtest_write_result_v1",
+        "session_date": backtest.session_date,
+        "source_case_count": backtest.source_case_count,
+        "result_count": len(backtest.results),
+        "json_path": str(json_path),
+        "markdown_path": str(markdown_path),
+    }
+
+
 def render_replay_config_review_markdown(review: ReplayConfigReview, *, json_path: str | None = None) -> str:
     lines = [
         f"# Postgame Replay Config Review - {review.session_date}",
@@ -131,6 +258,38 @@ def render_replay_config_review_markdown(review: ReplayConfigReview, *, json_pat
     lines.extend(_bullet_lines(review.next_actions))
     lines.extend(["", "## Hard Prohibitions"])
     lines.extend(_bullet_lines(f"`{item}`" for item in review.hard_prohibitions))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def render_replay_fixture_backtest_markdown(
+    backtest: ReplayFixtureBacktest,
+    *,
+    json_path: str | None = None,
+) -> str:
+    lines = [
+        f"# Postgame Replay Fixture Backtest - {backtest.session_date}",
+        "",
+        f"- generated_at_utc: `{backtest.generated_at_utc.isoformat()}`",
+        f"- issue: `{backtest.issue}`",
+        f"- trading_boundary: `{backtest.trading_boundary}`",
+        f"- source_case_count: `{backtest.source_case_count}`",
+    ]
+    if json_path:
+        lines.append(f"- json_artifact: `{json_path}`")
+    lines.extend(["", "## Results"])
+    for result in backtest.results:
+        lines.append(
+            f"- `{result.case_id}` `{result.recommendation}`: final_pnl="
+            f"`{result.final_score_pnl_usd:.4f}`, target_pnl=`{_format_optional_money(result.target_fill_pnl_usd)}`, "
+            f"blockers=`{','.join(result.blockers) or 'none'}`"
+        )
+    lines.extend(["", "## Summary"])
+    for key, value in backtest.summary.items():
+        lines.append(f"- {key}: `{value}`")
+    lines.extend(["", "## Next Actions"])
+    lines.extend(_bullet_lines(backtest.next_actions))
+    lines.extend(["", "## Hard Prohibitions"])
+    lines.extend(_bullet_lines(f"`{item}`" for item in backtest.hard_prohibitions))
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -301,6 +460,135 @@ def _next_actions(cases: list[ReplayCase]) -> list[str]:
     ]
 
 
+def _fixture_for_case(case_id: str) -> ReplayFixture | None:
+    fixtures = {
+        "wnba-phx-atl-atlanta-comeback-low-band": ReplayFixture(
+            case_id=case_id,
+            entry_price=0.32,
+            target_price=0.45,
+            score_gap=-8,
+            spread=0.02,
+            max_allowed_price=0.45,
+            max_allowed_spread=0.02,
+            final_side_won=True,
+            evidence_note="Atlanta low-band comeback window: 5-share fixture wins at final score and stays within the held WNBA max-price gate.",
+        ),
+        "wnba-dal-nyl-dallas-q2-low-band": ReplayFixture(
+            case_id=case_id,
+            entry_price=0.23,
+            target_price=0.45,
+            score_gap=-6,
+            spread=0.02,
+            max_allowed_price=0.45,
+            max_allowed_spread=0.02,
+            final_side_won=True,
+            evidence_note="Dallas Q2 low-band fixture wins at final score and remains fillable under the 2c spread gate.",
+        ),
+        "wnba-wsh-sea-seattle-q1-rebound": ReplayFixture(
+            case_id=case_id,
+            entry_price=0.26,
+            target_price=0.45,
+            score_gap=-7,
+            spread=0.01,
+            max_allowed_price=0.45,
+            max_allowed_spread=0.02,
+            final_side_won=True,
+            evidence_note="Seattle Q1 rebound fixture compares the early 25c/26c window with final-score conversion.",
+        ),
+        "nba-okc-sas-thunder-q4-subpenny-negative": ReplayFixture(
+            case_id=case_id,
+            entry_price=0.005,
+            target_price=0.01,
+            shares=606.0,
+            score_gap=-21,
+            spread=0.005,
+            max_allowed_price=0.01,
+            max_allowed_spread=0.01,
+            final_side_won=False,
+            duplicate_intent_count=3,
+            evidence_note="Thunder Q4 subpenny fixture approximates the three duplicate late buys and final loser accounting.",
+        ),
+    }
+    return fixtures.get(case_id)
+
+
+def _score_fixture(case: ReplayCase, fixture: ReplayFixture) -> ReplayFixtureBacktestResult:
+    fillability_passed = fixture.entry_price <= fixture.max_allowed_price and fixture.spread <= fixture.max_allowed_spread
+    score_gap_available = fixture.score_gap is not None
+    duplicate_cooldown_passed = fixture.duplicate_intent_count <= 1
+    target_fill_pnl = None
+    if fixture.target_price is not None:
+        target_fill_pnl = round((fixture.target_price - fixture.entry_price) * fixture.shares, 4)
+    final_price = 1.0 if fixture.final_side_won else 0.0
+    final_score_pnl = round((final_price - fixture.entry_price) * fixture.shares, 4)
+    blockers: list[str] = []
+    if not fillability_passed:
+        blockers.append("fillability_gate_failed")
+    if not score_gap_available:
+        blockers.append("score_gap_missing")
+    if not duplicate_cooldown_passed:
+        blockers.append("duplicate_intent_cooldown_required")
+    if final_score_pnl <= 0:
+        blockers.append("final_score_negative_edge")
+    recommendation = _fixture_recommendation(case, blockers)
+    return ReplayFixtureBacktestResult(
+        case_id=case.case_id,
+        event_id=case.event_id,
+        league=case.league,
+        side=case.side,
+        expected_direction=case.expected_direction,
+        fillability_passed=fillability_passed,
+        score_gap_available=score_gap_available,
+        duplicate_cooldown_passed=duplicate_cooldown_passed,
+        target_fill_pnl_usd=target_fill_pnl,
+        final_score_pnl_usd=final_score_pnl,
+        recommendation=recommendation,
+        blockers=blockers,
+        evidence_note=fixture.evidence_note,
+    )
+
+
+def _fixture_recommendation(case: ReplayCase, blockers: list[str]) -> str:
+    if case.expected_direction == "negative_case":
+        return "quarantine_until_independent_replay_proves_edge"
+    if blockers:
+        return "keep_monitor_only_until_blockers_clear"
+    return "eligible_for_entry_timing_matrix_not_live_promotion"
+
+
+def _fixture_backtest_summary(results: list[ReplayFixtureBacktestResult]) -> dict[str, Any]:
+    eligible_positive = [
+        result.case_id
+        for result in results
+        if result.expected_direction == "positive_candidate" and not result.blockers
+    ]
+    quarantined = [
+        result.case_id
+        for result in results
+        if result.recommendation == "quarantine_until_independent_replay_proves_edge"
+    ]
+    return {
+        "result_count": len(results),
+        "eligible_positive_case_count": len(eligible_positive),
+        "eligible_positive_case_ids": eligible_positive,
+        "quarantined_case_count": len(quarantined),
+        "quarantined_case_ids": quarantined,
+        "net_final_score_pnl_usd": round(sum(result.final_score_pnl_usd for result in results), 4),
+        "live_promotion_allowed": False,
+    }
+
+
+def _fixture_backtest_next_actions(summary: dict[str, Any]) -> list[str]:
+    actions = [
+        "Feed eligible positive WNBA cases into #55 entry-timing matrix rows with no live promotion by this artifact alone.",
+        "Keep q4_subpenny_hype_bounce and no_bid_min_price_lottery_v1 quarantined unless independent replay shows durable edge.",
+        "Route any future signal enable/disable change through #69 event-control readback artifacts.",
+    ]
+    if summary.get("quarantined_case_count", 0):
+        actions.append("Keep #61 residual Thunder reconciliation separate from fixture replay scoring.")
+    return actions
+
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
@@ -311,3 +599,7 @@ def _read_text(path: Path) -> str:
 def _bullet_lines(items: list[str] | Any) -> list[str]:
     rendered = [f"- {item}" for item in items if item]
     return rendered or ["- none"]
+
+
+def _format_optional_money(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.4f}"
