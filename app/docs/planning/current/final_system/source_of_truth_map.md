@@ -98,6 +98,7 @@ Current-scope expansion before crypto/options:
 | `master-janus-manager` and `oversight-devloop` | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | Anti-stagnation scoring for repeated comments, stale blockers, unclosed work, oversized issues, missing automation memory, stale prompts, pinned-heartbeat regression, and source-of-truth drift. | Governance only; no trading. |
 | Obsidian backlog repair | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repair note-to-backlog promotion so curated notes become bounded issue candidates without becoming runtime truth. | Curation/governance only; no trading. |
 | Portfolio-manager artifact ownership | closed [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | Reconciled the 2026-05-24T18:06Z portfolio-manager artifact-only pass, memory ownership, and queue-claim discipline. Future portfolio drift, scaling, grid-service expansion, or order-path regression needs a focused follow-up issue. | Governance/portfolio oversight only; no trading or service starts. |
+| Portfolio lifecycle reconciliation | [#76](https://github.com/LucaCGN/janus_cortex/issues/76) | Reconcile the Maduro filled-position target gap and Colorado Avalanche target-fill/close evidence from fresh direct CLOB truth. | Portfolio-manager only through approved order paths and gates; no Janus NBA/WNBA authority. |
 
 ## Runtime State Anchors
 
@@ -221,6 +222,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | P1 | open | Harden issue lifecycle anti-stagnation and closure governance for repeated comments, stale blockers, and oversized issues. |
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | open | Repair Obsidian-to-backlog ingestion and curation workflow so note insights become issue candidates with acceptance criteria. |
 | [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | P1 | closed | Portfolio-manager artifact-only pass ownership reconciled; next portfolio-manager run proved queue claim/release discipline with durable memory, artifacts, and Obsidian updates. |
+| [#76](https://github.com/LucaCGN/janus_cortex/issues/76) | P0 | open | Reconcile Maduro filled-position target coverage and Colorado Avalanche target-fill/close evidence through the portfolio-manager path. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |
