@@ -39,7 +39,7 @@ This is not a new strategy lane and not a Codex portfolio-manager feature. It is
 | Signal producers | Deterministic, ML, scoreboard, play-by-play, band/grid, LLM, Codex, and operator/user signals. | See `automation/live_signal_aggregation_contract.md`. |
 | Signal aggregation system | Merges signals, resolves conflicts, applies event config/risk, and chooses monitor/hold/buy/sell/rebuy/reduce outputs. | New app module and tests under `#63` child slices. |
 | StrategyPlan bridge | Converts aggregated decisions into StrategyPlan revisions and order intents. | Existing StrategyPlan evaluator remains the execution gate. |
-| Execution and sleeve manager | Maintains per-event sleeves: core hold, grid/scalp, rebuy, reduce/stop, and settlement. | Minimum parallel test structure is 5-share grid plus 5-share core when risk gates allow. |
+| Execution and sleeve manager | Maintains per-event sleeves: core hold, grid/scalp, rebuy, reduce/stop, and settlement. | Minimum parallel test structure is 5-share grid plus 5-share core when risk gates allow. Grid/scalp sleeves require paired microcycle state, not repeated independent buys. |
 | Postgame performance review | Reviews fired/missed/blocked signals, fills, orderbook, latency, PnL, and strategy confidence. | Must feed issue closure, strategy config, and Obsidian lessons. |
 
 ## Live Snapshot Contract
@@ -118,6 +118,20 @@ Supported live-test plan shapes:
 | `responsive_both_sides` | No side is selected but both moneyline sides should be available to signals. | Creates one 5-share grid/scalp sleeve per outcome, capped by operator notional gates. |
 
 The live tick and worker now accept `max_buy_notional_usd`, and the evaluator can respect StrategyPlan `size_policy=plan_size` while still enforcing minimum size, minimum buy notional, and maximum buy notional. This prevents the prior failure mode where every buy collapsed to a minimum-order heuristic and made parallel sleeve testing impossible.
+
+### Required Paired Microcycle Slice
+
+The next grid/scalp runtime slice is #77: paired microcycle order handling.
+
+The target behavior is not "buy whenever low-price signals appear." It is:
+
+1. create or import a bounded buy leg;
+2. when that buy fills, immediately create or manage the paired sell leg through Janus gates;
+3. while that sell is unresolved, block duplicate same-cycle buys;
+4. when the sell fills, either close the cycle or request a paired rebuy after fresh score/CLOB/event-control review;
+5. allow multiple concurrent cycles only when they are distinct by band/sleeve and event controls allow parallel cycles.
+
+This is the missing execution link between resistance-band/retest signals and actual 1c-3c interval trading.
 
 ### Implemented WNBA Live Adapter Slice
 

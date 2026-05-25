@@ -167,6 +167,34 @@ Target coverage must be evaluated from fresh direct CLOB account truth:
 - Target replacement should cancel/replace only through approved Janus order-management gates and only when event controls allow it.
 - If a strategy wants both grid and core exposure, the system should be able to target only the grid lot while holding the core lot.
 
+## Paired Microcycle Order Engine
+
+Lot evidence is not the same thing as a trading cycle.
+
+Grid/scalp sleeves need a paired microcycle state machine so Janus does not keep buying the same outcome without managing the corresponding sell/rebuy legs. A microcycle is one bounded buy/sell/rebuy loop for one token, sleeve, band, and size.
+
+Each cycle should track:
+
+- `cycle_id`, event id, sleeve id, token id, outcome, band id, and strategy id;
+- buy leg: requested price, filled price, shares, order id, fill id, status;
+- paired sell leg: target price, submitted/open/filled/stale status, order id, fill id;
+- optional paired rebuy leg: trigger price, review status, submitted/open/filled status;
+- cap state: max active cycles for the sleeve, max shares per cycle, max unresolved buy legs, max unresolved sell legs, and event budget remaining;
+- freshness state: last direct CLOB reconciliation, scoreboard/clock evidence, and event-control version;
+- execution boundary: evidence-only, intent-candidate, or submitted-through-Janus-gates.
+
+Required behavior:
+
+1. When a buy leg fills, the next eligible action is the paired sell leg, not another same-cycle buy.
+2. While the paired sell leg is open, pending, missing, or stale, the cycle blocks duplicate same-cycle buys.
+3. When the paired sell leg fills, the cycle can close or request a paired rebuy only after fresh score/CLOB/event-control review.
+4. Multiple cycles can run only when they are distinct by band/sleeve and event controls allow parallel cycles.
+5. Core-hold sleeves are not cycled unless explicitly converted to a grid/scalp sleeve.
+6. Operator/manual fills are imported into cycle state before Janus computes the next leg.
+7. The engine must emit blockers such as `paired_sell_open_blocks_duplicate_buy`, `paired_sell_missing`, `paired_rebuy_requires_fresh_review`, `cycle_budget_exhausted`, and `cycle_fill_reconciliation_missing`.
+
+This is the behavior required for 1c-3c interval trading: the system should place or recommend the opposite leg as soon as a fill is detected, then wait for that opposite leg to resolve before adding the next linked exposure.
+
 ## Postgame Feedback
 
 Every live event should persist:

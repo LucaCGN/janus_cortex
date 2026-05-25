@@ -46,7 +46,7 @@ Implemented since the original 2026-05-24 map:
 Still missing for the full diagram:
 
 - Live-worker adoption of aggregation and event-budget decisions as the ordinary evaluation path.
-- Lot-level target management that reconciles Janus and operator fills before replacing targets.
+- Paired microcycle order handling: filled grid/scalp buy -> paired sell, filled sell -> reviewed rebuy, and no duplicate same-cycle buy while the sell leg is unresolved.
 - Replay-first no-bid/min-price calibration with direct-CLOB fillability proof.
 - Structured optional NBA/WNBA pregame research artifacts.
 - Obsidian-to-backlog ingestion that promotes notes into bounded GitHub issues without making Obsidian execution truth.
@@ -90,6 +90,7 @@ Crypto options remain #47 and should stay in idea/research until this basketball
 | #62 | Active WNBA live promotion evidence route. |
 | #63 | Active parent for live-worker adoption of aggregation, event budgets, target coverage, and degraded-mode runtime behavior. |
 | #70 | Active postgame signal performance, missed-signal replay, and no-bid/min-price calibration route. |
+| #77 | Active paired microcycle order engine route for grid/scalp sleeves. |
 | #71 | Project-chief performance review and development-planning automation. |
 | #72 | NBA/WNBA pregame research agents as optional priors. |
 | #73 | Issue lifecycle anti-stagnation and closure governance. |
