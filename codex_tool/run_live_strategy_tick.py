@@ -38,6 +38,7 @@ from app.modules.agentic.signal_aggregation import (
     aggregate_live_signals,
 )
 from app.modules.agentic.store import write_live_signal_aggregation_decision
+from app.modules.agentic.paired_microcycle import build_paired_microcycle_evidence
 from app.modules.agentic.target_management import build_target_management_evidence
 from codex_tools.polymarket.settlement import classify_documented_residual_positions
 
@@ -590,6 +591,24 @@ def _run_event_tick(
         default_target_delta_cents=manual_target_delta_cents,
     ).model_dump(mode="json")
     portfolio_state["target_management"] = target_management_evidence
+    paired_microcycle_budget = _live_tick_event_budget_snapshot(
+        event_id=event_id,
+        direct_clob=event_direct_clob_state,
+        portfolio_state=portfolio_state,
+        min_buy_notional_usd=min_buy_notional_usd,
+        max_buy_notional_usd=max_buy_notional_usd,
+    )
+    paired_microcycle_evidence = build_paired_microcycle_evidence(
+        event_id=event_id,
+        plan=plan,
+        direct_clob=event_direct_clob_state,
+        target_management=target_management_evidence,
+        event_risk_budget=paired_microcycle_budget,
+        known_external_order_ids=set(known_order_ids["external_order_ids"]) if known_order_ids["ok"] else None,
+        min_size=min_size,
+        default_target_delta_cents=manual_target_delta_cents,
+    ).model_dump(mode="json")
+    portfolio_state["paired_microcycle"] = paired_microcycle_evidence
 
     direct_trade_persistence = _persist_direct_trade_watch_observations(
         api_root=api_root,
@@ -618,6 +637,7 @@ def _run_event_tick(
     if market_outcome_lookup_error:
         market_state["market_outcome_lookup_error"] = market_outcome_lookup_error
     market_state["target_management"] = target_management_evidence
+    market_state["paired_microcycle"] = paired_microcycle_evidence
     normalized_live_snapshot = build_normalized_live_snapshot(
         event_id=event_id,
         league=_event_league(event_id=event_id, game=game),
@@ -821,6 +841,31 @@ def _safe_strategy_fragment(value: str) -> str:
     while "--" in fragment:
         fragment = fragment.replace("--", "-")
     return fragment[:64] or "event"
+
+
+def _live_tick_event_budget_snapshot(
+    *,
+    event_id: str,
+    direct_clob: dict[str, Any],
+    portfolio_state: dict[str, Any],
+    min_buy_notional_usd: float,
+    max_buy_notional_usd: float | None,
+) -> dict[str, Any]:
+    budget_policy = EventRiskBudgetPolicy(absolute_event_cap_usd=max_buy_notional_usd or 10.0)
+    pending_notional = (
+        _float(portfolio_state.get("pending_buy_intents"))
+        or _float(portfolio_state.get("pending_intents"))
+        or 0.0
+    ) * min_buy_notional_usd
+    return derive_event_risk_budget(
+        event_id=event_id,
+        portfolio_value_usd=budget_policy.absolute_event_cap_usd / max(budget_policy.event_cap_pct, 1e-9),
+        available_cash_usd=budget_policy.absolute_event_cap_usd / max(budget_policy.cash_cap_pct, 1e-9),
+        current_position_notional_usd=_event_position_notional(direct_clob),
+        open_order_notional_usd=_event_open_order_notional(direct_clob),
+        pending_intent_notional_usd=pending_notional,
+        policy=budget_policy,
+    ).model_dump(mode="json")
 
 
 def _build_live_signal_aggregation_evidence(

@@ -412,6 +412,14 @@ def test_run_event_tick_includes_normalized_live_snapshot_pytest(monkeypatch) ->
     assert snapshot["runtime"]["worker_status"] == "stopped"
     assert snapshot["execution_boundary"] == "evidence_only"
     assert snapshot == evaluate_payloads[0]["market_state"]["normalized_live_snapshot"]
+    paired = result["market_state"]["paired_microcycle"]
+    assert paired["schema_version"] == "sports_live_paired_microcycle_evidence_v1"
+    assert paired["execution_boundary"] == "evidence_only"
+    assert paired["cycle_count"] == 1
+    assert paired["cycles"][0]["sleeve_id"] == "seattle-grid"
+    assert paired["cycles"][0]["status"] == "awaiting_buy"
+    assert paired == evaluate_payloads[0]["market_state"]["paired_microcycle"]
+    assert paired == result["portfolio_state"]["paired_microcycle"]
 
 
 def test_resolve_game_uses_catalog_link_for_uuid_event_pytest(monkeypatch) -> None:
