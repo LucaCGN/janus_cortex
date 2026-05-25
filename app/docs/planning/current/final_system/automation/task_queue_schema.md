@@ -166,6 +166,18 @@ An issue comment without a blocker change, implementation evidence, validation r
 Until a DB-backed or GitHub-native queue exists, the queue can be represented by:
 
 - GitHub issues as durable backlog.
+- `app/docs/planning/current/final_system/automation/issue_task_register.md` as the local issue-to-task execution bridge.
 - `local/shared/handoffs/development-agent/master_queue.md` as local operational bridge.
 - `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md` as issue seed.
 - Future generated queue artifact under `local/shared/artifacts/final-system-controller/`.
+
+## Issue Task Register
+
+`automation/issue_task_register.md` maps open GitHub issues to bounded local tasks with the smallest next executable step, expected owner lane, current blocker, and evidence. It is the planning bridge between broad GitHub issues and runtime controller locks.
+
+The register does not replace active locks, direct CLOB truth, runtime artifacts, or GitHub closure evidence. It prevents issue loops from spending repeated passes on status comments by requiring one of these outcomes when an open P0/P1 issue is selected:
+
+- work the registered task;
+- update the registered blocker, task split, owner lane, or validation evidence;
+- add a missing registered task for an issue that is too broad;
+- no-op because the registered task and blocker are unchanged.

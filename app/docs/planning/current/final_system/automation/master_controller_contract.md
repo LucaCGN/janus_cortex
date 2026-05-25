@@ -51,25 +51,26 @@ Every controller pass must read or inspect:
 8. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
 9. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
 10. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-11. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-12. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-13. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-14. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
-15. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
-16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
-17. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-19. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
-20. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
-21. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-22. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-23. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
-24. `local/shared/handoffs/daily-live-validation/status.md`
-25. `local/shared/handoffs/development-agent/status.md`
-26. Latest relevant daily reports.
-27. GitHub issue state once the issue seed is created.
-28. Obsidian index notes once populated.
-29. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
+11. `app/docs/planning/current/final_system/automation/issue_task_register.md`
+12. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+13. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+14. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+15. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
+16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
+17. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
+18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+19. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+20. `app/docs/planning/current/final_system/automation/docs_memory_health_check.md`
+21. `app/docs/planning/current/final_system/backlog/immediate_issue_seed_2026-05-17.md`
+22. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+23. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+24. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+25. `local/shared/handoffs/daily-live-validation/status.md`
+26. `local/shared/handoffs/development-agent/status.md`
+27. Latest relevant daily reports.
+28. GitHub issue state once the issue seed is created.
+29. Obsidian index notes once populated.
+30. `python codex_tool/janus_status.py` unless explicitly in docs-only mode.
 
 ## Axis-First Decision Model
 
@@ -173,12 +174,15 @@ Development tasks must be issue-backed after the issue seed is initialized.
 Each task should state:
 
 - Issue id or issue draft id.
+- Issue task register id from `automation/issue_task_register.md` when the issue is already open and selected for work.
 - Branch/worktree ownership.
 - Files owned.
 - Tests expected.
 - Runtime impact.
 - Live-order impact.
 - Acceptance criteria.
+
+Before selecting an open P0/P1 issue for implementation, check `automation/issue_task_register.md`. The pass should work the listed next executable step, update the register when the task decomposition or blocker changed, or add a missing task before commenting on the issue. A repeated GitHub issue comment with no register change, validation evidence, commit, closure, or blocker change is `no_material_change`.
 
 Before any code, docs, handoff, Obsidian, or runtime-artifact write, the acting persona must establish ownership through the repo-local controller queue:
 

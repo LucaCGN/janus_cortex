@@ -14,6 +14,7 @@ Separate raw ideas, planned work, sprint issues, and runtime-active tasks so the
 | Idea backlog | Low | Repo docs and Obsidian notes | Preserve concepts and future domains without forcing execution. |
 | Planned backlog | Medium | Repo docs and GitHub draft/ready issues | Scoped tasks with acceptance criteria and dependencies. |
 | Sprint backlog | High for work identity | GitHub issues | Work selected for near-term implementation/review. |
+| Issue task register | High for execution planning | `automation/issue_task_register.md` | Bounded next steps for open issues, blockers, owner lanes, and validation evidence. |
 | Active queue | Runtime/current | `local/shared` handoffs/artifacts | Claimed tasks, locks, running agents, current blockers. |
 | Evidence layer | Runtime/reporting | artifacts, reports, review bundles | Proof used to close, promote, or demote tasks/domains. |
 
@@ -56,6 +57,19 @@ Sprint backlog items must be GitHub issues with:
 The immediate seed issues `#17-#29` are closed foundations. Follow-up work should be narrower hardening/calibration/readiness issues.
 
 Follow-up issues should use GitHub issue types when available, plus the `type:*`, `priority:*`, `market:*`, `lane:*`, `phase:*`, `stage:*`, and `live-impact:*` labels from `issue_taxonomy.md`.
+
+## Issue Task Register
+
+The issue task register is the local bridge from broad sprint issues to executable work. It should answer: what exact task is next, who owns it, what files or evidence are in scope, and what blocker changed since the last pass.
+
+Use `automation/issue_task_register.md` when:
+
+- an issue is important but too broad for one automation pass;
+- the same issue has repeated comments without commits, validation, closure, or blocker changes;
+- live-window evidence needs to be preserved while implementation waits for postgame;
+- an oversight lane needs to decide whether to split, close, or defer an issue.
+
+Do not use the register as live trading truth or active lock authority. Runtime locks still live under `local/shared/artifacts/final-system-controller/queue`, and execution truth still comes from direct CLOB/API/artifact evidence.
 
 ## Current Sprint/Follow-Up Issues
 

@@ -25,6 +25,8 @@ The recurring automation prompt should remain small and stable. It should always
 
 GitHub issues are below tracked repo docs because they do not define app behavior by themselves. They are the durable work queue and governance layer.
 
+GitHub issues are intentionally broad enough to carry priority, ownership, labels, and closure evidence. The bounded local execution plan for those issues lives in `app/docs/planning/current/final_system/automation/issue_task_register.md`; recurring automations must use that register to select the smallest next task instead of adding repeated issue comments.
+
 ## Stable Automation Anchors
 
 The controller automation should read these anchor files on every material pass:
@@ -39,22 +41,23 @@ The controller automation should read these anchor files on every material pass:
 8. `app/docs/planning/current/final_system/automation/controller_decision_tree.md`
 9. `app/docs/planning/current/final_system/automation/agent_persona_registry.md`
 10. `app/docs/planning/current/final_system/automation/task_queue_schema.md`
-11. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
-12. `app/docs/planning/current/final_system/automation/backlog_layers.md`
-13. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
-14. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
-15. `app/docs/planning/current/final_system/automation/live_activation_preflight_contract.md`
-16. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
-17. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
-18. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
-19. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
-20. `app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md`
-21. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
-22. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
-23. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
-24. `app/docs/planning/current/final_system/backlog/live_runtime_scope_map_2026-05-24.md`
-25. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-26. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+11. `app/docs/planning/current/final_system/automation/issue_task_register.md`
+12. `app/docs/planning/current/final_system/automation/issue_taxonomy.md`
+13. `app/docs/planning/current/final_system/automation/backlog_layers.md`
+14. `app/docs/planning/current/final_system/automation/subagent_parallelism_contract.md`
+15. `app/docs/planning/current/final_system/automation/codex_tooling_contract.md`
+16. `app/docs/planning/current/final_system/automation/live_activation_preflight_contract.md`
+17. `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
+18. `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
+19. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_contract.md`
+20. `app/docs/planning/current/final_system/automation/global_portfolio_explorer_prompt.md`
+21. `app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md`
+22. `app/docs/planning/current/final_system/architecture/current_architecture_and_degradation_map.md`
+23. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
+24. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
+25. `app/docs/planning/current/final_system/backlog/live_runtime_scope_map_2026-05-24.md`
+26. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+27. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
