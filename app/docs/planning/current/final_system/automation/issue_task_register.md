@@ -48,8 +48,9 @@ Update this register only when task decomposition, next executable step, blocker
 
 | Task id | Issue | Status | Owner lane | Next executable step | Evidence / blocker |
 |---|---:|---|---|---|---|
-| JIT-62-01 | #62 | active | janus-master-dev | Finish the 2026-05-24 WNBA live monitor through final state; capture final score/clock, event-scoped CLOB inventory, intents, blockers, and direct flatness/order proof. | WNBA scoped games were already final by the 2026-05-25T01Z manual validation window; no live WNBA order could still be executed. Carry forward as a pre-start worker/adoption timing fix, not an LLM/fallback blocker. |
+| JIT-62-01 | #62 | done | janus-master-dev | Final-state WNBA live-monitor evidence captured; keep #62 open for the first controlled WNBA fill-confirmed minimum-size lifecycle. | Commit `c6029a5` added `app/docs/reference/postgame_evaluation_2026-05-24_wnba_live_gap.md`: all three scoped WNBA events ended flat with no positions, no orders, no direct trades, `pending_intents=0`, and final `orderbook_spread_required` blockers. |
 | JIT-61-01 | #61 | active | janus-master-dev | Keep NBA OKC/SAS under app-owned live worker through final/protect-only phases; validate, commit/push, split, or exactly block any dirty live-target follow-up patch before unrelated implementation. | 2026-05-25T01Z manual validation fixed stale pending-intent expiry and strategy-owned target protection, then live worker executed 10 Thunder shares at 0.22 and submitted sell targets. The 2026-05-25T02:45Z manager pass found an unowned dirty follow-up patch in live target-basis/tick-size code and tests; route it to #61 cleanup, not a passive blocker. |
+| JIT-62-02 | #62 | ready | janus-master-dev | Implement `wnba_controlled_min_size_entry_v1` and tests against the three 2026-05-24 WNBA StrategyPlans. | Next slice from `postgame_evaluation_2026-05-24_wnba_live_gap.md`: when ordinary grid mode blocks on spread, controlled-fill mode may emit at most one bounded WNBA order candidate if all non-liquidity gates are green. |
 
 ### Immediate Post-Live Development Stack
 
@@ -88,11 +89,12 @@ Update this register only when task decomposition, next executable step, blocker
 
 When the current live window is no longer active, work should proceed in this order unless fresh runtime evidence changes priorities:
 
-1. Use JIT-70-01 evidence to implement JIT-68-01 deterministic fallback / score-gap normalization.
-2. Implement JIT-65-01 signal schema/persistence.
-3. Implement JIT-66-01 aggregation arbitration.
-4. Validate JIT-67-01 sleeve/risk transitions.
-5. Implement JIT-69-01 runtime event-control endpoints.
-6. Use JIT-71-01 project-chief review to score results and update this register.
+1. Implement JIT-62-02 WNBA controlled minimum-size entry fallback while #62 remains open.
+2. Use JIT-70-01 evidence to route replay/config work from the NBA/WNBA postgame docs.
+3. Implement JIT-65-01 signal schema/persistence.
+4. Implement JIT-66-01 aggregation arbitration.
+5. Validate JIT-67-01 sleeve/risk transitions.
+6. Implement JIT-69-01 runtime event-control endpoints.
+7. Use JIT-71-01 project-chief review to score results and update this register.
 
 Portfolio and future-domain tasks should not preempt this stack unless they expose a direct live-money safety issue.
