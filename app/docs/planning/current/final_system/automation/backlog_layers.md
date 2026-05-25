@@ -102,7 +102,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | P0 | Planned/sprint | Implement live signal schema and persistence. |
 | [#66](https://github.com/LucaCGN/janus_cortex/issues/66) | P0 | Planned/sprint | Build signal aggregation arbitration and blocker artifacts. |
 | [#67](https://github.com/LucaCGN/janus_cortex/issues/67) | P0 | Planned/sprint | Implement event risk budget and sleeve manager. |
-| [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Planned/sprint | Preserve deterministic fallback when pregame or LLM inputs fail. |
+| [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Closed foundation | Deterministic fallback/degraded-mode behavior implemented and live-validated; future regressions should open a focused #63 child follow-up instead of reopening this slice. |
 | [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Planned backlog | Add runtime control endpoints for event config and signal toggles. |
 | [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P1 | Planned backlog | Add postgame signal performance review and missed-signal replay. |
 | [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Planned backlog | Add project-chief performance review and development-planning automation for daily return-focused system improvement. |
