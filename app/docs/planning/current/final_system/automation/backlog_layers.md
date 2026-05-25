@@ -95,7 +95,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#53](https://github.com/LucaCGN/janus_cortex/issues/53) | P0 | Closed foundation | Codex tooling split and preview-first Polymarket fallback base implemented. |
 | [#54](https://github.com/LucaCGN/janus_cortex/issues/54) | P0 | Closed foundation | Approved global portfolio execution gate proof, concrete Janus order-management adapter, runtime activation guard, risk/rate evidence, ledger finalization, confirmation-id handling, and idempotency replay hardening implemented. |
 | [#59](https://github.com/LucaCGN/janus_cortex/issues/59) | P0 | Closed foundation | Portfolio-manager real-call reconciliation proof completed; future activation drift or expansion needs a new focused issue. |
-| [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | Closed foundation | Next NBA playoff min-size live test executed through Janus gates during the 2026-05-24 OKC/SAS window; remaining lessons route to #63/#70/#55 follow-up tasks. |
+| [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | Closed foundation | Next NBA playoff min-size live test executed through Janus gates during the 2026-05-24 OKC/SAS window; remaining lessons route to #63/#70 follow-up tasks using closed #55 entry-timing evidence where relevant. |
 | [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | Active/sprint | Validate the next WNBA controlled min-size live lifecycle with the implemented WNBA StrategyPlan fallback, direct CLOB evidence, worker heartbeat, and post-call reconciliation. |
 | [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | Active/sprint | Build the independent Janus covered-market live trading runtime and signal aggregation system so pregame Codex/LLM availability is not a liveness dependency. |
 | [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | P0 | Closed foundation | Normalized NBA/WNBA live snapshot review and live-tick runtime adoption implemented in `340db2f` and `e87515f`; future HTTP/readback adoption needs a focused follow-up if #63 requires it. |
@@ -105,7 +105,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | P0 | Closed foundation | Deterministic fallback/degraded-mode behavior implemented and live-validated; future regressions should open a focused #63 child follow-up instead of reopening this slice. |
 | [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | P1 | Closed foundation | Runtime event-control endpoints for event config and signal toggles implemented in `a86818e`. |
 | [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | P1 | Planned/sprint | Add postgame signal performance review, missed-signal replay, no-bid/min-price quarantine, and replay-backed config recommendations. |
-| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Closed foundation | Project-chief performance review contract, deterministic artifact generator, and first daily review artifact implemented; future improvements should route through #70/#55/#69 recommendations or focused follow-up tasks. |
+| [#71](https://github.com/LucaCGN/janus_cortex/issues/71) | P1 | Closed foundation | Project-chief performance review contract, deterministic artifact generator, and first daily review artifact implemented; future improvements should route through #70/#69 recommendations, closed #55 evidence, or focused follow-up tasks. |
 | [#72](https://github.com/LucaCGN/janus_cortex/issues/72) | P1 | Planned backlog | Formalize NBA/WNBA pregame research agents as optional priors with expiry and no liveness dependency. |
 | [#73](https://github.com/LucaCGN/janus_cortex/issues/73) | P1 | Planned/sprint | Harden issue lifecycle anti-stagnation and closure governance for repeated comments, stale blockers, oversized issues, and missing validation/closure. |
 | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | P2 | Planned backlog | Repair Obsidian-to-backlog ingestion and curation workflow so notes become bounded issue candidates rather than execution authority. |
@@ -116,7 +116,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | Closed foundation | WNBA passive/shadow baseline and blocker report published. Remaining active-window WNBA capture/audit work split to #60. |
 | [#60](https://github.com/LucaCGN/janus_cortex/issues/60) | P1 | Closed foundation | Sustained WNBA active-window passive CLOB capture and audit integration completed; remaining WNBA live-promotion blockers require follow-up scope. |
-| [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | Research backlog | Compare NBA/WNBA pregame, immediate-live, post-Q1, and post-Q1-stability entry timing with fillability and event-start cancellation effects; feeds #63/#70/#69 guidance but is not a live execution checklist. |
+| [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | Closed research foundation | NBA/WNBA pregame, first-live, post-Q1, and post-Q1-stability entry timing research completed with replay matrix, event-control recommendation pack, and StrategyPlan template guidance. Future runtime adoption routes to #62/#63/#70/#69. |
 | [#56](https://github.com/LucaCGN/janus_cortex/issues/56) | P1 | Closed foundation | Active portfolio-manager action planning, frontend/profile discovery enforcement, one-shot portfolio order routing, approved global portfolio 1c grid service spawn proof, cross-league basketball scanner, and 20-slot governance completed. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | Planned backlog | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | Idea/planned backlog | Incubate crypto up/down options research and backtest lane. |
@@ -149,8 +149,8 @@ Routing rules:
 
 | Issue family | Routing under `#63` |
 |---|---|
-| `#61/#62` | Keep #62 as the active WNBA live-validation route. #61 is the completed NBA live-test foundation; future NBA runtime gaps should use #63/#70/#55 focused tasks instead of reopening #61. |
-| `#55` | Keep as research/backtest evidence feeding signal confidence and timing config. |
+| `#61/#62` | Keep #62 as the active WNBA live-validation route. #61 is the completed NBA live-test foundation; future NBA runtime gaps should use #63/#70 focused tasks and closed #55 evidence instead of reopening #61. |
+| `#55` | Closed research/backtest evidence feeding signal confidence and timing config; use #62/#63/#70/#69 for future runtime adoption or calibration. |
 | `#42/#44` | Keep as support for exchange minimums, order exceptions, risk budget, and bankroll scaling. |
 | `#56/#59` | Closed Codex global portfolio-manager foundations. Do not use them as Janus NBA/WNBA live-runtime owners or as open umbrellas for future status comments; create focused follow-up issues for new portfolio drift or expansion. |
 | `#46/#47/#48` | Keep as profile/future-domain incubation, not covered-market live authority. |
