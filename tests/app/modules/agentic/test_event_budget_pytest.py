@@ -3,6 +3,7 @@ from __future__ import annotations
 from app.modules.agentic.event_budget import (
     EventRiskBudgetPolicy,
     SleeveTransitionRequest,
+    build_event_risk_budget_policy,
     derive_event_risk_budget,
     evaluate_event_sleeve_transitions,
 )
@@ -251,3 +252,108 @@ def test_custom_side_and_phase_budget_blocks_without_global_budget_exhaustion_py
     assert decision.status == "blocked"
     assert decision.reason_codes == ["side_budget_exceeded", "phase_budget_exceeded"]
     assert decision.remaining_notional_usd_after == 10.0
+
+
+def test_development_risk_mode_uses_percentage_plus_nominal_cap_pytest() -> None:
+    policy = build_event_risk_budget_policy("development")
+    high_cash = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=300.0,
+        available_cash_usd=200.0,
+        policy=policy,
+    )
+    lower_cash = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=50.0,
+        available_cash_usd=20.0,
+        policy=policy,
+    )
+
+    assert policy.risk_mode == "development"
+    assert policy.max_concurrent_events == 5
+    assert policy.max_active_cycles == 4
+    assert high_cash.event_cap_usd == 10.0
+    assert lower_cash.event_cap_usd == 4.0
+
+
+def test_risk_modes_calibrate_validation_development_and_production_caps_pytest() -> None:
+    validation = build_event_risk_budget_policy("validation")
+    development = build_event_risk_budget_policy("development")
+    production = build_event_risk_budget_policy("production")
+
+    assert validation.absolute_event_cap_usd < development.absolute_event_cap_usd
+    assert production.event_cap_pct < development.event_cap_pct
+    assert validation.max_active_cycles < development.max_active_cycles
+    assert production.min_expected_edge_after_slippage_cents > development.min_expected_edge_after_slippage_cents
+
+
+def test_same_side_exposure_cap_is_local_not_global_pytest() -> None:
+    budget = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=200.0,
+        available_cash_usd=100.0,
+        policy=EventRiskBudgetPolicy(
+            absolute_event_cap_usd=10.0,
+            max_same_side_exposure_pct=0.50,
+        ),
+    )
+
+    bundle = evaluate_event_sleeve_transitions(
+        event_id=EVENT_ID,
+        budget=budget,
+        sleeves=[
+            SleeveTransitionRequest(
+                sleeve_id="okc-grid",
+                sleeve_role="grid_scalp",
+                action="buy",
+                side="Thunder",
+                requested_shares=5,
+                max_price=0.25,
+                side_used_notional_usd=4.0,
+            ),
+            SleeveTransitionRequest(
+                sleeve_id="sas-grid",
+                sleeve_role="grid_scalp",
+                action="buy",
+                side="Spurs",
+                requested_shares=5,
+                max_price=0.20,
+                side_used_notional_usd=0.0,
+            ),
+        ],
+    )
+
+    decisions = {decision.sleeve_id: decision for decision in bundle.decisions}
+    assert budget.side_budget_caps_usd == {"default": 5.0}
+    assert decisions["okc-grid"].status == "blocked"
+    assert decisions["okc-grid"].reason_codes == ["side_budget_exceeded"]
+    assert decisions["sas-grid"].status == "intent_candidate"
+    assert decisions["sas-grid"].remaining_notional_usd_after == 9.0
+
+
+def test_max_active_cycles_blocks_duplicate_cycle_expansion_pytest() -> None:
+    budget = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=200.0,
+        available_cash_usd=100.0,
+        policy=EventRiskBudgetPolicy(absolute_event_cap_usd=10.0, max_active_cycles=2),
+    )
+    bundle = evaluate_event_sleeve_transitions(
+        event_id=EVENT_ID,
+        budget=budget,
+        sleeves=[
+            SleeveTransitionRequest(
+                sleeve_id="okc-grid",
+                sleeve_role="grid_scalp",
+                action="buy",
+                side="Thunder",
+                requested_shares=5,
+                max_price=0.20,
+                active_cycle_count=2,
+            ),
+        ],
+    )
+
+    decision = bundle.decisions[0]
+    assert decision.status == "blocked"
+    assert decision.reason_codes == ["max_active_cycles_reached"]

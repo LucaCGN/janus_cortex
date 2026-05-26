@@ -17,17 +17,56 @@ SideBudgetMode = Literal[
     "custom",
 ]
 PhaseBudgetMode = Literal["none", "active_phase_only", "custom"]
+RiskMode = Literal["validation", "development", "production"]
+
+
+_RISK_MODE_DEFAULTS: dict[RiskMode, dict[str, object]] = {
+    "validation": {
+        "event_cap_pct": 0.03,
+        "cash_cap_pct": 0.10,
+        "absolute_event_cap_usd": 5.0,
+        "max_concurrent_events": 2,
+        "max_active_cycles": 1,
+        "max_same_side_exposure_pct": 0.60,
+        "min_expected_edge_after_slippage_cents": 1.0,
+        "default_sleeve_budget_pct": 0.50,
+    },
+    "development": {
+        "event_cap_pct": 0.10,
+        "cash_cap_pct": 0.20,
+        "absolute_event_cap_usd": 10.0,
+        "max_concurrent_events": 5,
+        "max_active_cycles": 4,
+        "max_same_side_exposure_pct": 0.70,
+        "min_expected_edge_after_slippage_cents": 0.2,
+        "default_sleeve_budget_pct": 0.50,
+    },
+    "production": {
+        "event_cap_pct": 0.02,
+        "cash_cap_pct": 0.05,
+        "absolute_event_cap_usd": 5.0,
+        "max_concurrent_events": 3,
+        "max_active_cycles": 2,
+        "max_same_side_exposure_pct": 0.55,
+        "min_expected_edge_after_slippage_cents": 1.5,
+        "default_sleeve_budget_pct": 0.35,
+    },
+}
 
 
 class EventRiskBudgetPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    risk_mode: RiskMode = "development"
     event_cap_pct: float = Field(default=0.10, ge=0.0, le=1.0)
     cash_cap_pct: float = Field(default=0.20, ge=0.0, le=1.0)
     absolute_event_cap_usd: float = Field(default=10.0, ge=0.0)
     max_concurrent_events: int = Field(default=5, ge=1)
+    max_active_cycles: int = Field(default=4, ge=0)
     max_grid_leg_shares: float = Field(default=5.0, ge=0.0)
     core_hold_shares: float = Field(default=5.0, ge=0.0)
+    max_same_side_exposure_pct: float = Field(default=1.0, ge=0.0, le=1.0)
+    min_expected_edge_after_slippage_cents: float = Field(default=0.0, ge=0.0)
     side_budget_mode: SideBudgetMode = "none"
     side_budget_pct: dict[str, float] = Field(default_factory=dict)
     phase_budget_mode: PhaseBudgetMode = "none"
@@ -76,7 +115,18 @@ class SleeveTransitionRequest(BaseModel):
     side_used_notional_usd: float = Field(default=0.0, ge=0.0)
     phase_used_notional_usd: float = Field(default=0.0, ge=0.0)
     sleeve_used_notional_usd: float = Field(default=0.0, ge=0.0)
+    active_cycle_count: int = Field(default=0, ge=0)
     enabled: bool = True
+
+
+def build_event_risk_budget_policy(
+    risk_mode: RiskMode = "development",
+    **overrides: object,
+) -> EventRiskBudgetPolicy:
+    defaults = dict(_RISK_MODE_DEFAULTS[risk_mode])
+    defaults["risk_mode"] = risk_mode
+    defaults.update({key: value for key, value in overrides.items() if value is not None})
+    return EventRiskBudgetPolicy(**defaults)
 
 
 class SleeveTransitionDecision(BaseModel):
@@ -279,6 +329,8 @@ def _buy_blockers(
         blockers.append("duplicate_pending_exposure")
     if sleeve.existing_position_shares > 0.0 and sleeve.action == "buy":
         blockers.append("duplicate_open_position")
+    if budget.policy.max_active_cycles > 0 and sleeve.active_cycle_count >= budget.policy.max_active_cycles:
+        blockers.append("max_active_cycles_reached")
     if sleeve.action == "rebuy" and sleeve.target_coverage_shares < sleeve.existing_position_shares:
         blockers.append("rebuy_requires_existing_position_covered")
     if requested_notional > remaining:
@@ -348,6 +400,8 @@ def _side_budget_caps(policy: EventRiskBudgetPolicy, event_cap: float) -> dict[s
     caps = _pct_caps(policy.side_budget_pct, event_cap)
     if policy.side_budget_mode == "balanced_50_50" and not caps:
         return {"side_a": round(event_cap * 0.5, 6), "side_b": round(event_cap * 0.5, 6)}
+    if policy.max_same_side_exposure_pct < 1.0:
+        caps["default"] = round(event_cap * policy.max_same_side_exposure_pct, 6)
     return caps
 
 
@@ -414,13 +468,15 @@ def _decrement_local_remaining(values: dict[str, float | None], requested_notion
 
 
 def _cap_for_side(budget: EventRiskBudgetSnapshot, side_key: str) -> float | None:
-    if not side_key or budget.policy.side_budget_mode == "none":
+    if not side_key:
         return None
     caps = budget.side_budget_caps_usd
     if side_key in caps:
         return caps[side_key]
     if budget.policy.side_budget_mode == "balanced_50_50":
         return round(budget.event_cap_usd * 0.5, 6)
+    if "default" in caps:
+        return caps["default"]
     return None
 
 
@@ -465,12 +521,14 @@ __all__ = [
     "EventRiskBudgetPolicy",
     "EventRiskBudgetSnapshot",
     "EventSleeveTransitionBundle",
+    "RiskMode",
     "SleeveAction",
     "SideBudgetMode",
     "PhaseBudgetMode",
     "SleeveTransitionDecision",
     "SleeveTransitionRequest",
     "SleeveTransitionStatus",
+    "build_event_risk_budget_policy",
     "derive_event_risk_budget",
     "evaluate_event_sleeve_transitions",
 ]

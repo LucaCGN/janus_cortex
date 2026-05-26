@@ -222,6 +222,27 @@ Required behavior:
 
 This is the behavior required for 1c-3c interval trading: the system should place or recommend the opposite leg as soon as a fill is detected, then wait for that opposite leg to resolve before adding the next linked exposure.
 
+## Risk Mode Budget Ladder
+
+Sports-live budgets are policy-derived, not fixed nominal constants. The current `$10/game` development target is expressed as the minimum of portfolio percentage, cash percentage, and nominal cap so it naturally shrinks when available cash falls and can grow only after the policy is deliberately raised.
+
+Canonical modes:
+
+| Mode | Purpose | Event cap | Active cycle posture |
+|---|---|---|---|
+| `validation` | Controlled minimum-size live verification. | `min(3% portfolio, 10% cash, $5)` | One active cycle, stricter expected edge. |
+| `development` | Today's learning/live-testing money profile. | `min(10% portfolio, 20% cash, $10)` | Up to four active cycles and up to five concurrent events, with sleeve/side caps still local. |
+| `production` | Conservative deployed-money profile. | `min(2% portfolio, 5% cash, $5)` | Fewer cycles and higher expected edge threshold. |
+
+Mode policy lives in `app/modules/agentic/event_budget.py` via `build_event_risk_budget_policy`. Every live StrategyPlan or worker tick may override a cap only by persisting the override in event controls or StrategyPlan metadata. Chat text, screenshots, or stale pregame priors do not change the risk mode.
+
+Risk caps are local unless they are true safety gates:
+
+- global blockers: kill switch, stale direct CLOB truth, missing token mapping, and exhausted event budget;
+- local blockers: side cap, phase cap, sleeve cap, same-side exposure cap, and max active cycles for that sleeve/cycle family.
+
+This keeps one blocked side, phase, or sleeve from suppressing unrelated sleeves. It also allows future postgame optimization to test `50/50`, favorite-heavy, underdog-heavy, one-sided, delayed, or phase-specific budget splits without changing the execution boundary.
+
 ## Postgame Feedback
 
 Every live event should persist:
