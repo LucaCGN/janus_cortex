@@ -2134,6 +2134,36 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
             "heartbeat_event_ids": [event_id],
         },
     )
+    monkeypatch.setattr(
+        ops_router,
+        "_read_postgame_replay_tick_stream_summary",
+        lambda *, day, event_id: {
+            "schema_version": "postgame_replay_tick_stream_summary_v1",
+            "status": "recorded",
+            "event_id": event_id,
+            "path": "local/shared/artifacts/live-strategy-worker/2026-05-10/ticks.jsonl",
+            "source_confidence": "runtime_artifact",
+            "tick_count": 2,
+            "intent_count": 1,
+            "executed_order_count": 0,
+            "order_intent_candidate_count": 1,
+            "decision_type_counts": {"candidate": 2},
+            "blocker_reason_counts": {"scoreboard_freshness_required": 1},
+            "sleeves": {
+                "grid-1": {
+                    "sleeve_id": "grid-1",
+                    "strategy_id": "grid-1",
+                    "sleeve_role": "grid_scalp",
+                    "sleeve_side": "Knicks",
+                    "strategy_family": "price_stability_micro_grid",
+                    "tick_count": 2,
+                    "intent_count": 1,
+                    "blocker_count": 1,
+                    "blocker_reasons": ["scoreboard_freshness_required"],
+                }
+            },
+        },
+    )
 
     client = TestClient(create_app())
     client.app.dependency_overrides[get_db_connection] = fake_db_connection
@@ -2184,15 +2214,21 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     assert realized["items"][0]["account_pnl"]["known_cashflow_usd"] == 0.8
     assert realized["items"][0]["market_tape"]["account_pnl_eligible"] is False
     assert realized["items"][0]["market_tape"]["event_scoped_trade_count"] == 1
-    assert evaluation["replay_modes"]["sleeve_isolated"]["status"] == "pending_implementation"
-    assert evaluation["replay_modes"]["aggregate_replay"]["status"] == "pending_implementation"
-    assert evaluation["replay_modes"]["leave_one_out"]["status"] == "pending_implementation"
+    assert evaluation["replay_input"]["same_tick_stream_for_all_modes"] is True
+    assert evaluation["replay_input"]["events"]["nba-sas-min-2026-05-10"]["tick_count"] == 2
+    assert evaluation["replay_modes"]["sleeve_isolated"]["status"] == "input_ready"
+    assert evaluation["replay_modes"]["sleeve_isolated"]["sleeve_count"] == 1
+    assert evaluation["replay_modes"]["aggregate_replay"]["status"] == "input_ready"
+    assert evaluation["replay_modes"]["aggregate_replay"]["aggregate"]["order_intent_candidate_count"] == 1
+    assert evaluation["replay_modes"]["leave_one_out"]["status"] == "input_ready"
+    assert evaluation["replay_modes"]["leave_one_out"]["excluded_sleeve_count"] == 1
     assert "portfolio_pnl_attribution" in Path(payload["path"]).read_text(encoding="utf-8")
     assert "postgame_evaluation" in Path(payload["path"]).read_text(encoding="utf-8")
 
 
 def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> None:
     evaluation = ops_router._build_postgame_evaluation(
+        day=None,
         reviewed_event_ids=["wnba-conn-gsv-2026-05-25"],
         strategy_plan_gate={"status": "ready", "ready": True},
         postgame_live_evidence={"status": "live_evidence_present"},
@@ -2241,6 +2277,64 @@ def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> No
         "realized_return",
         "all_account_performance",
     ]
+
+
+def test_postgame_replay_tick_stream_summary_reads_same_event_stream_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    tick_root = local_root / "shared" / "artifacts" / "live-strategy-worker" / "2026-05-25"
+    tick_root.mkdir(parents=True)
+    tick = {
+        "started_at_utc": "2026-05-25T22:00:00Z",
+        "finished_at_utc": "2026-05-25T22:00:01Z",
+        "stdout": {
+            "events": [
+                {"event_id": "other-event"},
+                {
+                    "event_id": "wnba-conn-gsv-2026-05-25",
+                    "live_execution": {
+                        "intent_count": 2,
+                        "executed_orders": [{"order_id": "order-1"}],
+                        "blockers": [{"reason": "scoreboard_freshness_required"}],
+                        "sleeve_states": [
+                            {
+                                "sleeve_id": "gsv-grid",
+                                "strategy_id": "gsv-grid",
+                                "sleeve_role": "grid_scalp",
+                                "sleeve_side": "Golden State Valkyries",
+                                "strategy_family": "price_stability_micro_grid",
+                                "intent_count": 2,
+                                "blocker_count": 1,
+                                "blocker_reasons": ["scoreboard_freshness_required"],
+                            }
+                        ],
+                    },
+                    "live_signal_aggregation": {
+                        "decision": {
+                            "decision_type": "candidate",
+                            "order_intent_candidates": [{"intent_id": "intent-1"}],
+                        }
+                    },
+                },
+            ]
+        },
+    }
+    (tick_root / "ticks.jsonl").write_text(json.dumps(tick) + "\n", encoding="utf-8")
+
+    summary = ops_router._read_postgame_replay_tick_stream_summary(
+        day="2026-05-25",
+        event_id="wnba-conn-gsv-2026-05-25",
+    )
+
+    assert summary["status"] == "recorded"
+    assert summary["tick_count"] == 1
+    assert summary["intent_count"] == 2
+    assert summary["executed_order_count"] == 1
+    assert summary["order_intent_candidate_count"] == 1
+    assert summary["decision_type_counts"] == {"candidate": 1}
+    assert summary["blocker_reason_counts"] == {"scoreboard_freshness_required": 1}
+    assert summary["sleeves"]["gsv-grid"]["intent_count"] == 2
+    assert summary["sleeves"]["gsv-grid"]["blocker_reasons"] == ["scoreboard_freshness_required"]
 
 
 def test_postgame_review_flags_not_actually_live_tested_pytest(tmp_path, monkeypatch) -> None:

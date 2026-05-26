@@ -270,6 +270,7 @@ def run_ops_postgame_review(
         day=payload.session_date,
     )
     postgame_evaluation = _build_postgame_evaluation(
+        day=payload.session_date,
         reviewed_event_ids=reviewed_event_ids,
         strategy_plan_gate=strategy_plan_gate,
         postgame_live_evidence=postgame_live_evidence,
@@ -1388,6 +1389,7 @@ def _build_postgame_portfolio_pnl_attribution(
 
 def _build_postgame_evaluation(
     *,
+    day: str | None,
     reviewed_event_ids: list[str],
     strategy_plan_gate: dict[str, Any],
     postgame_live_evidence: dict[str, Any],
@@ -1403,6 +1405,10 @@ def _build_postgame_evaluation(
     ]
     pnl_status = str(portfolio_pnl_attribution.get("status") or "not_requested")
     live_status = str(postgame_live_evidence.get("status") or "unknown")
+    replay_inputs = {
+        event_id: _read_postgame_replay_tick_stream_summary(day=day, event_id=event_id)
+        for event_id in reviewed_event_ids
+    }
     if not reviewed_event_ids:
         status_text = "not_requested"
     elif pnl_status == "ready" and not unresolved:
@@ -1442,18 +1448,28 @@ def _build_postgame_evaluation(
                 "items": realized_items,
             },
             "replay_modes": {
-                "sleeve_isolated": _pending_postgame_replay_mode(
+                "sleeve_isolated": _build_postgame_replay_mode(
                     "sleeve_isolated",
                     "Run each sleeve alone with the same event budget and simulated fills from recorded direct CLOB prices.",
+                    replay_inputs=replay_inputs,
                 ),
-                "aggregate_replay": _pending_postgame_replay_mode(
+                "aggregate_replay": _build_postgame_replay_mode(
                     "aggregate_replay",
                     "Run all sleeves together through the current aggregator, risk, budget, and dedupe rules.",
+                    replay_inputs=replay_inputs,
                 ),
-                "leave_one_out": _pending_postgame_replay_mode(
+                "leave_one_out": _build_postgame_replay_mode(
                     "leave_one_out",
                     "Run aggregate replay minus one sleeve to measure marginal sleeve value.",
+                    replay_inputs=replay_inputs,
                 ),
+            },
+            "replay_input": {
+                "schema_version": "postgame_replay_input_v1",
+                "source_confidence": "runtime_artifact",
+                "same_tick_stream_for_all_modes": True,
+                "event_count": len(replay_inputs),
+                "events": replay_inputs,
             },
             "market_tape_policy": {
                 "source_confidence": "clob_market_tape",
@@ -1507,14 +1523,113 @@ def _postgame_evaluation_source_authority() -> list[dict[str, Any]]:
     ]
 
 
-def _pending_postgame_replay_mode(mode: str, description: str) -> dict[str, Any]:
-    return {
+def _build_postgame_replay_mode(
+    mode: str,
+    description: str,
+    *,
+    replay_inputs: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    recorded_inputs = [item for item in replay_inputs.values() if item.get("status") == "recorded"]
+    sleeve_rows = _postgame_replay_mode_sleeve_rows(replay_inputs)
+    status_text = "input_ready" if recorded_inputs else "input_missing"
+    base = {
         "schema_version": "postgame_replay_mode_status_v1",
         "mode": mode,
-        "status": "pending_implementation",
-        "source_confidence": "inferred",
+        "status": status_text,
+        "source_confidence": "runtime_artifact" if recorded_inputs else "inferred",
         "description": description,
         "account_pnl_eligible": False,
+        "same_tick_stream_for_all_modes": True,
+        "event_count": len(replay_inputs),
+        "recorded_event_count": len(recorded_inputs),
+        "simulation_status": "pending_fill_simulation",
+    }
+    if mode == "sleeve_isolated":
+        return {
+            **base,
+            "sleeve_count": len(sleeve_rows),
+            "sleeves": sleeve_rows,
+        }
+    if mode == "aggregate_replay":
+        return {
+            **base,
+            "aggregate": _postgame_replay_mode_aggregate(replay_inputs),
+        }
+    if mode == "leave_one_out":
+        return {
+            **base,
+            "excluded_sleeve_count": len(sleeve_rows),
+            "leave_one_out_rows": [
+                {
+                    "event_id": row.get("event_id"),
+                    "excluded_sleeve_id": row.get("sleeve_id"),
+                    "excluded_strategy_id": row.get("strategy_id"),
+                    "sleeve_role": row.get("sleeve_role"),
+                    "status": "pending_fill_simulation",
+                    "input_tick_count": row.get("tick_count"),
+                    "marginal_value_usd": None,
+                    "marginal_value_source_confidence": "inferred",
+                }
+                for row in sleeve_rows
+            ],
+        }
+    return {
+        **base,
+        "status": "unknown_mode",
+    }
+
+
+def _postgame_replay_mode_sleeve_rows(replay_inputs: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for event_id, summary in replay_inputs.items():
+        for sleeve_id, sleeve in (summary.get("sleeves") or {}).items():
+            if not isinstance(sleeve, dict):
+                continue
+            rows.append(
+                {
+                    "event_id": event_id,
+                    "sleeve_id": sleeve_id,
+                    "strategy_id": sleeve.get("strategy_id"),
+                    "sleeve_role": sleeve.get("sleeve_role"),
+                    "sleeve_side": sleeve.get("sleeve_side"),
+                    "strategy_family": sleeve.get("strategy_family"),
+                    "tick_count": sleeve.get("tick_count"),
+                    "intent_count": sleeve.get("intent_count"),
+                    "blocker_count": sleeve.get("blocker_count"),
+                    "blocker_reasons": sleeve.get("blocker_reasons") or [],
+                    "simulated_pnl_usd": None,
+                    "simulation_status": "pending_fill_simulation",
+                    "source_confidence": "runtime_artifact",
+                }
+            )
+    return rows
+
+
+def _postgame_replay_mode_aggregate(replay_inputs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    blocker_counts: dict[str, int] = {}
+    decision_counts: dict[str, int] = {}
+    tick_count = 0
+    intent_count = 0
+    executed_order_count = 0
+    order_intent_candidate_count = 0
+    for summary in replay_inputs.values():
+        tick_count += _safe_int(summary.get("tick_count"))
+        intent_count += _safe_int(summary.get("intent_count"))
+        executed_order_count += _safe_int(summary.get("executed_order_count"))
+        order_intent_candidate_count += _safe_int(summary.get("order_intent_candidate_count"))
+        for key, count in (summary.get("blocker_reason_counts") or {}).items():
+            blocker_counts[str(key)] = blocker_counts.get(str(key), 0) + _safe_int(count)
+        for key, count in (summary.get("decision_type_counts") or {}).items():
+            decision_counts[str(key)] = decision_counts.get(str(key), 0) + _safe_int(count)
+    return {
+        "tick_count": tick_count,
+        "intent_count": intent_count,
+        "executed_order_count": executed_order_count,
+        "order_intent_candidate_count": order_intent_candidate_count,
+        "blocker_reason_counts": dict(sorted(blocker_counts.items())),
+        "decision_type_counts": dict(sorted(decision_counts.items())),
+        "simulated_pnl_usd": None,
+        "simulation_status": "pending_fill_simulation",
     }
 
 
@@ -1577,6 +1692,144 @@ def _build_postgame_realized_live_item(item: dict[str, Any]) -> dict[str, Any]:
         },
         "unresolved_evidence": unresolved,
     }
+
+
+def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str) -> dict[str, Any]:
+    if not day:
+        return {
+            "schema_version": "postgame_replay_tick_stream_summary_v1",
+            "status": "not_checked",
+            "reason": "session_date_missing",
+            "event_id": event_id,
+            "tick_count": 0,
+            "source_confidence": "inferred",
+        }
+    root = ops_artifact_root(day).parent.parent / "live-strategy-worker" / day
+    ticks_path = root / "ticks.jsonl"
+    if not ticks_path.exists():
+        return {
+            "schema_version": "postgame_replay_tick_stream_summary_v1",
+            "status": "missing",
+            "reason": "ticks_jsonl_missing",
+            "event_id": event_id,
+            "path": str(ticks_path),
+            "tick_count": 0,
+            "source_confidence": "inferred",
+        }
+
+    summary = {
+        "schema_version": "postgame_replay_tick_stream_summary_v1",
+        "status": "recorded",
+        "event_id": event_id,
+        "path": str(ticks_path),
+        "source_confidence": "runtime_artifact",
+        "tick_count": 0,
+        "first_tick_at_utc": None,
+        "latest_tick_at_utc": None,
+        "intent_count": 0,
+        "executed_order_count": 0,
+        "order_intent_candidate_count": 0,
+        "decision_type_counts": {},
+        "blocker_reason_counts": {},
+        "sleeves": {},
+    }
+    try:
+        with ticks_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    tick = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                event_payload = _live_worker_tick_event_payload(tick, event_id=event_id)
+                if not event_payload:
+                    continue
+                _accumulate_postgame_replay_tick_summary(summary, tick=tick, event_payload=event_payload)
+    except OSError as exc:
+        return {
+            **summary,
+            "status": "error",
+            "error": str(exc),
+        }
+    if not summary["tick_count"]:
+        summary["status"] = "missing"
+        summary["reason"] = "event_not_found_in_tick_stream"
+        summary["source_confidence"] = "inferred"
+    summary["decision_type_counts"] = dict(sorted(summary["decision_type_counts"].items()))
+    summary["blocker_reason_counts"] = dict(sorted(summary["blocker_reason_counts"].items()))
+    summary["sleeves"] = dict(sorted(summary["sleeves"].items()))
+    return summary
+
+
+def _live_worker_tick_event_payload(tick: dict[str, Any], *, event_id: str) -> dict[str, Any] | None:
+    stdout = tick.get("stdout") if isinstance(tick.get("stdout"), dict) else {}
+    events = stdout.get("events") if isinstance(stdout.get("events"), list) else []
+    for event_payload in events:
+        if isinstance(event_payload, dict) and str(event_payload.get("event_id") or "") == event_id:
+            return event_payload
+    return None
+
+
+def _accumulate_postgame_replay_tick_summary(
+    summary: dict[str, Any],
+    *,
+    tick: dict[str, Any],
+    event_payload: dict[str, Any],
+) -> None:
+    summary["tick_count"] += 1
+    timestamp = tick.get("finished_at_utc") or tick.get("started_at_utc")
+    if timestamp and summary.get("first_tick_at_utc") is None:
+        summary["first_tick_at_utc"] = timestamp
+    if timestamp:
+        summary["latest_tick_at_utc"] = timestamp
+
+    live_execution = event_payload.get("live_execution") if isinstance(event_payload.get("live_execution"), dict) else {}
+    summary["intent_count"] += _safe_int(live_execution.get("intent_count"))
+    summary["executed_order_count"] += len(live_execution.get("executed_orders") or [])
+    for blocker in live_execution.get("blockers") or []:
+        if not isinstance(blocker, dict):
+            continue
+        reason = str(blocker.get("reason") or "unknown")
+        summary["blocker_reason_counts"][reason] = summary["blocker_reason_counts"].get(reason, 0) + 1
+
+    aggregation = (
+        event_payload.get("live_signal_aggregation")
+        if isinstance(event_payload.get("live_signal_aggregation"), dict)
+        else {}
+    )
+    decision = aggregation.get("decision") if isinstance(aggregation.get("decision"), dict) else {}
+    decision_type = str(decision.get("decision_type") or "unknown")
+    summary["decision_type_counts"][decision_type] = summary["decision_type_counts"].get(decision_type, 0) + 1
+    summary["order_intent_candidate_count"] += len(decision.get("order_intent_candidates") or [])
+
+    sleeve_states = live_execution.get("sleeve_states") or event_payload.get("sleeve_states") or []
+    for sleeve in sleeve_states:
+        if not isinstance(sleeve, dict):
+            continue
+        sleeve_id = str(sleeve.get("sleeve_id") or sleeve.get("strategy_id") or "").strip()
+        if not sleeve_id:
+            continue
+        row = summary["sleeves"].setdefault(
+            sleeve_id,
+            {
+                "sleeve_id": sleeve_id,
+                "strategy_id": sleeve.get("strategy_id"),
+                "sleeve_role": sleeve.get("sleeve_role"),
+                "sleeve_side": sleeve.get("sleeve_side"),
+                "strategy_family": sleeve.get("strategy_family"),
+                "tick_count": 0,
+                "intent_count": 0,
+                "blocker_count": 0,
+                "blocker_reasons": [],
+            },
+        )
+        row["tick_count"] += 1
+        row["intent_count"] += _safe_int(sleeve.get("intent_count"))
+        row["blocker_count"] += _safe_int(sleeve.get("blocker_count"))
+        blocker_reasons = row["blocker_reasons"]
+        for reason in sleeve.get("blocker_reasons") or []:
+            reason_text = str(reason)
+            if reason_text not in blocker_reasons:
+                blocker_reasons.append(reason_text)
 
 
 def _event_scoped_order_lifecycle_direct_context(
@@ -1793,6 +2046,7 @@ def _build_event_review_bundle(
         day=resolved_day,
     )
     postgame_evaluation = _build_postgame_evaluation(
+        day=resolved_day,
         reviewed_event_ids=[event_id],
         strategy_plan_gate={
             "status": "ready" if strategy_plan_versions.get("current_exists") else "review_required",
