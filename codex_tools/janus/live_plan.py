@@ -68,8 +68,15 @@ def build_live_strategy_plan_from_catalog(
     max_orderbook_age_seconds: float = 45.0,
     max_abs_score_gap: float = 18.0,
     min_clock_remaining_seconds: float = 60.0,
+    include_core_hold: bool = True,
     include_wnba_controlled_entry: bool = True,
     wnba_controlled_max_spread_cents: float = 6.0,
+    include_ultra_low_rebound: bool = False,
+    ultra_low_budget_usd: float = 2.0,
+    ultra_low_min_entry_price: float = 0.003,
+    ultra_low_max_entry_price: float = 0.05,
+    ultra_low_max_spread_cents: float = 1.0,
+    ultra_low_max_abs_score_gap: float = 35.0,
     valid_minutes: float = 960.0,
     generated_at_utc: datetime | None = None,
 ) -> dict[str, Any]:
@@ -104,6 +111,50 @@ def build_live_strategy_plan_from_catalog(
                     max_adverse_cents=3.0,
                 )
             )
+            if include_core_hold and total_shares - grid_leg_shares >= 5.0:
+                strategies.append(
+                    _build_strategy(
+                        event_id=event_id,
+                        market_id=market_id,
+                        outcome=item,
+                        shares=total_shares - grid_leg_shares,
+                        budget_usd=max_buy_notional_usd,
+                        family="core_hold_live_validation",
+                        sleeve_role="core_hold",
+                        min_entry_price=min_entry_price,
+                        max_entry_price=max_entry_price,
+                        max_spread_cents=max_spread_cents,
+                        max_scoreboard_age_seconds=max_scoreboard_age_seconds,
+                        max_orderbook_age_seconds=max_orderbook_age_seconds,
+                        max_abs_score_gap=max_abs_score_gap,
+                        min_clock_remaining_seconds=min_clock_remaining_seconds,
+                        target_cents=3.0,
+                        target_return_fraction=0.25,
+                        max_adverse_cents=5.0,
+                    )
+                )
+            if include_ultra_low_rebound:
+                strategies.append(
+                    _build_strategy(
+                        event_id=event_id,
+                        market_id=market_id,
+                        outcome=item,
+                        shares=grid_leg_shares,
+                        budget_usd=ultra_low_budget_usd,
+                        family="ultra_low_underdog_decimal_grid",
+                        sleeve_role="ultra_low_rebound",
+                        min_entry_price=ultra_low_min_entry_price,
+                        max_entry_price=ultra_low_max_entry_price,
+                        max_spread_cents=ultra_low_max_spread_cents,
+                        max_scoreboard_age_seconds=max_scoreboard_age_seconds,
+                        max_orderbook_age_seconds=max_orderbook_age_seconds,
+                        max_abs_score_gap=ultra_low_max_abs_score_gap,
+                        min_clock_remaining_seconds=min_clock_remaining_seconds,
+                        target_cents=0.3,
+                        target_return_fraction=0.50,
+                        max_adverse_cents=2.0,
+                    )
+                )
             if normalized_league == "wnba" and include_wnba_controlled_entry:
                 strategies.append(
                     _build_strategy(
@@ -173,7 +224,7 @@ def build_live_strategy_plan_from_catalog(
                 )
             )
         core_shares = total_shares - grid_shares
-        if core_shares >= 5.0:
+        if include_core_hold and core_shares >= 5.0:
             strategies.append(
                 _build_strategy(
                     event_id=event_id,
@@ -195,6 +246,28 @@ def build_live_strategy_plan_from_catalog(
                     max_adverse_cents=5.0,
                 )
             )
+        if include_ultra_low_rebound:
+            strategies.append(
+                _build_strategy(
+                    event_id=event_id,
+                    market_id=market_id,
+                    outcome=selected,
+                    shares=grid_leg_shares,
+                    budget_usd=ultra_low_budget_usd,
+                    family="ultra_low_underdog_decimal_grid",
+                    sleeve_role="ultra_low_rebound",
+                    min_entry_price=ultra_low_min_entry_price,
+                    max_entry_price=ultra_low_max_entry_price,
+                    max_spread_cents=ultra_low_max_spread_cents,
+                    max_scoreboard_age_seconds=max_scoreboard_age_seconds,
+                    max_orderbook_age_seconds=max_orderbook_age_seconds,
+                    max_abs_score_gap=ultra_low_max_abs_score_gap,
+                    min_clock_remaining_seconds=min_clock_remaining_seconds,
+                    target_cents=0.3,
+                    target_return_fraction=0.50,
+                    max_adverse_cents=2.0,
+                )
+            )
 
     plan = StrategyPlan(
         event_id=event_id,
@@ -211,7 +284,17 @@ def build_live_strategy_plan_from_catalog(
             "catalog_event_title": catalog_event.get("title"),
             "planning_mode": _normalize_mode(mode),
             "max_event_notional_usd": max_buy_notional_usd,
-            "minimum_parallel_sleeve": "5-share grid plus 5-share core when total_shares >= 10",
+            "minimum_parallel_sleeve": "5-share grid plus 5-share core when total_shares >= 10 and core_hold is enabled",
+            "core_hold_enabled": bool(include_core_hold),
+            "ultra_low_rebound_enabled": bool(include_ultra_low_rebound),
+            "ultra_low_rebound_policy": {
+                "status": "development_opt_in" if include_ultra_low_rebound else "disabled",
+                "min_price": ultra_low_min_entry_price,
+                "max_price": ultra_low_max_entry_price,
+                "max_spread_cents": ultra_low_max_spread_cents,
+                "max_abs_score_gap": ultra_low_max_abs_score_gap,
+                "budget_usd": ultra_low_budget_usd,
+            },
             "wnba_controlled_entry_fallback": bool(normalized_league == "wnba" and include_wnba_controlled_entry),
             "execution_boundary": "plan-only; Janus evaluate/execute/live-worker gates own all orders",
         },
@@ -297,6 +380,13 @@ def build_live_strategy_plan_with_api(args: Namespace) -> dict[str, Any]:
         min_clock_remaining_seconds=args.min_clock_remaining_seconds,
         include_wnba_controlled_entry=not args.disable_wnba_controlled_entry,
         wnba_controlled_max_spread_cents=args.wnba_controlled_max_spread_cents,
+        include_core_hold=not args.disable_core_hold,
+        include_ultra_low_rebound=args.enable_ultra_low_rebound,
+        ultra_low_budget_usd=args.ultra_low_budget_usd,
+        ultra_low_min_entry_price=args.ultra_low_min_entry_price,
+        ultra_low_max_entry_price=args.ultra_low_max_entry_price,
+        ultra_low_max_spread_cents=args.ultra_low_max_spread_cents,
+        ultra_low_max_abs_score_gap=args.ultra_low_max_abs_score_gap,
         valid_minutes=args.valid_minutes,
     )
     if args.output_path:
@@ -373,8 +463,15 @@ def build_live_plan_parser(description: str) -> ArgumentParser:
     parser.add_argument("--max-orderbook-age-seconds", type=float, default=45.0)
     parser.add_argument("--max-abs-score-gap", type=float, default=18.0)
     parser.add_argument("--min-clock-remaining-seconds", type=float, default=60.0)
+    parser.add_argument("--disable-core-hold", action="store_true")
     parser.add_argument("--disable-wnba-controlled-entry", action="store_true")
     parser.add_argument("--wnba-controlled-max-spread-cents", type=float, default=6.0)
+    parser.add_argument("--enable-ultra-low-rebound", action="store_true")
+    parser.add_argument("--ultra-low-budget-usd", type=float, default=2.0)
+    parser.add_argument("--ultra-low-min-entry-price", type=float, default=0.003)
+    parser.add_argument("--ultra-low-max-entry-price", type=float, default=0.05)
+    parser.add_argument("--ultra-low-max-spread-cents", type=float, default=1.0)
+    parser.add_argument("--ultra-low-max-abs-score-gap", type=float, default=35.0)
     parser.add_argument("--valid-minutes", type=float, default=960.0)
     parser.add_argument("--stream-enabled", action="store_true")
     parser.add_argument("--stream-sample-count", type=int, default=3)
@@ -411,6 +508,7 @@ def _build_strategy(
 ) -> ActiveStrategy:
     label = str(outcome.get("outcome_label") or "outcome").strip()
     slug = _slug(label)
+    is_ultra_low = family == "ultra_low_underdog_decimal_grid"
     return ActiveStrategy(
         strategy_id=f"{event_id}-{slug}-{sleeve_role}",
         family=family,
@@ -445,6 +543,15 @@ def _build_strategy(
             "reason": f"{sleeve_role}_controlled_live_test",
             **(
                 {
+                    "sizing_mode": "minimum_notional",
+                    "min_buy_notional_usd": 1.0,
+                    "ultra_low_development_opt_in": True,
+                }
+                if is_ultra_low
+                else {}
+            ),
+            **(
+                {
                     "controlled_entry_mode": "current_ask_fill_proof",
                     "controlled_entry_requires_grid_spread_blocker": True,
                     "fallback_after_family": "price_stability_micro_grid",
@@ -460,6 +567,14 @@ def _build_strategy(
             "target_policy": "micro_grid_scaled",
             "min_target_cents": target_cents,
             "target_return_fraction": target_return_fraction,
+            **(
+                {
+                    "min_target_price": 0.001,
+                    "target_tick_size": 0.001,
+                }
+                if is_ultra_low
+                else {}
+            ),
         },
         stop_rules={"max_adverse_cents": max_adverse_cents},
         revision_triggers=[

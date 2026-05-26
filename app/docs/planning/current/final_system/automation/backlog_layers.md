@@ -160,6 +160,8 @@ Routing rules:
 
 Implementation children created from `#63`: `#64` normalized live snapshots/feed parity, `#65` signal schema, `#66` aggregator arbitration, `#67` event budget/sleeves, `#68` deterministic fallback, `#69` runtime control endpoints, `#70` postgame signal-performance/replay/config review, `#77` paired microcycle evidence/readback, `#78` complete postgame evaluation/replay artifact, and `#79` sleeve portfolio/order-lifecycle promotion are closed foundations. New adoption, calibration, or regression work should use focused follow-up tasks instead of reopening closed children.
 
+2026-05-26 live-window adoption status: `#63/JIT-63-07` bootstrapped the current NBA StrategyPlan from the shared covered-market runtime with six sleeve participants for `nba-sas-okc-2026-05-26`: grid scalp, core hold, and opt-in ultra-low rebound for both outcomes. This is an adoption task, not a new architecture split; NBA/WNBA should continue to share the same StrategyPlan, live tick, signal aggregation, sleeve, paired-cycle, event-control, risk, and reconciliation platform.
+
 Current-scope expansion created 2026-05-24:
 
 | Issue | Role |

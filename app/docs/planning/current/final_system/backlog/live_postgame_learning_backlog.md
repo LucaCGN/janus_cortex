@@ -4,6 +4,7 @@ Status: foundation implemented; use for follow-up scoping
 Created: 2026-05-26
 Parent issue: #63
 Completed foundation follow-ups: #78, #79
+Current live-window adoption: #63/JIT-63-07
 
 ## Purpose
 
@@ -35,6 +36,8 @@ Postgame and development decisions must use this hierarchy:
 | Obsidian backlog ingestion | #74 | Convert curated lessons into issue candidates without execution authority. |
 | Pregame optional priors | #72 | Closed foundation keeping pregame research structured but non-authoritative. |
 | Profile/future domains | #46/#47/#48 | Preserve future-domain hypotheses without preempting basketball runtime. |
+
+2026-05-26 adoption note: today's NBA worker uses the shared platform with six StrategyPlan sleeves across both sides: grid scalp, core hold, and opt-in ultra-low rebound. Ultra-low remains a development/validation sleeve and must be judged from postgame replay and account-scoped fills before default promotion.
 
 ## Development Tracks
 
