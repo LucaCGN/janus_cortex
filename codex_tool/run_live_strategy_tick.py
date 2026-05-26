@@ -4352,6 +4352,7 @@ def _wnba_slug_alias(value: Any) -> str:
         "connecticut": "con",
         "connecticutsun": "con",
         "sun": "con",
+        "conn": "con",
         "atlanta": "atl",
         "atlantadream": "atl",
         "dream": "atl",

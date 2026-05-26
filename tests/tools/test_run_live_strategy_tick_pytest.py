@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+import pandas as pd
 
 from app.modules.agentic.contracts import LLMRuntimeTrace, StrategyPlan
 from codex_tool import run_live_strategy_tick as live_tick
@@ -195,6 +196,7 @@ def test_outcome_label_from_strategy_ignores_trade_side_pytest() -> None:
 
 def test_wnba_slug_aliases_cover_current_live_window_teams_pytest() -> None:
     assert live_tick._wnba_slug_alias("CON") == "con"
+    assert live_tick._wnba_slug_alias("CONN") == "con"
     assert live_tick._wnba_slug_alias("Connecticut Sun") == "con"
     assert live_tick._wnba_slug_alias("Atlanta Dream") == "atl"
     assert live_tick._wnba_slug_alias("Phoenix Mercury") == "phx"
@@ -208,6 +210,42 @@ def test_wnba_slug_aliases_cover_current_live_window_teams_pytest() -> None:
     assert live_tick._wnba_slug_alias("WAS") == "wsh"
     assert live_tick._wnba_slug_alias("Washington Mystics") == "wsh"
     assert live_tick._wnba_slug_alias("DAL") == "dal"
+
+
+def test_resolve_wnba_game_matches_connecticut_conn_slug_to_con_tricode_pytest(monkeypatch) -> None:
+    from app.data.nodes.wnba.live import live_stats
+
+    monkeypatch.setattr(
+        live_stats,
+        "fetch_todays_scoreboard_df",
+        lambda: pd.DataFrame(
+            [
+                {
+                    "game_id": "1022600048",
+                    "game_status": 2,
+                    "game_status_text": "Q1 6:34",
+                    "period": 1,
+                    "game_clock": "PT06M34.00S",
+                    "game_date": "2026-05-25",
+                    "home_team_tricode": "GSV",
+                    "away_team_tricode": "CON",
+                    "home_score": 12,
+                    "away_score": 5,
+                }
+            ]
+        ),
+    )
+
+    result = live_tick._resolve_wnba_game_from_cdn(
+        "wnba-conn-gsv-2026-05-25",
+        ("conn", "gsv", "2026-05-25"),
+        session_date="2026-05-25",
+    )
+
+    assert result is not None
+    assert result["resolved"] is True
+    assert result["game_id"] == "1022600048"
+    assert result["resolution_source"] == "wnba_cdn_scoreboard_event_slug"
 
 
 def test_sync_and_fetch_live_state_routes_wnba_to_wnba_endpoints_pytest(monkeypatch) -> None:
