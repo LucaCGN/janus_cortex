@@ -154,3 +154,100 @@ def test_sleeve_transitions_block_duplicate_exposure_and_budget_overflow_pytest(
     assert decisions["okc-grid"].reason_codes == ["duplicate_open_position", "event_budget_exceeded"]
     assert decisions["okc-rebuy"].status == "blocked"
     assert decisions["okc-rebuy"].reason_codes == ["rebuy_requires_existing_position_covered"]
+
+
+def test_side_phase_and_sleeve_budgets_are_local_to_each_transition_pytest() -> None:
+    budget = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=200.0,
+        available_cash_usd=100.0,
+        policy=EventRiskBudgetPolicy(
+            absolute_event_cap_usd=10.0,
+            side_budget_mode="balanced_50_50",
+            phase_budget_mode="custom",
+            phase_budget_pct={"q4": 0.30},
+            sleeve_role_budget_pct={"grid_scalp": 0.20, "core_hold": 0.50},
+        ),
+    )
+
+    bundle = evaluate_event_sleeve_transitions(
+        event_id=EVENT_ID,
+        budget=budget,
+        sleeves=[
+            SleeveTransitionRequest(
+                sleeve_id="okc-grid",
+                sleeve_role="grid_scalp",
+                action="buy",
+                side="Thunder",
+                phase="q4",
+                requested_shares=5,
+                max_price=0.25,
+                side_used_notional_usd=4.0,
+                phase_used_notional_usd=1.0,
+                sleeve_used_notional_usd=1.0,
+            ),
+            SleeveTransitionRequest(
+                sleeve_id="sas-core",
+                sleeve_role="core_hold",
+                action="buy",
+                side="Spurs",
+                phase="q4",
+                requested_shares=5,
+                max_price=0.20,
+                side_used_notional_usd=0.0,
+                phase_used_notional_usd=1.0,
+                sleeve_used_notional_usd=0.0,
+            ),
+        ],
+    )
+
+    decisions = {decision.sleeve_id: decision for decision in bundle.decisions}
+    assert decisions["okc-grid"].status == "blocked"
+    assert decisions["okc-grid"].reason_codes == ["side_budget_exceeded", "sleeve_budget_exceeded"]
+    assert decisions["okc-grid"].side_remaining_notional_usd_after == 1.0
+    assert decisions["okc-grid"].sleeve_remaining_notional_usd_after == 1.0
+    assert decisions["sas-core"].status == "intent_candidate"
+    assert decisions["sas-core"].remaining_notional_usd_after == 9.0
+    assert decisions["sas-core"].side_remaining_notional_usd_after == 4.0
+    assert decisions["sas-core"].phase_remaining_notional_usd_after == 1.0
+    assert decisions["sas-core"].sleeve_remaining_notional_usd_after == 4.0
+
+
+def test_custom_side_and_phase_budget_blocks_without_global_budget_exhaustion_pytest() -> None:
+    budget = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=200.0,
+        available_cash_usd=100.0,
+        policy=EventRiskBudgetPolicy(
+            absolute_event_cap_usd=10.0,
+            side_budget_mode="custom",
+            side_budget_pct={"Thunder": 0.30, "Spurs": 0.70},
+            phase_budget_mode="custom",
+            phase_budget_pct={"clutch": 0.10},
+            default_sleeve_budget_pct=1.0,
+        ),
+    )
+
+    bundle = evaluate_event_sleeve_transitions(
+        event_id=EVENT_ID,
+        budget=budget,
+        sleeves=[
+            SleeveTransitionRequest(
+                sleeve_id="okc-clutch",
+                sleeve_role="grid_scalp",
+                action="buy",
+                side="Thunder",
+                phase="clutch",
+                requested_shares=5,
+                max_price=0.25,
+                side_used_notional_usd=2.0,
+                phase_used_notional_usd=0.25,
+            ),
+        ],
+    )
+
+    decision = bundle.decisions[0]
+    assert budget.remaining_notional_usd == 10.0
+    assert decision.status == "blocked"
+    assert decision.reason_codes == ["side_budget_exceeded", "phase_budget_exceeded"]
+    assert decision.remaining_notional_usd_after == 10.0

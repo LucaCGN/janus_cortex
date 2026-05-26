@@ -7,6 +7,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 SleeveAction = Literal["buy", "sell", "rebuy", "reduce", "monitor", "hold"]
 SleeveTransitionStatus = Literal["intent_candidate", "blocked", "monitor_only"]
+SideBudgetMode = Literal[
+    "none",
+    "balanced_50_50",
+    "favorite_heavy",
+    "underdog_heavy",
+    "winner_only",
+    "contrarian_only",
+    "custom",
+]
+PhaseBudgetMode = Literal["none", "active_phase_only", "custom"]
 
 
 class EventRiskBudgetPolicy(BaseModel):
@@ -18,6 +28,13 @@ class EventRiskBudgetPolicy(BaseModel):
     max_concurrent_events: int = Field(default=5, ge=1)
     max_grid_leg_shares: float = Field(default=5.0, ge=0.0)
     core_hold_shares: float = Field(default=5.0, ge=0.0)
+    side_budget_mode: SideBudgetMode = "none"
+    side_budget_pct: dict[str, float] = Field(default_factory=dict)
+    phase_budget_mode: PhaseBudgetMode = "none"
+    phase_budget_pct: dict[str, float] = Field(default_factory=dict)
+    sleeve_budget_caps_usd: dict[str, float] = Field(default_factory=dict)
+    sleeve_role_budget_pct: dict[str, float] = Field(default_factory=dict)
+    default_sleeve_budget_pct: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class EventRiskBudgetSnapshot(BaseModel):
@@ -37,6 +54,9 @@ class EventRiskBudgetSnapshot(BaseModel):
     budget_status: Literal["within_budget", "exhausted", "over_budget"] = "within_budget"
     blocker_codes: list[str] = Field(default_factory=list)
     policy: EventRiskBudgetPolicy
+    side_budget_caps_usd: dict[str, float] = Field(default_factory=dict)
+    phase_budget_caps_usd: dict[str, float] = Field(default_factory=dict)
+    sleeve_role_budget_caps_usd: dict[str, float] = Field(default_factory=dict)
 
 
 class SleeveTransitionRequest(BaseModel):
@@ -46,12 +66,16 @@ class SleeveTransitionRequest(BaseModel):
     sleeve_role: str = Field(min_length=1)
     action: SleeveAction
     side: str | None = None
+    phase: str | None = None
     requested_shares: float = Field(default=0.0, ge=0.0)
     max_price: float | None = Field(default=None, ge=0.0, le=1.0)
     existing_position_shares: float = Field(default=0.0, ge=0.0)
     open_order_shares: float = Field(default=0.0, ge=0.0)
     pending_intent_shares: float = Field(default=0.0, ge=0.0)
     target_coverage_shares: float = Field(default=0.0, ge=0.0)
+    side_used_notional_usd: float = Field(default=0.0, ge=0.0)
+    phase_used_notional_usd: float = Field(default=0.0, ge=0.0)
+    sleeve_used_notional_usd: float = Field(default=0.0, ge=0.0)
     enabled: bool = True
 
 
@@ -63,8 +87,12 @@ class SleeveTransitionDecision(BaseModel):
     action: SleeveAction
     status: SleeveTransitionStatus
     side: str | None = None
+    phase: str | None = None
     requested_notional_usd: float = Field(default=0.0, ge=0.0)
     remaining_notional_usd_after: float = Field(default=0.0, ge=0.0)
+    side_remaining_notional_usd_after: float | None = Field(default=None, ge=0.0)
+    phase_remaining_notional_usd_after: float | None = Field(default=None, ge=0.0)
+    sleeve_remaining_notional_usd_after: float | None = Field(default=None, ge=0.0)
     reason_codes: list[str] = Field(default_factory=list)
 
 
@@ -75,6 +103,9 @@ class EventSleeveTransitionBundle(BaseModel):
     event_id: str = Field(min_length=1)
     budget: EventRiskBudgetSnapshot
     decisions: list[SleeveTransitionDecision] = Field(default_factory=list)
+    side_usage_usd: dict[str, float] = Field(default_factory=dict)
+    phase_usage_usd: dict[str, float] = Field(default_factory=dict)
+    sleeve_usage_usd: dict[str, float] = Field(default_factory=dict)
 
     @property
     def has_order_candidates(self) -> bool:
@@ -122,6 +153,9 @@ def derive_event_risk_budget(
         budget_status=status,
         blocker_codes=blockers,
         policy=policy,
+        side_budget_caps_usd=_side_budget_caps(policy, event_cap),
+        phase_budget_caps_usd=_phase_budget_caps(policy, event_cap),
+        sleeve_role_budget_caps_usd=_sleeve_role_budget_caps(policy, event_cap),
     )
 
 
@@ -133,12 +167,43 @@ def evaluate_event_sleeve_transitions(
 ) -> EventSleeveTransitionBundle:
     remaining = budget.remaining_notional_usd
     decisions: list[SleeveTransitionDecision] = []
+    side_usage = _initial_usage_by_key(sleeves, key_name="side", value_name="side_used_notional_usd")
+    phase_usage = _initial_usage_by_key(sleeves, key_name="phase", value_name="phase_used_notional_usd")
+    sleeve_usage = {sleeve.sleeve_id: round(sleeve.sleeve_used_notional_usd, 6) for sleeve in sleeves}
     for sleeve in sleeves:
-        decision = _evaluate_sleeve(sleeve, remaining=remaining, budget=budget)
+        decision = _evaluate_sleeve(
+            sleeve,
+            remaining=remaining,
+            budget=budget,
+            side_usage=side_usage,
+            phase_usage=phase_usage,
+            sleeve_usage=sleeve_usage,
+        )
         decisions.append(decision)
         if decision.status == "intent_candidate" and sleeve.action in {"buy", "rebuy"}:
             remaining = max(remaining - decision.requested_notional_usd, 0.0)
-    return EventSleeveTransitionBundle(event_id=event_id, budget=budget, decisions=decisions)
+            if sleeve.side:
+                side_usage[_budget_key(sleeve.side)] = round(
+                    side_usage.get(_budget_key(sleeve.side), 0.0) + decision.requested_notional_usd,
+                    6,
+                )
+            if sleeve.phase:
+                phase_usage[_budget_key(sleeve.phase)] = round(
+                    phase_usage.get(_budget_key(sleeve.phase), 0.0) + decision.requested_notional_usd,
+                    6,
+                )
+            sleeve_usage[sleeve.sleeve_id] = round(
+                sleeve_usage.get(sleeve.sleeve_id, 0.0) + decision.requested_notional_usd,
+                6,
+            )
+    return EventSleeveTransitionBundle(
+        event_id=event_id,
+        budget=budget,
+        decisions=decisions,
+        side_usage_usd=side_usage,
+        phase_usage_usd=phase_usage,
+        sleeve_usage_usd=sleeve_usage,
+    )
 
 
 def _evaluate_sleeve(
@@ -146,23 +211,53 @@ def _evaluate_sleeve(
     *,
     remaining: float,
     budget: EventRiskBudgetSnapshot,
+    side_usage: dict[str, float],
+    phase_usage: dict[str, float],
+    sleeve_usage: dict[str, float],
 ) -> SleeveTransitionDecision:
     requested_notional = _requested_notional(sleeve)
+    local_remaining = _local_budget_remaining(
+        sleeve,
+        budget=budget,
+        side_usage=side_usage,
+        phase_usage=phase_usage,
+        sleeve_usage=sleeve_usage,
+    )
     if not sleeve.enabled:
-        return _decision(sleeve, "monitor_only", requested_notional, remaining, ["sleeve_disabled"])
+        return _decision(sleeve, "monitor_only", requested_notional, remaining, ["sleeve_disabled"], local_remaining)
     if sleeve.action in {"monitor", "hold"}:
-        return _decision(sleeve, "monitor_only", requested_notional, remaining, ["monitor_only"])
+        return _decision(sleeve, "monitor_only", requested_notional, remaining, ["monitor_only"], local_remaining)
     if sleeve.action in {"buy", "rebuy"}:
-        blockers = _buy_blockers(sleeve, requested_notional=requested_notional, remaining=remaining, budget=budget)
+        blockers = _buy_blockers(
+            sleeve,
+            requested_notional=requested_notional,
+            remaining=remaining,
+            budget=budget,
+            local_remaining=local_remaining,
+        )
         if blockers:
-            return _decision(sleeve, "blocked", requested_notional, remaining, blockers)
-        return _decision(sleeve, "intent_candidate", requested_notional, remaining - requested_notional, ["budget_available"])
+            return _decision(sleeve, "blocked", requested_notional, remaining, blockers, local_remaining)
+        return _decision(
+            sleeve,
+            "intent_candidate",
+            requested_notional,
+            remaining - requested_notional,
+            ["budget_available"],
+            _decrement_local_remaining(local_remaining, requested_notional),
+        )
     blockers = _sell_or_reduce_blockers(sleeve)
     if blockers:
-        return _decision(sleeve, "blocked", requested_notional, remaining, blockers)
+        return _decision(sleeve, "blocked", requested_notional, remaining, blockers, local_remaining)
     if sleeve.target_coverage_shares >= sleeve.existing_position_shares > 0:
-        return _decision(sleeve, "monitor_only", requested_notional, remaining, ["target_already_covers_position"])
-    return _decision(sleeve, "intent_candidate", requested_notional, remaining, ["position_reduction_available"])
+        return _decision(
+            sleeve,
+            "monitor_only",
+            requested_notional,
+            remaining,
+            ["target_already_covers_position"],
+            local_remaining,
+        )
+    return _decision(sleeve, "intent_candidate", requested_notional, remaining, ["position_reduction_available"], local_remaining)
 
 
 def _buy_blockers(
@@ -171,6 +266,7 @@ def _buy_blockers(
     requested_notional: float,
     remaining: float,
     budget: EventRiskBudgetSnapshot,
+    local_remaining: dict[str, float | None],
 ) -> list[str]:
     blockers: list[str] = []
     if budget.budget_status != "within_budget":
@@ -187,6 +283,12 @@ def _buy_blockers(
         blockers.append("rebuy_requires_existing_position_covered")
     if requested_notional > remaining:
         blockers.append("event_budget_exceeded")
+    if _exceeds_local_budget(requested_notional, local_remaining.get("side")):
+        blockers.append("side_budget_exceeded")
+    if _exceeds_local_budget(requested_notional, local_remaining.get("phase")):
+        blockers.append("phase_budget_exceeded")
+    if _exceeds_local_budget(requested_notional, local_remaining.get("sleeve")):
+        blockers.append("sleeve_budget_exceeded")
     return _unique(blockers)
 
 
@@ -205,15 +307,21 @@ def _decision(
     requested_notional_usd: float,
     remaining_after: float,
     reason_codes: list[str],
+    local_remaining: dict[str, float | None] | None = None,
 ) -> SleeveTransitionDecision:
+    local_remaining = local_remaining or {}
     return SleeveTransitionDecision(
         sleeve_id=sleeve.sleeve_id,
         sleeve_role=sleeve.sleeve_role,
         action=sleeve.action,
         status=status,
         side=sleeve.side,
+        phase=sleeve.phase,
         requested_notional_usd=round(requested_notional_usd, 6),
         remaining_notional_usd_after=round(max(remaining_after, 0.0), 6),
+        side_remaining_notional_usd_after=_round_optional(local_remaining.get("side")),
+        phase_remaining_notional_usd_after=_round_optional(local_remaining.get("phase")),
+        sleeve_remaining_notional_usd_after=_round_optional(local_remaining.get("sleeve")),
         reason_codes=_unique(reason_codes),
     )
 
@@ -236,11 +344,130 @@ def _unique(values: list[str]) -> list[str]:
     return unique
 
 
+def _side_budget_caps(policy: EventRiskBudgetPolicy, event_cap: float) -> dict[str, float]:
+    caps = _pct_caps(policy.side_budget_pct, event_cap)
+    if policy.side_budget_mode == "balanced_50_50" and not caps:
+        return {"side_a": round(event_cap * 0.5, 6), "side_b": round(event_cap * 0.5, 6)}
+    return caps
+
+
+def _phase_budget_caps(policy: EventRiskBudgetPolicy, event_cap: float) -> dict[str, float]:
+    if policy.phase_budget_mode == "none":
+        return {}
+    return _pct_caps(policy.phase_budget_pct, event_cap)
+
+
+def _sleeve_role_budget_caps(policy: EventRiskBudgetPolicy, event_cap: float) -> dict[str, float]:
+    caps = _pct_caps(policy.sleeve_role_budget_pct, event_cap)
+    if policy.default_sleeve_budget_pct < 1.0:
+        caps["default"] = round(event_cap * policy.default_sleeve_budget_pct, 6)
+    for key, value in policy.sleeve_budget_caps_usd.items():
+        caps[_budget_key(key)] = round(max(float(value), 0.0), 6)
+    return caps
+
+
+def _pct_caps(values: dict[str, float], event_cap: float) -> dict[str, float]:
+    caps: dict[str, float] = {}
+    for key, pct in values.items():
+        normalized = _budget_key(key)
+        if not normalized:
+            continue
+        caps[normalized] = round(event_cap * min(max(float(pct), 0.0), 1.0), 6)
+    return caps
+
+
+def _initial_usage_by_key(sleeves: list[SleeveTransitionRequest], *, key_name: str, value_name: str) -> dict[str, float]:
+    usage: dict[str, float] = {}
+    for sleeve in sleeves:
+        key = _budget_key(getattr(sleeve, key_name) or "")
+        if not key:
+            continue
+        usage[key] = max(usage.get(key, 0.0), float(getattr(sleeve, value_name) or 0.0))
+    return usage
+
+
+def _local_budget_remaining(
+    sleeve: SleeveTransitionRequest,
+    *,
+    budget: EventRiskBudgetSnapshot,
+    side_usage: dict[str, float],
+    phase_usage: dict[str, float],
+    sleeve_usage: dict[str, float],
+) -> dict[str, float | None]:
+    side_key = _budget_key(sleeve.side or "")
+    phase_key = _budget_key(sleeve.phase or "")
+    side_cap = _cap_for_side(budget, side_key)
+    phase_cap = _cap_for_phase(budget, phase_key)
+    sleeve_cap = _cap_for_sleeve(budget, sleeve)
+    return {
+        "side": _remaining_from_cap(side_cap, side_usage.get(side_key, 0.0)),
+        "phase": _remaining_from_cap(phase_cap, phase_usage.get(phase_key, 0.0)),
+        "sleeve": _remaining_from_cap(sleeve_cap, sleeve_usage.get(sleeve.sleeve_id, 0.0)),
+    }
+
+
+def _decrement_local_remaining(values: dict[str, float | None], requested_notional: float) -> dict[str, float | None]:
+    return {
+        key: None if value is None else max(float(value) - requested_notional, 0.0)
+        for key, value in values.items()
+    }
+
+
+def _cap_for_side(budget: EventRiskBudgetSnapshot, side_key: str) -> float | None:
+    if not side_key or budget.policy.side_budget_mode == "none":
+        return None
+    caps = budget.side_budget_caps_usd
+    if side_key in caps:
+        return caps[side_key]
+    if budget.policy.side_budget_mode == "balanced_50_50":
+        return round(budget.event_cap_usd * 0.5, 6)
+    return None
+
+
+def _cap_for_phase(budget: EventRiskBudgetSnapshot, phase_key: str) -> float | None:
+    if not phase_key or budget.policy.phase_budget_mode == "none":
+        return None
+    return budget.phase_budget_caps_usd.get(phase_key)
+
+
+def _cap_for_sleeve(budget: EventRiskBudgetSnapshot, sleeve: SleeveTransitionRequest) -> float | None:
+    caps = budget.sleeve_role_budget_caps_usd
+    sleeve_key = _budget_key(sleeve.sleeve_id)
+    role_key = _budget_key(sleeve.sleeve_role)
+    if sleeve_key in caps:
+        return caps[sleeve_key]
+    if role_key in caps:
+        return caps[role_key]
+    return caps.get("default")
+
+
+def _remaining_from_cap(cap: float | None, used: float) -> float | None:
+    if cap is None:
+        return None
+    return round(max(cap - used, 0.0), 6)
+
+
+def _exceeds_local_budget(requested_notional: float, remaining: float | None) -> bool:
+    return remaining is not None and requested_notional > remaining
+
+
+def _round_optional(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(max(float(value), 0.0), 6)
+
+
+def _budget_key(value: str) -> str:
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
 __all__ = [
     "EventRiskBudgetPolicy",
     "EventRiskBudgetSnapshot",
     "EventSleeveTransitionBundle",
     "SleeveAction",
+    "SideBudgetMode",
+    "PhaseBudgetMode",
     "SleeveTransitionDecision",
     "SleeveTransitionRequest",
     "SleeveTransitionStatus",
