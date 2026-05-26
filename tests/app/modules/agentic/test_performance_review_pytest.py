@@ -145,3 +145,39 @@ def test_project_chief_review_suppresses_superseded_blockers_from_register_pytes
     assert any(item.issue == "#69" for item in review.next_priority_queue)
     rendered = render_project_chief_review_markdown(review)
     assert "Superseded Findings" in rendered
+
+
+def test_project_chief_review_issue_health_requires_local_task_rows_pytest(tmp_path) -> None:
+    reports_dir = tmp_path / "reports"
+    reports_dir.mkdir()
+    (reports_dir / "postgame_signal_review_2026-05-25T0228Z.md").write_text(
+        "Seattle Q1 rebound after early deficit.",
+        encoding="utf-8",
+    )
+    register = tmp_path / "issue_task_register.md"
+    register.write_text(
+        "\n".join(
+            [
+                "| Task id | Issue | Status | Owner lane | Next executable step | Evidence / blocker |",
+                "|---|---:|---|---|---|---|",
+                "| JIT-55-99 | #55 | ready | basketball-intelligence | replay Seattle candidate | report |",
+                "| JIT-71-01 | #71 | done | janus-performance-review | project-chief artifact generator | commit |",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    review = build_project_chief_review(
+        day="2026-05-25",
+        reports_dir=reports_dir,
+        artifact_root=tmp_path,
+        issue_task_register_path=register,
+    )
+
+    checks = {item["issue"]: item for item in review.issue_health_checks}
+    assert checks["#55"]["status"] == "tracked"
+    assert checks["#55"]["task_ids"] == ["JIT-55-99"]
+    assert checks["#71"]["status"] == "no_open_task_row"
+    assert review.tangent_processing_status == "review_required"
+    rendered = render_project_chief_review_markdown(review)
+    assert "Issue Health Checks" in rendered

@@ -49,6 +49,8 @@ class ProjectChiefReview(BaseModel):
     superseded_findings: list[dict[str, Any]] = Field(default_factory=list)
     config_recommendations: list[dict[str, Any]] = Field(default_factory=list)
     issue_actions: list[ProjectChiefRecommendation] = Field(default_factory=list)
+    issue_health_checks: list[dict[str, Any]] = Field(default_factory=list)
+    tangent_processing_status: str = "not_checked"
     next_priority_queue: list[ProjectChiefRecommendation] = Field(default_factory=list)
     hard_prohibitions: list[str] = Field(
         default_factory=lambda: [
@@ -100,6 +102,7 @@ def build_project_chief_review(
     missed = _missed_opportunities(texts, register_state)
     blockers, superseded = _technical_blockers(texts, register_state)
     issue_actions = _issue_actions(missed, blockers, event_controls, register_state)
+    issue_health_checks = _issue_health_checks(issue_actions, register_state)
     return ProjectChiefReview(
         session_date=resolved_day,
         input_artifacts=input_artifacts,
@@ -109,6 +112,8 @@ def build_project_chief_review(
         superseded_findings=superseded,
         config_recommendations=_config_recommendations(missed, blockers, event_controls, register_state),
         issue_actions=issue_actions,
+        issue_health_checks=issue_health_checks,
+        tangent_processing_status=_tangent_processing_status(issue_health_checks),
         next_priority_queue=issue_actions[:5],
     )
 
@@ -172,6 +177,13 @@ def render_project_chief_review_markdown(review: ProjectChiefReview, *, json_pat
     )
     lines.extend(["", "## Next Priority Queue"])
     lines.extend(_bullet_lines(f"{item.issue} `{item.priority}`: {item.action}" for item in review.next_priority_queue))
+    lines.extend(["", "## Issue Health Checks"])
+    lines.extend(
+        _bullet_lines(
+            f"{item['issue']} `{item['status']}`: {item['required_intervention']}"
+            for item in review.issue_health_checks
+        )
+    )
     lines.extend(["", "## Hard Prohibitions"])
     lines.extend(_bullet_lines(f"`{item}`" for item in review.hard_prohibitions))
     return "\n".join(lines).rstrip() + "\n"
@@ -342,6 +354,64 @@ def _issue_actions(
     return actions
 
 
+def _issue_health_checks(
+    actions: list[ProjectChiefRecommendation],
+    register_state: dict[str, Any],
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    tasks_by_issue = register_state.get("tasks_by_issue", {})
+    for action in actions:
+        issue = action.issue
+        tasks = list(tasks_by_issue.get(issue, []))
+        if not tasks:
+            checks.append(
+                {
+                    "issue": issue,
+                    "status": "missing_task_row",
+                    "required_intervention": "add local task row, create focused issue, or mark future-domain before another narrative comment",
+                    "action": action.action,
+                    "priority": action.priority,
+                }
+            )
+            continue
+        active = [
+            task
+            for task in tasks
+            if task.get("status") in {"ready", "active", "blocked"}
+        ]
+        if active:
+            checks.append(
+                {
+                    "issue": issue,
+                    "status": "tracked",
+                    "required_intervention": "work or update the listed local task before adding another issue comment",
+                    "task_ids": [task["task_id"] for task in active],
+                    "action": action.action,
+                    "priority": action.priority,
+                }
+            )
+            continue
+        checks.append(
+            {
+                "issue": issue,
+                "status": "no_open_task_row",
+                "required_intervention": "close the issue, add a new focused task row, or explicitly defer/future-domain the recommendation",
+                "task_ids": [task["task_id"] for task in tasks],
+                "action": action.action,
+                "priority": action.priority,
+            }
+        )
+    return checks
+
+
+def _tangent_processing_status(checks: list[dict[str, Any]]) -> str:
+    if not checks:
+        return "no_issue_actions"
+    if all(check.get("status") == "tracked" for check in checks):
+        return "ready"
+    return "review_required"
+
+
 def _strategy_score_deltas(missed: list[dict[str, Any]], blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     deltas = []
     if any(item["event_id"].startswith("wnba-") for item in missed):
@@ -438,15 +508,28 @@ def _default_issue_task_register_path() -> Path:
 
 def _issue_task_register_state(text: str) -> dict[str, Any]:
     done_tasks: set[str] = set()
+    tasks_by_issue: dict[str, list[dict[str, str]]] = {}
     for line in text.splitlines():
         parts = [part.strip() for part in line.strip().strip("|").split("|")]
         if len(parts) < 3:
             continue
         task_id, _issue, status = parts[:3]
-        if task_id.startswith("JIT-") and status == "done":
+        if not task_id.startswith("JIT-"):
+            continue
+        tasks_by_issue.setdefault(_issue, []).append(
+            {
+                "task_id": task_id,
+                "issue": _issue,
+                "status": status,
+                "owner_lane": parts[3] if len(parts) > 3 else "",
+                "next_step": parts[4] if len(parts) > 4 else "",
+            }
+        )
+        if status == "done":
             done_tasks.add(task_id)
     return {
         "done_tasks": done_tasks,
+        "tasks_by_issue": tasks_by_issue,
         "resolved_findings": {
             "event_review_bundle_export_http_500": {"JIT-70-02"},
             "wnba_score_gap_null": {"JIT-70-03"},
