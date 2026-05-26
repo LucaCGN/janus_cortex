@@ -2175,7 +2175,72 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     assert attribution["items"][0]["direct_event_scope"]["open_position_count"] == 0
     assert attribution["items"][0]["direct_event_scope"]["trade_count"] == 1
     assert attribution["items"][0]["pnl_attribution"]["known_cashflow_usd"] == 0.8
+    evaluation = payload["postgame_evaluation"]
+    assert evaluation["schema_version"] == "postgame_evaluation_v1"
+    assert evaluation["market_tape_policy"]["account_pnl_eligible"] is False
+    assert "account_pnl" in evaluation["market_tape_policy"]["blocked_uses"]
+    realized = evaluation["realized_live"]
+    assert realized["public_market_tape_excluded_from_account_pnl"] is True
+    assert realized["items"][0]["account_pnl"]["known_cashflow_usd"] == 0.8
+    assert realized["items"][0]["market_tape"]["account_pnl_eligible"] is False
+    assert realized["items"][0]["market_tape"]["event_scoped_trade_count"] == 1
+    assert evaluation["replay_modes"]["sleeve_isolated"]["status"] == "pending_implementation"
+    assert evaluation["replay_modes"]["aggregate_replay"]["status"] == "pending_implementation"
+    assert evaluation["replay_modes"]["leave_one_out"]["status"] == "pending_implementation"
     assert "portfolio_pnl_attribution" in Path(payload["path"]).read_text(encoding="utf-8")
+    assert "postgame_evaluation" in Path(payload["path"]).read_text(encoding="utf-8")
+
+
+def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> None:
+    evaluation = ops_router._build_postgame_evaluation(
+        reviewed_event_ids=["wnba-conn-gsv-2026-05-25"],
+        strategy_plan_gate={"status": "ready", "ready": True},
+        postgame_live_evidence={"status": "live_evidence_present"},
+        portfolio_pnl_attribution={
+            "status": "ready",
+            "items": [
+                {
+                    "ok": True,
+                    "event_id": "wnba-conn-gsv-2026-05-25",
+                    "event_slug": "wnba-conn-gsv-2026-05-25",
+                    "direct_event_scope": {
+                        "schema_version": "postgame_direct_event_scope_v1",
+                        "status": "scoped",
+                        "scoped": True,
+                        "trade_count": 999,
+                    },
+                    "reconciliation": {
+                        "order_count": 2,
+                        "linked_trade_count": 2,
+                        "unknown_lifecycle_count": 0,
+                    },
+                    "pnl_attribution": {
+                        "known_cashflow_usd": Decimal("2.15"),
+                        "known_fee_usd": Decimal("0"),
+                        "residual_status": "not_supplied",
+                        "direct_final_flat": True,
+                        "pnl_attribution_ready": True,
+                        "buckets": [
+                            {
+                                "actor_label": "janus_strategy",
+                                "known_cashflow_usd": Decimal("2.15"),
+                            }
+                        ],
+                    },
+                }
+            ],
+        },
+    )
+
+    realized_item = evaluation["realized_live"]["items"][0]
+    assert realized_item["account_pnl"]["known_cashflow_usd"] == 2.15
+    assert realized_item["market_tape"]["event_scoped_trade_count"] == 999
+    assert realized_item["market_tape"]["account_pnl_eligible"] is False
+    assert evaluation["market_tape_policy"]["blocked_uses"] == [
+        "account_pnl",
+        "realized_return",
+        "all_account_performance",
+    ]
 
 
 def test_postgame_review_flags_not_actually_live_tested_pytest(tmp_path, monkeypatch) -> None:

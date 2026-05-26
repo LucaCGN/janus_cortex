@@ -269,6 +269,12 @@ def run_ops_postgame_review(
         event_ids=reviewed_event_ids,
         day=payload.session_date,
     )
+    postgame_evaluation = _build_postgame_evaluation(
+        reviewed_event_ids=reviewed_event_ids,
+        strategy_plan_gate=strategy_plan_gate,
+        postgame_live_evidence=postgame_live_evidence,
+        portfolio_pnl_attribution=portfolio_pnl_attribution,
+    )
     recorded = record_ops_stage(
         "postgame-review",
         {
@@ -277,6 +283,7 @@ def run_ops_postgame_review(
             "strategy_plan_gate": strategy_plan_gate,
             "postgame_live_evidence": postgame_live_evidence,
             "portfolio_pnl_attribution": portfolio_pnl_attribution,
+            "postgame_evaluation": postgame_evaluation,
         },
         day=payload.session_date,
     )
@@ -286,6 +293,7 @@ def run_ops_postgame_review(
         "strategy_plan_gate": strategy_plan_gate,
         "postgame_live_evidence": postgame_live_evidence,
         "portfolio_pnl_attribution": portfolio_pnl_attribution,
+        "postgame_evaluation": postgame_evaluation,
     }
 
 
@@ -1378,6 +1386,199 @@ def _build_postgame_portfolio_pnl_attribution(
     )
 
 
+def _build_postgame_evaluation(
+    *,
+    reviewed_event_ids: list[str],
+    strategy_plan_gate: dict[str, Any],
+    postgame_live_evidence: dict[str, Any],
+    portfolio_pnl_attribution: dict[str, Any],
+) -> dict[str, Any]:
+    pnl_items = portfolio_pnl_attribution.get("items") if isinstance(portfolio_pnl_attribution.get("items"), list) else []
+    realized_items = [_build_postgame_realized_live_item(item) for item in pnl_items if isinstance(item, dict)]
+    unresolved = [
+        gap
+        for item in realized_items
+        for gap in item.get("unresolved_evidence", [])
+        if isinstance(gap, dict)
+    ]
+    pnl_status = str(portfolio_pnl_attribution.get("status") or "not_requested")
+    live_status = str(postgame_live_evidence.get("status") or "unknown")
+    if not reviewed_event_ids:
+        status_text = "not_requested"
+    elif pnl_status == "ready" and not unresolved:
+        status_text = "ready"
+    elif pnl_status in {"error", "partial"}:
+        status_text = "review_required"
+    else:
+        status_text = "review_required"
+
+    return to_jsonable(
+        {
+            "schema_version": "postgame_evaluation_v1",
+            "status": status_text,
+            "reviewed_event_ids": reviewed_event_ids,
+            "source_authority": _postgame_evaluation_source_authority(),
+            "source_confidence_labels": {
+                "account_confirmed": "Metric is backed by account-scoped direct CLOB fills or Janus reconciliation.",
+                "db_confirmed": "Metric is backed by local Janus DB lifecycle rows.",
+                "clob_market_tape": "Metric is direct CLOB token market tape for price path/fillability only.",
+                "ui_observed": "Metric is operator/UI display evidence and may be rounded.",
+                "inferred": "Metric is derived from incomplete evidence and must stay review-gated.",
+            },
+            "strategy_plan_gate": {
+                "status": strategy_plan_gate.get("status"),
+                "ready": strategy_plan_gate.get("ready"),
+                "event_count": len(reviewed_event_ids),
+            },
+            "realized_live": {
+                "schema_version": "postgame_realized_live_v1",
+                "status": pnl_status,
+                "source_confidence": "account_confirmed"
+                if pnl_status == "ready"
+                else "inferred",
+                "account_pnl_source": "portfolio_order_lifecycle_pnl_attribution_v1",
+                "public_market_tape_excluded_from_account_pnl": True,
+                "event_count": len(realized_items),
+                "items": realized_items,
+            },
+            "replay_modes": {
+                "sleeve_isolated": _pending_postgame_replay_mode(
+                    "sleeve_isolated",
+                    "Run each sleeve alone with the same event budget and simulated fills from recorded direct CLOB prices.",
+                ),
+                "aggregate_replay": _pending_postgame_replay_mode(
+                    "aggregate_replay",
+                    "Run all sleeves together through the current aggregator, risk, budget, and dedupe rules.",
+                ),
+                "leave_one_out": _pending_postgame_replay_mode(
+                    "leave_one_out",
+                    "Run aggregate replay minus one sleeve to measure marginal sleeve value.",
+                ),
+            },
+            "market_tape_policy": {
+                "source_confidence": "clob_market_tape",
+                "account_pnl_eligible": False,
+                "allowed_uses": ["price_path", "fillability", "liquidity", "ui_rounding_comparison"],
+                "blocked_uses": ["account_pnl", "realized_return", "all_account_performance"],
+            },
+            "postgame_live_evidence_status": live_status,
+            "portfolio_pnl_attribution_status": pnl_status,
+            "unresolved_evidence_count": len(unresolved),
+            "unresolved_evidence": unresolved,
+        }
+    )
+
+
+def _postgame_evaluation_source_authority() -> list[dict[str, Any]]:
+    return [
+        {
+            "rank": 1,
+            "source": "account_scoped_direct_clob_and_janus_reconciliation",
+            "source_confidence": "account_confirmed",
+            "allowed_for_account_pnl": True,
+        },
+        {
+            "rank": 2,
+            "source": "janus_db_order_trade_lifecycle",
+            "source_confidence": "db_confirmed",
+            "allowed_for_account_pnl": True,
+        },
+        {
+            "rank": 3,
+            "source": "direct_current_event_open_positions_and_orders",
+            "source_confidence": "account_confirmed",
+            "allowed_for_account_pnl": False,
+            "allowed_for": ["exposure", "residual_inventory", "target_coverage"],
+        },
+        {
+            "rank": 4,
+            "source": "direct_clob_token_market_tape",
+            "source_confidence": "clob_market_tape",
+            "allowed_for_account_pnl": False,
+            "allowed_for": ["price_path", "fillability", "liquidity"],
+        },
+        {
+            "rank": 5,
+            "source": "polymarket_ui_screenshots",
+            "source_confidence": "ui_observed",
+            "allowed_for_account_pnl": False,
+            "allowed_for": ["operator_audit", "displayed_rounding"],
+        },
+    ]
+
+
+def _pending_postgame_replay_mode(mode: str, description: str) -> dict[str, Any]:
+    return {
+        "schema_version": "postgame_replay_mode_status_v1",
+        "mode": mode,
+        "status": "pending_implementation",
+        "source_confidence": "inferred",
+        "description": description,
+        "account_pnl_eligible": False,
+    }
+
+
+def _build_postgame_realized_live_item(item: dict[str, Any]) -> dict[str, Any]:
+    pnl = item.get("pnl_attribution") if isinstance(item.get("pnl_attribution"), dict) else {}
+    reconciliation = item.get("reconciliation") if isinstance(item.get("reconciliation"), dict) else {}
+    direct_scope = item.get("direct_event_scope") if isinstance(item.get("direct_event_scope"), dict) else {}
+    buckets = pnl.get("buckets") if isinstance(pnl.get("buckets"), list) else []
+    unresolved: list[dict[str, Any]] = []
+    if item.get("ok") is False:
+        unresolved.append({"reason": "pnl_attribution_error", "error": item.get("error")})
+    if pnl.get("pnl_attribution_ready") is not True:
+        unresolved.append(
+            {
+                "reason": "pnl_attribution_not_ready",
+                "unknown_lifecycle_count": pnl.get("unknown_lifecycle_count"),
+                "residual_status": pnl.get("residual_status"),
+                "direct_final_flat": pnl.get("direct_final_flat"),
+            }
+        )
+    if direct_scope.get("scoped") is not True:
+        unresolved.append(
+            {
+                "reason": "direct_event_scope_not_confirmed",
+                "scope_status": direct_scope.get("status"),
+            }
+        )
+
+    return {
+        "event_id": item.get("event_id") or item.get("event_slug"),
+        "event_slug": item.get("event_slug") or item.get("event_id"),
+        "status": "ready" if pnl.get("pnl_attribution_ready") is True and not unresolved else "review_required",
+        "source_confidence": "account_confirmed" if pnl.get("pnl_attribution_ready") is True else "inferred",
+        "account_pnl": {
+            "source": "portfolio_order_lifecycle_pnl_attribution_v1",
+            "source_confidence": "account_confirmed" if pnl else "inferred",
+            "known_cashflow_usd": pnl.get("known_cashflow_usd"),
+            "known_fee_usd": pnl.get("known_fee_usd"),
+            "direct_collateral_delta_usd": pnl.get("direct_collateral_delta_usd"),
+            "residual_cashflow_usd": pnl.get("residual_cashflow_usd"),
+            "residual_status": pnl.get("residual_status"),
+            "final_winning_outcome_id": pnl.get("final_winning_outcome_id"),
+            "pnl_attribution_ready": pnl.get("pnl_attribution_ready"),
+        },
+        "actor_buckets": buckets,
+        "lifecycle_summary": {
+            "source": "portfolio_order_lifecycle_reconciliation_v1",
+            "source_confidence": "db_confirmed",
+            "order_count": reconciliation.get("order_count"),
+            "linked_trade_count": reconciliation.get("linked_trade_count"),
+            "unknown_lifecycle_count": reconciliation.get("unknown_lifecycle_count"),
+            "lifecycle_status_counts": reconciliation.get("lifecycle_status_counts"),
+        },
+        "direct_event_scope": direct_scope,
+        "market_tape": {
+            "source_confidence": "clob_market_tape",
+            "account_pnl_eligible": False,
+            "event_scoped_trade_count": direct_scope.get("trade_count"),
+            "allowed_uses": ["price_path", "fillability", "liquidity"],
+        },
+        "unresolved_evidence": unresolved,
+    }
+
+
 def _event_scoped_order_lifecycle_direct_context(
     direct_context: dict[str, Any],
     *,
@@ -1591,6 +1792,15 @@ def _build_event_review_bundle(
         event_ids=[event_id],
         day=resolved_day,
     )
+    postgame_evaluation = _build_postgame_evaluation(
+        reviewed_event_ids=[event_id],
+        strategy_plan_gate={
+            "status": "ready" if strategy_plan_versions.get("current_exists") else "review_required",
+            "ready": bool(strategy_plan_versions.get("current_exists")),
+        },
+        postgame_live_evidence=postgame_live_evidence,
+        portfolio_pnl_attribution=portfolio_pnl_attribution,
+    )
     decision_timeline = _build_event_review_decision_timeline(
         event_id=event_id,
         agent_context=agent_context,
@@ -1635,6 +1845,7 @@ def _build_event_review_bundle(
             "llm_runtime_status": llm_runtime_status,
             "postgame_live_evidence": postgame_live_evidence,
             "portfolio_pnl_attribution": portfolio_pnl_attribution,
+            "postgame_evaluation": postgame_evaluation,
             "actor_attribution": actor_attribution,
             "token_cost_timeline": token_cost_timeline,
             "market_microstructure": market_microstructure,
