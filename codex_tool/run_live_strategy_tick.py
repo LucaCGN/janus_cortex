@@ -28,6 +28,7 @@ from app.modules.agentic.llm_runtime import (
     process_llm_runtime_trace,
 )
 from app.modules.agentic.live_snapshot import build_normalized_live_snapshot
+from app.modules.agentic.pbp_annotation import build_pbp_annotation_evidence
 from app.modules.agentic.pregame_priors import build_optional_pregame_prior_evidence
 from app.modules.agentic.signal_aggregation import (
     LiveSignalAggregationControl,
@@ -707,6 +708,13 @@ def _run_event_tick(
     portfolio_state["current_event_inventory_proof"] = current_event_inventory_proof
     llm_portfolio_state["current_event_inventory_proof"] = current_event_inventory_proof
     market_state["current_event_inventory_proof"] = current_event_inventory_proof
+    pbp_annotation = build_pbp_annotation_evidence(
+        event_id=event_id,
+        live_state=live_state,
+        plan=plan,
+        source=f"{source}:pbp_annotation",
+    )
+    market_state["pbp_annotation"] = pbp_annotation
     llm_runtime_trace = build_llm_runtime_trace(
         event_id=event_id,
         market_id=str(plan.get("market_id") or "") or None,
@@ -723,7 +731,7 @@ def _run_event_tick(
         operator_interventions=_operator_reaction_revision_events(operator_reaction),
         strategy_decisions=[],
         pbp_shocks=player_status_shocks,
-        ml_pbp_evidence={"status": "placeholder_schema_ready", "signals": []},
+        ml_pbp_evidence=pbp_annotation,
         source=f"{source}:llm_runtime_detector",
     )
     llm_runtime_persistence: dict[str, Any] = {

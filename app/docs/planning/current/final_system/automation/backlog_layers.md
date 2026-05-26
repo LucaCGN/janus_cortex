@@ -114,6 +114,8 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#77](https://github.com/LucaCGN/janus_cortex/issues/77) | P0 | Closed foundation | Paired microcycle evidence and readback scoring implemented in `9b1a087` and `5a1e9f9`; future order-path promotion needs focused gate-cleared follow-up scope. |
 | [#78](https://github.com/LucaCGN/janus_cortex/issues/78) | P0 | Closed foundation | Complete postgame evaluation and replay learning artifact implemented with account-scoped PnL, sleeve/cycle attribution, replay inputs, isolated/aggregate/leave-one-out views, missed-window/extrema analysis, CLOB/UI grounding, and source-confidence labels. |
 | [#79](https://github.com/LucaCGN/janus_cortex/issues/79) | P0 | Closed foundation | Sleeve portfolio behavior implemented: side/phase/sleeve budgets, paired lifecycle metadata, manual-imported and ultra-low sleeves, and local-vs-global blocker separation behind Janus gates. |
+| [#80](https://github.com/LucaCGN/janus_cortex/issues/80) | P1 | Planned/sprint | Backfill WNBA price-history and market-state panels so WNBA can use the same sleeve replay pack as NBA. |
+| [#81](https://github.com/LucaCGN/janus_cortex/issues/81) | P1 | Active/sprint | Add cheap nano-compatible PBP annotation context. First deterministic evidence-only live-tick slice is complete; real nano dispatch and aggregate-window escalation remain next. |
 | [#57](https://github.com/LucaCGN/janus_cortex/issues/57) | P0 | Closed foundation | Spurs/Thunder final settlement and residual Thunder direct-CLOB exposure reconciled. |
 | [#58](https://github.com/LucaCGN/janus_cortex/issues/58) | P0 | Closed foundation | Resolved-market redeem workflow and unredeemed residual tolerance implemented so settled positions do not block new live readiness after direct-truth classification. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | Closed foundation | Direct open CLOB order mirror endpoint implemented and runtime-validated. |
@@ -174,6 +176,8 @@ Current-scope expansion created 2026-05-24:
 | [#76](https://github.com/LucaCGN/janus_cortex/issues/76) | Closed focused portfolio lifecycle route; Maduro target placement and Colorado close/fill reconciliation completed. Do not reopen `#56/#59/#75/#76` for future drift; open a focused follow-up issue. |
 | [#78](https://github.com/LucaCGN/janus_cortex/issues/78) | Closed foundation for complete `postgame_evaluation.json` and replay learning artifacts with account-scoped PnL, source-confidence labels, CLOB/UI grounding, and comparable replay modes. |
 | [#79](https://github.com/LucaCGN/janus_cortex/issues/79) | Closed foundation for live sleeve portfolio behavior: side/phase budgets, paired buy/sell/rebuy lifecycle, manual-imported position management, and ultra-low rebound sleeves. |
+| [#80](https://github.com/LucaCGN/janus_cortex/issues/80) | WNBA replay parity blocker: add price-history and market-state panels before WNBA sleeve replay promotion. |
+| [#81](https://github.com/LucaCGN/janus_cortex/issues/81) | Nano-compatible PBP annotation lane: deterministic evidence-only slice is live-tick wired; real nano dispatch and escalation policy remain open. |
 
 Do not expand crypto options or new model domains beyond research issue [#47](https://github.com/LucaCGN/janus_cortex/issues/47) until the current basketball runtime has normalized snapshots, persisted signals, aggregation arbitration, runtime controls, complete postgame evaluation/replay artifacts, sleeve portfolio controls, and daily performance-review governance.
 

@@ -67,6 +67,26 @@ Main gap:
 
 There is no always-on cheap PBP annotation stream feeding sleeve context. #81 owns adding a nano-compatible play-by-play annotator that emits non-executable evidence and escalates only aggregate trigger windows to larger models.
 
+2026-05-26 pre-window update:
+
+- First deterministic fallback slice is implemented as `pbp_annotation_evidence_v1`.
+- Live ticks now include `market_state.pbp_annotation` and pass the same evidence into the `ml_pbp_evidence` slot with `emit_trigger=false` and `must_not_place_orders=true`.
+- Current worker readback before game start showed the field present, intended model `gpt-5.4-nano`, no PBP rows yet, and `llm_runtime_trigger_count=0`.
+- Next #81 step is real nano dispatch plus aggregate-window escalation after a live game proves tag quality.
+
+## Pre-Window Readiness Artifact
+
+Current readiness artifact:
+
+`local/shared/artifacts/prewindow-sleeve-readiness/2026-05-26/nba-sas-okc-2026-05-26/prewindow_sleeve_readiness_20260526T180128Z.json`
+
+Read:
+
+- Status is `YELLOW`, not because the runtime is broken, but because ultra-low sleeves are live-test present while naive ultra-low replay is strongly negative.
+- Grid/core sleeves are live-validation eligible behind normal Janus gates.
+- Ultra-low should stay constrained development evidence unless a tighter volatility/comeback rule proves edge.
+- WNBA replay parity remains blocked until #80 adds WNBA price-history and market-state panels.
+
 ## Development Implications
 
 1. Do not promote naive ultra-low rebound as a default live sleeve from anecdotes alone.
