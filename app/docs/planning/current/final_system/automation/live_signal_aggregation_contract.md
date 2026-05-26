@@ -235,4 +235,25 @@ Every live event should persist:
 - strategy confidence changes
 - recommended issue/doc/config updates
 
-Postgame review should update signal confidence and backlog routing. Repeated missed live-window opportunities should become implementation issues, not repeated narrative comments.
+The canonical event-level artifact is `postgame_evaluation.json` as tracked by [#78](https://github.com/LucaCGN/janus_cortex/issues/78). It must separate source authority:
+
+1. account-scoped direct CLOB fills and Janus order reconciliation;
+2. local Janus DB order/trade lifecycle;
+3. direct current-event positions and open orders;
+4. token-level direct CLOB market tape for price path and fillability only;
+5. Polymarket UI screenshots for displayed rounding/operator audit only.
+
+Token-level market tape rows such as `current_token_trades` must not be reported as account PnL unless matched to known external order ids. Any metric derived from non-account sources must carry a source label such as `clob_market_tape`, `ui_observed`, or `inferred`.
+
+Every complete postgame artifact should run four comparable evaluations over the same tick stream:
+
+| Mode | Purpose |
+|---|---|
+| `realized_live` | What actually happened through Janus/operator/account-scoped fills, open orders, final positions, and settlement assumptions. |
+| `sleeve_isolated` | How each sleeve would have performed alone with the same event budget and simulated fills from recorded direct CLOB prices. |
+| `aggregate_replay` | How all sleeves would have performed together through the current aggregator, budget, risk, and dedupe rules. |
+| `leave_one_out` | Aggregate replay minus one sleeve, used to measure marginal sleeve value and detect sleeves that suppress or improve portfolio performance. |
+
+`leave_one_out` is not only a reporting view. Its output should feed #79 sleeve-portfolio recommendations: side-budget splits, phase-budget changes, selected-side/contrarian modes, and whether strategies should run sequentially or in parallel.
+
+Postgame review should update signal confidence, event-control recommendations, issue tasks, and backlog routing. Repeated missed live-window opportunities should become implementation issues or local task rows, not repeated narrative comments.

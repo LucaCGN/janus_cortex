@@ -56,8 +56,9 @@ The controller automation should read these anchor files on every material pass:
 23. `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
 24. `app/docs/planning/current/final_system/backlog/premise_to_backlog_map_2026-05-18.md`
 25. `app/docs/planning/current/final_system/backlog/live_runtime_scope_map_2026-05-24.md`
-26. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
-27. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
+26. `app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md`
+27. `app/docs/planning/current/final_system/obsidian/bootstrap_map.md`
+28. `app/docs/planning/current/final_system/obsidian/modular_curation_policy.md`
 
 The automation prompt should not encode detailed persona rules, market taxonomy, issue labels, or backlog policy directly.
 
@@ -80,7 +81,7 @@ Core lanes:
 | `master-janus-manager` | 1 hour | Review last automation runs across all Janus lanes, detect prompt/memory/source-of-truth drift, and keep GitHub issues, repo docs, and Obsidian aligned as the durable CI/CD truth. | Automation governance only: no trading actions, no worker/service starts, no fresh-lock takeover. |
 | `oversight-portfolio` | 1 hour | Review `janus-portfolio-manager` behavior, strategy quality, trade-rationale lifecycle, winning-profile delta use, target/close/grid decisions, closed #56/#59 foundation evidence, and active portfolio follow-ups. | Oversight only: no order, cancel, replace, redeem, signing, broadcasting, or worker/service start. |
 | `oversight-devloop` | 30 minutes | Monitor the development loop, queue locks, dirty worktree, repeated issue comments, issue splitting/closure, backlog drift, and whether implementation slices are being claimed, validated, committed, pushed, and closed. | No trading actions; code/docs patches only when issue-backed and narrow. |
-| `janus-master-dev` | 15 minutes | Recurring Janus development/live-readiness executor for issue-backed work, especially #62 WNBA validation, #63-#70 live-runtime children, closed #55 entry-timing evidence adoption, and new focused portfolio follow-ups when sports does not preempt them. | Not the global portfolio trader; no raw exchange bypass; Janus live actions only through approved Janus gates. |
+| `janus-master-dev` | 15 minutes | Recurring Janus development/live-readiness executor for issue-backed work, especially #63 live-runtime follow-ups, #78 postgame evaluation, #79 sleeve/order-lifecycle promotion, closed #55/#70/#77 evidence adoption, and new focused portfolio follow-ups when sports does not preempt them. | Not the global portfolio trader; no raw exchange bypass; Janus live actions only through approved Janus gates. |
 | `janus-portfolio-manager` | 6 hours deep pass; temporary 30 minutes only during active portfolio testing | Active Codex global portfolio manager for existing-position actions, new micro-position scouting, Polymarket frontend/profile discovery, one-shot order routing, and grid/scalping candidates. | May trade only through approved portfolio-manager order paths and live gates; no Janus NBA/WNBA covered-market authority. |
 | `janus-obsidian-builder` | 6 hours | Curated Obsidian memory, indexes, profile/trade rationale navigation, source links, and note hygiene. | No execution, no automation schedule edits, no repo contract rewrites unless explicitly issue-backed. |
 
@@ -99,6 +100,8 @@ Current-scope expansion before crypto/options:
 | Obsidian backlog repair | [#74](https://github.com/LucaCGN/janus_cortex/issues/74) | Repair note-to-backlog promotion so curated notes become bounded issue candidates without becoming runtime truth. | Curation/governance only; no trading. |
 | Portfolio-manager artifact ownership | closed [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | Reconciled the 2026-05-24T18:06Z portfolio-manager artifact-only pass, memory ownership, and queue-claim discipline. Future portfolio drift, scaling, grid-service expansion, or order-path regression needs a focused follow-up issue. | Governance/portfolio oversight only; no trading or service starts. |
 | Portfolio lifecycle reconciliation | closed [#76](https://github.com/LucaCGN/janus_cortex/issues/76) | Maduro target coverage was restored and Colorado Avalanche was reconciled closed/no-active-position by the 2026-05-25 portfolio-manager pass. | Future portfolio lifecycle drift needs a focused follow-up issue; no Janus NBA/WNBA authority. |
+| Postgame learning artifact | [#78](https://github.com/LucaCGN/janus_cortex/issues/78) | Complete `postgame_evaluation.json` and replay comparison outputs for account-scoped PnL, sleeve/cycle attribution, CLOB/UI grounding, and source-confidence labels. | Read-only evaluation; no trading. |
+| Sleeve portfolio promotion | [#79](https://github.com/LucaCGN/janus_cortex/issues/79) | Promote side/phase budget controls, paired order lifecycle, manual-imported position handling, and ultra-low rebound sleeves behind Janus gates. | May affect live order candidates only through Janus StrategyPlan/live-worker/order-management gates. |
 
 ## Runtime State Anchors
 
@@ -213,7 +216,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#55](https://github.com/LucaCGN/janus_cortex/issues/55) | P1 | closed | NBA/WNBA entry-timing research completed with replay matrix, event-control recommendation pack, and StrategyPlan template guidance; future runtime adoption routes to #62/#63/#69 or a focused follow-up. |
 | [#60](https://github.com/LucaCGN/janus_cortex/issues/60) | P1 | closed | WNBA sustained active-window passive CLOB/trade capture and audit integration completed; future WNBA live-promotion is #62. |
 | [#61](https://github.com/LucaCGN/janus_cortex/issues/61) | P0 | closed | NBA OKC/SAS minimum-size live test completed through Janus gates; remaining lessons route to focused #63 follow-ups using closed #55/#70 evidence where relevant. |
-| [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | open | WNBA shadow-to-controlled-min-size live lifecycle validation route. |
+| [#62](https://github.com/LucaCGN/janus_cortex/issues/62) | P0 | closed | WNBA controlled live lifecycle validation completed during the 2026-05-25 window with shared runtime, feed/slug repair, live orders, and paired target behavior; future WNBA quality gaps route to #63/#78/#79. |
 | [#63](https://github.com/LucaCGN/janus_cortex/issues/63) | P0 | open | Parent architecture and implementation route for independent Janus covered-market live trading runtime, live signal aggregation, degraded-mode operation, event risk budgets, and issue/backlog reset. |
 | [#64](https://github.com/LucaCGN/janus_cortex/issues/64) | P0 | closed | Normalized NBA/WNBA live snapshot contract and live-tick runtime adoption implemented in `340db2f` and `e87515f`; future HTTP/readback adoption should use a focused #63 follow-up only if needed. |
 | [#65](https://github.com/LucaCGN/janus_cortex/issues/65) | P0 | closed | Live signal schema and artifact persistence implemented in `ddbf6e0`; future changes should route through focused follow-up tasks under #63. |
@@ -229,6 +232,8 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#75](https://github.com/LucaCGN/janus_cortex/issues/75) | P1 | closed | Portfolio-manager artifact-only pass ownership reconciled; next portfolio-manager run proved queue claim/release discipline with durable memory, artifacts, and Obsidian updates. |
 | [#76](https://github.com/LucaCGN/janus_cortex/issues/76) | P0 | closed | Maduro filled-position target coverage restored with approved portfolio-manager target maintenance; Colorado Avalanche reconciled closed/no-active-position. |
 | [#77](https://github.com/LucaCGN/janus_cortex/issues/77) | P0 | closed | Paired sports-live microcycle evidence and readback scoring implemented; future promotion remains behind Janus StrategyPlan/live-worker/order-management gates. |
+| [#78](https://github.com/LucaCGN/janus_cortex/issues/78) | P0 | open | Complete postgame evaluation and replay learning artifact: account-scoped PnL, sleeve/cycle attribution, four replay modes, CLOB/UI grounding, and source-confidence labels. |
+| [#79](https://github.com/LucaCGN/janus_cortex/issues/79) | P0 | open | Promote live sleeve portfolio behavior: side/phase budgets, paired order lifecycle, manual-imported positions, and ultra-low rebound sleeves through Janus gates. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |
