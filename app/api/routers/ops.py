@@ -1875,12 +1875,76 @@ def _build_postgame_clob_grounding(
             "open_position_count": direct_scope.get("open_position_count"),
             "trade_count": direct_scope.get("trade_count"),
         },
-        "ui_displayed_price_comparison": {
+        "ui_displayed_price_comparison": _build_ui_displayed_price_comparison(fill_rows),
+    }
+
+
+def _build_ui_displayed_price_comparison(fill_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    for row in fill_rows:
+        exact_price = _safe_float(row.get("effective_avg_price"))
+        if exact_price is None:
+            continue
+        exact_cents = exact_price * 100.0
+        whole_cent = round(exact_cents)
+        one_decimal_cent = round(exact_cents, 1)
+        fill_size = _safe_float(row.get("effective_fill_size")) or 0.0
+        cashflow = _safe_float(row.get("effective_cashflow_usd"))
+        notional = abs(cashflow) if cashflow is not None else round(exact_price * fill_size, 6)
+        rows.append(
+            {
+                "order_id": row.get("order_id"),
+                "external_order_id": row.get("external_order_id"),
+                "side": row.get("side"),
+                "token_id": row.get("token_id"),
+                "exact_avg_price": round(exact_price, 6),
+                "exact_cents": round(exact_cents, 6),
+                "estimated_ui_whole_cent_label": f"{int(whole_cent)}c",
+                "estimated_ui_one_decimal_cent_label": _cent_label(one_decimal_cent),
+                "rounding_delta_to_whole_cent": round(whole_cent - exact_cents, 6),
+                "minimum_checks": {
+                    "min_size": 5.0,
+                    "min_buy_notional_usd": 1.0,
+                    "effective_fill_size": row.get("effective_fill_size"),
+                    "effective_notional_usd": round(notional, 6),
+                    "size_meets_exchange_minimum": fill_size >= 5.0,
+                    "notional_meets_exchange_buy_minimum": notional >= 1.0,
+                },
+                "source_confidence": "account_confirmed",
+            }
+        )
+    if not rows:
+        return {
+            "schema_version": "postgame_ui_displayed_price_comparison_v1",
             "status": "not_available",
             "source_confidence": "ui_observed",
-            "reason": "ui_observation_not_attached_to_postgame_artifact",
+            "actual_ui_observation_attached": False,
+            "reason": "no_account_scoped_fill_rows_for_display_comparison",
+            "account_pnl_eligible": False,
+        }
+    return {
+        "schema_version": "postgame_ui_displayed_price_comparison_v1",
+        "status": "derived_display_estimates",
+        "source_confidence": "inferred",
+        "actual_ui_observation_source_confidence": "ui_observed",
+        "actual_ui_observation_attached": False,
+        "reason": "exact_account_clob_prices_available_but_ui_screenshot_values_not_attached",
+        "account_pnl_eligible": False,
+        "rounding_policy": {
+            "whole_cent_label": "nearest displayed whole-cent estimate; useful for audit only",
+            "one_decimal_cent_label": "one-decimal cent estimate for sub-cent/low-price UI audit",
+            "accounting_authority": "effective_avg_price from account-scoped direct CLOB/local reconciliation",
         },
+        "row_count": len(rows),
+        "rows": rows,
     }
+
+
+def _cent_label(value: float) -> str:
+    rounded = round(value, 1)
+    if abs(rounded - int(rounded)) < 1e-9:
+        return f"{int(rounded)}c"
+    return f"{rounded:.1f}c"
 
 
 def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str) -> dict[str, Any]:

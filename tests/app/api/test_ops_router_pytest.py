@@ -2242,7 +2242,12 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     assert clob_grounding["external_order_ids"] == ["0xorder1"]
     assert clob_grounding["direct_trade_ids"] == ["direct-trade-1"]
     assert clob_grounding["fill_rows"][0]["effective_avg_price"] == 0.95
-    assert clob_grounding["ui_displayed_price_comparison"]["status"] == "not_available"
+    ui_comparison = clob_grounding["ui_displayed_price_comparison"]
+    assert ui_comparison["status"] == "derived_display_estimates"
+    assert ui_comparison["account_pnl_eligible"] is False
+    assert ui_comparison["rows"][0]["exact_avg_price"] == 0.95
+    assert ui_comparison["rows"][0]["estimated_ui_whole_cent_label"] == "95c"
+    assert ui_comparison["rows"][0]["minimum_checks"]["size_meets_exchange_minimum"] is True
     assert evaluation["replay_input"]["same_tick_stream_for_all_modes"] is True
     assert evaluation["replay_input"]["events"]["nba-sas-min-2026-05-10"]["tick_count"] == 2
     assert evaluation["replay_modes"]["sleeve_isolated"]["status"] == "input_ready"
@@ -2318,7 +2323,11 @@ def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> No
     realized_item = evaluation["realized_live"]["items"][0]
     assert realized_item["account_pnl"]["known_cashflow_usd"] == 2.15
     assert realized_item["clob_grounding"]["fill_rows"][0]["effective_avg_price"] == 0.95
-    assert realized_item["clob_grounding"]["ui_displayed_price_comparison"]["source_confidence"] == "ui_observed"
+    ui_comparison = realized_item["clob_grounding"]["ui_displayed_price_comparison"]
+    assert ui_comparison["source_confidence"] == "inferred"
+    assert ui_comparison["actual_ui_observation_source_confidence"] == "ui_observed"
+    assert ui_comparison["rows"][0]["estimated_ui_one_decimal_cent_label"] == "95c"
+    assert ui_comparison["rows"][0]["minimum_checks"]["notional_meets_exchange_buy_minimum"] is True
     assert realized_item["market_tape"]["event_scoped_trade_count"] == 999
     assert realized_item["market_tape"]["account_pnl_eligible"] is False
     assert evaluation["market_tape_policy"]["blocked_uses"] == [
@@ -2326,6 +2335,30 @@ def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> No
         "realized_return",
         "all_account_performance",
     ]
+
+
+def test_postgame_ui_display_comparison_preserves_subcent_clob_truth_pytest() -> None:
+    comparison = ops_router._build_ui_displayed_price_comparison(
+        [
+            {
+                "order_id": "order-subcent",
+                "side": "buy",
+                "token_id": "token-okc",
+                "effective_fill_size": 202,
+                "effective_cashflow_usd": -1.212,
+                "effective_avg_price": 0.006,
+            }
+        ]
+    )
+
+    row = comparison["rows"][0]
+    assert comparison["account_pnl_eligible"] is False
+    assert row["exact_avg_price"] == 0.006
+    assert row["exact_cents"] == 0.6
+    assert row["estimated_ui_whole_cent_label"] == "1c"
+    assert row["estimated_ui_one_decimal_cent_label"] == "0.6c"
+    assert row["rounding_delta_to_whole_cent"] == 0.4
+    assert row["minimum_checks"]["effective_notional_usd"] == 1.212
 
 
 def test_postgame_replay_tick_stream_summary_reads_same_event_stream_pytest(tmp_path, monkeypatch) -> None:
