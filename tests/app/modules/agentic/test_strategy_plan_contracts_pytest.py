@@ -104,6 +104,63 @@ def test_strategy_plan_evaluator_compiles_valid_order_intent_pytest() -> None:
     assert result.intents[0].metadata["required_notional_usd"] == 1.0
 
 
+def test_strategy_plan_position_limit_is_token_scoped_for_parallel_sleeves_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="favorite-grid",
+                family="price_stability_micro_grid",
+                side="Favorite",
+                budget_usd=5.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-fav",
+                    "token_id": "token-fav",
+                    "side": "buy",
+                    "price": 0.8,
+                    "size": 5,
+                    "price_band": [0.01, 0.95],
+                },
+            ),
+            ActiveStrategy(
+                strategy_id="dog-grid",
+                family="price_stability_micro_grid",
+                side="Underdog",
+                budget_usd=5.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-dog",
+                    "token_id": "token-dog",
+                    "side": "buy",
+                    "price": 0.2,
+                    "size": 5,
+                    "price_band": [0.01, 0.95],
+                },
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={"token_states": {"token-fav": {"price": 0.8}, "token-dog": {"price": 0.2}}},
+        portfolio_state={
+            "open_positions": 1,
+            "open_orders": 0,
+            "event_scoped_direct_clob": {
+                "open_positions": {"positions": [{"asset": "token-fav", "size": 5}]},
+                "open_orders": {"orders": []},
+            },
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].strategy_id == "dog-grid"
+    assert any(blocker["strategy_id"] == "favorite-grid" and blocker["reason"] == "position_limit_reached" for blocker in result.blockers)
+
+
 def test_strategy_plan_evaluator_promotes_live_aggregation_candidate_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-1",

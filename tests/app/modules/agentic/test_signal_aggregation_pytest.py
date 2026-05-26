@@ -88,7 +88,7 @@ def test_aggregator_blocks_conflicting_signals_pytest() -> None:
     )
 
     assert decision.decision_type == "blocked"
-    assert decision.conflict_count == 2
+    assert decision.conflict_count == 1
     assert decision.order_intent_candidates == []
     assert {blocker.reason_code for blocker in decision.blocker_artifacts} == {"conflicting_actionable_signals"}
 
@@ -118,6 +118,53 @@ def test_aggregator_keeps_sleeve_local_blocker_from_suppressing_independent_cand
     assert [(blocker.reason_code, blocker.detail["scope"], blocker.detail["candidate_blocking"]) for blocker in decision.blocker_artifacts] == [
         ("block_signal_present", "local_sleeve", False)
     ]
+
+
+def test_aggregator_keeps_independent_sell_from_blocking_rebuy_candidate_pytest() -> None:
+    rebuy = _signal(
+        signal_type="rebuy",
+        side="Cavaliers",
+        token="token-cavaliers",
+        confidence=0.78,
+        reason="target_filled_rebuy_leg",
+    )
+    rebuy.risk_request = LiveSignalRiskRequest(sleeve_id="cavaliers-grid", requested_shares=5, max_price=0.24)
+    rebuy.payload = {"sleeve_id": "cavaliers-grid", "trigger_source": "paired_microcycle"}
+    sell = _signal(
+        signal_type="sell",
+        side="Knicks",
+        token="token-knicks",
+        confidence=0.72,
+        reason="paired_sell_target",
+    )
+    sell.risk_request = LiveSignalRiskRequest(sleeve_id="knicks-grid", requested_shares=5, max_price=0.81)
+    sell.payload = {"sleeve_id": "knicks-grid", "trigger_source": "paired_microcycle"}
+
+    decision = aggregate_live_signals(
+        [rebuy, sell],
+        event_id=EVENT_ID,
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert decision.decision_type == "order_intent_candidate"
+    assert decision.conflict_count == 0
+    assert decision.order_intent_candidates[0].side == "Cavaliers"
+
+
+def test_aggregator_keeps_local_block_local_without_candidate_pytest() -> None:
+    blocked_sleeve = _signal(signal_type="block", side="Spurs", token="token-spurs")
+    blocked_sleeve.risk_request = LiveSignalRiskRequest(sleeve_id="sas-grid", requested_shares=5, max_price=0.54)
+    blocked_sleeve.payload = {"aggregation_scope": "local_sleeve", "sleeve_id": "sas-grid"}
+
+    decision = aggregate_live_signals(
+        [blocked_sleeve],
+        event_id=EVENT_ID,
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert decision.decision_type == "blocked"
+    assert decision.order_intent_candidates == []
+    assert decision.blocker_artifacts[0].detail == {"scope": "local_sleeve", "candidate_blocking": False}
 
 
 def test_aggregator_carries_trigger_and_cycle_metadata_to_candidate_pytest() -> None:

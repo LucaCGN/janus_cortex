@@ -519,6 +519,7 @@ def _run_event_tick(
         else {}
     )
     if event_direct_clob_state:
+        portfolio_state["event_scoped_direct_clob"] = event_direct_clob_state
         raw_event_open_position_count = event_direct_clob_state.get(
             "raw_event_open_position_count",
             event_direct_clob_state.get("event_open_position_count"),

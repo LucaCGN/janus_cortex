@@ -959,8 +959,16 @@ def _rules_blocker(
     max_open_positions = None
     if explicit_position_cap is not None or has_exposure_state:
         max_open_positions = _min_present(explicit_position_cap, _safe_float(strategy_max_positions))
-    open_positions = _safe_float(portfolio_state.get("open_positions"))
-    open_orders = _safe_float(portfolio_state.get("open_orders")) or 0.0
+    scoped_exposure = _strategy_scoped_unresolved_exposure(
+        portfolio_state,
+        entry_rules=entry_rules,
+    )
+    if scoped_exposure is not None:
+        open_positions = scoped_exposure["open_positions"]
+        open_orders = scoped_exposure["open_orders"]
+    else:
+        open_positions = _safe_float(portfolio_state.get("open_positions"))
+        open_orders = _safe_float(portfolio_state.get("open_orders")) or 0.0
     direct_unresolved_exposure = (open_positions or 0.0) + open_orders
     unresolved_exposure = direct_unresolved_exposure + pending_intents
     if explicit_position_cap is not None and open_positions is None:
@@ -1141,6 +1149,59 @@ def _revision_required_player_status_shocks(strategy_state: dict[str, Any]) -> l
     else:
         values = []
     return [item for item in values if item.get("requires_strategy_plan_revision") is not False]
+
+
+def _strategy_scoped_unresolved_exposure(
+    portfolio_state: dict[str, Any],
+    *,
+    entry_rules: dict[str, Any],
+) -> dict[str, float] | None:
+    direct_clob = portfolio_state.get("event_scoped_direct_clob") or portfolio_state.get("direct_clob_truth")
+    if not isinstance(direct_clob, dict):
+        return None
+
+    token_id = str(entry_rules.get("token_id") or entry_rules.get("asset_id") or "").strip()
+    outcome_id = str(entry_rules.get("outcome_id") or "").strip()
+    if not token_id and not outcome_id:
+        return None
+
+    open_positions = 0.0
+    positions = ((direct_clob.get("open_positions") or {}).get("positions") or []) if isinstance(direct_clob.get("open_positions"), dict) else []
+    for position in positions:
+        if isinstance(position, dict) and _direct_position_matches(position, token_id=token_id, outcome_id=outcome_id):
+            open_positions += 1.0
+
+    open_orders = 0.0
+    orders = ((direct_clob.get("open_orders") or {}).get("orders") or []) if isinstance(direct_clob.get("open_orders"), dict) else []
+    for order in orders:
+        if isinstance(order, dict) and _direct_order_matches(order, token_id=token_id, outcome_id=outcome_id):
+            open_orders += 1.0
+
+    return {"open_positions": open_positions, "open_orders": open_orders}
+
+
+def _direct_position_matches(position: dict[str, Any], *, token_id: str, outcome_id: str) -> bool:
+    position_token = str(
+        position.get("asset")
+        or position.get("asset_id")
+        or position.get("token_id")
+        or position.get("market_token_id")
+        or ""
+    ).strip()
+    position_outcome = str(position.get("outcome_id") or "").strip()
+    return bool((token_id and position_token == token_id) or (outcome_id and position_outcome == outcome_id))
+
+
+def _direct_order_matches(order: dict[str, Any], *, token_id: str, outcome_id: str) -> bool:
+    order_token = str(
+        order.get("asset_id")
+        or order.get("token_id")
+        or order.get("asset")
+        or order.get("market_token_id")
+        or ""
+    ).strip()
+    order_outcome = str(order.get("outcome_id") or "").strip()
+    return bool((token_id and order_token == token_id) or (outcome_id and order_outcome == outcome_id))
 
 
 def _has_pending_intent_state(portfolio_state: dict[str, Any]) -> bool:

@@ -163,14 +163,14 @@ def aggregate_live_signals(
     candidate_group = _candidate_group(actionable)
     explicit_blocks = [signal for signal in selected if signal.signal_type == "block"]
     for block_signal in explicit_blocks:
-        local_to_other_sleeve = _is_local_block_signal(block_signal, candidate_group)
+        block_scope = _block_signal_scope(block_signal, candidate_group)
         blockers.append(
             _blocker(
                 "block_signal_present",
                 [block_signal],
                 {
-                    "scope": "local_sleeve" if local_to_other_sleeve else "global",
-                    "candidate_blocking": not local_to_other_sleeve,
+                    "scope": block_scope["scope"],
+                    "candidate_blocking": block_scope["candidate_blocking"],
                 },
             )
         )
@@ -286,19 +286,24 @@ def _candidate_group(actionable: list[LiveSignal]) -> list[LiveSignal]:
     return sorted(groups.values(), key=lambda group: (len(group), max(signal.confidence or 0.0 for signal in group)), reverse=True)[0]
 
 
-def _is_local_block_signal(signal: LiveSignal, candidate_group: list[LiveSignal]) -> bool:
-    if not candidate_group:
-        return False
+def _block_signal_scope(signal: LiveSignal, candidate_group: list[LiveSignal]) -> dict[str, Any]:
     payload = signal.payload if isinstance(signal.payload, dict) else {}
     scope = str(payload.get("aggregation_scope") or payload.get("scope") or "").strip().lower()
+    if scope in {"global", "event", "live_safety"}:
+        return {"scope": "global", "candidate_blocking": True}
     if scope not in {"local", "sleeve", "strategy", "local_sleeve"}:
-        return False
+        return {"scope": "global", "candidate_blocking": True}
     block_sleeve = _signal_sleeve_id(signal)
     if not block_sleeve:
-        return False
+        return {"scope": "local_sleeve", "candidate_blocking": False}
+    if not candidate_group:
+        return {"scope": "local_sleeve", "candidate_blocking": False}
     candidate_sleeves = {_signal_sleeve_id(candidate) for candidate in candidate_group}
     candidate_sleeves.discard(None)
-    return bool(candidate_sleeves) and block_sleeve not in candidate_sleeves
+    return {
+        "scope": "local_sleeve",
+        "candidate_blocking": bool(candidate_sleeves) and block_sleeve in candidate_sleeves,
+    }
 
 
 def _signal_sleeve_id(signal: LiveSignal) -> str | None:
@@ -322,18 +327,23 @@ def _conflict_groups(actionable: list[LiveSignal]) -> list[list[LiveSignal]]:
         return []
     groups: dict[tuple[Any, ...], list[LiveSignal]] = {}
     for signal in actionable:
-        groups.setdefault(_action_key(signal), []).append(signal)
-    if len(groups) <= 1:
-        return []
-    buy_groups = [group for key, group in groups.items() if key[0] in _BUY_TYPES]
-    sell_groups = [group for key, group in groups.items() if key[0] in _SELL_TYPES]
-    if buy_groups and sell_groups:
-        return [signal_group for signal_group in groups.values()]
-    if len(buy_groups) > 1:
-        return buy_groups
-    if len(sell_groups) > 1:
-        return sell_groups
-    return []
+        groups.setdefault(_conflict_scope_key(signal), []).append(signal)
+    conflicts: list[list[LiveSignal]] = []
+    for group in groups.values():
+        has_buy = any(signal.signal_type in _BUY_TYPES for signal in group)
+        has_sell = any(signal.signal_type in _SELL_TYPES for signal in group)
+        if has_buy and has_sell:
+            conflicts.append(group)
+    return conflicts
+
+
+def _conflict_scope_key(signal: LiveSignal) -> tuple[Any, ...]:
+    return (
+        _norm(signal.side),
+        signal.market_token_id,
+        signal.outcome_id,
+        _signal_sleeve_id(signal),
+    )
 
 
 def _action_key(signal: LiveSignal) -> tuple[Any, ...]:
