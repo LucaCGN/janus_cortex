@@ -87,7 +87,7 @@ Do not use the register as live trading truth or active lock authority. Runtime 
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | Closed foundation | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | Closed foundation | Current architecture and degradation maps completed. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | Closed foundation | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
-| [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | Planned/sprint | Validate minimum order constraints and market-order exception policy. |
+| [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | Closed foundation | Minimum-order/UI-vs-CLOB audit, sub-cent warning policy, and disabled-by-default sell-only urgent-profit market-order exception implemented. |
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | Closed foundation | Chart-equivalent microstructure metrics implemented for event review/live monitor. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | Planned/sprint | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | Closed foundation | Global portfolio target/rebuy ledger and watchlist schema implemented. |
@@ -154,7 +154,7 @@ Routing rules:
 |---|---|
 | `#61/#62` | Both are closed live-validation foundations. Future NBA/WNBA runtime gaps should use focused #63/#78/#79 tasks and closed #55/#70/#77 evidence instead of reopening #61 or #62. |
 | `#55` | Closed research/backtest evidence feeding signal confidence and timing config; use #62/#63/#69 or a focused follow-up for future runtime adoption or calibration. |
-| `#42/#44` | Keep as support for exchange minimums, order exceptions, risk budget, and bankroll scaling. |
+| `#42/#44` | `#42` is closed support for exchange minimums and order exceptions. Keep `#44` open for future profit-ratcheted bankroll scaling after more realized live-test data. |
 | `#56/#59` | Closed Codex global portfolio-manager foundations. Do not use them as Janus NBA/WNBA live-runtime owners or as open umbrellas for future status comments; create focused follow-up issues for new portfolio drift or expansion. |
 | `#46/#47/#48` | Keep as profile/future-domain incubation, not covered-market live authority. |
 

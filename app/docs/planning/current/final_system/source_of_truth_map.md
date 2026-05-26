@@ -202,7 +202,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#39](https://github.com/LucaCGN/janus_cortex/issues/39) | P0 | closed | Controller active queue locks and pass ledger implemented in `app/runtime/controller_queue.py` and `tools/controller_queue.py`. |
 | [#40](https://github.com/LucaCGN/janus_cortex/issues/40) | P0 | closed | Current architecture and service degradation map completed in `architecture/current_architecture_and_degradation_map.md`. |
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | closed | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
-| [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | open | Validate Polymarket minimum order constraints and market-order exception policy. |
+| [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | closed | Minimum-order/UI-vs-CLOB audit, sub-cent warning policy, and disabled-by-default sell-only urgent-profit market-order exception implemented. |
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | closed | Chart-equivalent microstructure metrics implemented for event review/live monitor; later authority promotion belongs to replay/fillability follow-up work. |
 | [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | closed | Global portfolio watchlist schema, read-only tooling, target policy flags, and artifacts implemented; active execution moved through closed foundations `#54` and `#59`. |
