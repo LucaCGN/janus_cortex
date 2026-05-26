@@ -496,7 +496,22 @@ def _is_grid_scalp_strategy(strategy: dict[str, Any], entry_rules: dict[str, Any
             entry_rules.get("sleeve_role"),
         )
     )
-    return any(marker in haystack for marker in ("grid", "scalp", "microcycle", "micro_grid", "price_stability"))
+    return any(
+        marker in haystack
+        for marker in (
+            "grid",
+            "scalp",
+            "microcycle",
+            "micro_grid",
+            "price_stability",
+            "manual_imported",
+            "manual-imported",
+            "ultra_low",
+            "ultralow",
+            "subpenny",
+            "decimal_grid",
+        )
+    )
 
 
 def _trades_by_token(

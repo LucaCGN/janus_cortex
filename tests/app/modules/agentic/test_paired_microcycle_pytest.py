@@ -190,6 +190,66 @@ def test_paired_microcycle_manual_fill_import_and_stale_target_replacement_pytes
     assert cycle.reason_codes == ["paired_sell_target_stale", "manual_or_unknown_fill_imported"]
 
 
+def test_paired_microcycle_manual_imported_sleeve_is_first_class_pytest() -> None:
+    plan = {
+        "event_id": EVENT_ID,
+        "market_id": "market-okc-sas",
+        "active_strategies": [
+            {
+                "strategy_id": "okc-operator-import",
+                "family": "manual_imported_position_management",
+                "side": "Thunder",
+                "sleeve_id": "okc-operator-import",
+                "sleeve_role": "manual_imported",
+                "entry_rules": {
+                    "market_id": "market-okc-sas",
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "size": 5,
+                    "price": 0.04,
+                },
+                "exit_rules": {
+                    "target_policy": "micro_grid_scaled",
+                    "min_target_cents": 1,
+                },
+            }
+        ],
+    }
+
+    evidence = build_paired_microcycle_evidence(
+        event_id=EVENT_ID,
+        plan=plan,
+        known_external_order_ids=set(),
+        direct_clob={
+            "current_token_trades": {
+                "trades": [
+                    {"id": "operator-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "operator-buy-1"},
+                ]
+            },
+        },
+        target_management={
+            "sleeves": [
+                {
+                    "sleeve_id": "okc-operator-import",
+                    "target_status": "target_missing",
+                    "weighted_basis_price": 0.04,
+                    "target_price": 0.05,
+                }
+            ]
+        },
+    )
+
+    cycle = evidence.cycles[0]
+    assert evidence.manual_fill_import_count == 1
+    assert evidence.next_leg_candidate_count == 1
+    assert cycle.sleeve_role == "manual_imported"
+    assert cycle.status == "sell_candidate"
+    assert cycle.next_action == "place_paired_sell"
+    assert cycle.manual_fill_imported is True
+    assert cycle.buy_leg.actor == "operator"
+    assert cycle.reason_codes == ["filled_buy_requires_paired_sell", "manual_or_unknown_fill_imported"]
+
+
 def test_paired_microcycle_blocks_rebuy_when_event_budget_exhausted_pytest() -> None:
     evidence = build_paired_microcycle_evidence(
         event_id=EVENT_ID,

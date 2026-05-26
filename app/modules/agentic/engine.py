@@ -260,9 +260,16 @@ def _order_intents_from_live_signal_aggregation(
         token_id = _clean_text(candidate.get("market_token_id") or candidate.get("token_id"))
         outcome_id = _clean_text(candidate.get("outcome_id"))
         price = _safe_float(candidate.get("max_price") or candidate.get("price"))
-        size = _candidate_size(candidate, price=price)
         strategy_id = _clean_text(candidate.get("strategy_id")) or f"live-signal-aggregation-{index + 1}"
         sleeve_id = _clean_text(candidate.get("sleeve_id")) or strategy_id
+        strategy = strategies_by_id.get(strategy_id)
+        size, size_metadata = _candidate_size(
+            candidate,
+            price=price,
+            side=side,
+            strategy=strategy,
+            min_buy_notional_usd=min_buy_notional,
+        )
         dedupe_key = (token_id, side, sleeve_id, _clean_text(candidate.get("cycle_id")))
         if dedupe_key in seen_keys:
             blockers.append(
@@ -342,10 +349,39 @@ def _order_intents_from_live_signal_aggregation(
                 }
             )
             continue
+        if side == "buy" and strategy is not None and strategy.budget_usd > 0 and notional > strategy.budget_usd + 1e-9:
+            blockers.append(
+                {
+                    "scope": "live_signal_aggregation",
+                    "reason": "budget_exceeded",
+                    "strategy_id": strategy_id,
+                    "sleeve_id": sleeve_id,
+                    "budget_usd": strategy.budget_usd,
+                    "required_notional_usd": round(notional, 6),
+                }
+            )
+            continue
+        if strategy is not None:
+            ultra_low_blocker = _ultra_low_underdog_blocker(
+                strategy,
+                order_side=side,
+                order_price=price,
+                market_state=_strategy_market_state(strategy.entry_rules, market_state, strategy_id=strategy.strategy_id),
+            )
+            if ultra_low_blocker is not None:
+                blockers.append(
+                    {
+                        "scope": "live_signal_aggregation",
+                        "strategy_id": strategy_id,
+                        "sleeve_id": sleeve_id,
+                        **ultra_low_blocker,
+                    }
+                )
+                continue
         lifecycle_blocker = _aggregation_candidate_lifecycle_blocker(
             candidate,
             side=side,
-            strategy=strategies_by_id.get(strategy_id),
+            strategy=strategy,
         )
         if lifecycle_blocker is not None:
             blockers.append(lifecycle_blocker)
@@ -378,6 +414,7 @@ def _order_intents_from_live_signal_aggregation(
                     "min_size": min_size,
                     "min_buy_notional_usd": min_buy_notional,
                     "max_buy_notional_usd": max_buy_notional,
+                    **size_metadata,
                 },
                 "sleeve": {
                     "sleeve_id": sleeve_id,
@@ -390,7 +427,7 @@ def _order_intents_from_live_signal_aggregation(
                 "paired_lifecycle": _aggregation_candidate_lifecycle_metadata(
                     candidate,
                     side=side,
-                    strategy=strategies_by_id.get(strategy_id),
+                    strategy=strategy,
                 ),
             },
         )
@@ -419,14 +456,90 @@ def _candidate_order_side(candidate: dict[str, Any]) -> str | None:
     return None
 
 
-def _candidate_size(candidate: dict[str, Any], *, price: float | None) -> float | None:
+def _candidate_size(
+    candidate: dict[str, Any],
+    *,
+    price: float | None,
+    side: str | None,
+    strategy: Any | None,
+    min_buy_notional_usd: float,
+) -> tuple[float | None, dict[str, Any]]:
     size = _safe_float(candidate.get("requested_shares") or candidate.get("size"))
-    if size is not None:
-        return size
+    source = "requested_shares" if size is not None else None
     notional = _safe_float(candidate.get("requested_notional_usd") or candidate.get("notional_usd"))
-    if notional is not None and price is not None and price > 0.0:
-        return notional / price
-    return None
+    if size is None and notional is not None and price is not None and price > 0.0:
+        size = notional / price
+        source = "requested_notional_usd"
+    if (
+        side == "buy"
+        and price is not None
+        and price > 0.0
+        and _aggregation_min_notional_sizing_enabled(candidate, strategy)
+    ):
+        target_notional = _aggregation_min_buy_notional(strategy, fallback=min_buy_notional_usd)
+        precision = _aggregation_share_precision(strategy)
+        min_notional_size = _ceil_to_precision(target_notional / price, precision)
+        if size is None or size * price < target_notional:
+            return min_notional_size, {
+                "mode": "minimum_notional_ultra_low_sleeve",
+                "requested_size": size,
+                "resolved_size_source": "minimum_buy_notional",
+                "target_notional_usd": round(target_notional, 6),
+                "share_precision": precision,
+            }
+    return size, {
+        "mode": "candidate_size",
+        "requested_size": size,
+        "resolved_size_source": source,
+    }
+
+
+def _aggregation_min_notional_sizing_enabled(candidate: dict[str, Any], strategy: Any | None) -> bool:
+    explicit_mode = str(
+        candidate.get("sizing_mode")
+        or candidate.get("size_policy")
+        or candidate.get("sizing_policy")
+        or ""
+    ).strip().lower()
+    if explicit_mode in {"minimum_notional", "min_notional", "min_buy_notional", "operator_minimum_order"}:
+        return True
+    if strategy is None:
+        return False
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    strategy_mode = str(
+        entry_rules.get("sizing_mode")
+        or entry_rules.get("size_policy")
+        or entry_rules.get("sizing_policy")
+        or ""
+    ).strip().lower()
+    if strategy_mode in {"minimum_notional", "min_notional", "min_buy_notional", "operator_minimum_order"}:
+        return True
+    if _truthy_any(entry_rules, ("size_to_min_buy_notional", "scale_to_min_buy_notional")):
+        return True
+    return _is_ultra_low_sleeve_strategy(strategy)
+
+
+def _aggregation_min_buy_notional(strategy: Any | None, *, fallback: float) -> float:
+    if strategy is None:
+        return fallback
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    value = _safe_float(entry_rules.get("min_buy_notional_usd") or entry_rules.get("minimum_buy_notional_usd"))
+    return value if value is not None and value > 0.0 else fallback
+
+
+def _aggregation_share_precision(strategy: Any | None) -> int:
+    if strategy is None:
+        return 3
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    precision = _safe_float(entry_rules.get("share_precision") or entry_rules.get("size_precision"))
+    if precision is None:
+        return 3
+    return max(0, min(6, int(precision)))
+
+
+def _ceil_to_precision(value: float, precision: int) -> float:
+    factor = 10**precision
+    return math.ceil(value * factor - 1e-12) / factor
 
 
 def _aggregation_candidate_lifecycle_blocker(
@@ -486,6 +599,9 @@ def _strategy_declares_buy_lifecycle(strategy: Any | None) -> bool:
         for value in (
             exit_rules.get("target_price"),
             exit_rules.get("target_delta_cents"),
+            exit_rules.get("target_policy"),
+            exit_rules.get("min_target_cents"),
+            exit_rules.get("target_return_fraction"),
             entry_rules.get("target_price"),
             entry_rules.get("target_delta_cents"),
             stop_rules.get("stop_price"),
@@ -920,6 +1036,21 @@ def _is_underdog_strategy(strategy: Any) -> bool:
     family = str(getattr(strategy, "family", "") or "").lower()
     side = str(getattr(strategy, "side", "") or "").lower()
     return "underdog" in family or side in {"underdog", "dog", "away_underdog", "home_underdog"}
+
+
+def _is_ultra_low_sleeve_strategy(strategy: Any) -> bool:
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    haystack = " ".join(
+        str(value or "").lower()
+        for value in (
+            getattr(strategy, "family", ""),
+            getattr(strategy, "sleeve_role", ""),
+            getattr(strategy, "sleeve_id", ""),
+            getattr(strategy, "strategy_id", ""),
+            entry_rules.get("sleeve_role"),
+        )
+    )
+    return any(marker in haystack for marker in ("ultra_low", "ultralow", "subpenny", "decimal_grid"))
 
 
 def _truthy_any(values: dict[str, Any], keys: tuple[str, ...]) -> bool:
