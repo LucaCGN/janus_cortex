@@ -246,6 +246,7 @@ def _order_intents_from_live_signal_aggregation(
     min_size = _safe_float(sizing_policy.get("min_size") or sizing_policy.get("minimum_size")) or MIN_ORDER_SIZE
     min_buy_notional = _safe_float(sizing_policy.get("min_buy_notional_usd") or sizing_policy.get("minimum_buy_notional_usd")) or MIN_BUY_NOTIONAL_USD
     max_buy_notional = _safe_float(sizing_policy.get("max_buy_notional_usd") or sizing_policy.get("max_notional_usd"))
+    strategies_by_id = {strategy.strategy_id: strategy for strategy in plan.active_strategies}
 
     for index, candidate in enumerate(candidates):
         if len(intents) >= max_remaining:
@@ -341,6 +342,14 @@ def _order_intents_from_live_signal_aggregation(
                 }
             )
             continue
+        lifecycle_blocker = _aggregation_candidate_lifecycle_blocker(
+            candidate,
+            side=side,
+            strategy=strategies_by_id.get(strategy_id),
+        )
+        if lifecycle_blocker is not None:
+            blockers.append(lifecycle_blocker)
+            continue
 
         intent = OrderIntent(
             intent_id=f"{plan.event_id}|{strategy_id}|aggregation|{len(existing_intents) + len(intents) + 1}",
@@ -378,6 +387,11 @@ def _order_intents_from_live_signal_aggregation(
                 "cycle_id": _clean_text(candidate.get("cycle_id")),
                 "trigger_type": _clean_text(candidate.get("trigger_type")),
                 "trigger_source": _clean_text(candidate.get("trigger_source")),
+                "paired_lifecycle": _aggregation_candidate_lifecycle_metadata(
+                    candidate,
+                    side=side,
+                    strategy=strategies_by_id.get(strategy_id),
+                ),
             },
         )
         seen_keys.add(dedupe_key)
@@ -413,6 +427,102 @@ def _candidate_size(candidate: dict[str, Any], *, price: float | None) -> float 
     if notional is not None and price is not None and price > 0.0:
         return notional / price
     return None
+
+
+def _aggregation_candidate_lifecycle_blocker(
+    candidate: dict[str, Any],
+    *,
+    side: str,
+    strategy: Any | None,
+) -> dict[str, Any] | None:
+    signal_type = str(candidate.get("signal_type") or "").strip().lower()
+    trigger_source = _clean_text(candidate.get("trigger_source"))
+    reason_codes = {str(reason) for reason in candidate.get("reason_codes") or []}
+    strategy_id = _clean_text(candidate.get("strategy_id"))
+    sleeve_id = _clean_text(candidate.get("sleeve_id"))
+    if trigger_source == "paired_microcycle":
+        if not _clean_text(candidate.get("cycle_id")):
+            return {
+                "scope": "live_signal_aggregation",
+                "reason": "paired_microcycle_cycle_id_required",
+                "strategy_id": strategy_id,
+                "sleeve_id": sleeve_id,
+            }
+        if signal_type == "rebuy" and "sell_fill_allows_rebuy_review" not in reason_codes:
+            return {
+                "scope": "live_signal_aggregation",
+                "reason": "rebuy_requires_sell_fill_evidence",
+                "strategy_id": strategy_id,
+                "sleeve_id": sleeve_id,
+            }
+        if side == "sell" and not (
+            {"filled_buy_requires_paired_sell", "paired_sell_target_stale"} & reason_codes
+        ):
+            return {
+                "scope": "live_signal_aggregation",
+                "reason": "sell_requires_buy_fill_or_stale_target_evidence",
+                "strategy_id": strategy_id,
+                "sleeve_id": sleeve_id,
+            }
+    if side == "buy" and signal_type != "rebuy" and not _strategy_declares_buy_lifecycle(strategy):
+        return {
+            "scope": "live_signal_aggregation",
+            "reason": "paired_lifecycle_policy_required_for_buy",
+            "strategy_id": strategy_id,
+            "sleeve_id": sleeve_id,
+        }
+    return None
+
+
+def _strategy_declares_buy_lifecycle(strategy: Any | None) -> bool:
+    if strategy is None:
+        return False
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {})
+    exit_rules = dict(getattr(strategy, "exit_rules", {}) or {})
+    stop_rules = dict(getattr(strategy, "stop_rules", {}) or {})
+    shadow_flags = dict(getattr(strategy, "shadow_flags", {}) or {})
+    return any(
+        value not in {None, "", False}
+        for value in (
+            exit_rules.get("target_price"),
+            exit_rules.get("target_delta_cents"),
+            entry_rules.get("target_price"),
+            entry_rules.get("target_delta_cents"),
+            stop_rules.get("stop_price"),
+            stop_rules.get("max_loss_cents"),
+            shadow_flags.get("core_hold_reason"),
+            shadow_flags.get("hold_reason"),
+        )
+    )
+
+
+def _aggregation_candidate_lifecycle_metadata(
+    candidate: dict[str, Any],
+    *,
+    side: str,
+    strategy: Any | None,
+) -> dict[str, Any]:
+    trigger_source = _clean_text(candidate.get("trigger_source"))
+    reason_codes = [str(reason) for reason in candidate.get("reason_codes") or []]
+    entry_rules = dict(getattr(strategy, "entry_rules", {}) or {}) if strategy is not None else {}
+    exit_rules = dict(getattr(strategy, "exit_rules", {}) or {}) if strategy is not None else {}
+    stop_rules = dict(getattr(strategy, "stop_rules", {}) or {}) if strategy is not None else {}
+    shadow_flags = dict(getattr(strategy, "shadow_flags", {}) or {}) if strategy is not None else {}
+    return {
+        "required": side == "buy" or trigger_source == "paired_microcycle",
+        "trigger_source": trigger_source,
+        "cycle_id": _clean_text(candidate.get("cycle_id")),
+        "reason_codes": reason_codes,
+        "declared_exit_policy": {
+            "target_price": exit_rules.get("target_price") or entry_rules.get("target_price"),
+            "target_delta_cents": exit_rules.get("target_delta_cents") or entry_rules.get("target_delta_cents"),
+        },
+        "declared_stop_policy": {
+            "stop_price": stop_rules.get("stop_price"),
+            "max_loss_cents": stop_rules.get("max_loss_cents"),
+        },
+        "hold_reason": shadow_flags.get("core_hold_reason") or shadow_flags.get("hold_reason"),
+    }
 
 
 def _aggregation_reason(candidate: dict[str, Any]) -> str:

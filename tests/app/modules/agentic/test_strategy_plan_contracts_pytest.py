@@ -208,6 +208,142 @@ def test_strategy_plan_evaluator_promotes_live_aggregation_candidate_pytest() ->
     assert result.intents[0].metadata["source"] == "live_signal_aggregation"
     assert result.intents[0].metadata["cycle_id"] == "cycle-okc"
     assert result.intents[0].metadata["trigger_type"] == "paired_microcycle_next_leg"
+    assert result.intents[0].metadata["paired_lifecycle"]["cycle_id"] == "cycle-okc"
+    assert "filled_buy_requires_paired_sell" in result.intents[0].metadata["paired_lifecycle"]["reason_codes"]
+
+
+def test_strategy_plan_evaluator_requires_lifecycle_policy_for_aggregation_buy_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "live_signal_aggregation": {
+                "decision": {
+                    "order_intent_candidates": [
+                        {
+                            "event_id": "event-1",
+                            "signal_type": "buy",
+                            "side": "Thunder",
+                            "market_id": "market-1",
+                            "outcome_id": "outcome-okc",
+                            "market_token_id": "token-okc",
+                            "sleeve_id": "okc-grid",
+                            "strategy_id": "grid-1",
+                            "strategy_family": "resistance_band_rebound_grid",
+                            "requested_shares": 5,
+                            "max_price": 0.2,
+                        }
+                    ]
+                }
+            }
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 0
+    assert result.blocked_count == 1
+    assert result.blockers[0]["reason"] == "paired_lifecycle_policy_required_for_buy"
+
+
+def test_strategy_plan_evaluator_promotes_aggregation_buy_with_exit_policy_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="grid-1",
+                family="manual_imported_micro_grid",
+                side="Thunder",
+                sleeve_id="okc-grid",
+                sleeve_role="grid_scalp",
+                budget_usd=2.0,
+                entry_rules={
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "side": "monitor",
+                    "price": 0.2,
+                    "size": 5,
+                },
+                exit_rules={"target_price": 0.24},
+            )
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "live_signal_aggregation": {
+                "decision": {
+                    "order_intent_candidates": [
+                        {
+                            "event_id": "event-1",
+                            "signal_type": "buy",
+                            "side": "Thunder",
+                            "market_id": "market-1",
+                            "outcome_id": "outcome-okc",
+                            "market_token_id": "token-okc",
+                            "sleeve_id": "okc-grid",
+                            "strategy_id": "grid-1",
+                            "strategy_family": "manual_imported_micro_grid",
+                            "requested_shares": 5,
+                            "max_price": 0.2,
+                            "reason_codes": ["strategy_plan_intent_created"],
+                        }
+                    ]
+                }
+            }
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].side == "buy"
+    assert result.intents[0].metadata["paired_lifecycle"]["declared_exit_policy"]["target_price"] == 0.24
+
+
+def test_strategy_plan_evaluator_blocks_rebuy_without_sell_fill_evidence_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "live_signal_aggregation": {
+                "decision": {
+                    "order_intent_candidates": [
+                        {
+                            "event_id": "event-1",
+                            "signal_type": "rebuy",
+                            "side": "Thunder",
+                            "market_id": "market-1",
+                            "outcome_id": "outcome-okc",
+                            "market_token_id": "token-okc",
+                            "sleeve_id": "okc-grid",
+                            "strategy_id": "okc-grid",
+                            "cycle_id": "cycle-okc",
+                            "trigger_type": "paired_microcycle_next_leg",
+                            "trigger_source": "paired_microcycle",
+                            "requested_shares": 5,
+                            "max_price": 0.2,
+                            "reason_codes": ["manual_rebuy_review"],
+                        }
+                    ]
+                }
+            }
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 0
+    assert result.blockers[0]["reason"] == "rebuy_requires_sell_fill_evidence"
 
 
 def test_strategy_plan_evaluator_dedupes_live_aggregation_candidate_matching_plan_intent_pytest() -> None:
