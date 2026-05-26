@@ -1578,6 +1578,7 @@ def _postgame_replay_mode_sleeve_rows(replay_inputs: dict[str, dict[str, Any]]) 
             if not isinstance(sleeve, dict):
                 continue
             simulation = sleeve.get("fill_simulation") if isinstance(sleeve.get("fill_simulation"), dict) else {}
+            missed = _postgame_missed_value_for_sleeve(summary, sleeve_id=str(sleeve_id))
             rows.append(
                 {
                     "event_id": event_id,
@@ -1600,6 +1601,7 @@ def _postgame_replay_mode_sleeve_rows(replay_inputs: dict[str, dict[str, Any]]) 
                     "simulated_mark_value_usd": simulation.get("simulated_mark_value_usd"),
                     "simulated_pnl_usd": simulation.get("simulated_pnl_usd"),
                     "simulation_status": simulation.get("status") or "no_candidates",
+                    "missed_window_estimated_value_usd": missed,
                     "source_confidence": "runtime_artifact",
                 }
             )
@@ -1619,6 +1621,8 @@ def _postgame_replay_mode_aggregate(replay_inputs: dict[str, dict[str, Any]]) ->
     not_fillable_count = 0
     missing_price_count = 0
     unmatched_sell_count = 0
+    missed_window_estimated_value = 0.0
+    missed_window_count = 0
     simulated_cashflow = 0.0
     simulated_mark_value = 0.0
     simulated_pnl: float | None = 0.0
@@ -1635,6 +1639,9 @@ def _postgame_replay_mode_aggregate(replay_inputs: dict[str, dict[str, Any]]) ->
         not_fillable_count += _safe_int(simulation.get("not_fillable_count"))
         missing_price_count += _safe_int(simulation.get("missing_price_count"))
         unmatched_sell_count += _safe_int(simulation.get("unmatched_sell_count"))
+        missed = summary.get("missed_window_analysis") if isinstance(summary.get("missed_window_analysis"), dict) else {}
+        missed_window_estimated_value += _safe_float(missed.get("estimated_missed_value_usd")) or 0.0
+        missed_window_count += len(missed.get("rows") or [])
         simulated_cashflow += _safe_float(simulation.get("simulated_cashflow_usd")) or 0.0
         simulated_mark_value += _safe_float(simulation.get("simulated_mark_value_usd")) or 0.0
         if simulation.get("simulated_pnl_usd") is None and _safe_int(simulation.get("unique_candidate_count")):
@@ -1663,6 +1670,8 @@ def _postgame_replay_mode_aggregate(replay_inputs: dict[str, dict[str, Any]]) ->
         "simulated_cashflow_usd": round(simulated_cashflow, 6),
         "simulated_mark_value_usd": round(simulated_mark_value, 6),
         "simulated_pnl_usd": round(simulated_pnl, 6) if simulated_pnl is not None else None,
+        "missed_window_estimated_value_usd": round(missed_window_estimated_value, 6),
+        "missed_window_count": missed_window_count,
         "simulation_status": _combined_postgame_replay_simulation_status(
             statuses=simulation_statuses,
             unique_candidate_count=unique_candidate_count,
@@ -1706,6 +1715,15 @@ def _postgame_replay_mode_leave_one_out_rows(
             }
         )
     return rows
+
+
+def _postgame_missed_value_for_sleeve(summary: dict[str, Any], *, sleeve_id: str) -> float:
+    missed = summary.get("missed_window_analysis") if isinstance(summary.get("missed_window_analysis"), dict) else {}
+    value = 0.0
+    for row in missed.get("rows") or []:
+        if isinstance(row, dict) and str(row.get("sleeve_id") or "") == sleeve_id:
+            value += _safe_float(row.get("estimated_missed_value_usd")) or 0.0
+    return round(value, 6)
 
 
 def _combined_postgame_replay_simulation_status(
@@ -1904,10 +1922,15 @@ def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str)
         "blocker_reason_counts": {},
         "sleeves": {},
         "fill_simulation": _empty_postgame_replay_fill_simulation(),
+        "missed_window_analysis": _empty_postgame_missed_window_analysis(),
         "_candidate_keys_seen": set(),
         "_latest_bid_by_token": {},
         "_latest_bid_by_outcome": {},
         "_open_positions_by_sleeve_token": {},
+        "_price_path_by_token": {},
+        "_candidate_windows": [],
+        "_token_labels": {},
+        "_outcome_to_token": {},
     }
     try:
         with ticks_path.open("r", encoding="utf-8") as handle:
@@ -1964,6 +1987,24 @@ def _empty_postgame_replay_fill_simulation() -> dict[str, Any]:
         "simulated_pnl_usd": 0.0,
         "dedupe_policy": "event+sleeve+signal_type+token+cycle_or_supporting_signal",
         "mark_policy": "open_buy_inventory_marked_at_latest_recorded_best_bid",
+    }
+
+
+def _empty_postgame_missed_window_analysis() -> dict[str, Any]:
+    return {
+        "schema_version": "postgame_missed_window_analysis_v1",
+        "status": "no_candidates",
+        "source_confidence": "clob_market_tape",
+        "account_pnl_eligible": False,
+        "candidate_window_count": 0,
+        "blocked_sleeve_window_count": 0,
+        "estimated_missed_value_usd": 0.0,
+        "rows": [],
+        "blocked_sleeve_rows": [],
+        "policy": {
+            "value_source": "recorded direct CLOB best ask/bid extrema after candidate windows",
+            "blocked_sleeves": "inferred volatility context only unless a token can be mapped from sleeve side",
+        },
     }
 
 
@@ -2050,12 +2091,23 @@ def _postgame_replay_sleeve_summary(summary: dict[str, Any], source: dict[str, A
 
 def _update_postgame_replay_latest_books(summary: dict[str, Any], *, event_payload: dict[str, Any]) -> None:
     market_state = event_payload.get("market_state") if isinstance(event_payload.get("market_state"), dict) else {}
+    for sampled in market_state.get("sampled_outcomes") or []:
+        if not isinstance(sampled, dict):
+            continue
+        token_id = str(sampled.get("token_id") or "")
+        outcome_id = str(sampled.get("outcome_id") or "")
+        label = str(sampled.get("outcome_label") or "").strip()
+        if token_id and label:
+            summary["_token_labels"][token_id] = label
+        if outcome_id and token_id:
+            summary["_outcome_to_token"][outcome_id] = token_id
     for token_id, token_state in (market_state.get("token_states") or {}).items():
         if not isinstance(token_state, dict):
             continue
         bid = _safe_float(token_state.get("best_bid"))
         if bid is not None:
             summary["_latest_bid_by_token"][str(token_id)] = bid
+        _accumulate_postgame_price_path_point(summary, token_id=str(token_id), state=token_state)
     outcome_states = market_state.get("outcome_states") or {}
     if isinstance(outcome_states, dict):
         iterable = outcome_states.items()
@@ -2069,6 +2121,26 @@ def _update_postgame_replay_latest_books(summary: dict[str, Any], *, event_paylo
         bid = _safe_float(outcome_state.get("best_bid"))
         if bid is not None:
             summary["_latest_bid_by_outcome"][str(outcome_id)] = bid
+        token_id = summary["_outcome_to_token"].get(str(outcome_id))
+        if token_id:
+            _accumulate_postgame_price_path_point(summary, token_id=str(token_id), state=outcome_state)
+
+
+def _accumulate_postgame_price_path_point(summary: dict[str, Any], *, token_id: str, state: dict[str, Any]) -> None:
+    if not token_id:
+        return
+    best_ask = _safe_float(state.get("best_ask"))
+    best_bid = _safe_float(state.get("best_bid"))
+    if best_ask is None and best_bid is None:
+        return
+    path = summary["_price_path_by_token"].setdefault(token_id, [])
+    path.append(
+        {
+            "tick_index": summary.get("tick_count", 0),
+            "best_ask": best_ask,
+            "best_bid": best_bid,
+        }
+    )
 
 
 def _accumulate_postgame_replay_candidate(
@@ -2097,6 +2169,12 @@ def _accumulate_postgame_replay_candidate(
         sleeve_sim["unique_candidate_count"] += 1
 
     fill = _postgame_replay_candidate_fill(candidate, event_payload=event_payload)
+    _record_postgame_candidate_window(
+        summary,
+        candidate=candidate,
+        fill=fill,
+        candidate_key=candidate_key,
+    )
     if fill["status"] == "missing_price":
         summary_sim["missing_price_count"] += 1
         if sleeve_sim is not None:
@@ -2175,6 +2253,39 @@ def _postgame_replay_position_key(candidate: dict[str, Any]) -> str:
             str(candidate.get("sleeve_id") or candidate.get("strategy_id") or ""),
             str(candidate.get("market_token_id") or candidate.get("token_id") or candidate.get("outcome_id") or ""),
         ]
+    )
+
+
+def _record_postgame_candidate_window(
+    summary: dict[str, Any],
+    *,
+    candidate: dict[str, Any],
+    fill: dict[str, Any],
+    candidate_key: str,
+) -> None:
+    token_id = str(candidate.get("market_token_id") or candidate.get("token_id") or "")
+    outcome_id = str(candidate.get("outcome_id") or "")
+    if not token_id and outcome_id:
+        token_id = str(summary.get("_outcome_to_token", {}).get(outcome_id) or "")
+    summary["_candidate_windows"].append(
+        {
+            "candidate_key": candidate_key,
+            "tick_index": summary.get("tick_count", 0),
+            "event_id": candidate.get("event_id"),
+            "sleeve_id": candidate.get("sleeve_id") or candidate.get("strategy_id"),
+            "strategy_id": candidate.get("strategy_id"),
+            "sleeve_role": candidate.get("sleeve_role"),
+            "signal_type": candidate.get("signal_type"),
+            "side": candidate.get("side"),
+            "token_id": token_id,
+            "outcome_id": outcome_id,
+            "max_price": _safe_float(candidate.get("max_price") or candidate.get("limit_price") or candidate.get("price")),
+            "min_price": _safe_float(candidate.get("min_price") or candidate.get("limit_price") or candidate.get("target_price")),
+            "requested_shares": fill.get("shares")
+            or _safe_float(candidate.get("requested_shares") or candidate.get("shares") or candidate.get("size")),
+            "fill_status": fill.get("status"),
+            "reference_price": fill.get("price"),
+        }
     )
 
 
@@ -2271,11 +2382,16 @@ def _finalize_postgame_replay_tick_summary(summary: dict[str, Any]) -> None:
     for sleeve in (summary.get("sleeves") or {}).values():
         if isinstance(sleeve, dict):
             _finalize_postgame_replay_simulation(sleeve["fill_simulation"])
+    _finalize_postgame_missed_window_analysis(summary)
     for key in (
         "_candidate_keys_seen",
         "_latest_bid_by_token",
         "_latest_bid_by_outcome",
         "_open_positions_by_sleeve_token",
+        "_price_path_by_token",
+        "_candidate_windows",
+        "_token_labels",
+        "_outcome_to_token",
     ):
         summary.pop(key, None)
 
@@ -2298,6 +2414,132 @@ def _finalize_postgame_replay_simulation(simulation: dict[str, Any]) -> None:
         missing_price_count=missing_price_count,
         not_fillable_count=not_fillable_count,
     )
+
+
+def _finalize_postgame_missed_window_analysis(summary: dict[str, Any]) -> None:
+    analysis = summary["missed_window_analysis"]
+    rows: list[dict[str, Any]] = []
+    for candidate in summary.get("_candidate_windows", []):
+        if not isinstance(candidate, dict):
+            continue
+        row = _postgame_candidate_missed_window_row(summary, candidate)
+        if row is not None:
+            rows.append(row)
+    blocked_rows = _postgame_blocked_sleeve_window_rows(summary)
+    estimated_value = sum(_safe_float(row.get("estimated_missed_value_usd")) or 0.0 for row in rows)
+    rows.sort(key=lambda item: _safe_float(item.get("estimated_missed_value_usd")) or 0.0, reverse=True)
+    analysis.update(
+        {
+            "status": "estimated" if rows or blocked_rows else "no_candidates",
+            "candidate_window_count": len(summary.get("_candidate_windows", [])),
+            "blocked_sleeve_window_count": len(blocked_rows),
+            "estimated_missed_value_usd": round(estimated_value, 6),
+            "rows": rows[:20],
+            "blocked_sleeve_rows": blocked_rows[:20],
+        }
+    )
+
+
+def _postgame_candidate_missed_window_row(summary: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any] | None:
+    signal_type = str(candidate.get("signal_type") or "").lower()
+    if signal_type not in {"buy", "rebuy"}:
+        return None
+    token_id = str(candidate.get("token_id") or "")
+    path = [
+        point
+        for point in summary.get("_price_path_by_token", {}).get(token_id, [])
+        if _safe_int(point.get("tick_index")) >= _safe_int(candidate.get("tick_index"))
+    ]
+    if not path:
+        return {
+            "event_id": candidate.get("event_id"),
+            "sleeve_id": candidate.get("sleeve_id"),
+            "signal_type": candidate.get("signal_type"),
+            "side": candidate.get("side") or summary.get("_token_labels", {}).get(token_id),
+            "status": "price_path_missing",
+            "source_confidence": "inferred",
+            "account_pnl_eligible": False,
+            "estimated_missed_value_usd": None,
+        }
+    bid_values = [_safe_float(point.get("best_bid")) for point in path]
+    ask_values = [_safe_float(point.get("best_ask")) for point in path]
+    bids = [value for value in bid_values if value is not None]
+    asks = [value for value in ask_values if value is not None]
+    max_bid = max(bids) if bids else None
+    min_ask = min(asks) if asks else None
+    shares = _safe_float(candidate.get("requested_shares")) or 0.0
+    entry_price = _safe_float(candidate.get("reference_price"))
+    status_text = str(candidate.get("fill_status") or "unknown")
+    reason = "missed_exit_extrema_after_candidate"
+    if status_text == "not_fillable":
+        max_price = _safe_float(candidate.get("max_price"))
+        if min_ask is None or max_price is None or min_ask > max_price:
+            return None
+        entry_price = min_ask
+        reason = "missed_entry_became_fillable_later"
+    if entry_price is None or max_bid is None or shares <= 0:
+        return None
+    value = max(0.0, (max_bid - entry_price) * shares)
+    if value <= 0:
+        return None
+    return {
+        "event_id": candidate.get("event_id"),
+        "sleeve_id": candidate.get("sleeve_id"),
+        "strategy_id": candidate.get("strategy_id"),
+        "sleeve_role": candidate.get("sleeve_role"),
+        "signal_type": candidate.get("signal_type"),
+        "side": candidate.get("side") or summary.get("_token_labels", {}).get(token_id),
+        "token_id": token_id,
+        "reason": reason,
+        "candidate_fill_status": status_text,
+        "entry_price": round(entry_price, 6),
+        "later_max_bid": round(max_bid, 6),
+        "later_min_ask": round(min_ask, 6) if min_ask is not None else None,
+        "requested_shares": shares,
+        "estimated_missed_value_usd": round(value, 6),
+        "source_confidence": "clob_market_tape",
+        "account_pnl_eligible": False,
+    }
+
+
+def _postgame_blocked_sleeve_window_rows(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    label_to_token = {str(label).lower(): token for token, label in summary.get("_token_labels", {}).items()}
+    for sleeve_id, sleeve in (summary.get("sleeves") or {}).items():
+        if not isinstance(sleeve, dict) or not _safe_int(sleeve.get("blocker_count")):
+            continue
+        side_label = str(sleeve.get("sleeve_side") or "").lower()
+        token_id = label_to_token.get(side_label)
+        path = summary.get("_price_path_by_token", {}).get(token_id or "", [])
+        bids = [_safe_float(point.get("best_bid")) for point in path]
+        asks = [_safe_float(point.get("best_ask")) for point in path]
+        bids = [bid for bid in bids if bid is not None]
+        asks = [ask for ask in asks if ask is not None]
+        if not bids and not asks:
+            continue
+        min_ask = min(asks) if asks else None
+        max_bid = max(bids) if bids else None
+        range_cents = None
+        if min_ask is not None and max_bid is not None:
+            range_cents = round(max(0.0, max_bid - min_ask) * 100.0, 4)
+        rows.append(
+            {
+                "sleeve_id": sleeve_id,
+                "strategy_id": sleeve.get("strategy_id"),
+                "sleeve_role": sleeve.get("sleeve_role"),
+                "side": sleeve.get("sleeve_side"),
+                "token_id": token_id,
+                "blocker_count": sleeve.get("blocker_count"),
+                "blocker_reasons": sleeve.get("blocker_reasons") or [],
+                "min_recorded_ask": min_ask,
+                "max_recorded_bid": max_bid,
+                "recorded_range_cents": range_cents,
+                "source_confidence": "inferred" if token_id else "runtime_artifact",
+                "account_pnl_eligible": False,
+            }
+        )
+    rows.sort(key=lambda item: _safe_float(item.get("recorded_range_cents")) or 0.0, reverse=True)
+    return rows
 
 
 def _event_scoped_order_lifecycle_direct_context(

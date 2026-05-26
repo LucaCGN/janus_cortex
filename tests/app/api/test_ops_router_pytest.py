@@ -2422,6 +2422,10 @@ def test_postgame_replay_tick_stream_summary_reads_same_event_stream_pytest(tmp_
     assert summary["fill_simulation"]["simulated_mark_value_usd"] == 4.7
     assert summary["fill_simulation"]["simulated_pnl_usd"] == 0.3
     assert summary["sleeves"]["gsv-grid"]["fill_simulation"]["simulated_pnl_usd"] == 0.3
+    assert summary["missed_window_analysis"]["status"] == "estimated"
+    assert summary["missed_window_analysis"]["estimated_missed_value_usd"] == 0.3
+    assert summary["missed_window_analysis"]["rows"][0]["reason"] == "missed_exit_extrema_after_candidate"
+    assert summary["missed_window_analysis"]["rows"][0]["account_pnl_eligible"] is False
 
 
 def test_postgame_replay_modes_compute_leave_one_out_marginal_value_pytest() -> None:
@@ -2442,6 +2446,11 @@ def test_postgame_replay_modes_compute_leave_one_out_marginal_value_pytest() -> 
                 "simulated_cashflow_usd": -9.0,
                 "simulated_mark_value_usd": 9.6,
                 "simulated_pnl_usd": 0.6,
+            },
+            "missed_window_analysis": {
+                "status": "estimated",
+                "estimated_missed_value_usd": 0.4,
+                "rows": [{"sleeve_id": "grid", "estimated_missed_value_usd": 0.4}],
             },
             "sleeves": {
                 "grid": {
@@ -2478,6 +2487,7 @@ def test_postgame_replay_modes_compute_leave_one_out_marginal_value_pytest() -> 
 
     assert aggregate["aggregate"]["simulation_status"] == "simulated_from_clob_tape"
     assert aggregate["aggregate"]["simulated_pnl_usd"] == 0.6
+    assert aggregate["aggregate"]["missed_window_estimated_value_usd"] == 0.4
     row = leave_one_out["leave_one_out_rows"][0]
     assert row["aggregate_simulated_pnl_usd"] == 0.6
     assert row["aggregate_without_excluded_simulated_pnl_usd"] == 0.0
