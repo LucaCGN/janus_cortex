@@ -76,6 +76,11 @@ def test_manual_order_assistant_approves_low_price_preview_with_caps_pytest() ->
     assert review["order_payload"]["notional_usd"] == 0.1
     assert review["metadata"]["origin_actor"] == "codex_assisted"
     assert review["metadata"]["guardrails"]["max_notional_usd"] == 0.1
+    assert review["warnings"][0]["reason"] == "below_reference_min_buy_notional"
+    minimum_policy = review["metadata"]["guardrails"]["minimum_order_policy"]
+    assert minimum_policy["minimum_shares"] == 5.0
+    assert minimum_policy["reference_min_buy_notional_usd"] == 1.0
+    assert minimum_policy["allow_below_reference_min_buy_notional"] is True
 
 
 def test_manual_order_assistant_blocks_max_notional_stale_wrong_event_duplicate_pytest() -> None:
@@ -179,6 +184,48 @@ def test_manual_order_assistant_blocks_market_exception_when_slippage_cap_exceed
 
     assert review["status"] == "blocked"
     assert {item["reason"] for item in review["blockers"]} == {"market_order_slippage_too_high"}
+
+
+def test_manual_order_assistant_blocks_below_minimum_buy_shares_pytest() -> None:
+    review = build_manual_clob_order_assistant_review(
+        _request(size=4.99, limit_price=0.02, max_price=0.03, max_notional_usd=1.0),
+        event_id="event-1",
+        matched_outcome=_outcome(),
+        orderbook=_book(),
+        inventory={"open_orders": [], "pending_intents": [], "unresolved_inventory_present": False},
+        now_utc=NOW,
+    )
+
+    assert review["status"] == "blocked"
+    assert {item["reason"] for item in review["blockers"]} == {"minimum_shares_not_met"}
+
+
+def test_manual_order_assistant_can_block_below_reference_buy_notional_when_policy_disallows_pytest() -> None:
+    review = build_manual_clob_order_assistant_review(
+        _request(allow_below_reference_min_buy_notional=False),
+        event_id="event-1",
+        matched_outcome=_outcome(),
+        orderbook=_book(),
+        inventory={"open_orders": [], "pending_intents": [], "unresolved_inventory_present": False},
+        now_utc=NOW,
+    )
+
+    assert review["status"] == "blocked"
+    assert {item["reason"] for item in review["blockers"]} == {"below_reference_min_buy_notional"}
+
+
+def test_manual_order_assistant_warns_below_minimum_sell_close_shares_pytest() -> None:
+    review = build_manual_clob_order_assistant_review(
+        _request(side="sell", size=0.3, limit_price=0.02, max_price=None, max_notional_usd=1.0),
+        event_id="event-1",
+        matched_outcome=_outcome(),
+        orderbook=_book(best_bid=0.02, best_ask=0.021),
+        inventory={"open_orders": [], "pending_intents": [], "unresolved_inventory_present": False},
+        now_utc=NOW,
+    )
+
+    assert review["status"] == "preview_ready"
+    assert {item["reason"] for item in review["warnings"]} == {"minimum_shares_not_met"}
 
 
 def test_manual_order_assistant_rejects_buy_limit_above_max_price_at_schema_pytest() -> None:

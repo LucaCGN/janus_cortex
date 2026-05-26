@@ -50,6 +50,31 @@ They may place, cancel, replace, close, or open positions only when all gates ar
 
 If any gate is missing, the tool must return a management plan or blocker and must not prepare, sign, submit, cancel, or replace an order.
 
+## Minimum Order And Market-Order Policy
+
+Limit orders remain the default for Janus, Codex, portfolio-manager, and live-monitor actions.
+
+The current manual assistant/order policy records two separate minimum concepts:
+
+- `min_shares`: default `5` shares as the exchange-facing practical minimum for ordinary orders;
+- `reference_min_buy_notional_usd`: default `$1.00` as the conservative buy-notional reference.
+
+Sub-cent or low-cent UI observations can show apparent accepted orders below the `$1.00` reference. Janus treats that as an audit warning, not a new universal exchange rule. A below-reference buy may be preview-ready only when the caller explicitly allows `allow_below_reference_min_buy_notional=true`; the review must still include direct CLOB/book freshness, market/outcome/token mapping, notional cap, minimum-share check, spread/depth checks, and post-action reconciliation. If that flag is false, the same below-reference order is blocked.
+
+Sell/close behavior can differ from opening buys when dust, partial fills, or UI rounded rows are involved. A below-`min_shares` sell is warning-only and requires direct CLOB recheck; a below-`min_shares` buy is blocked.
+
+Market orders are disabled by default in policy and code. The only exception is urgent profit capture, and it remains sell-only. The exception requires all of:
+
+1. `allow_market_urgent_profit_capture=true`;
+2. side `sell`;
+3. explicit `urgent_profit_capture_reason`;
+4. `market_order_exception_reviewed_by`;
+5. `market_order_max_slippage_cents`;
+6. fresh direct CLOB orderbook with spread no wider than the slippage cap;
+7. max-notional proof and post-action reconciliation.
+
+The exception is intended for a live profit spike where reversal risk is high. It must not be used for speculative entries, routine target management, or convenience when a normal limit order path is available.
+
 ## Resolved-Market Redemption Gate
 
 Resolved-market redemption is separate from the CLOB order path. It claims collateral from a resolved conditional-token market; it is not a market buy, sell, close, cancel, or replace action.

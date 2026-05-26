@@ -443,6 +443,9 @@ class ManualClobOrderAssistantRequest(BaseModel):
     max_spread_cents: float = Field(default=5.0, ge=0.0)
     max_book_age_seconds: float = Field(default=20.0, ge=0.0)
     min_depth: float | None = Field(default=None, ge=0.0)
+    min_shares: float = Field(default=5.0, ge=0.0)
+    reference_min_buy_notional_usd: float = Field(default=1.0, ge=0.0)
+    allow_below_reference_min_buy_notional: bool = True
     actor: Literal["operator", "codex", "janus"] = "codex"
     reason: str = Field(min_length=1)
     execute: bool = False

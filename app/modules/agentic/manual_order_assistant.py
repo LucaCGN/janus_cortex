@@ -28,7 +28,7 @@ def build_manual_clob_order_assistant_review(
     if payload.execute and not str(payload.account_id or "").strip():
         blockers.append({"reason": "account_id_required_for_execute"})
     _validate_order_type_policy(payload, blockers=blockers)
-    _validate_price_and_notional(payload, blockers=blockers)
+    _validate_price_and_notional(payload, blockers=blockers, warnings=warnings)
     _validate_orderbook(payload, orderbook=book, now_utc=now, blockers=blockers, warnings=warnings)
     _validate_inventory(payload, inventory=inventory_snapshot, blockers=blockers, warnings=warnings)
 
@@ -104,6 +104,14 @@ def build_manual_clob_order_metadata(
             "max_spread_cents": payload.max_spread_cents,
             "max_book_age_seconds": payload.max_book_age_seconds,
             "min_depth": payload.min_depth,
+            "minimum_order_policy": {
+                "source": "direct_clob_reference_plus_ui_observation",
+                "minimum_shares": payload.min_shares,
+                "reference_min_buy_notional_usd": payload.reference_min_buy_notional_usd,
+                "allow_below_reference_min_buy_notional": payload.allow_below_reference_min_buy_notional,
+                "below_reference_min_buy_notional_is_warning_only": bool(payload.allow_below_reference_min_buy_notional),
+                "market_orders_default": "disabled",
+            },
             "market_order_exception": bool(payload.allow_market_urgent_profit_capture),
             "urgent_profit_capture_reason": payload.urgent_profit_capture_reason,
             "market_order_exception_reviewed_by": payload.market_order_exception_reviewed_by,
@@ -157,8 +165,28 @@ def _validate_order_type_policy(payload: ManualClobOrderAssistantRequest, *, blo
         blockers.append({"reason": "market_order_max_slippage_required"})
 
 
-def _validate_price_and_notional(payload: ManualClobOrderAssistantRequest, *, blockers: list[dict[str, Any]]) -> None:
+def _validate_price_and_notional(
+    payload: ManualClobOrderAssistantRequest,
+    *,
+    blockers: list[dict[str, Any]],
+    warnings: list[dict[str, Any]],
+) -> None:
     price = payload.limit_price
+    if float(payload.size) + 1e-9 < float(payload.min_shares):
+        item = {
+            "reason": "minimum_shares_not_met",
+            "size": payload.size,
+            "minimum_shares": payload.min_shares,
+        }
+        if payload.side == "buy":
+            blockers.append(item)
+        else:
+            warnings.append(
+                {
+                    **item,
+                    "minimum_policy": "sell_close_below_minimum_shares_requires_direct_clob_recheck",
+                }
+            )
     if payload.order_type == "limit":
         if price is None:
             blockers.append({"reason": "limit_price_required"})
@@ -174,6 +202,17 @@ def _validate_price_and_notional(payload: ManualClobOrderAssistantRequest, *, bl
                     "max_notional_usd": payload.max_notional_usd,
                 }
             )
+        if payload.side == "buy" and notional + 1e-9 < payload.reference_min_buy_notional_usd:
+            item = {
+                "reason": "below_reference_min_buy_notional",
+                "notional_usd": round(notional, 6),
+                "reference_min_buy_notional_usd": payload.reference_min_buy_notional_usd,
+                "minimum_policy": "ui_observed_subcent_possible_direct_clob_recheck_required",
+            }
+            if payload.allow_below_reference_min_buy_notional:
+                warnings.append(item)
+            else:
+                blockers.append(item)
 
 
 def _validate_orderbook(
