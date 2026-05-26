@@ -196,13 +196,16 @@ def _bindings_from_sleeve_states(
         strategy = strategies.get(strategy_id, {})
         entry_rules = _nested_dict(strategy.get("entry_rules"))
         status = str(state.get("status") or "").strip()
-        action = _action_from_sleeve_state(status, entry_rules)
+        action = _action_from_sleeve_state(status, entry_rules, strategy=strategy, state=state)
         outcome_id = _clean(entry_rules.get("outcome_id"))
         token_id = _clean(entry_rules.get("token_id") or entry_rules.get("asset_id"))
         strategy_state = _strategy_market_state(market_state=market_state, outcome_id=outcome_id, token_id=token_id, strategy_id=strategy_id)
         price = _first_float({**strategy_state, **entry_rules}, ("price", "current_price", "best_ask", "best_bid", "max_price"))
         sleeve_id = _clean(state.get("sleeve_id") or entry_rules.get("sleeve_id") or strategy_id) or strategy_id
         reasons = _string_list(state.get("blocker_reasons")) or [f"strategy_plan_{status or 'monitor'}"]
+        requested_notional = _requested_notional_from_minimum_sizing(entry_rules, strategy=strategy, state=state)
+        if requested_notional is not None:
+            reasons = _unique_strings([*reasons, "ultra_low_min_notional_resize_candidate"])
         bindings.append(
             SleeveTriggerBinding(
                 binding_id=_binding_id(event_id, "strategy", strategy_id or sleeve_id or str(index), status or str(index)),
@@ -215,6 +218,7 @@ def _bindings_from_sleeve_states(
                 outcome_id=outcome_id,
                 market_token_id=token_id,
                 requested_shares=_first_float(entry_rules, ("size", "requested_shares", "shares")) or min_size,
+                requested_notional_usd=requested_notional,
                 max_price=price,
                 current_price=price,
                 confidence=_confidence_from_status(status),
@@ -335,13 +339,75 @@ def _bindings_from_llm_runtime_triggers(
     return bindings
 
 
-def _action_from_sleeve_state(status: str, entry_rules: dict[str, Any]) -> SleeveTriggerAction:
+def _action_from_sleeve_state(
+    status: str,
+    entry_rules: dict[str, Any],
+    *,
+    strategy: dict[str, Any],
+    state: dict[str, Any],
+) -> SleeveTriggerAction:
     if status == "intent_created":
         side = str(entry_rules.get("side") or "buy").strip().lower()
         return "sell" if side == "sell" else "buy"
+    if status == "blocked" and _is_ultra_low_min_notional_resize_candidate(entry_rules, strategy=strategy, state=state):
+        return "buy"
     if status == "blocked":
         return "block"
     return "monitor"
+
+
+def _is_ultra_low_min_notional_resize_candidate(
+    entry_rules: dict[str, Any],
+    *,
+    strategy: dict[str, Any],
+    state: dict[str, Any],
+) -> bool:
+    blockers = set(_string_list(state.get("blocker_reasons")))
+    if "minimum_buy_notional_not_met" not in blockers:
+        return False
+    if not _is_ultra_low_strategy(strategy, entry_rules):
+        return False
+    if not _truthy_any(entry_rules, ("allow_sub_10c_underdog_grid", "allow_ultra_low_grid", "allow_0_5c_to_5c_grid")):
+        return False
+    return _truthy_any(entry_rules, ("allow_ultra_low_underdog", "allow_underdog_below_19c"))
+
+
+def _requested_notional_from_minimum_sizing(
+    entry_rules: dict[str, Any],
+    *,
+    strategy: dict[str, Any],
+    state: dict[str, Any],
+) -> float | None:
+    if not _is_ultra_low_min_notional_resize_candidate(entry_rules, strategy=strategy, state=state):
+        return None
+    value = _first_float(entry_rules, ("min_buy_notional_usd", "minimum_buy_notional_usd"))
+    return value if value is not None and value > 0.0 else None
+
+
+def _is_ultra_low_strategy(strategy: dict[str, Any], entry_rules: dict[str, Any]) -> bool:
+    haystack = " ".join(
+        str(value or "").lower()
+        for value in (
+            strategy.get("family"),
+            strategy.get("sleeve_role"),
+            strategy.get("sleeve_id"),
+            strategy.get("strategy_id"),
+            entry_rules.get("sleeve_role"),
+        )
+    )
+    return any(marker in haystack for marker in ("ultra_low", "ultralow", "subpenny", "decimal_grid"))
+
+
+def _truthy_any(values: dict[str, Any], keys: tuple[str, ...]) -> bool:
+    for key in keys:
+        value = values.get(key)
+        if isinstance(value, str):
+            if value.strip().lower() in {"1", "true", "yes", "y"}:
+                return True
+            continue
+        if bool(value):
+            return True
+    return False
 
 
 def _action_from_microcycle(cycle: dict[str, Any]) -> SleeveTriggerAction | None:
@@ -436,6 +502,18 @@ def _string_list(value: Any) -> list[str]:
     return [str(item).strip() for item in value if str(item).strip()]
 
 
+def _unique_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
 def _binding_id(event_id: str, *parts: str) -> str:
     raw = [event_id, *parts]
     return ":".join(_slug(part) for part in raw if _slug(part))
@@ -447,4 +525,3 @@ def _slug(value: Any) -> str:
     for char in text:
         keep.append(char if char.isalnum() else "-")
     return "-".join(part for part in "".join(keep).split("-") if part)
-

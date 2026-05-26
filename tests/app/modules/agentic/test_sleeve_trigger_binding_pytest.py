@@ -154,3 +154,62 @@ def test_microcycle_sell_fill_becomes_rebuy_signal_pytest() -> None:
     assert signals[0].risk_request.max_price == 0.03
     assert "sell_fill_allows_rebuy_review" in signals[0].reason_codes
 
+
+def test_ultra_low_min_notional_blocked_state_becomes_local_buy_signal_pytest() -> None:
+    plan = {
+        "market_id": "market-okc-sas",
+        "active_strategies": [
+            {
+                "strategy_id": "okc-q4-subpenny-hype-bounce",
+                "family": "ultra_low_underdog_decimal_grid",
+                "side": "Thunder",
+                "sleeve_id": "okc-ultra-low",
+                "sleeve_role": "ultra_low_rebound",
+                "entry_rules": {
+                    "outcome_id": "outcome-okc",
+                    "token_id": "token-okc",
+                    "size": 5,
+                    "price": 0.004,
+                    "min_buy_notional_usd": 1.0,
+                    "allow_ultra_low_underdog": True,
+                    "allow_sub_10c_underdog_grid": True,
+                },
+            }
+        ],
+    }
+
+    evidence = build_sleeve_trigger_binding_evidence(
+        event_id=EVENT_ID,
+        plan=plan,
+        evaluation={
+            "ok": True,
+            "sleeve_states": [
+                {
+                    "strategy_id": "okc-q4-subpenny-hype-bounce",
+                    "strategy_family": "ultra_low_underdog_decimal_grid",
+                    "sleeve_id": "okc-ultra-low",
+                    "sleeve_role": "ultra_low_rebound",
+                    "status": "blocked",
+                    "blocker_reasons": ["minimum_buy_notional_not_met"],
+                }
+            ],
+        },
+        market_state={
+            "outcome_states": {
+                "outcome-okc": {
+                    "best_ask": 0.004,
+                }
+            }
+        },
+        min_size=5,
+        source="pytest",
+    )
+    signals = live_signals_from_sleeve_trigger_bindings(evidence)
+
+    assert evidence.actionable_binding_count == 1
+    assert evidence.blocker_binding_count == 0
+    assert signals[0].signal_type == "buy"
+    assert signals[0].risk_request.requested_notional_usd == 1.0
+    assert signals[0].risk_request.requested_shares == 5
+    assert signals[0].risk_request.max_price == 0.004
+    assert "ultra_low_min_notional_resize_candidate" in signals[0].reason_codes
