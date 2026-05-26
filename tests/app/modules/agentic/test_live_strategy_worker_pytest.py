@@ -82,6 +82,75 @@ def test_live_strategy_worker_blocks_without_account_id_before_subprocess_pytest
     assert called is False
 
 
+def test_live_strategy_worker_env_autostart_blocks_stale_session_date_pytest(monkeypatch) -> None:
+    monkeypatch.setenv("JANUS_LIVE_STRATEGY_WORKER_ENABLED", "true")
+    monkeypatch.setenv("JANUS_LIVE_STRATEGY_WORKER_SESSION_DATE", "2026-05-24")
+    monkeypatch.setenv("JANUS_LIVE_STRATEGY_WORKER_EVENT_IDS", "event-old")
+    monkeypatch.setattr("app.modules.agentic.live_strategy_worker._brt_session_date", lambda: "2026-05-26")
+    worker = LiveStrategyWorker()
+
+    result = worker.start_if_env_enabled()
+
+    assert result["status"] == "stopped"
+    assert result["worker_thread_alive"] is False
+    assert result["start_skipped_reason"] == "stale_env_session_date"
+    assert result["configured_session_date"] == "2026-05-24"
+    assert result["current_session_date"] == "2026-05-26"
+
+
+def test_live_strategy_worker_ignores_cross_date_current_plan_pytest(tmp_path, monkeypatch) -> None:
+    local_root = tmp_path / "local"
+    monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))
+    plan_root = local_root / "shared" / "artifacts" / "strategy-plans" / "2026-05-26"
+    future = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    _write_json(
+        plan_root / "nba-okc-sas-2026-05-24" / "current.json",
+        {"event_id": "nba-okc-sas-2026-05-24", "valid_until_utc": future},
+    )
+    called = False
+
+    def fake_run(command, **kwargs):
+        nonlocal called
+        called = True
+        return SimpleNamespace(returncode=0, stdout="{}", stderr="")
+
+    monkeypatch.setattr("app.modules.agentic.live_strategy_worker.subprocess.run", fake_run)
+    worker = LiveStrategyWorker(
+        LiveStrategyWorkerConfig(session_date="2026-05-26", account_id="account-1", timeout_seconds=10)
+    )
+
+    result = worker.run_once()
+
+    assert result["ok"] is True
+    assert result["status"] == "no_op"
+    assert result["reason"] == "no_current_valid_strategy_plans"
+    assert result["event_ids"] == []
+    assert called is False
+
+
+def test_live_strategy_worker_stop_reports_pending_when_tick_is_still_running_pytest() -> None:
+    class ThreadStillRunning:
+        def __init__(self) -> None:
+            self.join_called = False
+
+        def is_alive(self) -> bool:
+            return True
+
+        def join(self, timeout: float | None = None) -> None:
+            self.join_called = True
+
+    worker = LiveStrategyWorker(LiveStrategyWorkerConfig())
+    fake_thread = ThreadStillRunning()
+    worker._thread = fake_thread  # noqa: SLF001
+
+    result = worker.stop()
+
+    assert fake_thread.join_called is True
+    assert result["status"] == "running"
+    assert result["worker_thread_alive"] is True
+    assert result["stop_status"] == "stop_pending"
+
+
 def test_live_strategy_worker_readiness_requires_running_worker_for_discovered_current_plan_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

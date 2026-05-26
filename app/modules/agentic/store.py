@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,12 +17,28 @@ from app.modules.agentic.repository import (
 from app.runtime.local_paths import resolve_shared_root
 
 
+_DATE_TOKEN_RE = re.compile(r"(20\d{2}-\d{2}-\d{2})")
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
 def session_date(value: str | None = None) -> str:
     return value or date.today().isoformat()
+
+
+def strategy_plan_session_date_for_event(event_id: str, *, fallback: str | None = None) -> str:
+    match = _DATE_TOKEN_RE.search(str(event_id or ""))
+    if match:
+        return match.group(1)
+    return session_date(fallback)
+
+
+def event_id_matches_session_date(event_id: str, day: str | None) -> bool:
+    resolved_day = session_date(day)
+    match = _DATE_TOKEN_RE.search(str(event_id or ""))
+    return match is None or match.group(1) >= resolved_day
 
 
 def shared_root() -> Path:
@@ -231,16 +248,17 @@ def append_pregame_research(
 
 
 def write_strategy_plan(plan: StrategyPlan, *, day: str | None = None) -> dict[str, Any]:
+    resolved_day = day or strategy_plan_session_date_for_event(plan.event_id)
     generated_at = plan.generated_at_utc.astimezone(timezone.utc)
     timestamp = generated_at.strftime("%Y%m%dT%H%M%SZ")
-    event_dir = strategy_plan_root(day) / _safe_name(plan.event_id)
+    event_dir = strategy_plan_root(resolved_day) / _safe_name(plan.event_id)
     version_path = event_dir / f"plan_{timestamp}.json"
     current_path = event_dir / "current.json"
     payload = plan.model_dump(mode="json")
     write_json(version_path, payload)
     write_json(current_path, payload)
     append_jsonl(
-        strategy_plan_root(day) / "strategy_plan_versions.jsonl",
+        strategy_plan_root(resolved_day) / "strategy_plan_versions.jsonl",
         {
             "timestamp_utc": utc_now().isoformat(),
             "event_id": plan.event_id,
@@ -263,7 +281,8 @@ def write_strategy_plan(plan: StrategyPlan, *, day: str | None = None) -> dict[s
 
 
 def load_current_strategy_plan(event_id: str, *, day: str | None = None) -> dict[str, Any] | None:
-    current_path = strategy_plan_root(day) / _safe_name(event_id) / "current.json"
+    resolved_day = day or strategy_plan_session_date_for_event(event_id)
+    current_path = strategy_plan_root(resolved_day) / _safe_name(event_id) / "current.json"
     return read_json(current_path)
 
 
@@ -320,7 +339,14 @@ def latest_handoff_statuses() -> dict[str, dict[str, Any]]:
 
 
 def build_ops_status() -> dict[str, Any]:
-    plans = sorted(strategy_plan_root().glob("*/current.json")) if strategy_plan_root().exists() else []
+    today = session_date()
+    plans: list[Path] = []
+    if strategy_plan_root(today).exists():
+        for path in sorted(strategy_plan_root(today).glob("*/current.json")):
+            payload = read_json(path) or {}
+            event_id = str(payload.get("event_id") or path.parent.name)
+            if event_id_matches_session_date(event_id, today):
+                plans.append(path)
     return {
         "status": "ok",
         "timestamp_utc": utc_now().isoformat(),
@@ -396,6 +422,7 @@ __all__ = [
     "append_pregame_research",
     "build_event_agent_context",
     "build_ops_status",
+    "event_id_matches_session_date",
     "load_current_strategy_plan",
     "load_current_strategy_plan_for_event",
     "live_signal_root",

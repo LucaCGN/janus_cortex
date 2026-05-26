@@ -11,7 +11,13 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.modules.agentic.store import append_jsonl, read_json, strategy_plan_root, write_json
+from app.modules.agentic.store import (
+    append_jsonl,
+    event_id_matches_session_date,
+    read_json,
+    strategy_plan_root,
+    write_json,
+)
 from app.runtime.local_paths import repo_root, resolve_shared_root
 
 
@@ -134,6 +140,16 @@ class LiveStrategyWorker:
         self._config = LiveStrategyWorkerConfig.from_env()
         if not self._config.enabled:
             return self.status(extra={"start_skipped_reason": "env_disabled"})
+        session_date = self._config.session_date
+        today = _brt_session_date()
+        if session_date and session_date != today:
+            return self.status(
+                extra={
+                    "start_skipped_reason": "stale_env_session_date",
+                    "configured_session_date": session_date,
+                    "current_session_date": today,
+                }
+            )
         return self.start()
 
     def start(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -154,7 +170,10 @@ class LiveStrategyWorker:
         if thread and thread.is_alive():
             thread.join(timeout=5.0)
         with self._lock:
-            return self.status(extra={"stop_status": "stopped"})
+            stopped = not (thread and thread.is_alive())
+            if stopped:
+                self._thread = None
+            return self.status(extra={"stop_status": "stopped" if stopped else "stop_pending"})
 
     def run_once(self, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
         with self._lock:
@@ -472,6 +491,8 @@ def _discover_current_event_ids(day: str) -> list[str]:
         payload = read_json(path) or {}
         event_id = str(payload.get("event_id") or path.parent.name).strip()
         if not event_id:
+            continue
+        if not event_id_matches_session_date(event_id, day):
             continue
         valid_until = _parse_dt(payload.get("valid_until_utc"))
         if valid_until is not None and valid_until <= now:

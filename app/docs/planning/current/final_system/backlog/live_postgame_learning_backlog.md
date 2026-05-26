@@ -1,9 +1,9 @@
 # Live Postgame Learning Backlog
 
-Status: active planning backlog
+Status: foundation implemented; use for follow-up scoping
 Created: 2026-05-26
 Parent issue: #63
-Primary follow-ups: #78, #79
+Completed foundation follow-ups: #78, #79
 
 ## Purpose
 
@@ -27,13 +27,13 @@ Postgame and development decisions must use this hierarchy:
 
 | Track | Owner issue | Purpose |
 |---|---:|---|
-| Postgame truth, PnL, replay, CLOB/UI grounding | #78 | Complete `postgame_evaluation.json` and replay comparison artifact. |
-| Sleeve portfolio, side/phase budgets, paired lifecycle | #79 | Live strategy behavior: budgeted sleeves, paired sell/rebuy, ultra-low, manual-imported positions. |
+| Postgame truth, PnL, replay, CLOB/UI grounding | #78 | Closed foundation for `postgame_evaluation.json`, replay comparison, source confidence, CLOB/UI grounding, missed-window/extrema analysis, and account-scoped PnL. |
+| Sleeve portfolio, side/phase budgets, paired lifecycle | #79 | Closed foundation for budgeted sleeves, paired sell/rebuy, ultra-low, manual-imported positions, and local-vs-global blocker separation. |
 | Exchange minimums, UI/CLOB behavior, market-order exception | #42 | Validate exact platform constraints and urgent profit-capture exception policy. |
 | Profit-ratcheted risk ladder and development bankroll policy | #44 | Convert realized data into risk budget defaults and promotion gates. |
-| Issue/task governance and tangent processing | #73 | Ensure new bugs/features become bounded tasks instead of repeated comments. |
+| Issue/task governance and tangent processing | #73 | Closed foundation ensuring new bugs/features become bounded tasks instead of repeated comments. |
 | Obsidian backlog ingestion | #74 | Convert curated lessons into issue candidates without execution authority. |
-| Pregame optional priors | #72 | Keep pregame research structured but non-authoritative. |
+| Pregame optional priors | #72 | Closed foundation keeping pregame research structured but non-authoritative. |
 | Profile/future domains | #46/#47/#48 | Preserve future-domain hypotheses without preempting basketball runtime. |
 
 ## Development Tracks
@@ -153,4 +153,3 @@ Any bug or feature discovered while implementing this backlog must be processed 
 2. If it changes scope, add a planned-backlog row or create a focused GitHub issue.
 3. If it is live-money safety related, stop promotion and mark the blocker explicitly.
 4. If it is future-domain work, route to #46, #47, or #48 and do not preempt #78/#79.
-

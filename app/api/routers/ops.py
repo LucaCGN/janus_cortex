@@ -52,6 +52,7 @@ from app.modules.agentic.store import (
     append_jsonl,
     build_event_agent_context,
     build_ops_status,
+    event_id_matches_session_date,
     load_current_strategy_plan,
     load_current_strategy_plan_for_event,
     ops_artifact_root,
@@ -940,6 +941,8 @@ def _resolve_live_monitor_event_ids(event_ids: list[str], *, day: str | None) ->
         if valid_until is not None and valid_until <= now:
             continue
         event_id = str(payload.get("event_id") or current_path.parent.name).strip()
+        if not event_id_matches_session_date(event_id, day):
+            continue
         if event_id:
             resolved.append(event_id)
     return _normalized_unique_values(resolved)
@@ -1265,6 +1268,8 @@ def _resolve_postgame_review_event_ids(event_ids: list[str], *, day: str | None)
             plan = {}
         if isinstance(plan, dict):
             event_id = str(plan.get("event_id") or event_id).strip()
+        if not event_id_matches_session_date(event_id, day):
+            continue
         if event_id:
             resolved.append(event_id)
     return _normalized_unique_values(resolved)
