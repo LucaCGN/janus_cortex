@@ -1675,6 +1675,10 @@ def _build_postgame_realized_live_item(item: dict[str, Any]) -> dict[str, Any]:
             "pnl_attribution_ready": pnl.get("pnl_attribution_ready"),
         },
         "actor_buckets": buckets,
+        "clob_grounding": _build_postgame_clob_grounding(
+            reconciliation=reconciliation,
+            direct_scope=direct_scope,
+        ),
         "lifecycle_summary": {
             "source": "portfolio_order_lifecycle_reconciliation_v1",
             "source_confidence": "db_confirmed",
@@ -1691,6 +1695,77 @@ def _build_postgame_realized_live_item(item: dict[str, Any]) -> dict[str, Any]:
             "allowed_uses": ["price_path", "fillability", "liquidity"],
         },
         "unresolved_evidence": unresolved,
+    }
+
+
+def _build_postgame_clob_grounding(
+    *,
+    reconciliation: dict[str, Any],
+    direct_scope: dict[str, Any],
+) -> dict[str, Any]:
+    rows = reconciliation.get("items") if isinstance(reconciliation.get("items"), list) else []
+    fill_rows: list[dict[str, Any]] = []
+    external_order_ids: list[str] = []
+    direct_trade_ids: list[str] = []
+    fill_source_counts: dict[str, int] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        external_order_id = str(row.get("external_order_id") or "").strip()
+        if external_order_id:
+            external_order_ids.append(external_order_id)
+        row_trade_ids = [str(item) for item in row.get("direct_trade_ids") or [] if str(item).strip()]
+        direct_trade_ids.extend(row_trade_ids)
+        source = str(row.get("fill_evidence_source") or "unknown")
+        fill_source_counts[source] = fill_source_counts.get(source, 0) + 1
+        fill_size = _safe_float(row.get("effective_fill_size"))
+        cashflow = _safe_float(row.get("effective_cashflow_usd"))
+        effective_avg_price = None
+        if fill_size and fill_size > 0 and cashflow is not None:
+            effective_avg_price = round(abs(cashflow) / fill_size, 6)
+        fill_rows.append(
+            {
+                "order_id": row.get("order_id"),
+                "external_order_id": row.get("external_order_id"),
+                "side": row.get("side"),
+                "outcome_id": row.get("outcome_id"),
+                "token_id": row.get("token_id"),
+                "source_confidence": "account_confirmed"
+                if source in {"direct_clob_trades", "local_and_direct_trades"}
+                else "db_confirmed",
+                "fill_evidence_source": row.get("fill_evidence_source"),
+                "effective_fill_size": row.get("effective_fill_size"),
+                "effective_cashflow_usd": row.get("effective_cashflow_usd"),
+                "effective_fee_usd": row.get("effective_fee_usd"),
+                "effective_avg_price": effective_avg_price,
+                "direct_fill_size": row.get("direct_fill_size"),
+                "direct_cashflow_usd": row.get("direct_cashflow_usd"),
+                "direct_fee_usd": row.get("direct_fee_usd"),
+                "direct_trade_ids": row_trade_ids,
+                "direct_local_fill_mismatch": row.get("direct_local_fill_mismatch"),
+            }
+        )
+
+    return {
+        "schema_version": "postgame_clob_grounding_v1",
+        "status": "recorded" if fill_rows else "not_recorded",
+        "source_confidence": "account_confirmed" if direct_scope.get("scoped") is True else "inferred",
+        "external_order_ids": sorted(set(external_order_ids)),
+        "direct_trade_ids": sorted(set(direct_trade_ids)),
+        "fill_source_counts": dict(sorted(fill_source_counts.items())),
+        "fill_rows": fill_rows,
+        "direct_event_scope": {
+            "status": direct_scope.get("status"),
+            "scoped": direct_scope.get("scoped"),
+            "open_order_count": direct_scope.get("open_order_count"),
+            "open_position_count": direct_scope.get("open_position_count"),
+            "trade_count": direct_scope.get("trade_count"),
+        },
+        "ui_displayed_price_comparison": {
+            "status": "not_available",
+            "source_confidence": "ui_observed",
+            "reason": "ui_observation_not_attached_to_postgame_artifact",
+        },
     }
 
 

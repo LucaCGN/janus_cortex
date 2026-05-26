@@ -2090,7 +2090,30 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
         assert kwargs["direct_open_order_count"] == 0
         assert kwargs["direct_open_position_count"] == 0
         assert kwargs["direct_trade_rows"] == [{"id": "direct-trade-1", "token_id": "token-1"}]
-        return {"order_count": 1, "pnl_attribution_ready": True, "items": []}
+        return {
+            "order_count": 1,
+            "linked_trade_count": 0,
+            "unknown_lifecycle_count": 0,
+            "pnl_attribution_ready": True,
+            "items": [
+                {
+                    "order_id": "order-1",
+                    "external_order_id": "0xorder1",
+                    "side": "buy",
+                    "outcome_id": "outcome-1",
+                    "token_id": "token-1",
+                    "fill_evidence_source": "direct_clob_trades",
+                    "effective_fill_size": Decimal("5"),
+                    "effective_cashflow_usd": Decimal("-4.75"),
+                    "effective_fee_usd": Decimal("0"),
+                    "direct_fill_size": Decimal("5"),
+                    "direct_cashflow_usd": Decimal("-4.75"),
+                    "direct_fee_usd": Decimal("0"),
+                    "direct_trade_ids": ["direct-trade-1"],
+                    "direct_local_fill_mismatch": False,
+                }
+            ],
+        }
 
     monkeypatch.setattr(agentic_store, "try_persist_strategy_plan", lambda plan: {"ok": True})
     monkeypatch.setattr(ops_router, "_resolve_order_lifecycle_direct_context", fake_direct_context)
@@ -2214,6 +2237,12 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     assert realized["items"][0]["account_pnl"]["known_cashflow_usd"] == 0.8
     assert realized["items"][0]["market_tape"]["account_pnl_eligible"] is False
     assert realized["items"][0]["market_tape"]["event_scoped_trade_count"] == 1
+    clob_grounding = realized["items"][0]["clob_grounding"]
+    assert clob_grounding["status"] == "recorded"
+    assert clob_grounding["external_order_ids"] == ["0xorder1"]
+    assert clob_grounding["direct_trade_ids"] == ["direct-trade-1"]
+    assert clob_grounding["fill_rows"][0]["effective_avg_price"] == 0.95
+    assert clob_grounding["ui_displayed_price_comparison"]["status"] == "not_available"
     assert evaluation["replay_input"]["same_tick_stream_for_all_modes"] is True
     assert evaluation["replay_input"]["events"]["nba-sas-min-2026-05-10"]["tick_count"] == 2
     assert evaluation["replay_modes"]["sleeve_isolated"]["status"] == "input_ready"
@@ -2249,6 +2278,24 @@ def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> No
                         "order_count": 2,
                         "linked_trade_count": 2,
                         "unknown_lifecycle_count": 0,
+                        "items": [
+                            {
+                                "order_id": "order-1",
+                                "external_order_id": "0xorder1",
+                                "side": "sell",
+                                "outcome_id": "outcome-1",
+                                "token_id": "token-1",
+                                "fill_evidence_source": "local_and_direct_trades",
+                                "effective_fill_size": Decimal("5"),
+                                "effective_cashflow_usd": Decimal("4.75"),
+                                "effective_fee_usd": Decimal("0"),
+                                "direct_fill_size": Decimal("5"),
+                                "direct_cashflow_usd": Decimal("4.75"),
+                                "direct_fee_usd": Decimal("0"),
+                                "direct_trade_ids": ["trade-1"],
+                                "direct_local_fill_mismatch": False,
+                            }
+                        ],
                     },
                     "pnl_attribution": {
                         "known_cashflow_usd": Decimal("2.15"),
@@ -2270,6 +2317,8 @@ def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> No
 
     realized_item = evaluation["realized_live"]["items"][0]
     assert realized_item["account_pnl"]["known_cashflow_usd"] == 2.15
+    assert realized_item["clob_grounding"]["fill_rows"][0]["effective_avg_price"] == 0.95
+    assert realized_item["clob_grounding"]["ui_displayed_price_comparison"]["source_confidence"] == "ui_observed"
     assert realized_item["market_tape"]["event_scoped_trade_count"] == 999
     assert realized_item["market_tape"]["account_pnl_eligible"] is False
     assert evaluation["market_tape_policy"]["blocked_uses"] == [
