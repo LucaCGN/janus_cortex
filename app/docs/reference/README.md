@@ -41,6 +41,7 @@ Use planning docs for:
 ### Current Truth Snapshot
 - [current_analysis_system_state.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/current_analysis_system_state.md)
 - [postseason_final_20_validation.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/postseason_final_20_validation.md)
+- [sleeve_deep_backtest_review_2026-05-26.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/reference/sleeve_deep_backtest_review_2026-05-26.md)
 
 ### Stable Analysis Design Docs
 - [app/docs/nba_analysis_module_plan.md](/C:/Users/lnoni/OneDrive/Documentos/Code-Projects/janus_cortex/app/docs/nba_analysis_module_plan.md)
