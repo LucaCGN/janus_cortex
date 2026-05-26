@@ -2361,7 +2361,38 @@ def test_postgame_replay_tick_stream_summary_reads_same_event_stream_pytest(tmp_
                     "live_signal_aggregation": {
                         "decision": {
                             "decision_type": "candidate",
-                            "order_intent_candidates": [{"intent_id": "intent-1"}],
+                            "order_intent_candidates": [
+                                {
+                                    "event_id": "wnba-conn-gsv-2026-05-25",
+                                    "market_token_id": "token-gsv",
+                                    "outcome_id": "outcome-gsv",
+                                    "max_price": 0.95,
+                                    "requested_shares": 5,
+                                    "side": "Golden State Valkyries",
+                                    "signal_type": "buy",
+                                    "sleeve_id": "gsv-grid",
+                                    "sleeve_role": "grid_scalp",
+                                    "strategy_family": "price_stability_micro_grid",
+                                    "strategy_id": "gsv-grid",
+                                    "supporting_signal_ids": ["signal-1"],
+                                }
+                            ],
+                        }
+                    },
+                    "orderbook_results": {
+                        "outcome-gsv": {
+                            "best_ask": 0.88,
+                            "best_bid": 0.86,
+                            "captured_at": "2026-05-25T22:00:00Z",
+                        }
+                    },
+                    "market_state": {
+                        "token_states": {
+                            "token-gsv": {
+                                "best_ask": 0.90,
+                                "best_bid": 0.94,
+                                "captured_at_utc": "2026-05-25T22:00:01Z",
+                            }
                         }
                     },
                 },
@@ -2384,6 +2415,74 @@ def test_postgame_replay_tick_stream_summary_reads_same_event_stream_pytest(tmp_
     assert summary["blocker_reason_counts"] == {"scoreboard_freshness_required": 1}
     assert summary["sleeves"]["gsv-grid"]["intent_count"] == 2
     assert summary["sleeves"]["gsv-grid"]["blocker_reasons"] == ["scoreboard_freshness_required"]
+    assert summary["fill_simulation"]["status"] == "simulated_from_clob_tape"
+    assert summary["fill_simulation"]["unique_candidate_count"] == 1
+    assert summary["fill_simulation"]["simulated_fill_count"] == 1
+    assert summary["fill_simulation"]["simulated_cashflow_usd"] == -4.4
+    assert summary["fill_simulation"]["simulated_mark_value_usd"] == 4.7
+    assert summary["fill_simulation"]["simulated_pnl_usd"] == 0.3
+    assert summary["sleeves"]["gsv-grid"]["fill_simulation"]["simulated_pnl_usd"] == 0.3
+
+
+def test_postgame_replay_modes_compute_leave_one_out_marginal_value_pytest() -> None:
+    replay_inputs = {
+        "game-1": {
+            "status": "recorded",
+            "tick_count": 3,
+            "intent_count": 2,
+            "executed_order_count": 0,
+            "order_intent_candidate_count": 2,
+            "decision_type_counts": {"candidate": 3},
+            "blocker_reason_counts": {},
+            "fill_simulation": {
+                "status": "simulated_from_clob_tape",
+                "candidate_count": 2,
+                "unique_candidate_count": 2,
+                "simulated_fill_count": 2,
+                "simulated_cashflow_usd": -9.0,
+                "simulated_mark_value_usd": 9.6,
+                "simulated_pnl_usd": 0.6,
+            },
+            "sleeves": {
+                "grid": {
+                    "sleeve_id": "grid",
+                    "strategy_id": "grid",
+                    "sleeve_role": "grid_scalp",
+                    "tick_count": 3,
+                    "intent_count": 2,
+                    "blocker_count": 0,
+                    "fill_simulation": {
+                        "status": "simulated_from_clob_tape",
+                        "candidate_count": 2,
+                        "unique_candidate_count": 2,
+                        "simulated_fill_count": 2,
+                        "simulated_cashflow_usd": -9.0,
+                        "simulated_mark_value_usd": 9.6,
+                        "simulated_pnl_usd": 0.6,
+                    },
+                }
+            },
+        }
+    }
+
+    aggregate = ops_router._build_postgame_replay_mode(
+        "aggregate_replay",
+        "aggregate",
+        replay_inputs=replay_inputs,
+    )
+    leave_one_out = ops_router._build_postgame_replay_mode(
+        "leave_one_out",
+        "leave one out",
+        replay_inputs=replay_inputs,
+    )
+
+    assert aggregate["aggregate"]["simulation_status"] == "simulated_from_clob_tape"
+    assert aggregate["aggregate"]["simulated_pnl_usd"] == 0.6
+    row = leave_one_out["leave_one_out_rows"][0]
+    assert row["aggregate_simulated_pnl_usd"] == 0.6
+    assert row["aggregate_without_excluded_simulated_pnl_usd"] == 0.0
+    assert row["marginal_value_usd"] == 0.6
+    assert row["marginal_value_source_confidence"] == "clob_market_tape"
 
 
 def test_postgame_review_flags_not_actually_live_tested_pytest(tmp_path, monkeypatch) -> None:

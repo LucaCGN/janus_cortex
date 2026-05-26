@@ -1531,6 +1531,7 @@ def _build_postgame_replay_mode(
 ) -> dict[str, Any]:
     recorded_inputs = [item for item in replay_inputs.values() if item.get("status") == "recorded"]
     sleeve_rows = _postgame_replay_mode_sleeve_rows(replay_inputs)
+    aggregate = _postgame_replay_mode_aggregate(replay_inputs)
     status_text = "input_ready" if recorded_inputs else "input_missing"
     base = {
         "schema_version": "postgame_replay_mode_status_v1",
@@ -1542,7 +1543,7 @@ def _build_postgame_replay_mode(
         "same_tick_stream_for_all_modes": True,
         "event_count": len(replay_inputs),
         "recorded_event_count": len(recorded_inputs),
-        "simulation_status": "pending_fill_simulation",
+        "simulation_status": aggregate.get("simulation_status") or "input_missing",
     }
     if mode == "sleeve_isolated":
         return {
@@ -1553,25 +1554,16 @@ def _build_postgame_replay_mode(
     if mode == "aggregate_replay":
         return {
             **base,
-            "aggregate": _postgame_replay_mode_aggregate(replay_inputs),
+            "aggregate": aggregate,
         }
     if mode == "leave_one_out":
         return {
             **base,
             "excluded_sleeve_count": len(sleeve_rows),
-            "leave_one_out_rows": [
-                {
-                    "event_id": row.get("event_id"),
-                    "excluded_sleeve_id": row.get("sleeve_id"),
-                    "excluded_strategy_id": row.get("strategy_id"),
-                    "sleeve_role": row.get("sleeve_role"),
-                    "status": "pending_fill_simulation",
-                    "input_tick_count": row.get("tick_count"),
-                    "marginal_value_usd": None,
-                    "marginal_value_source_confidence": "inferred",
-                }
-                for row in sleeve_rows
-            ],
+            "leave_one_out_rows": _postgame_replay_mode_leave_one_out_rows(
+                sleeve_rows,
+                aggregate=aggregate,
+            ),
         }
     return {
         **base,
@@ -1585,6 +1577,7 @@ def _postgame_replay_mode_sleeve_rows(replay_inputs: dict[str, dict[str, Any]]) 
         for sleeve_id, sleeve in (summary.get("sleeves") or {}).items():
             if not isinstance(sleeve, dict):
                 continue
+            simulation = sleeve.get("fill_simulation") if isinstance(sleeve.get("fill_simulation"), dict) else {}
             rows.append(
                 {
                     "event_id": event_id,
@@ -1597,8 +1590,16 @@ def _postgame_replay_mode_sleeve_rows(replay_inputs: dict[str, dict[str, Any]]) 
                     "intent_count": sleeve.get("intent_count"),
                     "blocker_count": sleeve.get("blocker_count"),
                     "blocker_reasons": sleeve.get("blocker_reasons") or [],
-                    "simulated_pnl_usd": None,
-                    "simulation_status": "pending_fill_simulation",
+                    "candidate_count": simulation.get("candidate_count", 0),
+                    "unique_candidate_count": simulation.get("unique_candidate_count", 0),
+                    "simulated_fill_count": simulation.get("simulated_fill_count", 0),
+                    "not_fillable_count": simulation.get("not_fillable_count", 0),
+                    "missing_price_count": simulation.get("missing_price_count", 0),
+                    "unmatched_sell_count": simulation.get("unmatched_sell_count", 0),
+                    "simulated_cashflow_usd": simulation.get("simulated_cashflow_usd"),
+                    "simulated_mark_value_usd": simulation.get("simulated_mark_value_usd"),
+                    "simulated_pnl_usd": simulation.get("simulated_pnl_usd"),
+                    "simulation_status": simulation.get("status") or "no_candidates",
                     "source_confidence": "runtime_artifact",
                 }
             )
@@ -1612,11 +1613,36 @@ def _postgame_replay_mode_aggregate(replay_inputs: dict[str, dict[str, Any]]) ->
     intent_count = 0
     executed_order_count = 0
     order_intent_candidate_count = 0
+    candidate_count = 0
+    unique_candidate_count = 0
+    simulated_fill_count = 0
+    not_fillable_count = 0
+    missing_price_count = 0
+    unmatched_sell_count = 0
+    simulated_cashflow = 0.0
+    simulated_mark_value = 0.0
+    simulated_pnl: float | None = 0.0
+    simulation_statuses: set[str] = set()
     for summary in replay_inputs.values():
         tick_count += _safe_int(summary.get("tick_count"))
         intent_count += _safe_int(summary.get("intent_count"))
         executed_order_count += _safe_int(summary.get("executed_order_count"))
         order_intent_candidate_count += _safe_int(summary.get("order_intent_candidate_count"))
+        simulation = summary.get("fill_simulation") if isinstance(summary.get("fill_simulation"), dict) else {}
+        candidate_count += _safe_int(simulation.get("candidate_count"))
+        unique_candidate_count += _safe_int(simulation.get("unique_candidate_count"))
+        simulated_fill_count += _safe_int(simulation.get("simulated_fill_count"))
+        not_fillable_count += _safe_int(simulation.get("not_fillable_count"))
+        missing_price_count += _safe_int(simulation.get("missing_price_count"))
+        unmatched_sell_count += _safe_int(simulation.get("unmatched_sell_count"))
+        simulated_cashflow += _safe_float(simulation.get("simulated_cashflow_usd")) or 0.0
+        simulated_mark_value += _safe_float(simulation.get("simulated_mark_value_usd")) or 0.0
+        if simulation.get("simulated_pnl_usd") is None and _safe_int(simulation.get("unique_candidate_count")):
+            simulated_pnl = None
+        elif simulated_pnl is not None:
+            simulated_pnl += _safe_float(simulation.get("simulated_pnl_usd")) or 0.0
+        if simulation.get("status"):
+            simulation_statuses.add(str(simulation.get("status")))
         for key, count in (summary.get("blocker_reason_counts") or {}).items():
             blocker_counts[str(key)] = blocker_counts.get(str(key), 0) + _safe_int(count)
         for key, count in (summary.get("decision_type_counts") or {}).items():
@@ -1628,9 +1654,79 @@ def _postgame_replay_mode_aggregate(replay_inputs: dict[str, dict[str, Any]]) ->
         "order_intent_candidate_count": order_intent_candidate_count,
         "blocker_reason_counts": dict(sorted(blocker_counts.items())),
         "decision_type_counts": dict(sorted(decision_counts.items())),
-        "simulated_pnl_usd": None,
-        "simulation_status": "pending_fill_simulation",
+        "candidate_count": candidate_count,
+        "unique_candidate_count": unique_candidate_count,
+        "simulated_fill_count": simulated_fill_count,
+        "not_fillable_count": not_fillable_count,
+        "missing_price_count": missing_price_count,
+        "unmatched_sell_count": unmatched_sell_count,
+        "simulated_cashflow_usd": round(simulated_cashflow, 6),
+        "simulated_mark_value_usd": round(simulated_mark_value, 6),
+        "simulated_pnl_usd": round(simulated_pnl, 6) if simulated_pnl is not None else None,
+        "simulation_status": _combined_postgame_replay_simulation_status(
+            statuses=simulation_statuses,
+            unique_candidate_count=unique_candidate_count,
+            simulated_fill_count=simulated_fill_count,
+            missing_price_count=missing_price_count,
+            not_fillable_count=not_fillable_count,
+        ),
     }
+
+
+def _postgame_replay_mode_leave_one_out_rows(
+    sleeve_rows: list[dict[str, Any]],
+    *,
+    aggregate: dict[str, Any],
+) -> list[dict[str, Any]]:
+    aggregate_pnl = _safe_float(aggregate.get("simulated_pnl_usd"))
+    rows: list[dict[str, Any]] = []
+    for row in sleeve_rows:
+        sleeve_pnl = _safe_float(row.get("simulated_pnl_usd"))
+        aggregate_without = None
+        marginal = None
+        status_text = row.get("simulation_status") or "no_candidates"
+        confidence = "clob_market_tape" if sleeve_pnl is not None and aggregate_pnl is not None else "inferred"
+        if sleeve_pnl is not None and aggregate_pnl is not None:
+            aggregate_without = round(aggregate_pnl - sleeve_pnl, 6)
+            marginal = round(aggregate_pnl - aggregate_without, 6)
+        rows.append(
+            {
+                "event_id": row.get("event_id"),
+                "excluded_sleeve_id": row.get("sleeve_id"),
+                "excluded_strategy_id": row.get("strategy_id"),
+                "sleeve_role": row.get("sleeve_role"),
+                "status": status_text,
+                "input_tick_count": row.get("tick_count"),
+                "candidate_count": row.get("candidate_count", 0),
+                "simulated_fill_count": row.get("simulated_fill_count", 0),
+                "aggregate_simulated_pnl_usd": aggregate_pnl,
+                "aggregate_without_excluded_simulated_pnl_usd": aggregate_without,
+                "marginal_value_usd": marginal,
+                "marginal_value_source_confidence": confidence,
+            }
+        )
+    return rows
+
+
+def _combined_postgame_replay_simulation_status(
+    *,
+    statuses: set[str],
+    unique_candidate_count: int,
+    simulated_fill_count: int,
+    missing_price_count: int,
+    not_fillable_count: int,
+) -> str:
+    if not unique_candidate_count:
+        return "no_candidates"
+    if simulated_fill_count and not missing_price_count and not not_fillable_count:
+        return "simulated_from_clob_tape"
+    if simulated_fill_count:
+        return "partial_fillability_simulated"
+    if missing_price_count and "price_path_missing" in statuses:
+        return "price_path_missing"
+    if not_fillable_count:
+        return "not_fillable_at_recorded_book"
+    return "review_required"
 
 
 def _build_postgame_realized_live_item(item: dict[str, Any]) -> dict[str, Any]:
@@ -1807,6 +1903,11 @@ def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str)
         "decision_type_counts": {},
         "blocker_reason_counts": {},
         "sleeves": {},
+        "fill_simulation": _empty_postgame_replay_fill_simulation(),
+        "_candidate_keys_seen": set(),
+        "_latest_bid_by_token": {},
+        "_latest_bid_by_outcome": {},
+        "_open_positions_by_sleeve_token": {},
     }
     try:
         with ticks_path.open("r", encoding="utf-8") as handle:
@@ -1820,11 +1921,13 @@ def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str)
                     continue
                 _accumulate_postgame_replay_tick_summary(summary, tick=tick, event_payload=event_payload)
     except OSError as exc:
+        _finalize_postgame_replay_tick_summary(summary)
         return {
             **summary,
             "status": "error",
             "error": str(exc),
         }
+    _finalize_postgame_replay_tick_summary(summary)
     if not summary["tick_count"]:
         summary["status"] = "missing"
         summary["reason"] = "event_not_found_in_tick_stream"
@@ -1842,6 +1945,26 @@ def _live_worker_tick_event_payload(tick: dict[str, Any], *, event_id: str) -> d
         if isinstance(event_payload, dict) and str(event_payload.get("event_id") or "") == event_id:
             return event_payload
     return None
+
+
+def _empty_postgame_replay_fill_simulation() -> dict[str, Any]:
+    return {
+        "schema_version": "postgame_replay_fill_simulation_v1",
+        "status": "no_candidates",
+        "source_confidence": "clob_market_tape",
+        "candidate_count": 0,
+        "unique_candidate_count": 0,
+        "duplicate_candidate_count": 0,
+        "simulated_fill_count": 0,
+        "not_fillable_count": 0,
+        "missing_price_count": 0,
+        "unmatched_sell_count": 0,
+        "simulated_cashflow_usd": 0.0,
+        "simulated_mark_value_usd": 0.0,
+        "simulated_pnl_usd": 0.0,
+        "dedupe_policy": "event+sleeve+signal_type+token+cycle_or_supporting_signal",
+        "mark_policy": "open_buy_inventory_marked_at_latest_recorded_best_bid",
+    }
 
 
 def _accumulate_postgame_replay_tick_summary(
@@ -1874,29 +1997,20 @@ def _accumulate_postgame_replay_tick_summary(
     decision = aggregation.get("decision") if isinstance(aggregation.get("decision"), dict) else {}
     decision_type = str(decision.get("decision_type") or "unknown")
     summary["decision_type_counts"][decision_type] = summary["decision_type_counts"].get(decision_type, 0) + 1
-    summary["order_intent_candidate_count"] += len(decision.get("order_intent_candidates") or [])
+    candidates = decision.get("order_intent_candidates") or []
+    summary["order_intent_candidate_count"] += len(candidates)
+    _update_postgame_replay_latest_books(summary, event_payload=event_payload)
+    for candidate in candidates:
+        if isinstance(candidate, dict):
+            _accumulate_postgame_replay_candidate(summary, candidate=candidate, event_payload=event_payload)
 
     sleeve_states = live_execution.get("sleeve_states") or event_payload.get("sleeve_states") or []
     for sleeve in sleeve_states:
         if not isinstance(sleeve, dict):
             continue
-        sleeve_id = str(sleeve.get("sleeve_id") or sleeve.get("strategy_id") or "").strip()
-        if not sleeve_id:
+        row = _postgame_replay_sleeve_summary(summary, sleeve)
+        if row is None:
             continue
-        row = summary["sleeves"].setdefault(
-            sleeve_id,
-            {
-                "sleeve_id": sleeve_id,
-                "strategy_id": sleeve.get("strategy_id"),
-                "sleeve_role": sleeve.get("sleeve_role"),
-                "sleeve_side": sleeve.get("sleeve_side"),
-                "strategy_family": sleeve.get("strategy_family"),
-                "tick_count": 0,
-                "intent_count": 0,
-                "blocker_count": 0,
-                "blocker_reasons": [],
-            },
-        )
         row["tick_count"] += 1
         row["intent_count"] += _safe_int(sleeve.get("intent_count"))
         row["blocker_count"] += _safe_int(sleeve.get("blocker_count"))
@@ -1905,6 +2019,285 @@ def _accumulate_postgame_replay_tick_summary(
             reason_text = str(reason)
             if reason_text not in blocker_reasons:
                 blocker_reasons.append(reason_text)
+
+
+def _postgame_replay_sleeve_summary(summary: dict[str, Any], source: dict[str, Any]) -> dict[str, Any] | None:
+    sleeve_id = str(source.get("sleeve_id") or source.get("strategy_id") or "").strip()
+    if not sleeve_id:
+        return None
+    row = summary["sleeves"].setdefault(
+        sleeve_id,
+        {
+            "sleeve_id": sleeve_id,
+            "strategy_id": source.get("strategy_id"),
+            "sleeve_role": source.get("sleeve_role"),
+            "sleeve_side": source.get("sleeve_side") or source.get("side"),
+            "strategy_family": source.get("strategy_family"),
+            "tick_count": 0,
+            "intent_count": 0,
+            "blocker_count": 0,
+            "blocker_reasons": [],
+            "fill_simulation": _empty_postgame_replay_fill_simulation(),
+        },
+    )
+    for key in ("strategy_id", "sleeve_role", "sleeve_side", "strategy_family"):
+        if row.get(key) in (None, "") and source.get(key):
+            row[key] = source.get(key)
+    if row.get("sleeve_side") in (None, "") and source.get("side"):
+        row["sleeve_side"] = source.get("side")
+    return row
+
+
+def _update_postgame_replay_latest_books(summary: dict[str, Any], *, event_payload: dict[str, Any]) -> None:
+    market_state = event_payload.get("market_state") if isinstance(event_payload.get("market_state"), dict) else {}
+    for token_id, token_state in (market_state.get("token_states") or {}).items():
+        if not isinstance(token_state, dict):
+            continue
+        bid = _safe_float(token_state.get("best_bid"))
+        if bid is not None:
+            summary["_latest_bid_by_token"][str(token_id)] = bid
+    outcome_states = market_state.get("outcome_states") or {}
+    if isinstance(outcome_states, dict):
+        iterable = outcome_states.items()
+    elif isinstance(outcome_states, list):
+        iterable = ((item.get("outcome_id") or item.get("id"), item) for item in outcome_states if isinstance(item, dict))
+    else:
+        iterable = []
+    for outcome_id, outcome_state in iterable:
+        if not outcome_id or not isinstance(outcome_state, dict):
+            continue
+        bid = _safe_float(outcome_state.get("best_bid"))
+        if bid is not None:
+            summary["_latest_bid_by_outcome"][str(outcome_id)] = bid
+
+
+def _accumulate_postgame_replay_candidate(
+    summary: dict[str, Any],
+    *,
+    candidate: dict[str, Any],
+    event_payload: dict[str, Any],
+) -> None:
+    summary_sim = summary["fill_simulation"]
+    summary_sim["candidate_count"] += 1
+    sleeve = _postgame_replay_sleeve_summary(summary, candidate)
+    sleeve_sim = sleeve["fill_simulation"] if sleeve is not None else None
+    if sleeve_sim is not None:
+        sleeve_sim["candidate_count"] += 1
+
+    candidate_key = _postgame_replay_candidate_key(candidate)
+    seen = summary.setdefault("_candidate_keys_seen", set())
+    if candidate_key in seen:
+        summary_sim["duplicate_candidate_count"] += 1
+        if sleeve_sim is not None:
+            sleeve_sim["duplicate_candidate_count"] += 1
+        return
+    seen.add(candidate_key)
+    summary_sim["unique_candidate_count"] += 1
+    if sleeve_sim is not None:
+        sleeve_sim["unique_candidate_count"] += 1
+
+    fill = _postgame_replay_candidate_fill(candidate, event_payload=event_payload)
+    if fill["status"] == "missing_price":
+        summary_sim["missing_price_count"] += 1
+        if sleeve_sim is not None:
+            sleeve_sim["missing_price_count"] += 1
+        return
+    if fill["status"] == "not_fillable":
+        summary_sim["not_fillable_count"] += 1
+        if sleeve_sim is not None:
+            sleeve_sim["not_fillable_count"] += 1
+        return
+    if fill["status"] == "unsupported_signal_type":
+        summary_sim["not_fillable_count"] += 1
+        if sleeve_sim is not None:
+            sleeve_sim["not_fillable_count"] += 1
+        return
+
+    signal_type = str(candidate.get("signal_type") or "").lower()
+    token_id = str(candidate.get("market_token_id") or candidate.get("token_id") or "")
+    outcome_id = str(candidate.get("outcome_id") or "")
+    shares = fill["shares"]
+    price = fill["price"]
+    if signal_type in {"buy", "rebuy"}:
+        cashflow = -(price * shares)
+        _postgame_replay_apply_cashflow(summary_sim, cashflow)
+        if sleeve_sim is not None:
+            _postgame_replay_apply_cashflow(sleeve_sim, cashflow)
+        summary_sim["simulated_fill_count"] += 1
+        if sleeve_sim is not None:
+            sleeve_sim["simulated_fill_count"] += 1
+        position_key = _postgame_replay_position_key(candidate)
+        position = summary["_open_positions_by_sleeve_token"].setdefault(
+            position_key,
+            {"shares": 0.0, "token_id": token_id, "outcome_id": outcome_id, "sleeve_id": candidate.get("sleeve_id")},
+        )
+        position["shares"] += shares
+        return
+
+    if signal_type in {"sell", "exit", "reduce"}:
+        position_key = _postgame_replay_position_key(candidate)
+        position = summary["_open_positions_by_sleeve_token"].get(position_key)
+        available_shares = _safe_float(position.get("shares")) if isinstance(position, dict) else None
+        if not available_shares:
+            summary_sim["unmatched_sell_count"] += 1
+            if sleeve_sim is not None:
+                sleeve_sim["unmatched_sell_count"] += 1
+            return
+        filled_shares = min(shares, available_shares)
+        cashflow = price * filled_shares
+        position["shares"] = max(0.0, available_shares - filled_shares)
+        _postgame_replay_apply_cashflow(summary_sim, cashflow)
+        if sleeve_sim is not None:
+            _postgame_replay_apply_cashflow(sleeve_sim, cashflow)
+        summary_sim["simulated_fill_count"] += 1
+        if sleeve_sim is not None:
+            sleeve_sim["simulated_fill_count"] += 1
+
+
+def _postgame_replay_candidate_key(candidate: dict[str, Any]) -> str:
+    support = candidate.get("cycle_id") or ",".join(str(item) for item in candidate.get("supporting_signal_ids") or [])
+    if not support:
+        support = ",".join(str(item) for item in candidate.get("reason_codes") or []) or "candidate"
+    return "|".join(
+        [
+            str(candidate.get("event_id") or ""),
+            str(candidate.get("sleeve_id") or candidate.get("strategy_id") or ""),
+            str(candidate.get("signal_type") or ""),
+            str(candidate.get("market_token_id") or candidate.get("token_id") or candidate.get("outcome_id") or ""),
+            support,
+        ]
+    )
+
+
+def _postgame_replay_position_key(candidate: dict[str, Any]) -> str:
+    return "|".join(
+        [
+            str(candidate.get("sleeve_id") or candidate.get("strategy_id") or ""),
+            str(candidate.get("market_token_id") or candidate.get("token_id") or candidate.get("outcome_id") or ""),
+        ]
+    )
+
+
+def _postgame_replay_candidate_fill(candidate: dict[str, Any], *, event_payload: dict[str, Any]) -> dict[str, Any]:
+    signal_type = str(candidate.get("signal_type") or "").lower()
+    if signal_type not in {"buy", "rebuy", "sell", "exit", "reduce"}:
+        return {"status": "unsupported_signal_type"}
+    book = _postgame_replay_candidate_book(candidate, event_payload=event_payload)
+    if not book:
+        return {"status": "missing_price"}
+    price_field = "best_ask" if signal_type in {"buy", "rebuy"} else "best_bid"
+    price = _safe_float(book.get(price_field))
+    if price is None:
+        return {"status": "missing_price"}
+    shares = _safe_float(candidate.get("requested_shares") or candidate.get("shares") or candidate.get("size"))
+    notional = _safe_float(candidate.get("requested_notional_usd") or candidate.get("notional_usd"))
+    if shares is None and notional is not None and price > 0:
+        shares = notional / price
+    if shares is None or shares <= 0:
+        return {"status": "missing_price"}
+    if signal_type in {"buy", "rebuy"}:
+        max_price = _safe_float(candidate.get("max_price") or candidate.get("limit_price") or candidate.get("price"))
+        if max_price is not None and price > max_price:
+            return {"status": "not_fillable", "price": price, "shares": shares}
+    else:
+        min_price = _safe_float(
+            candidate.get("min_price")
+            or candidate.get("limit_price")
+            or candidate.get("target_price")
+            or candidate.get("price")
+        )
+        if min_price is not None and price < min_price:
+            return {"status": "not_fillable", "price": price, "shares": shares}
+    return {"status": "fill", "price": price, "shares": shares}
+
+
+def _postgame_replay_candidate_book(candidate: dict[str, Any], *, event_payload: dict[str, Any]) -> dict[str, Any] | None:
+    outcome_id = str(candidate.get("outcome_id") or "")
+    token_id = str(candidate.get("market_token_id") or candidate.get("token_id") or "")
+    orderbook_results = event_payload.get("orderbook_results") if isinstance(event_payload.get("orderbook_results"), dict) else {}
+    if outcome_id and isinstance(orderbook_results.get(outcome_id), dict):
+        return orderbook_results[outcome_id]
+    market_state = event_payload.get("market_state") if isinstance(event_payload.get("market_state"), dict) else {}
+    token_states = market_state.get("token_states") if isinstance(market_state.get("token_states"), dict) else {}
+    if token_id and isinstance(token_states.get(token_id), dict):
+        return token_states[token_id]
+    outcome_states = market_state.get("outcome_states")
+    if isinstance(outcome_states, dict) and outcome_id and isinstance(outcome_states.get(outcome_id), dict):
+        return outcome_states[outcome_id]
+    if isinstance(outcome_states, list):
+        for item in outcome_states:
+            if isinstance(item, dict) and str(item.get("outcome_id") or item.get("id") or "") == outcome_id:
+                return item
+    return None
+
+
+def _postgame_replay_apply_cashflow(simulation: dict[str, Any], cashflow: float) -> None:
+    simulation["simulated_cashflow_usd"] = round(
+        (_safe_float(simulation.get("simulated_cashflow_usd")) or 0.0) + cashflow,
+        6,
+    )
+
+
+def _finalize_postgame_replay_tick_summary(summary: dict[str, Any]) -> None:
+    for position in summary.get("_open_positions_by_sleeve_token", {}).values():
+        if not isinstance(position, dict):
+            continue
+        shares = _safe_float(position.get("shares")) or 0.0
+        if shares <= 0:
+            continue
+        token_id = str(position.get("token_id") or "")
+        outcome_id = str(position.get("outcome_id") or "")
+        mark_price = summary.get("_latest_bid_by_token", {}).get(token_id)
+        if mark_price is None:
+            mark_price = summary.get("_latest_bid_by_outcome", {}).get(outcome_id)
+        if mark_price is None:
+            summary["fill_simulation"]["missing_price_count"] += 1
+            sleeve = summary["sleeves"].get(str(position.get("sleeve_id") or ""))
+            if isinstance(sleeve, dict):
+                sleeve["fill_simulation"]["missing_price_count"] += 1
+            continue
+        mark_value = shares * float(mark_price)
+        summary["fill_simulation"]["simulated_mark_value_usd"] = round(
+            (_safe_float(summary["fill_simulation"].get("simulated_mark_value_usd")) or 0.0) + mark_value,
+            6,
+        )
+        sleeve = summary["sleeves"].get(str(position.get("sleeve_id") or ""))
+        if isinstance(sleeve, dict):
+            sleeve["fill_simulation"]["simulated_mark_value_usd"] = round(
+                (_safe_float(sleeve["fill_simulation"].get("simulated_mark_value_usd")) or 0.0) + mark_value,
+                6,
+            )
+    _finalize_postgame_replay_simulation(summary["fill_simulation"])
+    for sleeve in (summary.get("sleeves") or {}).values():
+        if isinstance(sleeve, dict):
+            _finalize_postgame_replay_simulation(sleeve["fill_simulation"])
+    for key in (
+        "_candidate_keys_seen",
+        "_latest_bid_by_token",
+        "_latest_bid_by_outcome",
+        "_open_positions_by_sleeve_token",
+    ):
+        summary.pop(key, None)
+
+
+def _finalize_postgame_replay_simulation(simulation: dict[str, Any]) -> None:
+    unique_candidate_count = _safe_int(simulation.get("unique_candidate_count"))
+    simulated_fill_count = _safe_int(simulation.get("simulated_fill_count"))
+    missing_price_count = _safe_int(simulation.get("missing_price_count"))
+    not_fillable_count = _safe_int(simulation.get("not_fillable_count"))
+    cashflow = _safe_float(simulation.get("simulated_cashflow_usd")) or 0.0
+    mark_value = _safe_float(simulation.get("simulated_mark_value_usd")) or 0.0
+    if missing_price_count and simulated_fill_count:
+        simulation["simulated_pnl_usd"] = None
+    else:
+        simulation["simulated_pnl_usd"] = round(cashflow + mark_value, 6)
+    simulation["status"] = _combined_postgame_replay_simulation_status(
+        statuses={"price_path_missing"} if missing_price_count else set(),
+        unique_candidate_count=unique_candidate_count,
+        simulated_fill_count=simulated_fill_count,
+        missing_price_count=missing_price_count,
+        not_fillable_count=not_fillable_count,
+    )
 
 
 def _event_scoped_order_lifecycle_direct_context(
