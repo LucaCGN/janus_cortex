@@ -43,7 +43,7 @@ def test_paired_microcycle_buy_fill_creates_sell_candidate_pytest() -> None:
         plan=_plan(),
         known_external_order_ids={"janus-buy-1"},
         direct_clob={
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "trade-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "janus-buy-1"},
                 ]
@@ -83,7 +83,7 @@ def test_paired_microcycle_open_sell_blocks_duplicate_buy_pytest() -> None:
                     {"id": "target-sell", "asset": "token-okc", "side": "sell", "status": "open", "size": 5, "price": 0.09},
                 ]
             },
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "trade-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "janus-buy-1"},
                 ]
@@ -107,7 +107,7 @@ def test_paired_microcycle_sell_fill_creates_rebuy_candidate_pytest() -> None:
         plan=_plan(),
         known_external_order_ids={"janus-buy-1", "janus-sell-1"},
         direct_clob={
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {
                         "id": "trade-buy",
@@ -161,7 +161,7 @@ def test_paired_microcycle_manual_fill_import_and_stale_target_replacement_pytes
         plan=_plan(),
         known_external_order_ids={"janus-other-order"},
         direct_clob={
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "operator-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.05, "order_id": "manual-buy-1"},
                 ]
@@ -221,7 +221,7 @@ def test_paired_microcycle_manual_imported_sleeve_is_first_class_pytest() -> Non
         plan=plan,
         known_external_order_ids=set(),
         direct_clob={
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "operator-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "operator-buy-1"},
                 ]
@@ -256,7 +256,7 @@ def test_paired_microcycle_blocks_rebuy_when_event_budget_exhausted_pytest() -> 
         plan=_plan(),
         known_external_order_ids={"janus-buy-1", "janus-sell-1"},
         direct_clob={
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "trade-buy", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "janus-buy-1"},
                     {"id": "trade-sell", "asset": "token-okc", "side": "sell", "size": 5, "price": 0.09, "order_id": "janus-sell-1"},
@@ -293,7 +293,7 @@ def test_paired_microcycle_readback_scores_unfilled_sell_and_final_mark_pytest()
                     },
                 ]
             },
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {
                         "id": "trade-buy",
@@ -324,13 +324,101 @@ def test_paired_microcycle_readback_scores_unfilled_sell_and_final_mark_pytest()
     ]
 
 
-def test_paired_microcycle_readback_score_persists_json_markdown_and_index_pytest(tmp_path) -> None:
+def test_paired_microcycle_ignores_public_current_token_trade_tape_pytest() -> None:
     evidence = build_paired_microcycle_evidence(
         event_id=EVENT_ID,
         plan=_plan(),
         known_external_order_ids={"janus-buy-1"},
         direct_clob={
             "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "public-market-print",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 4060,
+                        "price": 0.46,
+                        "order_id": "not-our-order",
+                    },
+                ]
+            }
+        },
+    )
+
+    cycle = evidence.cycles[0]
+    assert evidence.next_leg_candidate_count == 0
+    assert evidence.manual_fill_import_count == 0
+    assert cycle.status == "awaiting_buy"
+    assert cycle.buy_leg.status == "missing"
+    assert cycle.reason_codes == ["buy_fill_required_before_paired_sell"]
+
+
+def test_paired_microcycle_uses_target_position_and_ignores_public_sell_print_pytest() -> None:
+    evidence = build_paired_microcycle_evidence(
+        event_id=EVENT_ID,
+        plan=_plan(),
+        known_external_order_ids={"janus-buy-1", "janus-sell-1"},
+        direct_clob={
+            "open_orders": {
+                "orders": [
+                    {"id": "janus-sell-1", "asset": "token-okc", "side": "sell", "status": "open", "size": 5, "price": 0.09},
+                ]
+            },
+            "open_positions": {
+                "positions": [
+                    {"asset": "token-okc", "size": 5, "avg_price": 0.04, "outcome": "Thunder"},
+                ]
+            },
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "known-public-buy-print",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 5,
+                        "price": 0.04,
+                        "order_id": "janus-buy-1",
+                    },
+                    {
+                        "id": "known-public-sell-print",
+                        "asset": "token-okc",
+                        "side": "sell",
+                        "size": 5,
+                        "price": 0.09,
+                        "order_id": "janus-sell-1",
+                    },
+                ]
+            },
+        },
+        target_management={
+            "sleeves": [
+                {
+                    "sleeve_id": "okc-grid",
+                    "allocated_shares": 5,
+                    "weighted_basis_price": 0.04,
+                    "target_status": "target_covered",
+                    "target_price": 0.09,
+                }
+            ]
+        },
+    )
+
+    cycle = evidence.cycles[0]
+    assert cycle.status == "sell_open_waiting"
+    assert cycle.buy_leg.source == "target_management_position"
+    assert cycle.buy_leg.shares == 5
+    assert cycle.sell_leg is not None
+    assert cycle.sell_leg.status == "open"
+    assert cycle.next_action == "wait_for_sell_fill"
+
+
+def test_paired_microcycle_readback_score_persists_json_markdown_and_index_pytest(tmp_path) -> None:
+    evidence = build_paired_microcycle_evidence(
+        event_id=EVENT_ID,
+        plan=_plan(),
+        known_external_order_ids={"janus-buy-1"},
+        direct_clob={
+            "direct_trades": {
                 "trades": [
                     {
                         "id": "trade-buy",

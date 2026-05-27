@@ -155,6 +155,7 @@ def build_paired_microcycle_evidence(
     buy_trades = _trades_by_token(direct_clob, side="buy", known_external_order_ids=known_external_order_ids)
     sell_trades = _trades_by_token(direct_clob, side="sell", known_external_order_ids=known_external_order_ids)
     sell_orders = _orders_by_token(direct_clob, side="sell")
+    open_position_shares = _open_position_shares_by_token(direct_clob)
     target_rows = _target_rows_by_sleeve(target_management)
     budget = _model_or_dict(event_risk_budget)
 
@@ -170,6 +171,16 @@ def build_paired_microcycle_evidence(
             default_target_delta_cents=default_target_delta_cents,
         )
 
+        if token_id in open_position_shares:
+            buy_trades[token_id] = _cap_trade_legs(buy_trades.get(token_id) or [], open_position_shares[token_id])
+        if not buy_trades.get(token_id):
+            synthetic_buy = _buy_leg_from_target_position(
+                token_id=token_id,
+                target_row=target_row,
+                max_shares=entry_shares,
+            )
+            if synthetic_buy is not None:
+                buy_trades[token_id] = [synthetic_buy]
         buys = _take_trade_legs(buy_trades.get(token_id) or [], entry_shares)
         sells = _take_trade_legs(sell_trades.get(token_id) or [], _sum_leg_shares(buys) or entry_shares)
         open_sells = _take_order_legs(sell_orders.get(token_id) or [], _sum_leg_shares(buys) or entry_shares)
@@ -522,7 +533,7 @@ def _trades_by_token(
 ) -> dict[str, list[MicrocycleLegEvidence]]:
     rows: dict[str, list[MicrocycleLegEvidence]] = {}
     side_aliases = {"buy": {"buy", "long"}, "sell": {"sell", "short"}}[side]
-    for trade in _direct_trades(direct_clob):
+    for trade in _direct_trades(direct_clob, known_external_order_ids=known_external_order_ids):
         token_id = str(trade.get("asset") or trade.get("asset_id") or trade.get("token_id") or "").strip()
         trade_side = str(trade.get("side") or trade.get("taker_side") or "").strip().lower()
         shares = _float(trade.get("size") or trade.get("matched_amount") or trade.get("shares")) or 0.0
@@ -571,6 +582,58 @@ def _orders_by_token(direct_clob: dict[str, Any], *, side: Literal["buy", "sell"
             )
         )
     return rows
+
+
+def _open_position_shares_by_token(direct_clob: dict[str, Any]) -> dict[str, float]:
+    rows: dict[str, float] = {}
+    section = direct_clob.get("open_positions") if isinstance(direct_clob.get("open_positions"), dict) else {}
+    for position in section.get("positions") or []:
+        if not isinstance(position, dict):
+            continue
+        token_id = str(position.get("asset") or position.get("asset_id") or position.get("token_id") or "").strip()
+        shares = _float(position.get("size") or position.get("shares") or position.get("balance")) or 0.0
+        if token_id and shares > 0.0:
+            rows[token_id] = rows.get(token_id, 0.0) + shares
+    return {token_id: round(shares, 6) for token_id, shares in rows.items()}
+
+
+def _cap_trade_legs(legs: list[MicrocycleLegEvidence], max_shares: float) -> list[MicrocycleLegEvidence]:
+    if max_shares <= 0.0 or _sum_leg_shares(legs) <= max_shares + 1e-9:
+        return legs
+    remaining = max_shares
+    capped: list[MicrocycleLegEvidence] = []
+    for leg in legs:
+        if remaining <= 1e-9:
+            break
+        take = min(leg.shares, remaining)
+        if take <= 1e-9:
+            continue
+        capped.append(leg.model_copy(update={"shares": round(take, 6)}))
+        remaining -= take
+    return capped
+
+
+def _buy_leg_from_target_position(
+    *,
+    token_id: str,
+    target_row: dict[str, Any],
+    max_shares: float,
+) -> MicrocycleLegEvidence | None:
+    allocated = _float(target_row.get("allocated_shares")) or 0.0
+    if allocated <= 1e-9:
+        return None
+    shares = min(allocated, max_shares)
+    if shares <= 1e-9:
+        return None
+    return MicrocycleLegEvidence(
+        leg_type="buy",
+        status="filled",
+        token_id=token_id,
+        shares=round(shares, 6),
+        price=_float(target_row.get("weighted_basis_price")),
+        actor="unknown",
+        source="target_management_position",
+    )
 
 
 def _target_rows_by_sleeve(target_management: dict[str, Any] | BaseModel | None) -> dict[str, dict[str, Any]]:
@@ -665,15 +728,40 @@ def _target_status(target_row: dict[str, Any]) -> str:
     return str(target_row.get("target_status") or "").strip().lower()
 
 
-def _direct_trades(direct_clob: dict[str, Any]) -> list[dict[str, Any]]:
+_ACCOUNT_TRADE_SECTION_KEYS = (
+    "account_trades",
+    "event_account_trades",
+    "direct_account_trades",
+    "direct_trades",
+    "trades",
+)
+
+
+def _direct_trades(
+    direct_clob: dict[str, Any],
+    *,
+    known_external_order_ids: set[str] | None,
+) -> list[dict[str, Any]]:
     candidates: list[Any] = []
-    for key in ("current_token_trades", "event_trades", "direct_trades", "trades"):
+    for key in _ACCOUNT_TRADE_SECTION_KEYS:
         value = direct_clob.get(key)
         if isinstance(value, dict):
             candidates.extend(value.get("trades") or value.get("items") or [])
         elif isinstance(value, list):
             candidates.extend(value)
-    return [dict(item) for item in candidates if isinstance(item, dict)]
+
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        stable_key = _trade_stable_key(row)
+        if stable_key in seen:
+            continue
+        seen.add(stable_key)
+        output.append(row)
+    return output
 
 
 def _trade_actor(trade: dict[str, Any], *, known_external_order_ids: set[str] | None) -> MicrocycleActor:
@@ -709,6 +797,19 @@ def _external_trade_id(trade: dict[str, Any]) -> str | None:
         if value:
             return value
     return None
+
+
+def _trade_stable_key(trade: dict[str, Any]) -> str:
+    trade_id = _external_trade_id(trade)
+    if trade_id:
+        return f"id:{trade_id}"
+    order_id = _trade_order_id(trade) or ""
+    token_id = str(trade.get("asset") or trade.get("asset_id") or trade.get("token_id") or "").strip()
+    side = str(trade.get("side") or trade.get("taker_side") or "").strip().lower()
+    size = str(trade.get("size") or trade.get("matched_amount") or trade.get("shares") or "").strip()
+    price = str(trade.get("price") or "").strip()
+    timestamp = str(trade.get("timestamp_utc") or trade.get("created_at_utc") or trade.get("created_at") or "").strip()
+    return f"trade:{order_id}:{token_id}:{side}:{size}:{price}:{timestamp}"
 
 
 def _observed_at(row: dict[str, Any]) -> datetime | None:

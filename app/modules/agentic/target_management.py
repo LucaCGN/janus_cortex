@@ -249,7 +249,7 @@ def _lots_by_token(
     known_external_order_ids: set[str] | None,
 ) -> dict[str, list[TargetManagedLot]]:
     rows: dict[str, list[TargetManagedLot]] = {}
-    for trade in _direct_trades(direct_clob):
+    for trade in _direct_trades(direct_clob, known_external_order_ids=known_external_order_ids):
         token_id = str(trade.get("asset") or trade.get("asset_id") or trade.get("token_id") or "").strip()
         side = str(trade.get("side") or trade.get("taker_side") or "").strip().lower()
         size = _float(trade.get("size") or trade.get("matched_amount") or trade.get("shares")) or 0.0
@@ -266,6 +266,7 @@ def _lots_by_token(
                 external_trade_id=_external_trade_id(trade),
             )
         )
+    _cap_lots_to_open_positions(rows, positions)
     for token_id, position in positions.items():
         known_size = _sum_lot_shares(rows.get(token_id) or [])
         remainder = max(0.0, position["shares"] - known_size)
@@ -280,6 +281,28 @@ def _lots_by_token(
                 )
             )
     return rows
+
+
+def _cap_lots_to_open_positions(
+    rows: dict[str, list[TargetManagedLot]],
+    positions: dict[str, dict[str, Any]],
+) -> None:
+    for token_id, position in positions.items():
+        lots = rows.get(token_id) or []
+        position_shares = _float(position.get("shares")) or 0.0
+        if not lots or position_shares <= 0.0 or _sum_lot_shares(lots) <= position_shares + 1e-9:
+            continue
+        remaining = position_shares
+        capped: list[TargetManagedLot] = []
+        for lot in lots:
+            if remaining <= 1e-9:
+                break
+            take = min(lot.shares, remaining)
+            if take <= 1e-9:
+                continue
+            capped.append(lot.model_copy(update={"shares": round(take, 6)}))
+            remaining -= take
+        rows[token_id] = capped
 
 
 def _build_sleeve_evidence(
@@ -417,15 +440,40 @@ def _normalize_price(price: float, rules: dict[str, Any]) -> float:
     return round(bounded, 4)
 
 
-def _direct_trades(direct_clob: dict[str, Any]) -> list[dict[str, Any]]:
+_ACCOUNT_TRADE_SECTION_KEYS = (
+    "account_trades",
+    "event_account_trades",
+    "direct_account_trades",
+    "direct_trades",
+    "trades",
+)
+
+
+def _direct_trades(
+    direct_clob: dict[str, Any],
+    *,
+    known_external_order_ids: set[str] | None,
+) -> list[dict[str, Any]]:
     candidates: list[Any] = []
-    for key in ("current_token_trades", "event_trades", "direct_trades", "trades"):
+    for key in _ACCOUNT_TRADE_SECTION_KEYS:
         value = direct_clob.get(key)
         if isinstance(value, dict):
             candidates.extend(value.get("trades") or value.get("items") or [])
         elif isinstance(value, list):
             candidates.extend(value)
-    return [dict(item) for item in candidates if isinstance(item, dict)]
+
+    output: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in candidates:
+        if not isinstance(item, dict):
+            continue
+        row = dict(item)
+        stable_key = _trade_stable_key(row)
+        if stable_key in seen:
+            continue
+        seen.add(stable_key)
+        output.append(row)
+    return output
 
 
 def _trade_actor(trade: dict[str, Any], *, known_external_order_ids: set[str] | None) -> TargetActor:
@@ -460,6 +508,19 @@ def _external_trade_id(trade: dict[str, Any]) -> str | None:
         if value:
             return value
     return None
+
+
+def _trade_stable_key(trade: dict[str, Any]) -> str:
+    trade_id = _external_trade_id(trade)
+    if trade_id:
+        return f"id:{trade_id}"
+    order_id = _trade_order_id(trade) or ""
+    token_id = str(trade.get("asset") or trade.get("asset_id") or trade.get("token_id") or "").strip()
+    side = str(trade.get("side") or trade.get("taker_side") or "").strip().lower()
+    size = str(trade.get("size") or trade.get("matched_amount") or trade.get("shares") or "").strip()
+    price = str(trade.get("price") or "").strip()
+    timestamp = str(trade.get("timestamp_utc") or trade.get("created_at_utc") or trade.get("created_at") or "").strip()
+    return f"trade:{order_id}:{token_id}:{side}:{size}:{price}:{timestamp}"
 
 
 def _sum_lot_shares(lots: list[TargetManagedLot]) -> float:

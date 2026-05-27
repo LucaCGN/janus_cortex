@@ -68,7 +68,7 @@ def test_target_management_allocates_janus_and_operator_lots_to_sleeves_pytest()
                     {"id": "target-core", "asset": "token-okc", "side": "sell", "status": "open", "size": 5, "price": 0.12},
                 ]
             },
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "trade-1", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "janus-buy-1"},
                     {"id": "trade-2", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.06, "order_id": "operator-buy-1"},
@@ -104,7 +104,7 @@ def test_target_management_flags_stale_and_missing_sleeve_targets_pytest() -> No
                     {"id": "stale-grid-target", "asset": "token-okc", "side": "sell", "status": "open", "size": 5, "price": 0.06},
                 ]
             },
-            "current_token_trades": {
+            "direct_trades": {
                 "trades": [
                     {"id": "trade-1", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.04, "order_id": "janus-buy-1"},
                     {"id": "trade-2", "asset": "token-okc", "side": "buy", "size": 5, "price": 0.06, "order_id": "operator-buy-1"},
@@ -124,3 +124,72 @@ def test_target_management_flags_stale_and_missing_sleeve_targets_pytest() -> No
     ]
     assert by_sleeve["okc-core"].target_status == "target_missing"
     assert by_sleeve["okc-core"].target_coverage_shares == 0.0
+
+
+def test_target_management_ignores_public_current_token_trade_tape_pytest() -> None:
+    evidence = build_target_management_evidence(
+        event_id=EVENT_ID,
+        plan=_plan(),
+        known_external_order_ids={"janus-buy-1"},
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {"asset": "token-okc", "size": 10, "avg_price": 0.05, "outcome": "Thunder"},
+                ]
+            },
+            "open_orders": {
+                "orders": [
+                    {"id": "target-grid", "asset": "token-okc", "side": "sell", "status": "open", "size": 5, "price": 0.10},
+                    {"id": "target-core", "asset": "token-okc", "side": "sell", "status": "open", "size": 5, "price": 0.12},
+                ]
+            },
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "public-market-print",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 4060,
+                        "price": 0.46,
+                        "order_id": "not-our-order",
+                    },
+                ]
+            },
+        },
+    )
+
+    assert len(evidence.sleeves) == 2
+    assert not any(row.sleeve_role == "unassigned_excess" for row in evidence.sleeves)
+    assert sum(row.allocated_shares for row in evidence.sleeves) == 10.0
+    assert {row.weighted_basis_price for row in evidence.sleeves} == {0.05}
+
+
+def test_target_management_caps_known_market_observations_to_account_position_pytest() -> None:
+    evidence = build_target_management_evidence(
+        event_id=EVENT_ID,
+        plan=_plan(),
+        known_external_order_ids={"janus-buy-1"},
+        direct_clob={
+            "open_positions": {
+                "positions": [
+                    {"asset": "token-okc", "size": 10, "avg_price": 0.04, "outcome": "Thunder"},
+                ]
+            },
+            "current_token_trades": {
+                "trades": [
+                    {
+                        "id": "known-public-market-print",
+                        "asset": "token-okc",
+                        "side": "buy",
+                        "size": 4060,
+                        "price": 0.04,
+                        "order_id": "janus-buy-1",
+                    },
+                ]
+            },
+        },
+    )
+
+    assert len(evidence.sleeves) == 2
+    assert not any(row.sleeve_role == "unassigned_excess" for row in evidence.sleeves)
+    assert sum(row.allocated_shares for row in evidence.sleeves) == 10.0
