@@ -179,7 +179,12 @@ def aggregate_live_signals(
     for group in conflict_groups:
         blockers.append(_blocker("conflicting_actionable_signals", group, {"conflict_key": _conflict_key(group[0])}))
 
-    if candidate_group and candidate_group[0].signal_type in _BUY_TYPES and inventory.has_buy_blocking_exposure and not control.allow_inventory_adding:
+    if (
+        candidate_group
+        and candidate_group[0].signal_type in _BUY_TYPES
+        and inventory.has_buy_blocking_exposure
+        and not _candidate_group_allows_inventory_adding(candidate_group, control)
+    ):
         blockers.append(
             _blocker(
                 "duplicate_exposure_risk",
@@ -277,6 +282,28 @@ def _order_candidate(signals: list[LiveSignal]) -> LiveSignalOrderIntentCandidat
     )
 
 
+def _candidate_group_allows_inventory_adding(
+    signals: list[LiveSignal],
+    control: LiveSignalAggregationControl,
+) -> bool:
+    if control.allow_inventory_adding:
+        return True
+    for signal in signals:
+        payload = signal.payload if isinstance(signal.payload, dict) else {}
+        scope = str(payload.get("position_limit_scope") or "").strip().lower()
+        if scope in {"sleeve", "cycle", "parallel_sleeve", "local_sleeve"}:
+            return True
+        for key in (
+            "allow_existing_position_add",
+            "allow_existing_inventory_add",
+            "allow_same_side_position_add",
+            "allow_inventory_adding",
+        ):
+            if _truthy_payload(payload.get(key)):
+                return True
+    return False
+
+
 def _candidate_group(actionable: list[LiveSignal]) -> list[LiveSignal]:
     if not actionable:
         return []
@@ -316,6 +343,12 @@ def _signal_sleeve_id(signal: LiveSignal) -> str | None:
 def _clean_payload(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _truthy_payload(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _candidate_blocking(blocker: LiveSignalBlockerArtifact) -> bool:

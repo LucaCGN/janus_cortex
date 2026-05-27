@@ -546,6 +546,9 @@ def _build_strategy(
                     "sizing_mode": "minimum_notional",
                     "min_buy_notional_usd": 1.0,
                     "ultra_low_development_opt_in": True,
+                    "position_limit_scope": "sleeve",
+                    "allow_existing_position_add": True,
+                    "allow_existing_inventory_add": True,
                 }
                 if is_ultra_low
                 else {}

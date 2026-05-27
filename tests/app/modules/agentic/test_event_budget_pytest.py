@@ -157,6 +157,36 @@ def test_sleeve_transitions_block_duplicate_exposure_and_budget_overflow_pytest(
     assert decisions["okc-rebuy"].reason_codes == ["rebuy_requires_existing_position_covered"]
 
 
+def test_sleeve_transitions_allow_explicit_add_down_inside_local_budget_pytest() -> None:
+    budget = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=100.0,
+        available_cash_usd=50.0,
+        current_position_notional_usd=2.0,
+    )
+    bundle = evaluate_event_sleeve_transitions(
+        event_id=EVENT_ID,
+        budget=budget,
+        sleeves=[
+            SleeveTransitionRequest(
+                sleeve_id="sas-ultra-low",
+                sleeve_role="ultra_low_rebound",
+                action="buy",
+                side="Spurs",
+                requested_shares=25,
+                max_price=0.04,
+                existing_position_shares=5,
+                allow_existing_position_add=True,
+            )
+        ],
+    )
+
+    decision = bundle.decisions[0]
+    assert decision.status == "intent_candidate"
+    assert decision.reason_codes == ["budget_available"]
+    assert decision.requested_notional_usd == 1.0
+
+
 def test_side_phase_and_sleeve_budgets_are_local_to_each_transition_pytest() -> None:
     budget = derive_event_risk_budget(
         event_id=EVENT_ID,

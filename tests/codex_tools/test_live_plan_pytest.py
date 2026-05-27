@@ -130,6 +130,8 @@ def test_responsive_both_sides_nba_plan_can_include_core_and_ultra_low_sleeves_p
     assert all(item.budget_usd == 2.0 for item in ultra_low_strategies)
     assert all(item.entry_rules["price_band"] == [0.003, 0.05] for item in ultra_low_strategies)
     assert all(item.entry_rules["sizing_mode"] == "minimum_notional" for item in ultra_low_strategies)
+    assert all(item.entry_rules["position_limit_scope"] == "sleeve" for item in ultra_low_strategies)
+    assert all(item.entry_rules["allow_existing_position_add"] is True for item in ultra_low_strategies)
     assert all(item.exit_rules["target_tick_size"] == 0.001 for item in ultra_low_strategies)
 
 

@@ -31,6 +31,7 @@ def _signal(
     stale: bool = False,
     token: str = "token-thunder",
     reason: str = "score_gap_inside_rule",
+    payload: dict[str, object] | None = None,
 ) -> LiveSignal:
     emitted_at = BASE_TIME + timedelta(seconds=emitted_offset_seconds)
     return LiveSignal(
@@ -49,6 +50,7 @@ def _signal(
         reason_codes=[reason],
         risk_request=LiveSignalRiskRequest(sleeve_id="okc-grid", requested_shares=5, max_price=0.24),
         evidence_paths=[f"local/shared/artifacts/ops/{source}.json"],
+        payload=payload or {},
     )
 
 
@@ -229,6 +231,26 @@ def test_aggregator_dedupes_buy_signals_and_blocks_existing_exposure_pytest() ->
         "duplicate_signal_cooldown",
         "duplicate_exposure_risk",
     }
+
+
+def test_aggregator_allows_explicit_sleeve_scoped_inventory_add_candidate_pytest() -> None:
+    decision = aggregate_live_signals(
+        [
+            _signal(
+                payload={
+                    "position_limit_scope": "sleeve",
+                    "allow_existing_position_add": True,
+                }
+            )
+        ],
+        event_id=EVENT_ID,
+        inventory=LiveSignalAggregationInventory(open_position_count=1, current_exposure_notional_usd=1.10),
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert decision.decision_type == "order_intent_candidate"
+    assert decision.order_intent_candidates[0].sleeve_id == "okc-grid"
+    assert {blocker.reason_code for blocker in decision.blocker_artifacts} == set()
 
 
 def test_aggregation_decision_artifact_writer_records_json_and_index_pytest(tmp_path) -> None:

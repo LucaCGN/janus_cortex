@@ -161,6 +161,129 @@ def test_strategy_plan_position_limit_is_token_scoped_for_parallel_sleeves_pytes
     assert any(blocker["strategy_id"] == "favorite-grid" and blocker["reason"] == "position_limit_reached" for blocker in result.blockers)
 
 
+def test_strategy_plan_allows_explicit_sleeve_scoped_add_with_existing_position_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="spurs-grid",
+                family="price_stability_micro_grid",
+                side="Spurs",
+                budget_usd=5.0,
+                max_positions=1,
+                entry_rules={
+                    "outcome_id": "outcome-spurs",
+                    "token_id": "token-spurs",
+                    "side": "buy",
+                    "price": 0.04,
+                    "size": 25,
+                    "price_band": [0.01, 0.05],
+                },
+            ),
+            ActiveStrategy(
+                strategy_id="spurs-ultra-low",
+                family="ultra_low_underdog_decimal_grid",
+                side="Spurs",
+                budget_usd=2.0,
+                max_positions=1,
+                sleeve_role="ultra_low_rebound",
+                entry_rules={
+                    "outcome_id": "outcome-spurs",
+                    "token_id": "token-spurs",
+                    "side": "buy",
+                    "price": 0.04,
+                    "size": 25,
+                    "price_band": [0.003, 0.05],
+                    "position_limit_scope": "sleeve",
+                    "allow_existing_position_add": True,
+                    "allow_ultra_low_underdog": True,
+                    "allow_sub_10c_underdog_grid": True,
+                    "min_clock_remaining_seconds": 30,
+                    "max_scoreboard_age_seconds": 45,
+                    "max_abs_score_gap": 35,
+                },
+                exit_rules={"target_required": True, "target_policy": "micro_grid_scaled", "min_target_cents": 0.3},
+                stop_rules={"max_adverse_cents": 2},
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "token_states": {"token-spurs": {"price": 0.04, "clock_remaining": 300, "score_gap": -18, "scoreboard_age_seconds": 3}},
+        },
+        portfolio_state={
+            "event_scoped_direct_clob": {
+                "open_positions": {"positions": [{"asset": "token-spurs", "size": 5}]},
+                "open_orders": {"orders": []},
+            },
+            "pending_intent_orders": [],
+        },
+        dry_run=True,
+    )
+
+    assert [intent.strategy_id for intent in result.intents] == ["spurs-ultra-low"]
+    assert any(blocker["strategy_id"] == "spurs-grid" and blocker["reason"] == "position_limit_reached" for blocker in result.blockers)
+    assert not any(
+        blocker["strategy_id"] == "spurs-ultra-low" and blocker["reason"] == "position_limit_reached"
+        for blocker in result.blockers
+    )
+
+
+def test_strategy_plan_keeps_pending_intent_blocker_for_sleeve_scoped_add_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[
+            ActiveStrategy(
+                strategy_id="spurs-ultra-low",
+                family="ultra_low_underdog_decimal_grid",
+                side="Spurs",
+                budget_usd=2.0,
+                max_positions=1,
+                sleeve_role="ultra_low_rebound",
+                entry_rules={
+                    "outcome_id": "outcome-spurs",
+                    "token_id": "token-spurs",
+                    "side": "buy",
+                    "price": 0.04,
+                    "size": 25,
+                    "price_band": [0.003, 0.05],
+                    "position_limit_scope": "sleeve",
+                    "allow_existing_position_add": True,
+                    "allow_ultra_low_underdog": True,
+                    "allow_sub_10c_underdog_grid": True,
+                    "min_clock_remaining_seconds": 30,
+                    "max_scoreboard_age_seconds": 45,
+                    "max_abs_score_gap": 35,
+                },
+                exit_rules={"target_required": True, "target_policy": "micro_grid_scaled", "min_target_cents": 0.3},
+                stop_rules={"max_adverse_cents": 2},
+            ),
+        ],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "token_states": {"token-spurs": {"price": 0.04, "clock_remaining": 300, "score_gap": -18, "scoreboard_age_seconds": 3}},
+        },
+        portfolio_state={
+            "event_scoped_direct_clob": {
+                "open_positions": {"positions": [{"asset": "token-spurs", "size": 5}]},
+                "open_orders": {"orders": []},
+            },
+            "pending_intent_orders": [{"strategy_id": "spurs-ultra-low", "side": "buy", "market_token_id": "token-spurs"}],
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 0
+    assert any(blocker["strategy_id"] == "spurs-ultra-low" and blocker["reason"] == "pending_intent_limit_reached" for blocker in result.blockers)
+
+
 def test_strategy_plan_evaluator_promotes_live_aggregation_candidate_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-1",

@@ -1215,6 +1215,19 @@ def _rules_blocker(
     if explicit_position_cap is not None and open_positions is None:
         return {"reason": "position_state_required", "max_open_positions": max_open_positions}
     if max_open_positions is not None and unresolved_exposure >= max_open_positions:
+        if _allows_parallel_sleeve_add(entry_rules):
+            if pending_intents <= 0.0:
+                return None
+            return {
+                "reason": "pending_intent_limit_reached",
+                "open_positions": open_positions,
+                "open_orders": open_orders,
+                "pending_intents": pending_intents,
+                "direct_unresolved_exposure": direct_unresolved_exposure,
+                "unresolved_exposure": unresolved_exposure,
+                "max_open_positions": max_open_positions,
+                "position_limit_scope": entry_rules.get("position_limit_scope"),
+            }
         reason = "position_limit_reached"
         if pending_intents > 0.0 and direct_unresolved_exposure < max_open_positions:
             reason = "pending_intent_limit_reached"
@@ -1229,6 +1242,27 @@ def _rules_blocker(
         }
 
     return None
+
+
+def _allows_parallel_sleeve_add(entry_rules: dict[str, Any]) -> bool:
+    scope = str(entry_rules.get("position_limit_scope") or "").strip().lower()
+    if scope in {"sleeve", "cycle", "parallel_sleeve", "local_sleeve"}:
+        return True
+    for key in (
+        "allow_existing_position_add",
+        "allow_existing_inventory_add",
+        "allow_same_side_position_add",
+        "allow_inventory_adding",
+    ):
+        if _truthy_rule(entry_rules.get(key)):
+            return True
+    return False
+
+
+def _truthy_rule(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _period_blocker(entry_rules: dict[str, Any], strategy_state: dict[str, Any]) -> dict[str, Any] | None:

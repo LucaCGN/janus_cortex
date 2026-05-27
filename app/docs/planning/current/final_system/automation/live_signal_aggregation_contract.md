@@ -95,6 +95,8 @@ Examples:
 - A missing or stale LLM revision is advisory unless the selected sleeve explicitly requires LLM review.
 - A global kill switch, stale direct CLOB truth, missing token mapping, or event budget exhaustion blocks every live execution candidate.
 
+2026-05-27 OKC/SAS final readback added one more gate-scope rule: a token/outcome-level existing position is not automatically a global same-side blocker. Explicitly reviewed add-down sleeves may set `position_limit_scope=sleeve` plus `allow_existing_position_add=true`; this lets the sleeve reach event/sleeve budget and paired-exit evaluation while pending Janus intents, direct-truth gates, spread/fillability, kill switch, and event caps remain strict blockers. Default sleeves remain conservative unless they opt in.
+
 ## Event Control Config
 
 Each live event should expose mutable config that Codex, internal LLM, operator, or Janus runtime can update through approved endpoints:
@@ -276,5 +278,16 @@ Every complete postgame artifact should run four comparable evaluations over the
 | `leave_one_out` | Aggregate replay minus one sleeve, used to measure marginal sleeve value and detect sleeves that suppress or improve portfolio performance. |
 
 `leave_one_out` is not only a reporting view. Its output should feed #79 sleeve-portfolio recommendations: side-budget splits, phase-budget changes, selected-side/contrarian modes, and whether strategies should run sequentially or in parallel.
+
+Every complete P1/P2 artifact must also expose automation-ready summary sections, not only raw nested replay data:
+
+| Section | Purpose |
+|---|---|
+| `mode_comparison` | One compact comparison table for `realized_live`, `sleeve_isolated`, `aggregate_replay`, and `leave_one_out`, including source confidence and account-PnL eligibility. |
+| `sleeve_scoreboard` | Per-sleeve blocker, fillability, simulated PnL, missed-window, marginal-value, and next-action rows. |
+| `why_no_trade` | Event/sleeve blocker diagnosis with global-gate versus local-sleeve scope counts. |
+| `strategy_promotion_review` | Promotion/demotion gate that remains disabled when realized lifecycle evidence is unresolved, replay PnL is negative/missing, or live blockers remain. |
+
+2026-05-27 implementation proof: `local/shared/artifacts/ops/2026-05-26/postgame-review_20260527T100457Z.json` contains all four sections for OKC/SAS. It records `known_cashflow_usd=-6.00`, aggregate replay PnL `-2.00`, all six sleeves blocked, `global_gate=4080`, `local_sleeve=1521`, and `automation_ready=false` because final realized lifecycle evidence remains unresolved.
 
 Postgame review should update signal confidence, event-control recommendations, issue tasks, and backlog routing. Repeated missed live-window opportunities should become implementation issues or local task rows, not repeated narrative comments.

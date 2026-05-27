@@ -2528,6 +2528,142 @@ def test_postgame_replay_modes_compute_leave_one_out_marginal_value_pytest() -> 
     assert row["marginal_value_source_confidence"] == "clob_market_tape"
 
 
+def test_postgame_evaluation_builds_p1_p2_strategy_learning_sections_pytest(monkeypatch) -> None:
+    replay_summary = {
+        "status": "recorded",
+        "source_confidence": "runtime_artifact",
+        "tick_count": 3,
+        "intent_count": 2,
+        "executed_order_count": 0,
+        "order_intent_candidate_count": 2,
+        "decision_type_counts": {"candidate": 2, "blocked": 1},
+        "blocker_reason_counts": {
+            "price_band_not_met": 4,
+            "scoreboard_freshness_required": 1,
+        },
+        "fill_simulation": {
+            "status": "simulated_from_clob_tape",
+            "candidate_count": 2,
+            "unique_candidate_count": 2,
+            "simulated_fill_count": 2,
+            "simulated_cashflow_usd": -9.0,
+            "simulated_mark_value_usd": 9.6,
+            "simulated_pnl_usd": 0.6,
+        },
+        "missed_window_analysis": {
+            "status": "estimated",
+            "estimated_missed_value_usd": 0.4,
+            "rows": [{"sleeve_id": "grid", "estimated_missed_value_usd": 0.4}],
+            "blocked_sleeve_rows": [
+                {
+                    "sleeve_id": "blocked-grid",
+                    "blocker_count": 4,
+                    "blocker_reasons": ["price_band_not_met"],
+                    "recorded_range_cents": 2.0,
+                }
+            ],
+        },
+        "sleeves": {
+            "grid": {
+                "sleeve_id": "grid",
+                "strategy_id": "grid",
+                "sleeve_role": "grid_scalp",
+                "sleeve_side": "Spurs",
+                "tick_count": 3,
+                "intent_count": 2,
+                "blocker_count": 0,
+                "blocker_reasons": [],
+                "fill_simulation": {
+                    "status": "simulated_from_clob_tape",
+                    "candidate_count": 2,
+                    "unique_candidate_count": 2,
+                    "simulated_fill_count": 2,
+                    "simulated_cashflow_usd": -9.0,
+                    "simulated_mark_value_usd": 9.6,
+                    "simulated_pnl_usd": 0.6,
+                },
+            },
+            "blocked-grid": {
+                "sleeve_id": "blocked-grid",
+                "strategy_id": "blocked-grid",
+                "sleeve_role": "ultra_low_rebound",
+                "sleeve_side": "Thunder",
+                "tick_count": 3,
+                "intent_count": 0,
+                "blocker_count": 4,
+                "blocker_reasons": ["price_band_not_met"],
+                "fill_simulation": {
+                    "status": "no_candidates",
+                    "candidate_count": 0,
+                    "unique_candidate_count": 0,
+                    "simulated_fill_count": 0,
+                    "simulated_cashflow_usd": 0.0,
+                    "simulated_mark_value_usd": 0.0,
+                    "simulated_pnl_usd": 0.0,
+                },
+            },
+        },
+    }
+    monkeypatch.setattr(
+        ops_router,
+        "_read_postgame_replay_tick_stream_summary",
+        lambda *, day, event_id: replay_summary,
+    )
+
+    evaluation = ops_router._build_postgame_evaluation(
+        day="2026-05-26",
+        reviewed_event_ids=["nba-sas-okc-2026-05-26"],
+        strategy_plan_gate={"status": "ready", "ready": True},
+        postgame_live_evidence={"status": "live_evidence_present"},
+        portfolio_pnl_attribution={
+            "status": "partial",
+            "items": [
+                {
+                    "ok": True,
+                    "event_id": "nba-sas-okc-2026-05-26",
+                    "event_slug": "nba-sas-okc-2026-05-26",
+                    "direct_event_scope": {"status": "scoped", "scoped": True, "trade_count": 4},
+                    "reconciliation": {"order_count": 4, "linked_trade_count": 4, "unknown_lifecycle_count": 1},
+                    "pnl_attribution": {
+                        "known_cashflow_usd": Decimal("-6.0"),
+                        "unknown_lifecycle_count": 1,
+                        "direct_final_flat": False,
+                        "residual_status": "open_or_unresolved",
+                        "pnl_attribution_ready": False,
+                    },
+                }
+            ],
+        },
+    )
+
+    comparison = evaluation["mode_comparison"]
+    assert comparison["schema_version"] == "postgame_mode_comparison_v1"
+    assert [row["mode"] for row in comparison["rows"]] == [
+        "realized_live",
+        "sleeve_isolated",
+        "aggregate_replay",
+        "leave_one_out",
+    ]
+    assert comparison["rows"][0]["known_cashflow_usd"] == -6.0
+    assert comparison["rows"][1]["simulated_pnl_usd"] == 0.6
+    scoreboard = evaluation["sleeve_scoreboard"]
+    assert scoreboard["schema_version"] == "postgame_sleeve_scoreboard_v1"
+    assert scoreboard["positive_simulated_sleeve_count"] == 1
+    assert scoreboard["blocked_sleeve_count"] == 1
+    assert scoreboard["rows"][0]["sleeve_id"] == "grid"
+    assert scoreboard["rows"][0]["leave_one_out_marginal_value_usd"] == 0.6
+    why_no_trade = evaluation["why_no_trade"]
+    assert why_no_trade["aggregate_blocker_scope_counts"]["local_sleeve"] == 4
+    assert why_no_trade["aggregate_blocker_scope_counts"]["global_gate"] == 1
+    assert why_no_trade["events"][0]["sleeves"][0]["sleeve_id"] == "blocked-grid"
+    promotion = evaluation["strategy_promotion_review"]
+    assert promotion["schema_version"] == "postgame_strategy_promotion_review_v1"
+    assert promotion["status"] == "blocked_by_unresolved_realized_evidence"
+    assert promotion["automation_ready"] is False
+    assert promotion["rows"][0]["eligible_for_promotion"] is False
+    assert "realized_lifecycle_or_direct_evidence_unresolved" in promotion["rows"][0]["review_reasons"]
+
+
 def test_postgame_review_flags_not_actually_live_tested_pytest(tmp_path, monkeypatch) -> None:
     local_root = tmp_path / "local"
     monkeypatch.setenv("JANUS_LOCAL_ROOT", str(local_root))

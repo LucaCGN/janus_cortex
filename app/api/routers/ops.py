@@ -1414,6 +1414,40 @@ def _build_postgame_evaluation(
         event_id: _read_postgame_replay_tick_stream_summary(day=day, event_id=event_id)
         for event_id in reviewed_event_ids
     }
+    realized_live = {
+        "schema_version": "postgame_realized_live_v1",
+        "status": pnl_status,
+        "source_confidence": "account_confirmed"
+        if pnl_status == "ready"
+        else "inferred",
+        "account_pnl_source": "portfolio_order_lifecycle_pnl_attribution_v1",
+        "public_market_tape_excluded_from_account_pnl": True,
+        "event_count": len(realized_items),
+        "items": realized_items,
+    }
+    replay_modes = {
+        "sleeve_isolated": _build_postgame_replay_mode(
+            "sleeve_isolated",
+            "Run each sleeve alone with the same event budget and simulated fills from recorded direct CLOB prices.",
+            replay_inputs=replay_inputs,
+        ),
+        "aggregate_replay": _build_postgame_replay_mode(
+            "aggregate_replay",
+            "Run all sleeves together through the current aggregator, risk, budget, and dedupe rules.",
+            replay_inputs=replay_inputs,
+        ),
+        "leave_one_out": _build_postgame_replay_mode(
+            "leave_one_out",
+            "Run aggregate replay minus one sleeve to measure marginal sleeve value.",
+            replay_inputs=replay_inputs,
+        ),
+    }
+    mode_comparison = _build_postgame_mode_comparison(
+        realized_live=realized_live,
+        replay_modes=replay_modes,
+    )
+    sleeve_scoreboard = _build_postgame_sleeve_scoreboard(replay_modes=replay_modes)
+    why_no_trade = _build_postgame_why_no_trade(replay_inputs=replay_inputs)
     if not reviewed_event_ids:
         status_text = "not_requested"
     elif pnl_status == "ready" and not unresolved:
@@ -1441,34 +1475,18 @@ def _build_postgame_evaluation(
                 "ready": strategy_plan_gate.get("ready"),
                 "event_count": len(reviewed_event_ids),
             },
-            "realized_live": {
-                "schema_version": "postgame_realized_live_v1",
-                "status": pnl_status,
-                "source_confidence": "account_confirmed"
-                if pnl_status == "ready"
-                else "inferred",
-                "account_pnl_source": "portfolio_order_lifecycle_pnl_attribution_v1",
-                "public_market_tape_excluded_from_account_pnl": True,
-                "event_count": len(realized_items),
-                "items": realized_items,
-            },
-            "replay_modes": {
-                "sleeve_isolated": _build_postgame_replay_mode(
-                    "sleeve_isolated",
-                    "Run each sleeve alone with the same event budget and simulated fills from recorded direct CLOB prices.",
-                    replay_inputs=replay_inputs,
-                ),
-                "aggregate_replay": _build_postgame_replay_mode(
-                    "aggregate_replay",
-                    "Run all sleeves together through the current aggregator, risk, budget, and dedupe rules.",
-                    replay_inputs=replay_inputs,
-                ),
-                "leave_one_out": _build_postgame_replay_mode(
-                    "leave_one_out",
-                    "Run aggregate replay minus one sleeve to measure marginal sleeve value.",
-                    replay_inputs=replay_inputs,
-                ),
-            },
+            "realized_live": realized_live,
+            "replay_modes": replay_modes,
+            "mode_comparison": mode_comparison,
+            "sleeve_scoreboard": sleeve_scoreboard,
+            "why_no_trade": why_no_trade,
+            "strategy_promotion_review": _build_postgame_strategy_promotion_review(
+                evaluation_status=status_text,
+                realized_live=realized_live,
+                sleeve_scoreboard=sleeve_scoreboard,
+                why_no_trade=why_no_trade,
+                unresolved_evidence=unresolved,
+            ),
             "replay_input": {
                 "schema_version": "postgame_replay_input_v1",
                 "source_confidence": "runtime_artifact",
@@ -1488,6 +1506,466 @@ def _build_postgame_evaluation(
             "unresolved_evidence": unresolved,
         }
     )
+
+
+def _build_postgame_mode_comparison(
+    *,
+    realized_live: dict[str, Any],
+    replay_modes: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    realized_items = realized_live.get("items") if isinstance(realized_live.get("items"), list) else []
+    known_cashflow = 0.0
+    known_cashflow_available = False
+    unresolved_count = 0
+    for item in realized_items:
+        if not isinstance(item, dict):
+            continue
+        account_pnl = item.get("account_pnl") if isinstance(item.get("account_pnl"), dict) else {}
+        cashflow = _safe_float(account_pnl.get("known_cashflow_usd"))
+        if cashflow is not None:
+            known_cashflow += cashflow
+            known_cashflow_available = True
+        unresolved_count += len(item.get("unresolved_evidence") or [])
+    rows.append(
+        {
+            "mode": "realized_live",
+            "status": realized_live.get("status"),
+            "source_confidence": realized_live.get("source_confidence"),
+            "account_pnl_eligible": True,
+            "event_count": realized_live.get("event_count", 0),
+            "candidate_count": None,
+            "simulated_fill_count": None,
+            "known_cashflow_usd": round(known_cashflow, 6) if known_cashflow_available else None,
+            "simulated_pnl_usd": None,
+            "missed_window_estimated_value_usd": None,
+            "unresolved_evidence_count": unresolved_count,
+        }
+    )
+
+    sleeve_mode = replay_modes.get("sleeve_isolated") if isinstance(replay_modes.get("sleeve_isolated"), dict) else {}
+    sleeve_rows = sleeve_mode.get("sleeves") if isinstance(sleeve_mode.get("sleeves"), list) else []
+    sleeve_pnl: float | None = 0.0
+    sleeve_cashflow = 0.0
+    sleeve_mark_value = 0.0
+    sleeve_candidate_count = 0
+    sleeve_fill_count = 0
+    sleeve_missing_count = 0
+    sleeve_not_fillable_count = 0
+    sleeve_missed_value = 0.0
+    for row in sleeve_rows:
+        if not isinstance(row, dict):
+            continue
+        sleeve_candidate_count += _safe_int(row.get("unique_candidate_count"))
+        sleeve_fill_count += _safe_int(row.get("simulated_fill_count"))
+        sleeve_missing_count += _safe_int(row.get("missing_price_count"))
+        sleeve_not_fillable_count += _safe_int(row.get("not_fillable_count"))
+        sleeve_cashflow += _safe_float(row.get("simulated_cashflow_usd")) or 0.0
+        sleeve_mark_value += _safe_float(row.get("simulated_mark_value_usd")) or 0.0
+        sleeve_missed_value += _safe_float(row.get("missed_window_estimated_value_usd")) or 0.0
+        if row.get("simulated_pnl_usd") is None and _safe_int(row.get("unique_candidate_count")):
+            sleeve_pnl = None
+        elif sleeve_pnl is not None:
+            sleeve_pnl += _safe_float(row.get("simulated_pnl_usd")) or 0.0
+    rows.append(
+        {
+            "mode": "sleeve_isolated",
+            "status": sleeve_mode.get("status"),
+            "source_confidence": sleeve_mode.get("source_confidence"),
+            "account_pnl_eligible": False,
+            "sleeve_count": len(sleeve_rows),
+            "candidate_count": sleeve_candidate_count,
+            "simulated_fill_count": sleeve_fill_count,
+            "missing_price_count": sleeve_missing_count,
+            "not_fillable_count": sleeve_not_fillable_count,
+            "simulated_cashflow_usd": round(sleeve_cashflow, 6),
+            "simulated_mark_value_usd": round(sleeve_mark_value, 6),
+            "simulated_pnl_usd": round(sleeve_pnl, 6) if sleeve_pnl is not None else None,
+            "missed_window_estimated_value_usd": round(sleeve_missed_value, 6),
+        }
+    )
+
+    aggregate_mode = replay_modes.get("aggregate_replay") if isinstance(replay_modes.get("aggregate_replay"), dict) else {}
+    aggregate = aggregate_mode.get("aggregate") if isinstance(aggregate_mode.get("aggregate"), dict) else {}
+    rows.append(
+        {
+            "mode": "aggregate_replay",
+            "status": aggregate_mode.get("status"),
+            "source_confidence": aggregate_mode.get("source_confidence"),
+            "account_pnl_eligible": False,
+            "candidate_count": aggregate.get("unique_candidate_count"),
+            "simulated_fill_count": aggregate.get("simulated_fill_count"),
+            "missing_price_count": aggregate.get("missing_price_count"),
+            "not_fillable_count": aggregate.get("not_fillable_count"),
+            "simulated_cashflow_usd": aggregate.get("simulated_cashflow_usd"),
+            "simulated_mark_value_usd": aggregate.get("simulated_mark_value_usd"),
+            "simulated_pnl_usd": aggregate.get("simulated_pnl_usd"),
+            "missed_window_estimated_value_usd": aggregate.get("missed_window_estimated_value_usd"),
+            "blocker_reason_count": len(aggregate.get("blocker_reason_counts") or {}),
+        }
+    )
+
+    leave_mode = replay_modes.get("leave_one_out") if isinstance(replay_modes.get("leave_one_out"), dict) else {}
+    leave_rows = leave_mode.get("leave_one_out_rows") if isinstance(leave_mode.get("leave_one_out_rows"), list) else []
+    marginal_values = [
+        value
+        for value in (_safe_float(row.get("marginal_value_usd")) for row in leave_rows if isinstance(row, dict))
+        if value is not None
+    ]
+    rows.append(
+        {
+            "mode": "leave_one_out",
+            "status": leave_mode.get("status"),
+            "source_confidence": leave_mode.get("source_confidence"),
+            "account_pnl_eligible": False,
+            "excluded_sleeve_count": len(leave_rows),
+            "positive_marginal_sleeve_count": sum(1 for value in marginal_values if value > 0),
+            "negative_marginal_sleeve_count": sum(1 for value in marginal_values if value < 0),
+            "best_marginal_value_usd": round(max(marginal_values), 6) if marginal_values else None,
+            "worst_marginal_value_usd": round(min(marginal_values), 6) if marginal_values else None,
+            "total_marginal_value_usd": round(sum(marginal_values), 6) if marginal_values else None,
+        }
+    )
+    simulated_rows = [row for row in rows if _safe_float(row.get("simulated_pnl_usd")) is not None]
+    simulated_rows.sort(key=lambda row: _safe_float(row.get("simulated_pnl_usd")) or 0.0, reverse=True)
+    return {
+        "schema_version": "postgame_mode_comparison_v1",
+        "source_confidence": "mixed",
+        "same_tick_stream_for_replay_modes": True,
+        "account_pnl_uses_market_tape": False,
+        "row_count": len(rows),
+        "rows": rows,
+        "best_simulated_mode": simulated_rows[0]["mode"] if simulated_rows else None,
+        "worst_simulated_mode": simulated_rows[-1]["mode"] if simulated_rows else None,
+    }
+
+
+def _build_postgame_sleeve_scoreboard(*, replay_modes: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    isolated = replay_modes.get("sleeve_isolated") if isinstance(replay_modes.get("sleeve_isolated"), dict) else {}
+    leave_one_out = replay_modes.get("leave_one_out") if isinstance(replay_modes.get("leave_one_out"), dict) else {}
+    leave_rows = {
+        str(row.get("excluded_sleeve_id")): row
+        for row in leave_one_out.get("leave_one_out_rows", [])
+        if isinstance(row, dict) and row.get("excluded_sleeve_id") is not None
+    }
+    rows: list[dict[str, Any]] = []
+    for row in isolated.get("sleeves") or []:
+        if not isinstance(row, dict):
+            continue
+        sleeve_id = str(row.get("sleeve_id") or "")
+        leave_row = leave_rows.get(sleeve_id, {})
+        simulated_pnl = _safe_float(row.get("simulated_pnl_usd"))
+        missed_value = _safe_float(row.get("missed_window_estimated_value_usd")) or 0.0
+        blocker_count = _safe_int(row.get("blocker_count"))
+        candidate_count = _safe_int(row.get("unique_candidate_count") or row.get("candidate_count"))
+        fill_count = _safe_int(row.get("simulated_fill_count"))
+        status_text = _postgame_sleeve_performance_status(
+            simulated_pnl=simulated_pnl,
+            missed_value=missed_value,
+            blocker_count=blocker_count,
+            candidate_count=candidate_count,
+            fill_count=fill_count,
+        )
+        rows.append(
+            {
+                "event_id": row.get("event_id"),
+                "sleeve_id": sleeve_id,
+                "strategy_id": row.get("strategy_id"),
+                "sleeve_role": row.get("sleeve_role"),
+                "sleeve_side": row.get("sleeve_side"),
+                "strategy_family": row.get("strategy_family"),
+                "status": status_text,
+                "tick_count": row.get("tick_count"),
+                "intent_count": row.get("intent_count"),
+                "candidate_count": candidate_count,
+                "simulated_fill_count": fill_count,
+                "blocker_count": blocker_count,
+                "top_blockers": list(row.get("blocker_reasons") or [])[:5],
+                "simulated_pnl_usd": row.get("simulated_pnl_usd"),
+                "missed_window_estimated_value_usd": row.get("missed_window_estimated_value_usd"),
+                "leave_one_out_marginal_value_usd": leave_row.get("marginal_value_usd"),
+                "source_confidence": row.get("source_confidence") or "runtime_artifact",
+                "next_action": _postgame_sleeve_next_action(
+                    status_text=status_text,
+                    simulated_pnl=simulated_pnl,
+                    missed_value=missed_value,
+                    blocker_count=blocker_count,
+                    candidate_count=candidate_count,
+                    fill_count=fill_count,
+                ),
+            }
+        )
+    rows.sort(
+        key=lambda item: (
+            _safe_float(item.get("leave_one_out_marginal_value_usd")) or 0.0,
+            _safe_float(item.get("simulated_pnl_usd")) or 0.0,
+            _safe_float(item.get("missed_window_estimated_value_usd")) or 0.0,
+        ),
+        reverse=True,
+    )
+    return {
+        "schema_version": "postgame_sleeve_scoreboard_v1",
+        "source_confidence": "runtime_artifact",
+        "row_count": len(rows),
+        "rows": rows,
+        "positive_simulated_sleeve_count": sum(
+            1 for row in rows if (_safe_float(row.get("simulated_pnl_usd")) or 0.0) > 0
+        ),
+        "blocked_sleeve_count": sum(1 for row in rows if _safe_int(row.get("blocker_count")) > 0),
+        "missed_window_sleeve_count": sum(
+            1 for row in rows if (_safe_float(row.get("missed_window_estimated_value_usd")) or 0.0) > 0
+        ),
+        "top_rows": rows[:10],
+    }
+
+
+def _postgame_sleeve_performance_status(
+    *,
+    simulated_pnl: float | None,
+    missed_value: float,
+    blocker_count: int,
+    candidate_count: int,
+    fill_count: int,
+) -> str:
+    if candidate_count == 0 and blocker_count:
+        return "blocked_without_candidates"
+    if candidate_count == 0:
+        return "no_candidates"
+    if fill_count == 0:
+        return "not_fillable_or_blocked"
+    if simulated_pnl is None:
+        return "review_required"
+    if simulated_pnl > 0:
+        return "positive_replay"
+    if simulated_pnl < 0 and missed_value > 0:
+        return "negative_with_missed_window"
+    if simulated_pnl < 0:
+        return "negative_replay"
+    return "flat_replay"
+
+
+def _postgame_sleeve_next_action(
+    *,
+    status_text: str,
+    simulated_pnl: float | None,
+    missed_value: float,
+    blocker_count: int,
+    candidate_count: int,
+    fill_count: int,
+) -> str:
+    if status_text == "blocked_without_candidates":
+        return "fix_or_reclassify_local_blockers_before_next_live_window"
+    if candidate_count and not fill_count:
+        return "inspect_fillability_limits_and_orderbook_spread_policy"
+    if missed_value > 0 and (simulated_pnl is None or simulated_pnl <= 0):
+        return "review_missed_window_trigger_thresholds_and_pairing"
+    if simulated_pnl is not None and simulated_pnl > 0:
+        return "replay_more_events_before_promotion"
+    if simulated_pnl is not None and simulated_pnl < 0:
+        return "demote_or_tighten_until_retested"
+    if blocker_count:
+        return "separate_local_sleeve_blocker_from_global_gate"
+    return "collect_more_replay_evidence"
+
+
+def _build_postgame_why_no_trade(*, replay_inputs: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    event_rows: list[dict[str, Any]] = []
+    aggregate_scope_counts: dict[str, int] = {}
+    aggregate_blockers: dict[str, int] = {}
+    for event_id, summary in replay_inputs.items():
+        if not isinstance(summary, dict):
+            continue
+        blocker_counts = summary.get("blocker_reason_counts") if isinstance(summary.get("blocker_reason_counts"), dict) else {}
+        for reason, count in blocker_counts.items():
+            reason_text = str(reason)
+            aggregate_blockers[reason_text] = aggregate_blockers.get(reason_text, 0) + _safe_int(count)
+            scope = _postgame_blocker_scope(reason_text)
+            aggregate_scope_counts[scope] = aggregate_scope_counts.get(scope, 0) + _safe_int(count)
+        sleeve_rows: list[dict[str, Any]] = []
+        for sleeve_id, sleeve in (summary.get("sleeves") or {}).items():
+            if not isinstance(sleeve, dict):
+                continue
+            reasons = [str(reason) for reason in sleeve.get("blocker_reasons") or []]
+            scope_counts: dict[str, int] = {}
+            for reason in reasons:
+                scope = _postgame_blocker_scope(reason)
+                scope_counts[scope] = scope_counts.get(scope, 0) + 1
+            sleeve_rows.append(
+                {
+                    "sleeve_id": str(sleeve_id),
+                    "strategy_id": sleeve.get("strategy_id"),
+                    "sleeve_role": sleeve.get("sleeve_role"),
+                    "side": sleeve.get("sleeve_side"),
+                    "blocker_count": sleeve.get("blocker_count"),
+                    "candidate_count": (sleeve.get("fill_simulation") or {}).get("candidate_count")
+                    if isinstance(sleeve.get("fill_simulation"), dict)
+                    else 0,
+                    "blocker_reasons": reasons[:10],
+                    "blocker_scope_counts": dict(sorted(scope_counts.items())),
+                    "next_diagnostic": "local_sleeve_thresholds"
+                    if scope_counts.get("local_sleeve")
+                    else "global_gate_or_runtime_evidence",
+                }
+            )
+        sleeve_rows.sort(key=lambda row: _safe_int(row.get("blocker_count")), reverse=True)
+        missed = summary.get("missed_window_analysis") if isinstance(summary.get("missed_window_analysis"), dict) else {}
+        event_rows.append(
+            {
+                "event_id": event_id,
+                "status": summary.get("status"),
+                "tick_count": summary.get("tick_count"),
+                "intent_count": summary.get("intent_count"),
+                "executed_order_count": summary.get("executed_order_count"),
+                "order_intent_candidate_count": summary.get("order_intent_candidate_count"),
+                "top_global_blockers": _top_count_rows(blocker_counts, limit=8),
+                "global_blocker_scope_counts": _count_scope_rows(blocker_counts),
+                "sleeves": sleeve_rows[:20],
+                "blocked_sleeve_windows": missed.get("blocked_sleeve_rows", [])[:10],
+                "missed_candidate_windows": missed.get("rows", [])[:10],
+                "source_confidence": summary.get("source_confidence") or "runtime_artifact",
+            }
+        )
+    return {
+        "schema_version": "postgame_why_no_trade_v1",
+        "source_confidence": "runtime_artifact",
+        "policy": {
+            "global_gate_scope": "Only live-safety, account/direct-truth, worker, and strategy-plan readiness gates may block all sleeves.",
+            "local_sleeve_scope": "Price, score, phase, spread, and sleeve budget blockers must stay local to the sleeve.",
+        },
+        "event_count": len(event_rows),
+        "aggregate_blocker_reason_counts": dict(sorted(aggregate_blockers.items())),
+        "aggregate_blocker_scope_counts": dict(sorted(aggregate_scope_counts.items())),
+        "events": event_rows,
+    }
+
+
+def _build_postgame_strategy_promotion_review(
+    *,
+    evaluation_status: str,
+    realized_live: dict[str, Any],
+    sleeve_scoreboard: dict[str, Any],
+    why_no_trade: dict[str, Any],
+    unresolved_evidence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    rows: list[dict[str, Any]] = []
+    unresolved_count = len(unresolved_evidence)
+    for row in sleeve_scoreboard.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        simulated_pnl = _safe_float(row.get("simulated_pnl_usd"))
+        blocker_count = _safe_int(row.get("blocker_count"))
+        fill_count = _safe_int(row.get("simulated_fill_count"))
+        missed_value = _safe_float(row.get("missed_window_estimated_value_usd")) or 0.0
+        eligible = (
+            unresolved_count == 0
+            and simulated_pnl is not None
+            and simulated_pnl > 0
+            and fill_count > 0
+            and blocker_count == 0
+        )
+        reasons: list[str] = []
+        if unresolved_count:
+            reasons.append("realized_lifecycle_or_direct_evidence_unresolved")
+        if simulated_pnl is None:
+            reasons.append("simulated_pnl_missing")
+        elif simulated_pnl <= 0:
+            reasons.append("simulated_pnl_not_positive")
+        if fill_count <= 0:
+            reasons.append("no_simulated_fills")
+        if blocker_count:
+            reasons.append("live_blockers_present")
+        if missed_value > 0:
+            reasons.append("missed_window_review_required")
+        rows.append(
+            {
+                "sleeve_id": row.get("sleeve_id"),
+                "strategy_id": row.get("strategy_id"),
+                "sleeve_role": row.get("sleeve_role"),
+                "side": row.get("sleeve_side"),
+                "eligible_for_promotion": eligible,
+                "review_reasons": reasons,
+                "recommended_change": "promote_to_more_replay_events"
+                if eligible
+                else row.get("next_action") or "collect_more_evidence",
+                "source_confidence": row.get("source_confidence") or "runtime_artifact",
+            }
+        )
+    global_gate_count = _safe_int((why_no_trade.get("aggregate_blocker_scope_counts") or {}).get("global_gate"))
+    if not rows:
+        status_text = "no_sleeve_rows"
+    elif unresolved_count:
+        status_text = "blocked_by_unresolved_realized_evidence"
+    elif global_gate_count:
+        status_text = "blocked_by_global_gate_review"
+    elif any(row.get("eligible_for_promotion") for row in rows):
+        status_text = "promotion_candidates_present"
+    else:
+        status_text = "no_promotion_candidates"
+    return {
+        "schema_version": "postgame_strategy_promotion_review_v1",
+        "status": status_text,
+        "evaluation_status": evaluation_status,
+        "realized_live_status": realized_live.get("status"),
+        "source_confidence": "runtime_artifact",
+        "automation_ready": status_text == "promotion_candidates_present",
+        "unresolved_evidence_count": unresolved_count,
+        "global_gate_blocker_count": global_gate_count,
+        "row_count": len(rows),
+        "rows": rows,
+        "promotion_policy": {
+            "requires_account_or_db_realized_evidence_ready": True,
+            "requires_positive_replay_pnl": True,
+            "requires_no_live_blockers": True,
+            "requires_fillability": True,
+            "requires_missed_window_review_when_positive": True,
+        },
+    }
+
+
+def _postgame_blocker_scope(reason: str) -> str:
+    reason_text = reason.lower()
+    global_markers = (
+        "kill_switch",
+        "operator",
+        "account",
+        "direct_truth",
+        "strategy_plan",
+        "worker",
+        "scoreboard_freshness",
+        "live_safety",
+        "preflight",
+        "clob",
+    )
+    local_markers = (
+        "price_band",
+        "score_gap",
+        "clock",
+        "phase",
+        "spread",
+        "budget",
+        "duplicate",
+        "position_limit",
+        "orderbook_spread",
+    )
+    if any(marker in reason_text for marker in global_markers):
+        return "global_gate"
+    if any(marker in reason_text for marker in local_markers):
+        return "local_sleeve"
+    return "unknown"
+
+
+def _top_count_rows(counts: dict[str, Any], *, limit: int) -> list[dict[str, Any]]:
+    rows = [{"reason": str(reason), "count": _safe_int(count)} for reason, count in counts.items()]
+    rows.sort(key=lambda row: row["count"], reverse=True)
+    return rows[:limit]
+
+
+def _count_scope_rows(counts: dict[str, Any]) -> dict[str, int]:
+    scope_counts: dict[str, int] = {}
+    for reason, count in counts.items():
+        scope = _postgame_blocker_scope(str(reason))
+        scope_counts[scope] = scope_counts.get(scope, 0) + _safe_int(count)
+    return dict(sorted(scope_counts.items()))
 
 
 def _postgame_evaluation_source_authority() -> list[dict[str, Any]]:

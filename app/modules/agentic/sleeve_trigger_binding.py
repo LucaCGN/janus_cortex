@@ -235,6 +235,11 @@ def _bindings_from_sleeve_states(
                     "sleeve_status": status,
                     "intent_count": state.get("intent_count"),
                     "blocker_count": state.get("blocker_count"),
+                    "position_limit_scope": _clean(entry_rules.get("position_limit_scope")),
+                    "allow_existing_position_add": _truthy(entry_rules.get("allow_existing_position_add")),
+                    "allow_existing_inventory_add": _truthy(entry_rules.get("allow_existing_inventory_add")),
+                    "allow_same_side_position_add": _truthy(entry_rules.get("allow_same_side_position_add")),
+                    "allow_inventory_adding": _truthy(entry_rules.get("allow_inventory_adding")),
                 },
             )
         )
@@ -494,6 +499,12 @@ def _nested_dict(value: Any) -> dict[str, Any]:
 def _clean(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _string_list(value: Any) -> list[str]:

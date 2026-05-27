@@ -4,7 +4,7 @@ Status: foundation implemented; use for follow-up scoping
 Created: 2026-05-26
 Parent issue: #63
 Completed foundation follow-ups: #78, #79
-Current live-window adoption: #63/JIT-63-07
+Current live-window adoption: #63/JIT-63-13
 
 ## Purpose
 
@@ -38,6 +38,12 @@ Postgame and development decisions must use this hierarchy:
 | Profile/future domains | #46/#47/#48 | Preserve future-domain hypotheses without preempting basketball runtime. |
 
 2026-05-26 adoption note: today's NBA worker uses the shared platform with six StrategyPlan sleeves across both sides: grid scalp, core hold, and opt-in ultra-low rebound. Ultra-low remains a development/validation sleeve and must be judged from postgame replay and account-scoped fills before default promotion.
+
+2026-05-27 final readback note: the 2026-05-26 OKC/SAS game proved the runtime can run a six-sleeve plan and place Janus-gated live orders, but it did not prove the intended sleeve architecture. After four Spurs 5-share buys at `0.42`, Q4 generated zero intents despite repeated 1c-13c Spurs windows because the evaluator applied a token-wide `position_limit_reached` gate before sleeve-local budgets and cycles could act. Fix #63/JIT-63-12 before the next live window: explicit sleeve-scoped add-down strategies may add within local event/sleeve budgets while pending intents and live-safety/direct-truth gates remain strict blockers.
+
+Session tracker: `local/shared/artifacts/dev-sessions/2026-05-27/nba_sas_okc_postgame_sleeve_refactor_session.md`. Postgame artifact: `local/shared/artifacts/ops/2026-05-26/postgame-review_20260527T035600Z.json`.
+
+2026-05-27 P1/P2 postgame artifact note: `local/shared/artifacts/ops/2026-05-26/postgame-review_20260527T100457Z.json` is the current automation-consumable learning object. It adds `mode_comparison`, `sleeve_scoreboard`, `why_no_trade`, and `strategy_promotion_review` sections. Readback: realized known cashflow is `-$6.00` but final PnL is still review-gated; aggregate and isolated replay are `-$2.00`; all six sleeves have blockers; blocker scopes split into `global_gate=4080` and `local_sleeve=1521`; strategy promotion automation is intentionally disabled until unresolved lifecycle evidence and blocker repairs clear.
 
 ## Development Tracks
 

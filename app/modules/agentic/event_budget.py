@@ -116,6 +116,7 @@ class SleeveTransitionRequest(BaseModel):
     phase_used_notional_usd: float = Field(default=0.0, ge=0.0)
     sleeve_used_notional_usd: float = Field(default=0.0, ge=0.0)
     active_cycle_count: int = Field(default=0, ge=0)
+    allow_existing_position_add: bool = False
     enabled: bool = True
 
 
@@ -327,7 +328,7 @@ def _buy_blockers(
         blockers.append("max_price_required")
     if sleeve.open_order_shares > 0.0 or sleeve.pending_intent_shares > 0.0:
         blockers.append("duplicate_pending_exposure")
-    if sleeve.existing_position_shares > 0.0 and sleeve.action == "buy":
+    if sleeve.existing_position_shares > 0.0 and sleeve.action == "buy" and not sleeve.allow_existing_position_add:
         blockers.append("duplicate_open_position")
     if budget.policy.max_active_cycles > 0 and sleeve.active_cycle_count >= budget.policy.max_active_cycles:
         blockers.append("max_active_cycles_reached")
