@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -11,11 +10,46 @@ from app.modules.agentic.contracts import ActiveStrategy, StrategyPlan
 from app.modules.agentic.engine import evaluate_strategy_plan
 
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-WNBA_2026_05_24_PLAN_PATHS = [
-    REPO_ROOT / "local/shared/artifacts/strategy-plans/2026-05-24/wnba-phx-atl-2026-05-24/current.json",
-    REPO_ROOT / "local/shared/artifacts/strategy-plans/2026-05-24/wnba-dal-nyl-2026-05-24/current.json",
-    REPO_ROOT / "local/shared/artifacts/strategy-plans/2026-05-24/wnba-wsh-sea-2026-05-24/current.json",
+def _wnba_2026_05_24_plan_payload(event_id: str, side: str, token_id: str) -> dict:
+    generated_at = datetime(2026, 5, 24, tzinfo=timezone.utc)
+    return {
+        "event_id": event_id,
+        "market_id": f"{event_id}-market",
+        "generated_at_utc": generated_at.isoformat(),
+        "valid_until_utc": (generated_at + timedelta(hours=2)).isoformat(),
+        "plan_owner": "system",
+        "active_strategies": [
+            {
+                "strategy_id": f"{event_id}-grid",
+                "family": "price_stability_micro_grid",
+                "side": side,
+                "budget_usd": 5.0,
+                "max_positions": 1,
+                "sleeve_id": f"{event_id}-grid",
+                "sleeve_role": "grid_scalp",
+                "entry_rules": {
+                    "outcome_id": f"{event_id}-{side.lower()}",
+                    "token_id": token_id,
+                    "side": "buy",
+                    "size": 5,
+                    "price": 0.22,
+                    "max_spread_cents": 2.0,
+                    "max_scoreboard_age_seconds": 45,
+                    "max_orderbook_age_seconds": 45,
+                    "max_abs_score_gap": 18,
+                    "min_clock_remaining_seconds": 60,
+                },
+                "exit_rules": {"target_policy": "micro_grid_scaled", "min_target_cents": 2.0},
+                "stop_rules": {"max_adverse_cents": 4.0},
+            }
+        ],
+    }
+
+
+WNBA_2026_05_24_PLAN_PAYLOADS = [
+    _wnba_2026_05_24_plan_payload("wnba-phx-atl-2026-05-24", "Atlanta", "token-atl"),
+    _wnba_2026_05_24_plan_payload("wnba-dal-nyl-2026-05-24", "New York", "token-nyl"),
+    _wnba_2026_05_24_plan_payload("wnba-wsh-sea-2026-05-24", "Seattle", "token-sea"),
 ]
 
 
@@ -1164,8 +1198,8 @@ def test_wnba_controlled_entry_caps_event_to_one_candidate_pytest() -> None:
 
 
 def test_wnba_controlled_entry_augments_three_2026_05_24_plans_pytest() -> None:
-    for path in WNBA_2026_05_24_PLAN_PATHS:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+    for plan_payload in WNBA_2026_05_24_PLAN_PAYLOADS:
+        payload = deepcopy(plan_payload)
         payload["valid_until_utc"] = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         grid = payload["active_strategies"][0]
         controlled = {
@@ -1202,7 +1236,7 @@ def test_wnba_controlled_entry_augments_three_2026_05_24_plans_pytest() -> None:
             portfolio_state={"open_positions": 0, "open_orders": 0, "pending_intents": 0},
         )
 
-        assert result.intent_count == 1, path
+        assert result.intent_count == 1, payload["event_id"]
         assert result.intents[0].strategy_family == "wnba_controlled_min_size_entry_v1"
         assert result.blockers[0]["reason"] == "orderbook_spread_too_wide"
 
