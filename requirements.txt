@@ -58,7 +58,7 @@ mcp>=1.0.0,<2
 # (mantido com limites para reduzir quebra por releases recentes)
 # =========================
 crewai>=0.80,<1
-langchain-openai>=0.2,<1
+langchain-openai>=1,<2
 
 # =========================
 # Scraping
