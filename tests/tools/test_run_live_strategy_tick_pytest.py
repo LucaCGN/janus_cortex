@@ -2438,6 +2438,10 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
     assert aggregation["decision"]["blocker_artifacts"][0]["detail"]["scope"] == "local_sleeve"
     assert result["market_state"]["sleeve_trigger_binding"]["binding_count"] == 2
     assert aggregation["event_risk_budget"]["event_cap_usd"] == 10.0
+    assert aggregation["live_game_context"]["schema_version"] == "live_game_context_evidence_v1"
+    assert "game_scenario" in aggregation["live_game_context"]
+    assert "ml_confidence_by_sleeve" in aggregation["live_game_context"]
+    assert "dynamic_risk_state" in aggregation["live_game_context"]
     assert aggregation["persistence"]["status"] == "stored"
     assert persisted_decisions[0]["kwargs"]["day"] == "2026-05-11"
     portfolio_state = evaluate_calls[0]["payload"]["portfolio_state"]

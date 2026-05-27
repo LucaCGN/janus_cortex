@@ -178,6 +178,10 @@ def test_aggregator_carries_trigger_and_cycle_metadata_to_candidate_pytest() -> 
         "cycle_id": "cycle-okc",
         "trigger_type": "paired_microcycle_next_leg",
         "trigger_source": "paired_microcycle",
+        "lifecycle_policy": {"target_delta_cents": 1.0, "target_policy": "micro_target"},
+        "game_scenario": {"scenario_level": "A"},
+        "dynamic_risk_state": {"tail_risk_budget_usd": 1.0},
+        "ml_confidence": {"confidence": 0.72, "model_status": "deterministic_fallback"},
     }
 
     decision = aggregate_live_signals(
@@ -194,6 +198,10 @@ def test_aggregator_carries_trigger_and_cycle_metadata_to_candidate_pytest() -> 
     assert candidate.cycle_id == "cycle-okc"
     assert candidate.trigger_type == "paired_microcycle_next_leg"
     assert candidate.trigger_source == "paired_microcycle"
+    assert candidate.lifecycle_policy["target_policy"] == "micro_target"
+    assert candidate.game_scenario["scenario_level"] == "A"
+    assert candidate.dynamic_risk_state["tail_risk_budget_usd"] == 1.0
+    assert candidate.ml_confidence["confidence"] == 0.72
 
 
 def test_aggregator_blocks_stale_signal_before_order_candidate_pytest() -> None:

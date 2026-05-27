@@ -40,6 +40,7 @@ This is not a new strategy lane and not a Codex portfolio-manager feature. It is
 | Signal aggregation system | Merges signals, resolves conflicts, applies event config/risk, and chooses monitor/hold/buy/sell/rebuy/reduce outputs. | New app module and tests under `#63` child slices. |
 | StrategyPlan bridge | Converts aggregated decisions into StrategyPlan revisions and order intents. | Existing StrategyPlan evaluator remains the execution gate. |
 | Execution and sleeve manager | Maintains per-event sleeves: core hold, grid/scalp, rebuy, reduce/stop, and settlement. | Minimum parallel test structure is 5-share grid plus 5-share core when risk gates allow. Grid/scalp sleeves require paired microcycle state, not repeated independent buys. |
+| Live game context layer | Classifies the current game scenario, reports sleeve-level ML/PBP confidence, computes dynamic realized-profit risk, and emits narrowly bounded opportunistic candidates when current sleeves miss a valid entry/exit point. | `app/modules/agentic/live_game_context.py`, wired into the live tick and aggregation artifact on 2026-05-27. |
 | Postgame performance review | Reviews fired/missed/blocked signals, fills, orderbook, latency, PnL, and strategy confidence. | Must feed issue closure, strategy config, and Obsidian lessons. |
 
 ## Live Snapshot Contract
@@ -147,6 +148,31 @@ Current behavior:
 6. StrategyPlan evaluate/execute can promote aggregation candidates into Janus `OrderIntent`s after deduping any normal StrategyPlan intent for the same token/side/sleeve/cycle.
 
 This keeps score-gap, band, microcycle, and LLM/review triggers from becoming detached from the sleeve that owns them. It also prevents a single local strategy gate from suppressing unrelated sleeves when global Janus safety gates are green.
+
+### Implemented Live Game Context Slice
+
+As of 2026-05-27, `app/modules/agentic/live_game_context.py` is wired into `codex_tool/run_live_strategy_tick.py`.
+
+The live tick now emits `live_game_context_evidence_v1` under both `market_state["live_game_context"]` and `live_signal_aggregation["live_game_context"]`.
+
+The context layer answers four questions that were previously only implicit:
+
+1. What scenario is the game in: S/A/B/C/D, with exact classifier inputs?
+2. Which sleeves does the scenario support or suppress?
+3. Which sleeve-level ML/PBP confidence exists today, and is it executable?
+4. Does realized event/day profit unlock additional bounded risk for an entry/exit point not covered by current sleeves?
+
+Current ML/PBP confidence remains evidence-only. It is derived from deterministic PBP annotation plus the scenario classifier and is marked non-executable until #81 promotes a real nano dispatcher and reviewed escalation policy.
+
+Standalone opportunistic candidates are allowed into aggregation only when:
+
+- the scenario is not `D` or `U`;
+- fresh underdog/favorite outcome prices are available;
+- realized-profit risk budget funds at least the exchange minimum;
+- the candidate declares a paired lifecycle policy;
+- normal StrategyPlan/live-worker/order-management gates still pass.
+
+This gives Janus a controlled path for "proper entry/exit point detected outside current sleeves" without turning the context layer into an order executor.
 
 ### Implemented WNBA Live Adapter Slice
 

@@ -27,6 +27,10 @@ from app.modules.agentic.llm_runtime import (
     build_llm_runtime_trace,
     process_llm_runtime_trace,
 )
+from app.modules.agentic.live_game_context import (
+    build_live_game_context_evidence,
+    live_signals_from_live_game_context,
+)
 from app.modules.agentic.live_snapshot import build_normalized_live_snapshot
 from app.modules.agentic.pbp_annotation import build_pbp_annotation_evidence
 from app.modules.agentic.pregame_priors import build_optional_pregame_prior_evidence
@@ -715,6 +719,16 @@ def _run_event_tick(
         source=f"{source}:pbp_annotation",
     )
     market_state["pbp_annotation"] = pbp_annotation
+    live_game_context = build_live_game_context_evidence(
+        event_id=event_id,
+        plan=plan,
+        market_state=market_state,
+        portfolio_state=portfolio_state,
+        direct_clob=event_direct_clob_state,
+        max_buy_notional_usd=max_buy_notional_usd,
+        min_buy_notional_usd=min_buy_notional_usd,
+    )
+    market_state["live_game_context"] = live_game_context
     llm_runtime_trace = build_llm_runtime_trace(
         event_id=event_id,
         market_id=str(plan.get("market_id") or "") or None,
@@ -909,6 +923,7 @@ def _build_live_signal_aggregation_evidence(
     )
     market_state["sleeve_trigger_binding"] = sleeve_trigger_binding.model_dump(mode="json")
     signals = live_signals_from_sleeve_trigger_bindings(sleeve_trigger_binding)
+    signals.extend(live_signals_from_live_game_context(market_state.get("live_game_context")))
     budget_policy = EventRiskBudgetPolicy(absolute_event_cap_usd=max_buy_notional_usd or 10.0)
     position_notional = _event_position_notional(direct_clob)
     open_order_notional = _event_open_order_notional(direct_clob)
@@ -964,6 +979,7 @@ def _build_live_signal_aggregation_evidence(
         "decision": decision.model_dump(mode="json"),
         "event_risk_budget": budget.model_dump(mode="json"),
         "sleeve_transition_bundle": sleeve_bundle.model_dump(mode="json"),
+        "live_game_context": market_state.get("live_game_context") if isinstance(market_state.get("live_game_context"), dict) else {},
         "persistence": persistence,
         "execution_boundary": "evidence_only",
     }

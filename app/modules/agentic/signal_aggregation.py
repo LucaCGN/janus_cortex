@@ -80,6 +80,10 @@ class LiveSignalOrderIntentCandidate(BaseModel):
     supporting_signal_ids: list[str] = Field(default_factory=list)
     reason_codes: list[str] = Field(default_factory=list)
     evidence_paths: list[str] = Field(default_factory=list)
+    lifecycle_policy: dict[str, Any] = Field(default_factory=dict)
+    game_scenario: dict[str, Any] = Field(default_factory=dict)
+    dynamic_risk_state: dict[str, Any] = Field(default_factory=dict)
+    ml_confidence: dict[str, Any] = Field(default_factory=dict)
 
 
 class LiveSignalAggregationDecision(BaseModel):
@@ -279,6 +283,10 @@ def _order_candidate(signals: list[LiveSignal]) -> LiveSignalOrderIntentCandidat
         supporting_signal_ids=signal_ids,
         reason_codes=reason_codes,
         evidence_paths=evidence_paths,
+        lifecycle_policy=_dict_payload(payload.get("lifecycle_policy")),
+        game_scenario=_dict_payload(payload.get("game_scenario")),
+        dynamic_risk_state=_dict_payload(payload.get("dynamic_risk_state")),
+        ml_confidence=_dict_payload(payload.get("ml_confidence")),
     )
 
 
@@ -343,6 +351,10 @@ def _signal_sleeve_id(signal: LiveSignal) -> str | None:
 def _clean_payload(value: Any) -> str | None:
     text = str(value or "").strip()
     return text or None
+
+
+def _dict_payload(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _truthy_payload(value: Any) -> bool:

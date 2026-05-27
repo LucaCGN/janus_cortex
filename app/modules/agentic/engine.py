@@ -577,7 +577,12 @@ def _aggregation_candidate_lifecycle_blocker(
                 "strategy_id": strategy_id,
                 "sleeve_id": sleeve_id,
             }
-    if side == "buy" and signal_type != "rebuy" and not _strategy_declares_buy_lifecycle(strategy):
+    if (
+        side == "buy"
+        and signal_type != "rebuy"
+        and not _strategy_declares_buy_lifecycle(strategy)
+        and not _candidate_declares_buy_lifecycle(candidate)
+    ):
         return {
             "scope": "live_signal_aggregation",
             "reason": "paired_lifecycle_policy_required_for_buy",
@@ -612,6 +617,30 @@ def _strategy_declares_buy_lifecycle(strategy: Any | None) -> bool:
     )
 
 
+def _candidate_declares_buy_lifecycle(candidate: dict[str, Any]) -> bool:
+    lifecycle = candidate.get("lifecycle_policy") if isinstance(candidate.get("lifecycle_policy"), dict) else {}
+    exit_policy = candidate.get("exit_policy") if isinstance(candidate.get("exit_policy"), dict) else {}
+    stop_policy = candidate.get("stop_policy") if isinstance(candidate.get("stop_policy"), dict) else {}
+    return any(
+        value not in {None, "", False}
+        for value in (
+            lifecycle.get("target_price"),
+            lifecycle.get("target_delta_cents"),
+            lifecycle.get("target_policy"),
+            lifecycle.get("target_return_fraction"),
+            lifecycle.get("stop_price"),
+            lifecycle.get("max_loss_cents"),
+            lifecycle.get("max_loss_usd"),
+            lifecycle.get("hold_reason"),
+            exit_policy.get("target_price"),
+            exit_policy.get("target_delta_cents"),
+            stop_policy.get("stop_price"),
+            stop_policy.get("max_loss_cents"),
+            candidate.get("hold_reason"),
+        )
+    )
+
+
 def _aggregation_candidate_lifecycle_metadata(
     candidate: dict[str, Any],
     *,
@@ -624,20 +653,28 @@ def _aggregation_candidate_lifecycle_metadata(
     exit_rules = dict(getattr(strategy, "exit_rules", {}) or {}) if strategy is not None else {}
     stop_rules = dict(getattr(strategy, "stop_rules", {}) or {}) if strategy is not None else {}
     shadow_flags = dict(getattr(strategy, "shadow_flags", {}) or {}) if strategy is not None else {}
+    lifecycle = candidate.get("lifecycle_policy") if isinstance(candidate.get("lifecycle_policy"), dict) else {}
     return {
         "required": side == "buy" or trigger_source == "paired_microcycle",
         "trigger_source": trigger_source,
         "cycle_id": _clean_text(candidate.get("cycle_id")),
         "reason_codes": reason_codes,
         "declared_exit_policy": {
-            "target_price": exit_rules.get("target_price") or entry_rules.get("target_price"),
-            "target_delta_cents": exit_rules.get("target_delta_cents") or entry_rules.get("target_delta_cents"),
+            "target_price": exit_rules.get("target_price") or entry_rules.get("target_price") or lifecycle.get("target_price"),
+            "target_delta_cents": (
+                exit_rules.get("target_delta_cents")
+                or entry_rules.get("target_delta_cents")
+                or lifecycle.get("target_delta_cents")
+            ),
+            "target_policy": exit_rules.get("target_policy") or lifecycle.get("target_policy"),
         },
         "declared_stop_policy": {
-            "stop_price": stop_rules.get("stop_price"),
-            "max_loss_cents": stop_rules.get("max_loss_cents"),
+            "stop_price": stop_rules.get("stop_price") or lifecycle.get("stop_price"),
+            "max_loss_cents": stop_rules.get("max_loss_cents") or lifecycle.get("max_loss_cents"),
+            "max_loss_usd": lifecycle.get("max_loss_usd"),
         },
-        "hold_reason": shadow_flags.get("core_hold_reason") or shadow_flags.get("hold_reason"),
+        "hold_reason": shadow_flags.get("core_hold_reason") or shadow_flags.get("hold_reason") or lifecycle.get("hold_reason"),
+        "standalone_lifecycle_policy": lifecycle,
     }
 
 

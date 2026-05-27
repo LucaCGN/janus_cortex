@@ -73,6 +73,7 @@ Current implementation:
 - `codex_tool/run_live_strategy_tick.py` stores the binding evidence in `market_state["sleeve_trigger_binding"]` and `live_signal_aggregation["sleeve_trigger_binding"]`;
 - `app/modules/agentic/signal_aggregation.py` preserves `sleeve_id`, `sleeve_group`, `sleeve_role`, `strategy_id`, `strategy_family`, `cycle_id`, `trigger_type`, and `trigger_source` on order-intent candidates.
 - `app/modules/agentic/engine.py` can promote `live_signal_aggregation.decision.order_intent_candidates` into Janus `OrderIntent`s during StrategyPlan evaluate/execute, with duplicate protection against normal StrategyPlan intents.
+- `app/modules/agentic/live_game_context.py` emits `live_game_context_evidence_v1`, which attaches game scenario classification, per-sleeve ML/PBP confidence readback, realized-profit risk state, and bounded standalone opportunistic candidates to the same aggregation surface.
 
 Promotion rules:
 
@@ -81,6 +82,40 @@ Promotion rules:
 - required fields are event/market/outcome/token, sleeve, side, price, size, and reason metadata.
 - minimum size, minimum buy notional, max buy notional, `max_intents`, and global live gates still apply.
 - candidates matching an already-created StrategyPlan intent for the same token/side/sleeve/cycle are blocked as duplicates, not submitted twice.
+- standalone opportunistic buy candidates may promote only when they declare a paired lifecycle policy directly on the candidate; without target/stop/hold policy they remain blocked by `paired_lifecycle_policy_required_for_buy`.
+
+## Live Game Context Evidence
+
+Every live tick should emit event-level context before aggregation. This is the bridge between game state, sleeve choice, ML/PBP confidence, and dynamic risk.
+
+Current implementation: `app/modules/agentic/live_game_context.py`.
+
+The evidence includes:
+
+| Field | Purpose |
+|---|---|
+| `game_scenario` | S/A/B/C/D classifier result from scoreboard, period, clock, score gap, player shock, price, and PBP/run tags. |
+| `classification_snapshot` | The exact normalized inputs used by the classifier. |
+| `sleeve_candidate_review` | Scenario-derived sleeve suggestions plus duplicate checks against the active StrategyPlan. |
+| `ml_confidence_by_sleeve` | Per-sleeve confidence readback from the scenario classifier and PBP annotation. Current status is evidence-only deterministic fallback until #81 promotes real nano dispatch. |
+| `dynamic_risk_state` | Profit-ratcheted risk state from realized event/day PnL, unresolved inventory, scenario level, liquidity, and latency. |
+| `opportunistic_signal_candidates` | Standalone candidate rows for valid entry/exit points not covered by current sleeves. |
+
+The context artifact must not become a global blocker by itself. Scenario `D/U`, stale feeds, or unresolved inventory can block context-originated standalone candidates, but local sleeve signals still continue through their own gates unless a true global safety gate fails.
+
+## Standalone Opportunistic Signals
+
+Janus may need to react to a valid entry/exit point that no currently configured sleeve captured. This is allowed only as a bounded aggregation candidate, not as an executor bypass.
+
+Required controls:
+
+1. The candidate must be generated from fresh normalized game/CLOB/account evidence.
+2. The game scenario must not be `D` or `U`.
+3. The candidate must be funded by realized-profit risk budget or another explicit event-control budget, not by open unrealized profit.
+4. The candidate must include a lifecycle policy: target, stop, hold reason, and rebuy review behavior.
+5. StrategyPlan evaluate/execute must still enforce minimum size, minimum buy notional, max buy notional, event budget, direct-truth, kill-switch, worker, and order-management gates.
+
+Current implementation starts with realized-profit-funded underdog/opportunistic entries. It is intentionally narrow: if realized profit is too small to fund the exchange minimum, the artifact records `realized_profit_opportunistic_budget_below_minimum` instead of creating an order-intent candidate.
 
 ## Gate Scope
 

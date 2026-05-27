@@ -463,6 +463,55 @@ def test_strategy_plan_evaluator_promotes_aggregation_buy_with_exit_policy_pytes
     assert result.intents[0].metadata["paired_lifecycle"]["declared_exit_policy"]["target_price"] == 0.24
 
 
+def test_strategy_plan_evaluator_promotes_standalone_opportunistic_buy_with_lifecycle_policy_pytest() -> None:
+    plan = StrategyPlan(
+        event_id="event-1",
+        market_id="market-1",
+        active_strategies=[],
+    )
+
+    result = evaluate_strategy_plan(
+        plan,
+        market_state={
+            "live_signal_aggregation": {
+                "decision": {
+                    "order_intent_candidates": [
+                        {
+                            "event_id": "event-1",
+                            "signal_type": "buy",
+                            "side": "Thunder",
+                            "market_id": "market-1",
+                            "outcome_id": "outcome-okc",
+                            "market_token_id": "token-okc",
+                            "sleeve_id": "okc-opportunistic-tail",
+                            "sleeve_role": "opportunistic_tail_rebound",
+                            "strategy_family": "opportunistic_profit_ratcheted_entry",
+                            "trigger_source": "live_game_context",
+                            "requested_notional_usd": 1.0,
+                            "max_price": 0.04,
+                            "lifecycle_policy": {
+                                "target_delta_cents": 1.0,
+                                "target_policy": "profit_ratcheted_tail_micro_target",
+                                "max_loss_usd": 1.0,
+                                "rebuy_requires_fresh_review": True,
+                            },
+                            "reason_codes": ["profit_ratcheted_opportunistic_budget_available"],
+                        }
+                    ]
+                }
+            }
+        },
+        dry_run=True,
+    )
+
+    assert result.intent_count == 1
+    assert result.intents[0].strategy_family == "opportunistic_profit_ratcheted_entry"
+    assert result.intents[0].sleeve_id == "okc-opportunistic-tail"
+    assert result.intents[0].size == 25
+    assert result.intents[0].metadata["paired_lifecycle"]["declared_exit_policy"]["target_delta_cents"] == 1.0
+    assert result.intents[0].metadata["paired_lifecycle"]["standalone_lifecycle_policy"]["max_loss_usd"] == 1.0
+
+
 def test_strategy_plan_evaluator_blocks_rebuy_without_sell_fill_evidence_pytest() -> None:
     plan = StrategyPlan(
         event_id="event-1",
