@@ -10,6 +10,8 @@ def test_wnba_event_slug_parsing_and_aliases_pytest() -> None:
     assert live_tick._parse_wnba_event_id("nba-sas-okc-2026-05-20") is None
     assert live_tick._wnba_slug_alias("POR") == "pdx"
     assert live_tick._wnba_slug_alias("Indiana") == "ind"
+    assert live_tick._wnba_slug_alias("LAS") == "lva"
+    assert live_tick._wnba_slug_alias("Los Angeles Sparks") == "las"
 
 
 def test_jsonable_mapping_handles_datetime_and_nan_pytest() -> None:

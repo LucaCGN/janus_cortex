@@ -4382,6 +4382,46 @@ def _resolve_wnba_game_from_cdn(
                 "resolved": True,
                 "resolution_source": "wnba_cdn_scoreboard_event_slug",
             }
+    schedule_resolved = _resolve_wnba_game_from_schedule(event_id, parsed, session_date=session_date)
+    if schedule_resolved:
+        return schedule_resolved
+    return None
+
+
+def _resolve_wnba_game_from_schedule(
+    event_id: str,
+    parsed: tuple[str, str, str],
+    *,
+    session_date: str,
+) -> dict[str, Any] | None:
+    team_a, team_b, date = parsed
+    wanted = {_wnba_slug_alias(team_a), _wnba_slug_alias(team_b)}
+    expected_date = date or session_date
+    try:
+        from app.data.nodes.wnba.schedule.season_schedule import fetch_season_schedule_df
+
+        df = fetch_season_schedule_df(season=expected_date[:4])
+    except Exception:
+        return None
+    try:
+        rows = df.to_dict(orient="records")
+    except Exception:
+        rows = []
+    for item in rows:
+        if str(item.get("game_date") or "") and str(item.get("game_date") or "") != expected_date:
+            continue
+        slugs = {
+            _wnba_slug_alias(item.get("home_team_tricode") or item.get("home_team_slug")),
+            _wnba_slug_alias(item.get("away_team_tricode") or item.get("away_team_slug")),
+        }
+        if wanted == slugs:
+            return {
+                **_jsonable_mapping(item),
+                "event_id": event_id,
+                "league": "wnba",
+                "resolved": True,
+                "resolution_source": "wnba_cdn_schedule_event_slug",
+            }
     return None
 
 
@@ -4425,6 +4465,7 @@ def _wnba_slug_alias(value: Any) -> str:
         "goldenstate": "gsv",
         "goldenstatevalkyries": "gsv",
         "valkyries": "gsv",
+        "las": "lva",
         "lasvegas": "lva",
         "lasvegasaces": "lva",
         "aces": "lva",

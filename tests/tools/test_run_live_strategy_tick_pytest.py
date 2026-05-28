@@ -248,6 +248,44 @@ def test_resolve_wnba_game_matches_connecticut_conn_slug_to_con_tricode_pytest(m
     assert result["resolution_source"] == "wnba_cdn_scoreboard_event_slug"
 
 
+def test_resolve_wnba_game_falls_back_to_schedule_for_las_vegas_slug_pytest(monkeypatch) -> None:
+    from app.data.nodes.wnba.live import live_stats
+    from app.data.nodes.wnba.schedule import season_schedule
+
+    monkeypatch.setattr(live_stats, "fetch_todays_scoreboard_df", lambda: pd.DataFrame())
+    monkeypatch.setattr(
+        season_schedule,
+        "fetch_season_schedule_df",
+        lambda season="2026": pd.DataFrame(
+            [
+                {
+                    "game_id": "1022600054",
+                    "game_status": 1,
+                    "game_status_text": "8:00 pm ET",
+                    "period": None,
+                    "game_clock": "",
+                    "game_date": "2026-05-28",
+                    "home_team_tricode": "DAL",
+                    "away_team_tricode": "LVA",
+                    "home_score": 0,
+                    "away_score": 0,
+                }
+            ]
+        ),
+    )
+
+    result = live_tick._resolve_wnba_game_from_cdn(
+        "wnba-las-dal-2026-05-28",
+        ("las", "dal", "2026-05-28"),
+        session_date="2026-05-28",
+    )
+
+    assert result is not None
+    assert result["resolved"] is True
+    assert result["game_id"] == "1022600054"
+    assert result["resolution_source"] == "wnba_cdn_schedule_event_slug"
+
+
 def test_sync_and_fetch_live_state_routes_wnba_to_wnba_endpoints_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
 
