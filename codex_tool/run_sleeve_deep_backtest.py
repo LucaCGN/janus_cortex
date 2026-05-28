@@ -39,6 +39,9 @@ from app.data.pipelines.daily.wnba.analysis.contracts import (  # noqa: E402
     WNBA_DEFAULT_SEASON,
     WNBA_DEFAULT_SEASON_PHASE,
 )
+from app.data.pipelines.daily.wnba.analysis.price_history_parity import (  # noqa: E402
+    build_wnba_price_history_state_panel,
+)
 from app.modules.agentic import llm_runtime  # noqa: E402
 from app.data.pipelines.daily.nba.analysis import ml_trading_lane  # noqa: E402
 from app.runtime.local_paths import resolve_shared_root  # noqa: E402
@@ -496,7 +499,10 @@ def _llm_ml_usage_review() -> dict[str, Any]:
                 "late-uncertainty/order-protection gaps -> frontier unless budget/exposure gates downgrade to mini; "
                 "ordinary StrategyPlanJSON revision -> mini."
             ),
-            "gap": "No always-on nano PBP tagging stream is wired into sleeve backtests/live aggregation yet.",
+            "current_pbp_path": (
+                "Live ticks can call the optional gpt-5.4-nano PBP dispatcher when LLM dispatch is enabled; "
+                "otherwise the deterministic fallback still emits the same evidence shape."
+            ),
         },
         "ml_trading_lane": {
             "focus_strategy_families": list(getattr(ml_trading_lane, "FOCUS_STRATEGY_FAMILIES", ())),
@@ -507,7 +513,10 @@ def _llm_ml_usage_review() -> dict[str, Any]:
                 "Offline/replay sidecar for candidate ranking, calibrated confidence, execution likelihood, "
                 "and focus-family gates. It is not the primary live tick loop."
             ),
-            "gap": "ML features are NBA-heavy; WNBA ML rows are empty until WNBA state/price panels are populated.",
+            "gap": (
+                "ML features remain NBA-heavy until enough WNBA price-history-backed state panels are populated; "
+                "the WNBA cohort loader can now rebuild state panels from persisted price history when panel rows are empty."
+            ),
         },
     }
 
@@ -521,6 +530,67 @@ def _load_wnba_market_state_panel(connection: Any, *, season: str, season_phase:
     ORDER BY games.game_date ASC NULLS LAST, panel.game_id ASC, panel.team_side ASC, panel.state_index ASC;
     """
     return _query_df(connection, query, (season, season_phase))
+
+
+def _load_wnba_price_history_state_panel(connection: Any, *, season: str, season_phase: str) -> pd.DataFrame:
+    games = _query_df(
+        connection,
+        """
+        SELECT games.*
+        FROM wnba.wnba_games games
+        WHERE games.season = %s
+          AND games.season_phase = %s
+          AND EXISTS (
+              SELECT 1
+              FROM wnba.wnba_polymarket_price_history history
+              WHERE history.game_id = games.game_id
+          )
+        ORDER BY games.game_date ASC NULLS LAST, games.game_id ASC;
+        """,
+        (season, season_phase),
+    )
+    if games.empty:
+        return pd.DataFrame()
+    game_ids = tuple(str(value) for value in games["game_id"].dropna().astype(str).unique())
+    if not game_ids:
+        return pd.DataFrame()
+    placeholders = ", ".join(["%s"] * len(game_ids))
+    pbp = _query_df(
+        connection,
+        f"""
+        SELECT *
+        FROM wnba.wnba_play_by_play
+        WHERE game_id IN ({placeholders})
+        ORDER BY game_id ASC, event_index ASC;
+        """,
+        game_ids,
+    )
+    history = _query_df(
+        connection,
+        f"""
+        SELECT *
+        FROM wnba.wnba_polymarket_price_history
+        WHERE game_id IN ({placeholders})
+        ORDER BY game_id ASC, team_side ASC NULLS LAST, price_at ASC;
+        """,
+        game_ids,
+    )
+    panels: list[pd.DataFrame] = []
+    for _, game in games.iterrows():
+        game_id = str(game.get("game_id") or "")
+        game_pbp = pbp[pbp["game_id"].astype(str) == game_id] if "game_id" in pbp.columns else pd.DataFrame()
+        game_prices = history[history["game_id"].astype(str) == game_id] if "game_id" in history.columns else pd.DataFrame()
+        if game_pbp.empty or game_prices.empty:
+            continue
+        panel = build_wnba_price_history_state_panel(
+            game_pbp,
+            game=game.to_dict(),
+            price_history_df=game_prices,
+            analysis_version=WNBA_ANALYSIS_VERSION,
+        )
+        if not panel.empty:
+            panels.append(panel)
+    return pd.concat(panels, ignore_index=True) if panels else pd.DataFrame()
 
 
 def _load_wnba_counts(connection: Any, *, season: str) -> dict[str, Any]:
@@ -604,6 +674,10 @@ def _run_wnba_cohort(
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     counts = _load_wnba_counts(connection, season=season)
     state_df = _load_wnba_market_state_panel(connection, season=season, season_phase=season_phase)
+    state_source = "wnba_market_state_panels"
+    if state_df.empty and int(counts.get("price_history_rows") or 0) > 0:
+        state_df = _load_wnba_price_history_state_panel(connection, season=season, season_phase=season_phase)
+        state_source = "wnba_polymarket_price_history_rebuilt_panel"
     blockers: list[dict[str, Any]] = []
     if state_df.empty:
         blockers.append(
@@ -620,6 +694,7 @@ def _run_wnba_cohort(
             "status": "blocked",
             "season": season,
             "season_phase": season_phase,
+            "state_source": state_source,
             "counts": counts,
             "backtests": None,
         }, blockers
@@ -636,6 +711,7 @@ def _run_wnba_cohort(
         "status": result.get("status"),
         "season": season,
         "season_phase": season_phase,
+        "state_source": state_source,
         "counts": counts,
         "sample_game_ids": game_ids,
         "backtests": {key: value for key, value in result.items() if key != "families"},

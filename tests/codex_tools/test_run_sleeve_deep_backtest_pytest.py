@@ -3,6 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from codex_tool import run_sleeve_deep_backtest
 from codex_tool.run_sleeve_deep_backtest import _aggregate_family_summary, _recommendations
 
 
@@ -87,3 +88,51 @@ def test_recommendations_use_aggregate_family_rows_pytest() -> None:
     assert top["sample_rows"] == 2
     assert top["trade_count"] == 6
     assert top["avg_win_rate"] == 0.67
+
+
+def test_wnba_deep_backtest_rebuilds_panel_from_price_history_when_panel_table_empty_pytest(monkeypatch) -> None:
+    monkeypatch.setattr(
+        run_sleeve_deep_backtest,
+        "_load_wnba_counts",
+        lambda connection, *, season: {
+            "season": season,
+            "games": 1,
+            "pbp_rows": 2,
+            "market_state_rows": 0,
+            "price_history_rows": 2,
+        },
+    )
+    monkeypatch.setattr(
+        run_sleeve_deep_backtest,
+        "_load_wnba_market_state_panel",
+        lambda connection, *, season, season_phase: pd.DataFrame(),
+    )
+    monkeypatch.setattr(
+        run_sleeve_deep_backtest,
+        "_load_wnba_price_history_state_panel",
+        lambda connection, *, season, season_phase: pd.DataFrame(
+            [
+                {"game_id": "101", "team_side": "home", "state_index": 1, "team_price": 0.40},
+                {"game_id": "101", "team_side": "home", "state_index": 2, "team_price": 0.44},
+            ]
+        ),
+    )
+    monkeypatch.setattr(
+        run_sleeve_deep_backtest,
+        "run_shadow_backtests_for_lanes",
+        lambda frame, **kwargs: {"status": "shadow_complete", "families": {}, "blockers": []},
+    )
+
+    result, blockers = run_sleeve_deep_backtest._run_wnba_cohort(
+        object(),
+        cohort_name="wnba_current",
+        season="2026",
+        season_phase="regular_season",
+        sample_size=3,
+        seed=7,
+    )
+
+    assert blockers == []
+    assert result["status"] == "shadow_complete"
+    assert result["state_source"] == "wnba_polymarket_price_history_rebuilt_panel"
+    assert result["sample_game_ids"] == ["101"]

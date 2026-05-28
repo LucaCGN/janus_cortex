@@ -2488,6 +2488,39 @@ def test_event_tick_scopes_direct_clob_exposure_to_plan_tokens_pytest(monkeypatc
     assert portfolio_state["direct_clob_global_open_orders"] == 1
 
 
+def test_live_signal_aggregation_budget_uses_dynamic_risk_state_pytest() -> None:
+    aggregation = live_tick._build_live_signal_aggregation_evidence(
+        event_id="wnba-phx-nyl-2026-05-27",
+        session_date="2026-05-27",
+        source="pytest",
+        plan={"active_strategies": []},
+        evaluation={},
+        market_state={
+            "live_game_context": {
+                "schema_version": "live_game_context_evidence_v1",
+                "dynamic_risk_state": {
+                    "realized_event_pnl": 8.0,
+                    "realized_day_pnl": 0.0,
+                    "open_unrealized_pnl": -1.0,
+                },
+            }
+        },
+        portfolio_state={},
+        direct_clob={},
+        min_size=5.0,
+        min_buy_notional_usd=1.0,
+        max_buy_notional_usd=10.0,
+        persist=False,
+    )
+
+    budget = aggregation["event_risk_budget"]
+    assert budget["base_event_cap_usd"] == 10.0
+    assert budget["realized_event_pnl_usd"] == 8.0
+    assert budget["unresolved_loss_exposure_usd"] == 1.0
+    assert budget["profit_ratcheted_addon_usd"] == 2.8
+    assert budget["event_cap_usd"] == 12.8
+
+
 def test_event_tick_documents_resolved_residual_without_open_exposure_pytest(monkeypatch) -> None:
     calls: list[dict[str, Any]] = []
     plan = {

@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import re
+import json
+import os
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 
 SCHEMA_VERSION = "pbp_annotation_evidence_v1"
 INTENDED_MODEL = "gpt-5.4-nano"
+DEFAULT_OPENAI_API_KEY_ENV = "OPENAI_API_KEY"
 
 
 def build_pbp_annotation_evidence(
@@ -15,6 +18,9 @@ def build_pbp_annotation_evidence(
     live_state: dict[str, Any] | None = None,
     plan: dict[str, Any] | None = None,
     source: str = "janus-pbp-annotation",
+    nano_dispatcher: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
+    enable_nano_dispatch: bool = False,
+    allow_llm_escalation_triggers: bool = False,
 ) -> dict[str, Any]:
     """Build cheap, evidence-only PBP tags for live sleeve/context review.
 
@@ -49,6 +55,17 @@ def build_pbp_annotation_evidence(
     if quarter_tag is not None:
         tags.append(quarter_tag)
 
+    nano_result = _maybe_dispatch_nano(
+        event_id=event_id,
+        rows=rows,
+        latest=latest,
+        tags=tags,
+        plan_roles=plan_roles,
+        dispatcher=nano_dispatcher,
+        enabled=enable_nano_dispatch,
+    )
+    tags = _merge_nano_tags(tags, nano_result)
+
     status = "ready"
     if _is_pregame(latest):
         status = "pregame_waiting_for_live_pbp"
@@ -68,7 +85,8 @@ def build_pbp_annotation_evidence(
         "must_not_place_orders": True,
         "emit_trigger": False,
         "intended_model": INTENDED_MODEL,
-        "model_tier": "deterministic_fallback",
+        "model_tier": "nano" if nano_result["status"] == "response_recorded" else "deterministic_fallback",
+        "nano_dispatch": nano_result,
         "llm_trigger_type": "compression_or_tagging",
         "recent_play_by_play_count": len(rows),
         "snapshot_count": len(snapshots),
@@ -77,8 +95,8 @@ def build_pbp_annotation_evidence(
         "tags": tags,
         "signals": [
             {
-                "emit_trigger": False,
-                "trigger_type": "compression_or_tagging",
+                "emit_trigger": _tag_emits_escalation(tag, allow_llm_escalation_triggers=allow_llm_escalation_triggers),
+                "trigger_type": _tag_trigger_type(tag),
                 "tag_type": tag["tag_type"],
                 "severity": tag["severity"],
                 "confidence": tag["confidence"],
@@ -247,6 +265,10 @@ def _player_status_text_tag(rows: list[dict[str, Any]]) -> dict[str, Any] | None
 
 
 def _recommended_escalation(tags: list[dict[str, Any]]) -> str:
+    if any(tag.get("llm_escalation") == "frontier_review_if_deep_loss_exposure" for tag in tags):
+        return "frontier_review_if_deep_loss_exposure"
+    if any(tag.get("llm_escalation") == "mini_review_if_strategy_revision_triggered" for tag in tags):
+        return "mini_review_if_strategy_revision_triggered"
     if any(tag.get("severity") == "critical" for tag in tags):
         return "frontier_review_if_exposure_exists"
     if any(tag.get("severity") == "elevated" for tag in tags):
@@ -254,6 +276,251 @@ def _recommended_escalation(tags: list[dict[str, Any]]) -> str:
     if tags:
         return "nano_compression_only"
     return "none"
+
+
+def _maybe_dispatch_nano(
+    *,
+    event_id: str,
+    rows: list[dict[str, Any]],
+    latest: dict[str, Any],
+    tags: list[dict[str, Any]],
+    plan_roles: set[str],
+    dispatcher: Callable[[dict[str, Any]], dict[str, Any]] | None,
+    enabled: bool,
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": "pbp_nano_dispatch_request_v1",
+        "event_id": event_id,
+        "model": INTENDED_MODEL,
+        "execution_boundary": "evidence_only",
+        "must_not_place_orders": True,
+        "latest_snapshot": latest,
+        "recent_play_by_play": rows[:12],
+        "deterministic_tags": tags,
+        "plan_sleeve_roles": sorted(plan_roles),
+        "allowed_outputs": [
+            "summary",
+            "tags",
+            "llm_escalation",
+            "valuation_signal",
+        ],
+    }
+    if not enabled:
+        return {"status": "disabled", "model": INTENDED_MODEL, "request": payload}
+    if dispatcher is None:
+        return {"status": "dispatcher_unavailable", "model": INTENDED_MODEL, "request": payload}
+    try:
+        response = dispatcher(payload)
+    except Exception as exc:  # pragma: no cover - defensive runtime guard.
+        return {
+            "status": "dispatcher_error",
+            "model": INTENDED_MODEL,
+            "error": type(exc).__name__,
+            "request": payload,
+        }
+    if not isinstance(response, dict):
+        return {"status": "invalid_response", "model": INTENDED_MODEL, "request": payload}
+    return {
+        "status": "response_recorded",
+        "model": INTENDED_MODEL,
+        "request": payload,
+        "response": _sanitize_nano_response(response),
+    }
+
+
+def _sanitize_nano_response(response: dict[str, Any]) -> dict[str, Any]:
+    tags = response.get("tags") if isinstance(response.get("tags"), list) else []
+    clean_tags = [dict(tag) for tag in tags if isinstance(tag, dict)]
+    escalation = str(response.get("llm_escalation") or response.get("recommended_escalation") or "none").strip()
+    if escalation not in {
+        "none",
+        "mini_review_if_strategy_revision_triggered",
+        "frontier_review_if_deep_loss_exposure",
+    }:
+        escalation = "none"
+    valuation_signal = str(response.get("valuation_signal") or "").strip().lower()
+    if valuation_signal not in {"", "undervaluation", "overvaluation"}:
+        valuation_signal = ""
+    return {
+        "summary": str(response.get("summary") or "")[:600],
+        "llm_escalation": escalation,
+        "valuation_signal": valuation_signal or None,
+        "tags": clean_tags[:8],
+        "must_not_place_orders": True,
+        "execution_boundary": "evidence_only",
+    }
+
+
+def _merge_nano_tags(tags: list[dict[str, Any]], nano_result: dict[str, Any]) -> list[dict[str, Any]]:
+    response = nano_result.get("response") if isinstance(nano_result.get("response"), dict) else {}
+    nano_tags = response.get("tags") if isinstance(response.get("tags"), list) else []
+    merged = list(tags)
+    for raw_tag in nano_tags:
+        if not isinstance(raw_tag, dict):
+            continue
+        tag_type = str(raw_tag.get("tag_type") or "nano_context").strip() or "nano_context"
+        severity = str(raw_tag.get("severity") or "routine").strip()
+        if severity not in {"routine", "elevated", "critical"}:
+            severity = "routine"
+        merged.append(
+            {
+                "tag_type": tag_type,
+                "severity": severity,
+                "confidence": _bounded_confidence(raw_tag.get("confidence"), default=0.5),
+                "sleeve_relevance": _clean_sleeve_relevance(raw_tag.get("sleeve_relevance")),
+                "reason": str(raw_tag.get("reason") or "Nano PBP context tag.")[:300],
+                "evidence": raw_tag.get("evidence") if isinstance(raw_tag.get("evidence"), dict) else {},
+                "llm_escalation": response.get("llm_escalation"),
+                "valuation_signal": response.get("valuation_signal"),
+                "source": "gpt-5.4-nano",
+            }
+        )
+    return merged
+
+
+def _tag_emits_escalation(tag: dict[str, Any], *, allow_llm_escalation_triggers: bool) -> bool:
+    if not allow_llm_escalation_triggers:
+        return False
+    return str(tag.get("llm_escalation") or "none") in {
+        "mini_review_if_strategy_revision_triggered",
+        "frontier_review_if_deep_loss_exposure",
+    } and str(tag.get("valuation_signal") or "") in {"undervaluation", "overvaluation"}
+
+
+def _tag_trigger_type(tag: dict[str, Any]) -> str:
+    valuation = str(tag.get("valuation_signal") or "").strip().lower()
+    if valuation == "undervaluation":
+        return "undervaluation"
+    if valuation == "overvaluation":
+        return "overvaluation"
+    return "compression_or_tagging"
+
+
+def _bounded_confidence(value: Any, *, default: float) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    return min(max(numeric, 0.0), 1.0)
+
+
+def _clean_sleeve_relevance(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return ["grid_scalp", "core_hold", "reduce_stop"]
+    clean = [str(item).strip() for item in value if str(item or "").strip()]
+    return clean[:6] or ["grid_scalp", "core_hold", "reduce_stop"]
+
+
+def resolve_openai_nano_pbp_dispatcher() -> Callable[[dict[str, Any]], dict[str, Any]] | None:
+    """Return a real nano dispatcher when OpenAI runtime config is available."""
+
+    _load_dotenv_if_available()
+    if not os.getenv(DEFAULT_OPENAI_API_KEY_ENV):
+        return None
+    try:
+        from openai import OpenAI
+    except Exception:
+        return None
+    try:
+        client = OpenAI()
+    except Exception:
+        return None
+
+    def _dispatch(payload: dict[str, Any]) -> dict[str, Any]:
+        return openai_nano_pbp_dispatcher(payload, client=client)
+
+    return _dispatch
+
+
+def openai_nano_pbp_dispatcher(payload: dict[str, Any], *, client: Any) -> dict[str, Any]:
+    """Call the nano model for compact PBP tags without live-order authority."""
+
+    responses = getattr(client, "responses", None)
+    create = getattr(responses, "create", None)
+    if not callable(create):
+        raise TypeError("OpenAI client does not expose responses.create")
+    response = create(
+        model=INTENDED_MODEL,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You are Janus' cheap play-by-play tagger. Return only compact JSON. "
+                    "You cannot place, cancel, or recommend raw orders. You may tag context, "
+                    "suggest mini escalation for strategy review, or frontier escalation only "
+                    "for deep loss exposure."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str),
+            },
+        ],
+        text={
+            "format": {
+                "type": "json_schema",
+                "name": "janus_pbp_nano_annotation",
+                "schema": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "summary": {"type": "string"},
+                        "llm_escalation": {
+                            "type": "string",
+                            "enum": [
+                                "none",
+                                "mini_review_if_strategy_revision_triggered",
+                                "frontier_review_if_deep_loss_exposure",
+                            ],
+                        },
+                        "valuation_signal": {
+                            "type": ["string", "null"],
+                            "enum": ["undervaluation", "overvaluation", None],
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": True,
+                                "properties": {
+                                    "tag_type": {"type": "string"},
+                                    "severity": {"type": "string"},
+                                    "confidence": {"type": "number"},
+                                    "sleeve_relevance": {
+                                        "type": "array",
+                                        "items": {"type": "string"},
+                                    },
+                                    "reason": {"type": "string"},
+                                    "evidence": {"type": "object"},
+                                },
+                                "required": ["tag_type", "severity", "confidence", "sleeve_relevance", "reason"],
+                            },
+                        },
+                    },
+                    "required": ["summary", "llm_escalation", "valuation_signal", "tags"],
+                },
+            }
+        },
+        max_output_tokens=800,
+        store=False,
+    )
+    text = getattr(response, "output_text", None)
+    if text is None:
+        output = getattr(response, "output", None)
+        text = json.dumps(output, default=str) if output is not None else "{}"
+    return json.loads(text)
+
+
+def _load_dotenv_if_available() -> None:
+    try:
+        from dotenv import load_dotenv
+    except Exception:
+        return
+    try:
+        from app.runtime.local_paths import repo_root
+    except Exception:
+        return
+    load_dotenv(repo_root() / ".env", override=False)
 
 
 def _plan_roles(plan: dict[str, Any] | None) -> set[str]:
@@ -312,4 +579,9 @@ def _number(value: Any) -> float | None:
         return None
 
 
-__all__ = ["SCHEMA_VERSION", "build_pbp_annotation_evidence"]
+__all__ = [
+    "SCHEMA_VERSION",
+    "build_pbp_annotation_evidence",
+    "openai_nano_pbp_dispatcher",
+    "resolve_openai_nano_pbp_dispatcher",
+]

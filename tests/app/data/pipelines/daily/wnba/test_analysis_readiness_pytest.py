@@ -20,6 +20,12 @@ from app.data.pipelines.daily.wnba.analysis.ml_dataset import (
     build_wnba_pbp_ml_feature_rows,
     summarize_ml_training_readiness,
 )
+from app.data.pipelines.daily.wnba.analysis.price_history_parity import (
+    build_wnba_price_history_replay_pack,
+    build_wnba_price_history_state_panel,
+    price_history_to_market_points,
+    state_panel_db_records,
+)
 from app.data.pipelines.daily.wnba.analysis.state_panel import (
     build_wnba_state_panel,
     wnba_seconds_to_game_end,
@@ -105,6 +111,63 @@ def test_wnba_state_panel_joins_nearest_clob_ticks_and_ml_labels_pytest() -> Non
     labeled = feature_df[feature_df["label_status"] == "labeled"].iloc[0]
     assert labeled["label_price_delta"] is not None
     assert summarize_ml_training_readiness(feature_df)["status"] == "blocked"
+
+
+def test_wnba_price_history_builds_state_panel_and_replay_pack_pytest() -> None:
+    samples = _samples()
+    games_df, _teams_df = normalize_schedule_payload(samples["schedule"], season="2026")
+    pbp_df = normalize_play_by_play_payload(samples["play_by_play"])
+    base = datetime(2026, 4, 25, 19, 3, 23, tzinfo=timezone.utc)
+    price_history_df = pd.DataFrame(
+        [
+            {
+                "game_id": "1012600001",
+                "team_side": "away",
+                "team_tricode": "IND",
+                "price_at": (base + timedelta(seconds=1)).isoformat(),
+                "price": 0.30,
+                "token_id": "token-ind",
+            },
+            {
+                "game_id": "1012600001",
+                "team_side": "away",
+                "team_tricode": "IND",
+                "price_at": (base + timedelta(minutes=6)).isoformat(),
+                "price": 0.36,
+                "token_id": "token-ind",
+            },
+            {
+                "game_id": "1012600001",
+                "team_side": "home",
+                "team_tricode": "NYL",
+                "price_at": (base + timedelta(seconds=1)).isoformat(),
+                "price": 0.70,
+                "token_id": "token-nyl",
+            },
+        ]
+    )
+
+    market_points = price_history_to_market_points(price_history_df)
+    state_df = build_wnba_price_history_state_panel(
+        pbp_df,
+        game=games_df.iloc[0].to_dict(),
+        price_history_df=price_history_df,
+    )
+    pack = build_wnba_price_history_replay_pack(
+        games=[games_df.iloc[0].to_dict()],
+        pbp_df=pbp_df,
+        price_history_df=price_history_df,
+        season="2026",
+    )
+    db_records = state_panel_db_records(state_df)
+
+    assert len(market_points) == 3
+    assert state_df["team_price"].notna().all()
+    assert pack["schema_version"] == "wnba_price_history_replay_parity_v1"
+    assert pack["game_count"] == 1
+    assert pack["state_panel_rows"] == len(state_df)
+    assert pack["backtest_eligible_rows"] == len(state_df)
+    assert db_records[0]["liquidity_context_json"]["token_id"] in {"token-ind", "token-nyl"}
 
 
 def test_wnba_shadow_backtest_blocks_without_clob_and_runs_with_prices_pytest() -> None:

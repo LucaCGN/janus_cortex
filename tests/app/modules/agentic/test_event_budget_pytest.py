@@ -4,6 +4,7 @@ from app.modules.agentic.event_budget import (
     EventRiskBudgetPolicy,
     SleeveTransitionRequest,
     build_event_risk_budget_policy,
+    calibrate_event_risk_policy_from_history,
     derive_event_risk_budget,
     evaluate_event_sleeve_transitions,
 )
@@ -306,6 +307,32 @@ def test_development_risk_mode_uses_percentage_plus_nominal_cap_pytest() -> None
     assert lower_cash.event_cap_usd == 4.0
 
 
+def test_profit_ratcheted_event_budget_adds_realized_profit_without_counting_open_losses_pytest() -> None:
+    policy = build_event_risk_budget_policy("development")
+    winner = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=200.0,
+        available_cash_usd=100.0,
+        policy=policy,
+        realized_event_pnl_usd=8.0,
+        unresolved_loss_exposure_usd=1.0,
+    )
+    losing = derive_event_risk_budget(
+        event_id=EVENT_ID,
+        portfolio_value_usd=200.0,
+        available_cash_usd=100.0,
+        policy=policy,
+        realized_event_pnl_usd=-3.0,
+        unresolved_loss_exposure_usd=4.0,
+    )
+
+    assert winner.base_event_cap_usd == 10.0
+    assert winner.profit_ratcheted_addon_usd == 2.8
+    assert winner.event_cap_usd == 12.8
+    assert losing.loss_cut_usd == 2.5
+    assert losing.event_cap_usd == 7.5
+
+
 def test_risk_modes_calibrate_validation_development_and_production_caps_pytest() -> None:
     validation = build_event_risk_budget_policy("validation")
     development = build_event_risk_budget_policy("development")
@@ -315,6 +342,24 @@ def test_risk_modes_calibrate_validation_development_and_production_caps_pytest(
     assert production.event_cap_pct < development.event_cap_pct
     assert validation.max_active_cycles < development.max_active_cycles
     assert production.min_expected_edge_after_slippage_cents > development.min_expected_edge_after_slippage_cents
+
+
+def test_calibrate_event_risk_policy_from_history_promotes_winning_sample_pytest() -> None:
+    calibration = calibrate_event_risk_policy_from_history(
+        [
+            {"realized_pnl_usd": 1.2, "source_confidence": "account_confirmed"},
+            {"realized_pnl_usd": 0.7, "source_confidence": "db_confirmed"},
+            {"realized_pnl_usd": -0.2, "source_confidence": "account_confirmed"},
+            {"realized_pnl_usd": 1.0, "source_confidence": "db_confirmed"},
+            {"realized_pnl_usd": 0.4, "source_confidence": "account_confirmed"},
+        ],
+        risk_mode="development",
+        min_sample_size=5,
+    )
+
+    assert calibration["status"] == "calibrated"
+    assert "increase_realized_profit_reinvestment" in calibration["recommended_changes"]
+    assert calibration["policy"]["profit_ratcheted_reinvestment_pct"] > 0.40
 
 
 def test_same_side_exposure_cap_is_local_not_global_pytest() -> None:

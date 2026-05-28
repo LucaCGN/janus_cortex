@@ -17,8 +17,8 @@ from app.modules.agentic.contracts import (
     StrategyPlan,
 )
 from app.modules.agentic.event_budget import (
-    EventRiskBudgetPolicy,
     SleeveTransitionRequest,
+    build_event_risk_budget_policy,
     derive_event_risk_budget,
     evaluate_event_sleeve_transitions,
 )
@@ -32,7 +32,7 @@ from app.modules.agentic.live_game_context import (
     live_signals_from_live_game_context,
 )
 from app.modules.agentic.live_snapshot import build_normalized_live_snapshot
-from app.modules.agentic.pbp_annotation import build_pbp_annotation_evidence
+from app.modules.agentic.pbp_annotation import build_pbp_annotation_evidence, resolve_openai_nano_pbp_dispatcher
 from app.modules.agentic.pregame_priors import build_optional_pregame_prior_evidence
 from app.modules.agentic.reduce_stop_lifecycle import (
     build_reduce_stop_lifecycle_evidence,
@@ -721,6 +721,9 @@ def _run_event_tick(
         live_state=live_state,
         plan=plan,
         source=f"{source}:pbp_annotation",
+        nano_dispatcher=resolve_openai_nano_pbp_dispatcher() if enable_llm_dispatch else None,
+        enable_nano_dispatch=enable_llm_dispatch,
+        allow_llm_escalation_triggers=enable_llm_dispatch,
     )
     market_state["pbp_annotation"] = pbp_annotation
     live_game_context = build_live_game_context_evidence(
@@ -895,7 +898,10 @@ def _live_tick_event_budget_snapshot(
     min_buy_notional_usd: float,
     max_buy_notional_usd: float | None,
 ) -> dict[str, Any]:
-    budget_policy = EventRiskBudgetPolicy(absolute_event_cap_usd=max_buy_notional_usd or 10.0)
+    budget_policy = build_event_risk_budget_policy(
+        "development",
+        absolute_event_cap_usd=max_buy_notional_usd or 10.0,
+    )
     pending_notional = (
         _float(portfolio_state.get("pending_buy_intents"))
         or _float(portfolio_state.get("pending_intents"))
@@ -939,7 +945,10 @@ def _build_live_signal_aggregation_evidence(
     signals = live_signals_from_sleeve_trigger_bindings(sleeve_trigger_binding)
     signals.extend(live_signals_from_live_game_context(market_state.get("live_game_context")))
     signals.extend(live_signals_from_reduce_stop_lifecycle(market_state.get("reduce_stop_lifecycle")))
-    budget_policy = EventRiskBudgetPolicy(absolute_event_cap_usd=max_buy_notional_usd or 10.0)
+    budget_policy = build_event_risk_budget_policy(
+        "development",
+        absolute_event_cap_usd=max_buy_notional_usd or 10.0,
+    )
     position_notional = _event_position_notional(direct_clob)
     open_order_notional = _event_open_order_notional(direct_clob)
     pending_notional = (
@@ -947,6 +956,7 @@ def _build_live_signal_aggregation_evidence(
         or _float(portfolio_state.get("pending_intents"))
         or 0.0
     ) * min_buy_notional_usd
+    risk_inputs = _live_context_risk_budget_inputs(market_state)
     budget = derive_event_risk_budget(
         event_id=event_id,
         portfolio_value_usd=budget_policy.absolute_event_cap_usd / max(budget_policy.event_cap_pct, 1e-9),
@@ -955,6 +965,9 @@ def _build_live_signal_aggregation_evidence(
         open_order_notional_usd=open_order_notional,
         pending_intent_notional_usd=pending_notional,
         policy=budget_policy,
+        realized_event_pnl_usd=risk_inputs["realized_event_pnl_usd"],
+        realized_day_pnl_usd=risk_inputs["realized_day_pnl_usd"],
+        unresolved_loss_exposure_usd=risk_inputs["unresolved_loss_exposure_usd"],
     )
     inventory_proof = portfolio_state.get("current_event_inventory_proof")
     inventory = LiveSignalAggregationInventory(
@@ -998,6 +1011,31 @@ def _build_live_signal_aggregation_evidence(
         "reduce_stop_lifecycle": market_state.get("reduce_stop_lifecycle") if isinstance(market_state.get("reduce_stop_lifecycle"), dict) else {},
         "persistence": persistence,
         "execution_boundary": "evidence_only",
+    }
+
+
+def _live_context_risk_budget_inputs(market_state: dict[str, Any]) -> dict[str, float]:
+    live_context = market_state.get("live_game_context")
+    if not isinstance(live_context, dict):
+        return {
+            "realized_event_pnl_usd": 0.0,
+            "realized_day_pnl_usd": 0.0,
+            "unresolved_loss_exposure_usd": 0.0,
+        }
+    dynamic_risk_state = live_context.get("dynamic_risk_state")
+    if not isinstance(dynamic_risk_state, dict):
+        return {
+            "realized_event_pnl_usd": 0.0,
+            "realized_day_pnl_usd": 0.0,
+            "unresolved_loss_exposure_usd": 0.0,
+        }
+    open_unrealized_pnl = _float(dynamic_risk_state.get("open_unrealized_pnl")) or 0.0
+    explicit_unresolved = _float(dynamic_risk_state.get("unresolved_loss_exposure_usd"))
+    unresolved_loss_exposure = explicit_unresolved if explicit_unresolved is not None else max(-open_unrealized_pnl, 0.0)
+    return {
+        "realized_event_pnl_usd": _float(dynamic_risk_state.get("realized_event_pnl")) or 0.0,
+        "realized_day_pnl_usd": _float(dynamic_risk_state.get("realized_day_pnl")) or 0.0,
+        "unresolved_loss_exposure_usd": max(unresolved_loss_exposure, 0.0),
     }
 
 

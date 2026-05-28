@@ -30,6 +30,9 @@ _RISK_MODE_DEFAULTS: dict[RiskMode, dict[str, object]] = {
         "max_same_side_exposure_pct": 0.60,
         "min_expected_edge_after_slippage_cents": 1.0,
         "default_sleeve_budget_pct": 0.50,
+        "profit_ratcheted_reinvestment_pct": 0.10,
+        "max_profit_ratcheted_addon_usd": 1.0,
+        "loss_cut_event_cap_multiplier": 0.50,
     },
     "development": {
         "event_cap_pct": 0.10,
@@ -40,6 +43,9 @@ _RISK_MODE_DEFAULTS: dict[RiskMode, dict[str, object]] = {
         "max_same_side_exposure_pct": 0.70,
         "min_expected_edge_after_slippage_cents": 0.2,
         "default_sleeve_budget_pct": 0.50,
+        "profit_ratcheted_reinvestment_pct": 0.40,
+        "max_profit_ratcheted_addon_usd": 5.0,
+        "loss_cut_event_cap_multiplier": 0.75,
     },
     "production": {
         "event_cap_pct": 0.02,
@@ -50,6 +56,9 @@ _RISK_MODE_DEFAULTS: dict[RiskMode, dict[str, object]] = {
         "max_same_side_exposure_pct": 0.55,
         "min_expected_edge_after_slippage_cents": 1.5,
         "default_sleeve_budget_pct": 0.35,
+        "profit_ratcheted_reinvestment_pct": 0.15,
+        "max_profit_ratcheted_addon_usd": 2.0,
+        "loss_cut_event_cap_multiplier": 0.40,
     },
 }
 
@@ -74,6 +83,9 @@ class EventRiskBudgetPolicy(BaseModel):
     sleeve_budget_caps_usd: dict[str, float] = Field(default_factory=dict)
     sleeve_role_budget_pct: dict[str, float] = Field(default_factory=dict)
     default_sleeve_budget_pct: float = Field(default=1.0, ge=0.0, le=1.0)
+    profit_ratcheted_reinvestment_pct: float = Field(default=0.0, ge=0.0, le=1.0)
+    max_profit_ratcheted_addon_usd: float = Field(default=0.0, ge=0.0)
+    loss_cut_event_cap_multiplier: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 class EventRiskBudgetSnapshot(BaseModel):
@@ -82,9 +94,15 @@ class EventRiskBudgetSnapshot(BaseModel):
     schema_version: str = "event_risk_budget_snapshot_v1"
     event_id: str = Field(min_length=1)
     event_cap_usd: float = Field(ge=0.0)
+    base_event_cap_usd: float = Field(default=0.0, ge=0.0)
     portfolio_cap_usd: float = Field(ge=0.0)
     cash_cap_usd: float = Field(ge=0.0)
     absolute_event_cap_usd: float = Field(ge=0.0)
+    profit_ratcheted_addon_usd: float = Field(default=0.0, ge=0.0)
+    loss_cut_usd: float = Field(default=0.0, ge=0.0)
+    realized_event_pnl_usd: float = 0.0
+    realized_day_pnl_usd: float = 0.0
+    unresolved_loss_exposure_usd: float = Field(default=0.0, ge=0.0)
     current_position_notional_usd: float = Field(default=0.0, ge=0.0)
     open_order_notional_usd: float = Field(default=0.0, ge=0.0)
     pending_intent_notional_usd: float = Field(default=0.0, ge=0.0)
@@ -172,11 +190,27 @@ def derive_event_risk_budget(
     open_order_notional_usd: float = 0.0,
     pending_intent_notional_usd: float = 0.0,
     policy: EventRiskBudgetPolicy | None = None,
+    realized_event_pnl_usd: float = 0.0,
+    realized_day_pnl_usd: float = 0.0,
+    unresolved_loss_exposure_usd: float = 0.0,
 ) -> EventRiskBudgetSnapshot:
     policy = policy or EventRiskBudgetPolicy()
     portfolio_cap = max(portfolio_value_usd, 0.0) * policy.event_cap_pct
     cash_cap = max(available_cash_usd, 0.0) * policy.cash_cap_pct
-    event_cap = min(portfolio_cap, cash_cap, policy.absolute_event_cap_usd)
+    base_event_cap = min(portfolio_cap, cash_cap, policy.absolute_event_cap_usd)
+    loss_adjusted_event_cap, loss_cut = _apply_loss_cut(
+        base_event_cap,
+        policy=policy,
+        realized_event_pnl_usd=realized_event_pnl_usd,
+        unresolved_loss_exposure_usd=unresolved_loss_exposure_usd,
+    )
+    profit_addon = _profit_ratcheted_addon(
+        policy=policy,
+        realized_event_pnl_usd=realized_event_pnl_usd,
+        realized_day_pnl_usd=realized_day_pnl_usd,
+        unresolved_loss_exposure_usd=unresolved_loss_exposure_usd,
+    )
+    event_cap = min(loss_adjusted_event_cap + profit_addon, max(available_cash_usd, 0.0))
     used = current_position_notional_usd + open_order_notional_usd + pending_intent_notional_usd
     remaining = max(event_cap - used, 0.0)
     blockers: list[str] = []
@@ -193,9 +227,15 @@ def derive_event_risk_budget(
     return EventRiskBudgetSnapshot(
         event_id=event_id,
         event_cap_usd=round(event_cap, 6),
+        base_event_cap_usd=round(base_event_cap, 6),
         portfolio_cap_usd=round(portfolio_cap, 6),
         cash_cap_usd=round(cash_cap, 6),
         absolute_event_cap_usd=policy.absolute_event_cap_usd,
+        profit_ratcheted_addon_usd=round(profit_addon, 6),
+        loss_cut_usd=round(loss_cut, 6),
+        realized_event_pnl_usd=round(realized_event_pnl_usd, 6),
+        realized_day_pnl_usd=round(realized_day_pnl_usd, 6),
+        unresolved_loss_exposure_usd=round(max(unresolved_loss_exposure_usd, 0.0), 6),
         current_position_notional_usd=current_position_notional_usd,
         open_order_notional_usd=open_order_notional_usd,
         pending_intent_notional_usd=pending_intent_notional_usd,
@@ -208,6 +248,94 @@ def derive_event_risk_budget(
         phase_budget_caps_usd=_phase_budget_caps(policy, event_cap),
         sleeve_role_budget_caps_usd=_sleeve_role_budget_caps(policy, event_cap),
     )
+
+
+def _apply_loss_cut(
+    base_event_cap: float,
+    *,
+    policy: EventRiskBudgetPolicy,
+    realized_event_pnl_usd: float,
+    unresolved_loss_exposure_usd: float,
+) -> tuple[float, float]:
+    if realized_event_pnl_usd >= max(unresolved_loss_exposure_usd, 0.0):
+        return base_event_cap, 0.0
+    if policy.loss_cut_event_cap_multiplier >= 1.0:
+        return base_event_cap, 0.0
+    adjusted = base_event_cap * policy.loss_cut_event_cap_multiplier
+    return adjusted, max(base_event_cap - adjusted, 0.0)
+
+
+def _profit_ratcheted_addon(
+    *,
+    policy: EventRiskBudgetPolicy,
+    realized_event_pnl_usd: float,
+    realized_day_pnl_usd: float,
+    unresolved_loss_exposure_usd: float,
+) -> float:
+    realized_profit = max(realized_event_pnl_usd, 0.0) + max(realized_day_pnl_usd, 0.0)
+    if realized_profit <= 0.0 or unresolved_loss_exposure_usd >= realized_profit:
+        return 0.0
+    net_profit = realized_profit - max(unresolved_loss_exposure_usd, 0.0)
+    return min(
+        net_profit * policy.profit_ratcheted_reinvestment_pct,
+        policy.max_profit_ratcheted_addon_usd,
+    )
+
+
+def calibrate_event_risk_policy_from_history(
+    rows: list[dict[str, object]],
+    *,
+    risk_mode: RiskMode = "development",
+    min_sample_size: int = 5,
+) -> dict[str, object]:
+    """Build a risk-policy readback from realized account/DB history rows.
+
+    The return value is evidence for operators and automations. It never mutates
+    runtime event controls by itself.
+    """
+
+    base = build_event_risk_budget_policy(risk_mode)
+    realized_rows = [row for row in rows if row.get("source_confidence") in {None, "account_confirmed", "db_confirmed"}]
+    pnl_values = [_safe_float(row.get("realized_pnl_usd")) for row in realized_rows]
+    pnl_values = [value for value in pnl_values if value is not None]
+    if len(pnl_values) < min_sample_size:
+        return {
+            "schema_version": "event_risk_policy_calibration_v1",
+            "status": "insufficient_sample",
+            "sample_size": len(pnl_values),
+            "min_sample_size": min_sample_size,
+            "policy": base.model_dump(mode="json"),
+            "recommended_changes": [],
+            "source_confidence": "insufficient",
+        }
+
+    wins = [value for value in pnl_values if value > 0.0]
+    losses = [value for value in pnl_values if value < 0.0]
+    avg_pnl = sum(pnl_values) / len(pnl_values)
+    win_rate = len(wins) / len(pnl_values)
+    loss_tail = min(losses) if losses else 0.0
+    overrides: dict[str, object] = {}
+    recommended_changes: list[str] = []
+    if avg_pnl > 0.0 and win_rate >= 0.55:
+        overrides["profit_ratcheted_reinvestment_pct"] = min(base.profit_ratcheted_reinvestment_pct + 0.10, 0.60)
+        overrides["max_profit_ratcheted_addon_usd"] = min(base.max_profit_ratcheted_addon_usd + 2.0, 10.0)
+        recommended_changes.append("increase_realized_profit_reinvestment")
+    if loss_tail <= -5.0 or win_rate < 0.45:
+        overrides["loss_cut_event_cap_multiplier"] = min(base.loss_cut_event_cap_multiplier, 0.50)
+        overrides["max_active_cycles"] = max(base.max_active_cycles - 1, 1)
+        recommended_changes.append("tighten_loss_cut_and_active_cycles")
+    calibrated = build_event_risk_budget_policy(risk_mode, **overrides)
+    return {
+        "schema_version": "event_risk_policy_calibration_v1",
+        "status": "calibrated" if recommended_changes else "no_change",
+        "sample_size": len(pnl_values),
+        "avg_realized_pnl_usd": round(avg_pnl, 6),
+        "win_rate": round(win_rate, 6),
+        "max_loss_usd": round(loss_tail, 6),
+        "policy": calibrated.model_dump(mode="json"),
+        "recommended_changes": recommended_changes,
+        "source_confidence": "account_or_db_confirmed",
+    }
 
 
 def evaluate_event_sleeve_transitions(
@@ -397,6 +525,15 @@ def _unique(values: list[str]) -> list[str]:
     return unique
 
 
+def _safe_float(value: object) -> float | None:
+    if value in (None, ""):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _side_budget_caps(policy: EventRiskBudgetPolicy, event_cap: float) -> dict[str, float]:
     caps = _pct_caps(policy.side_budget_pct, event_cap)
     if policy.side_budget_mode == "balanced_50_50" and not caps:
@@ -530,6 +667,7 @@ __all__ = [
     "SleeveTransitionRequest",
     "SleeveTransitionStatus",
     "build_event_risk_budget_policy",
+    "calibrate_event_risk_policy_from_history",
     "derive_event_risk_budget",
     "evaluate_event_sleeve_transitions",
 ]

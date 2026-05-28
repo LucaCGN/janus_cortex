@@ -206,7 +206,7 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#41](https://github.com/LucaCGN/janus_cortex/issues/41) | P0 | closed | Budget-aware model routing and Codex fallback StrategyPlanJSON adoption/evaluation path validated. |
 | [#42](https://github.com/LucaCGN/janus_cortex/issues/42) | P1 | closed | Minimum-order/UI-vs-CLOB audit, sub-cent warning policy, and disabled-by-default sell-only urgent-profit market-order exception implemented. |
 | [#43](https://github.com/LucaCGN/janus_cortex/issues/43) | P1 | closed | Chart-equivalent microstructure metrics implemented for event review/live monitor; later authority promotion belongs to replay/fillability follow-up work. |
-| [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Calibrate profit-ratcheted risk ladder from account and DB histories. |
+| [#44](https://github.com/LucaCGN/janus_cortex/issues/44) | P1 | open | Profit-ratcheted event-budget code path implemented; issue remains the durable route for full account-confirmed calibration reports as more mapped history accumulates. |
 | [#45](https://github.com/LucaCGN/janus_cortex/issues/45) | P1 | closed | Global portfolio watchlist schema, read-only tooling, target policy flags, and artifacts implemented; active execution moved through closed foundations `#54` and `#59`. |
 | [#49](https://github.com/LucaCGN/janus_cortex/issues/49) | P1 | closed | Direct open CLOB order mirror endpoint implemented and runtime-validated; portfolio HTTP orders now expose the four current direct open sell targets. |
 | [#50](https://github.com/LucaCGN/janus_cortex/issues/50) | P1 | closed | WNBA passive/shadow baseline and blocker report published; sustained active-window capture/audit moved to closed `#60`. |
@@ -238,8 +238,8 @@ Every committed change should be pushed to GitHub promptly. GitHub is the operat
 | [#77](https://github.com/LucaCGN/janus_cortex/issues/77) | P0 | closed | Paired sports-live microcycle evidence and readback scoring implemented; future promotion remains behind Janus StrategyPlan/live-worker/order-management gates. |
 | [#78](https://github.com/LucaCGN/janus_cortex/issues/78) | P0 | closed | Complete postgame evaluation and replay learning artifact foundation completed; future replay-depth gaps route to focused #63 children such as #80/#81 instead of reopening #78. |
 | [#79](https://github.com/LucaCGN/janus_cortex/issues/79) | P0 | closed | Sleeve portfolio, side/phase budget, paired order lifecycle, manual-imported position, and ultra-low rebound foundations completed; strategy-quality/promotion calibration now routes through backtest evidence and focused #63 children. |
-| [#80](https://github.com/LucaCGN/janus_cortex/issues/80) | P1 | open | Backfill WNBA market price panels and market-state panels so WNBA can run the same sleeve replay/backtest parity pack as NBA. |
-| [#81](https://github.com/LucaCGN/janus_cortex/issues/81) | P1 | open | Add cheap nano play-by-play annotation as non-executable sleeve context feeding live signal aggregation and postgame learning. |
+| [#80](https://github.com/LucaCGN/janus_cortex/issues/80) | P1 | open | WNBA price-history-backed panel and replay parity code path implemented; issue remains the durable route for expanding persisted sample coverage. |
+| [#81](https://github.com/LucaCGN/janus_cortex/issues/81) | P1 | open | Cheap nano PBP dispatcher path implemented as non-executable sleeve context with deterministic fallback and escalation readback. |
 | [#46](https://github.com/LucaCGN/janus_cortex/issues/46) | P2 | open | Turn winning profile studies into benchmark hypotheses. |
 | [#47](https://github.com/LucaCGN/janus_cortex/issues/47) | P2 | open | Incubate crypto up/down options research and backtest lane. |
 | [#48](https://github.com/LucaCGN/janus_cortex/issues/48) | P2 | open | Incubate geopolitics, economics, and culture monitoring lanes. |

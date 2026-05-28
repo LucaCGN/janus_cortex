@@ -163,7 +163,7 @@ The context layer answers four questions that were previously only implicit:
 3. Which sleeve-level ML/PBP confidence exists today, and is it executable?
 4. Does realized event/day profit unlock additional bounded risk for an entry/exit point not covered by current sleeves?
 
-Current ML/PBP confidence remains evidence-only. It is derived from deterministic PBP annotation plus the scenario classifier and is marked non-executable until #81 promotes a real nano dispatcher and reviewed escalation policy.
+Current ML/PBP confidence remains evidence-only. It is derived from deterministic PBP annotation plus the scenario classifier, with an optional `gpt-5.4-nano` dispatcher available when live LLM dispatch and runtime credentials are enabled. Nano can tag and escalate review windows, but it cannot execute or bypass StrategyPlan/live-worker/order-management gates.
 
 Standalone opportunistic candidates are allowed into aggregation only when:
 
@@ -174,6 +174,8 @@ Standalone opportunistic candidates are allowed into aggregation only when:
 - normal StrategyPlan/live-worker/order-management gates still pass.
 
 This gives Janus a controlled path for "proper entry/exit point detected outside current sleeves" without turning the context layer into an order executor.
+
+The aggregation event-budget readback now consumes this live context risk state. Realized event/day profit can add bounded reinvestment capacity, while unresolved loss exposure can reduce event cap before new candidates are selected.
 
 ### Implemented Reduce/Stop Lifecycle Slice
 

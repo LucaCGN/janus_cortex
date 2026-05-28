@@ -97,8 +97,8 @@ The evidence includes:
 | `game_scenario` | S/A/B/C/D classifier result from scoreboard, period, clock, score gap, player shock, price, and PBP/run tags. |
 | `classification_snapshot` | The exact normalized inputs used by the classifier. |
 | `sleeve_candidate_review` | Scenario-derived sleeve suggestions plus duplicate checks against the active StrategyPlan. |
-| `ml_confidence_by_sleeve` | Per-sleeve confidence readback from the scenario classifier and PBP annotation. Current status is evidence-only deterministic fallback until #81 promotes real nano dispatch. |
-| `dynamic_risk_state` | Profit-ratcheted risk state from realized event/day PnL, unresolved inventory, scenario level, liquidity, and latency. |
+| `ml_confidence_by_sleeve` | Per-sleeve confidence readback from the scenario classifier and PBP annotation. PBP annotation uses deterministic fallback when dispatch is off, and can call the optional `gpt-5.4-nano` dispatcher when live LLM dispatch and credentials are enabled. |
+| `dynamic_risk_state` | Profit-ratcheted risk state from realized event/day PnL, unresolved inventory, scenario level, liquidity, and latency. Aggregation event-budget readback consumes this state so realized profit can fund bounded addon risk and unresolved loss exposure can cut event cap. |
 | `opportunistic_signal_candidates` | Standalone candidate rows for valid entry/exit points not covered by current sleeves. |
 
 The context artifact must not become a global blocker by itself. Scenario `D/U`, stale feeds, or unresolved inventory can block context-originated standalone candidates, but local sleeve signals still continue through their own gates unless a true global safety gate fails.
@@ -116,6 +116,12 @@ Required controls:
 5. StrategyPlan evaluate/execute must still enforce minimum size, minimum buy notional, max buy notional, event budget, direct-truth, kill-switch, worker, and order-management gates.
 
 Current implementation starts with realized-profit-funded underdog/opportunistic entries. It is intentionally narrow: if realized profit is too small to fund the exchange minimum, the artifact records `realized_profit_opportunistic_budget_below_minimum` instead of creating an order-intent candidate.
+
+## Nano PBP Annotation
+
+The cheap PBP annotation lane is evidence-only. `app/modules/agentic/pbp_annotation.py` emits `pbp_annotation_evidence_v1` for every live tick with deterministic tags, model tier, dispatch status, and escalation hints.
+
+When `codex_tool/run_live_strategy_tick.py` runs with LLM dispatch enabled and runtime credentials are available, it resolves a `gpt-5.4-nano` dispatcher. Nano output may add compact tags and mark a window for mini/frontier review, but it must not place orders. Aggregation can consume the resulting evidence shape; StrategyPlan/live-worker/order-management gates remain the only order path.
 
 ## Reduce/Stop Lifecycle Evidence
 
