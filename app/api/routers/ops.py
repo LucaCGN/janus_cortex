@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1304,7 +1304,7 @@ def _build_postgame_portfolio_pnl_attribution(
             direct_open_order_external_id=None,
             direct_open_order_count=None,
             direct_open_position_count=None,
-            include_direct_clob_evidence=True,
+            include_direct_clob_evidence=payload.include_direct_clob_evidence,
         )
     except Exception as exc:  # noqa: BLE001
         direct_context = {
@@ -1323,6 +1323,7 @@ def _build_postgame_portfolio_pnl_attribution(
     direct_evidence_summary = {
         key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}
     }
+    start_time, end_time = _postgame_account_window(day)
     items: list[dict[str, Any]] = []
     for event_id in event_ids:
         try:
@@ -1335,6 +1336,8 @@ def _build_postgame_portfolio_pnl_attribution(
                 connection,
                 account_id=payload.account_id,
                 event_slug=event_id,
+                start_time=start_time,
+                end_time=end_time,
             )
             lifecycle_report = build_order_lifecycle_reconciliation_report(
                 rows,
@@ -1390,6 +1393,16 @@ def _build_postgame_portfolio_pnl_attribution(
             "items": items,
         }
     )
+
+
+def _postgame_account_window(day: str | None) -> tuple[datetime | None, datetime | None]:
+    if not day:
+        return None, None
+    try:
+        start = datetime.fromisoformat(day).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None, None
+    return start, start + timedelta(days=2)
 
 
 def _build_postgame_evaluation(

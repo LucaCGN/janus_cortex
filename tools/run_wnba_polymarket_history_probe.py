@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -26,12 +27,28 @@ from app.data.pipelines.daily.wnba.analysis.backtests import run_shadow_backtest
 from app.data.pipelines.daily.wnba.analysis.data_sufficiency import WnbaDataCounts, evaluate_wnba_data_sufficiency
 from app.data.pipelines.daily.wnba.analysis.ml_dataset import build_wnba_pbp_ml_feature_rows
 from app.data.pipelines.daily.wnba.analysis.state_panel import build_wnba_state_panel
+from app.data.pipelines.daily.nba.analysis.artifacts import write_json
+from app.runtime.local_paths import resolve_shared_root
+
+
+SCHEMA_VERSION = "wnba_polymarket_history_probe_v1"
 
 
 def _jsonable(value: Any) -> Any:
     if hasattr(value, "isoformat"):
         return value.isoformat()
     return str(value)
+
+
+def write_probe_artifact(payload: dict[str, Any], *, artifact_dir: str | None = None) -> str:
+    """Persist a WNBA price-history probe for issue/backlog evidence."""
+
+    day = datetime.now(timezone.utc).date().isoformat()
+    root = Path(artifact_dir) if artifact_dir else resolve_shared_root() / "artifacts" / "wnba-price-history-probes" / day
+    path = root / f"wnba_price_history_probe_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}.json"
+    artifact_payload = dict(payload)
+    artifact_payload["artifact_path"] = str(path)
+    return write_json(path, artifact_payload)
 
 
 def _selected_target(targets_df: pd.DataFrame, *, game_id: str | None = None) -> pd.Series | None:
@@ -108,6 +125,7 @@ def _build_target_backtest(
         price_history_df = _price_history_for_target(target, outcome_rows, fidelity=fidelity)
     except Exception as exc:  # noqa: BLE001 - public provider fetches should not crash the whole batch.
         return {
+            "schema_version": SCHEMA_VERSION,
             "status": "blocked",
             "blockers": ["polymarket_price_history_fetch_error"],
             "error_text": repr(exc),
@@ -120,6 +138,7 @@ def _build_target_backtest(
         }
     if price_history_df.empty:
         return {
+            "schema_version": SCHEMA_VERSION,
             "status": "blocked",
             "blockers": ["missing_polymarket_price_history_rows"],
             "game_id": game_id_value,
@@ -135,6 +154,7 @@ def _build_target_backtest(
     game_row = games_df[games_df["game_id"].astype(str) == game_id_value]
     if pbp_df.empty or game_row.empty:
         return {
+            "schema_version": SCHEMA_VERSION,
             "status": "blocked",
             "blockers": ["missing_wnba_pbp_for_matched_closed_event"],
             "game_id": game_id_value,
@@ -159,6 +179,7 @@ def _build_target_backtest(
     lane_results = backtests.get("families") or {}
     shadow_trade_count = sum(int(result.get("trade_count") or 0) for result in lane_results.values())
     return {
+        "schema_version": SCHEMA_VERSION,
         "status": "price_history_backtest_complete" if backtests.get("status") != "blocked" else "price_history_backtest_blocked",
         "blockers": list(backtests.get("blockers") or []),
         "game_id": game_id_value,
@@ -188,6 +209,7 @@ def run_probe(*, season: str, event_limit: int, game_id: str | None, fidelity: i
     target = _selected_target(targets_df, game_id=game_id)
     if target is None:
         return {
+            "schema_version": SCHEMA_VERSION,
             "status": "blocked",
             "blockers": ["missing_matched_closed_wnba_moneyline_event"],
             "closed_events": len(events),
@@ -204,6 +226,7 @@ def run_probe(*, season: str, event_limit: int, game_id: str | None, fidelity: i
     )
     if target_result["status"] == "blocked":
         return {
+            "schema_version": SCHEMA_VERSION,
             "status": "blocked",
             "blockers": target_result["blockers"],
             "target": target.to_dict(),
@@ -226,6 +249,7 @@ def run_probe(*, season: str, event_limit: int, game_id: str | None, fidelity: i
     )
     audit = evaluate_wnba_data_sufficiency(counts)
     return {
+        "schema_version": SCHEMA_VERSION,
         "status": target_result["status"],
         "target": {
             "game_id": target_result["game_id"],
@@ -270,6 +294,7 @@ def run_batch_probe(*, season: str, event_limit: int, max_targets: int, fidelity
     ranked_targets = _ranked_targets(targets_df, max_targets=max_targets)
     if ranked_targets.empty:
         return {
+            "schema_version": SCHEMA_VERSION,
             "status": "blocked",
             "blockers": ["missing_matched_closed_wnba_moneyline_event"],
             "closed_events": len(events),
@@ -327,6 +352,7 @@ def run_batch_probe(*, season: str, event_limit: int, max_targets: int, fidelity
         ],
     }
     return {
+        "schema_version": SCHEMA_VERSION,
         "status": "batch_price_history_backtest_complete" if completed else "batch_price_history_backtest_blocked",
         "blockers": blockers,
         "closed_events": len(events),
@@ -354,6 +380,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--game-id", default=None)
     parser.add_argument("--fidelity", type=int, default=1)
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--write-artifact", action="store_true")
+    parser.add_argument("--artifact-dir", default=None)
     return parser
 
 
@@ -373,6 +401,8 @@ def main() -> int:
             game_id=args.game_id,
             fidelity=args.fidelity,
         )
+    if args.write_artifact:
+        payload["artifact_path"] = write_probe_artifact(payload, artifact_dir=args.artifact_dir)
     if args.json:
         print(json.dumps(payload, default=_jsonable, indent=2, sort_keys=True))
     else:
@@ -398,6 +428,8 @@ def main() -> int:
         audit = payload.get("data_audit") or {}
         print(f"data_status={audit.get('status')}")
         print(f"verdict={audit.get('verdict')}")
+        if "artifact_path" in payload:
+            print(f"artifact_path={payload.get('artifact_path')}")
     return 0 if not str(payload.get("status", "")).endswith("blocked") else 1
 
 

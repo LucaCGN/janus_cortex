@@ -78,6 +78,7 @@ def cycle_payload(args: argparse.Namespace) -> dict[str, Any]:
         "source": getattr(args, "source", "codex"),
         "notes": getattr(args, "notes", None),
         "execute": bool(getattr(args, "execute", False)),
+        "include_direct_clob_evidence": bool(getattr(args, "include_direct_clob_evidence", True)),
     }
 
 
@@ -89,4 +90,11 @@ def add_cycle_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument("--source", default="codex")
     parser.add_argument("--notes", default=None)
     parser.add_argument("--execute", action="store_true")
+    parser.add_argument(
+        "--skip-direct-clob-evidence",
+        action="store_false",
+        dest="include_direct_clob_evidence",
+        default=True,
+        help="Skip live direct CLOB evidence fetches and use local account rows only.",
+    )
     return parser

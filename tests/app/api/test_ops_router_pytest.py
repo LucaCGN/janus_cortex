@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.api.dependencies import get_db_connection
 from app.api.main import create_app
 from app.api.routers import ops as ops_router
+from app.modules.agentic.contracts import OpsCycleRequest
 from app.modules.agentic import store as agentic_store
 
 
@@ -2355,6 +2356,56 @@ def test_postgame_evaluation_keeps_market_tape_out_of_account_pnl_pytest() -> No
         "realized_return",
         "all_account_performance",
     ]
+
+
+def test_postgame_portfolio_pnl_can_skip_direct_clob_fetch_pytest(monkeypatch) -> None:
+    captured: list[bool] = []
+
+    def fake_direct_context(
+        connection,
+        *,
+        account_id,
+        direct_open_order_external_id,
+        direct_open_order_count,
+        direct_open_position_count,
+        include_direct_clob_evidence,
+    ):
+        captured.append(include_direct_clob_evidence)
+        return {
+            "direct_open_order_external_ids": [],
+            "direct_open_order_count": None,
+            "direct_open_position_count": None,
+            "direct_trade_rows": [],
+            "direct_evidence": {"enabled": include_direct_clob_evidence, "ok": None},
+        }
+
+    monkeypatch.setattr(ops_router, "_resolve_order_lifecycle_direct_context", fake_direct_context)
+    monkeypatch.setattr(ops_router, "_fetch_order_lifecycle_reconciliation_rows", lambda *args, **kwargs: [])
+    monkeypatch.setattr(
+        ops_router,
+        "build_order_lifecycle_reconciliation_report",
+        lambda rows, **kwargs: {"status": "ready", "fill_rows": [], "unresolved_evidence": []},
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "build_portfolio_pnl_attribution_report",
+        lambda report: {"pnl_attribution_ready": False, "known_cashflow_usd": 0.0},
+    )
+    payload = OpsCycleRequest(
+        account_id="56964015-5935-5035-bdab-b056c9277146",
+        include_direct_clob_evidence=False,
+    )
+
+    result = ops_router._build_postgame_portfolio_pnl_attribution(
+        object(),
+        payload,
+        event_ids=["wnba-phx-nyl-2026-05-27"],
+        day="2026-05-27",
+    )
+
+    assert captured == [False]
+    assert result["direct_evidence"]["enabled"] is False
+    assert result["items"][0]["ok"] is True
 
 
 def test_postgame_ui_display_comparison_preserves_subcent_clob_truth_pytest() -> None:

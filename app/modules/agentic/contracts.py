@@ -289,6 +289,7 @@ class OpsCycleRequest(BaseModel):
     source: str = "codex"
     notes: str | None = None
     execute: bool = False
+    include_direct_clob_evidence: bool = True
 
 
 class LiveStrategyWorkerRequest(BaseModel):

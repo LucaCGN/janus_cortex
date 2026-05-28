@@ -88,6 +88,8 @@ def build_pbp_annotation_evidence(
         "model_tier": "nano" if nano_result["status"] == "response_recorded" else "deterministic_fallback",
         "nano_dispatch": nano_result,
         "llm_trigger_type": "compression_or_tagging",
+        "call_budget": _pbp_call_budget(),
+        "cost_estimate": _pbp_cost_estimate(nano_result),
         "recent_play_by_play_count": len(rows),
         "snapshot_count": len(snapshots),
         "plan_sleeve_roles": sorted(plan_roles),
@@ -298,6 +300,7 @@ def _maybe_dispatch_nano(
         "recent_play_by_play": rows[:12],
         "deterministic_tags": tags,
         "plan_sleeve_roles": sorted(plan_roles),
+        "call_budget": _pbp_call_budget(),
         "allowed_outputs": [
             "summary",
             "tags",
@@ -326,6 +329,71 @@ def _maybe_dispatch_nano(
         "request": payload,
         "response": _sanitize_nano_response(response),
     }
+
+
+def _pbp_call_budget() -> dict[str, Any]:
+    try:
+        from app.modules.agentic import llm_runtime
+    except Exception:  # pragma: no cover - defensive import guard.
+        return {
+            "schema_version": "pbp_nano_call_budget_v1",
+            "status": "llm_runtime_unavailable",
+            "model": INTENDED_MODEL,
+            "trigger_type": "compression_or_tagging",
+            "max_output_tokens": 800,
+        }
+    pricing = getattr(llm_runtime, "_ESTIMATED_MODEL_COST_PER_MILLION_TOKENS", {}).get(INTENDED_MODEL) or {}
+    call_caps = getattr(llm_runtime, "_DEFAULT_TRIGGER_CALL_CAPS", {})
+    return {
+        "schema_version": "pbp_nano_call_budget_v1",
+        "status": "included",
+        "model": INTENDED_MODEL,
+        "trigger_type": "compression_or_tagging",
+        "event_token_budget": getattr(llm_runtime, "DEFAULT_EVENT_TOKEN_BUDGET", None),
+        "event_cost_budget_usd": getattr(llm_runtime, "DEFAULT_EVENT_COST_BUDGET_USD", None),
+        "trigger_call_cap": call_caps.get("compression_or_tagging"),
+        "max_output_tokens": 800,
+        "estimated_model_cost_per_million_tokens": dict(pricing),
+        "pricing_source": "app.modules.agentic.llm_runtime",
+    }
+
+
+def _pbp_cost_estimate(nano_result: dict[str, Any]) -> dict[str, Any]:
+    call_budget = _pbp_call_budget()
+    pricing = call_budget.get("estimated_model_cost_per_million_tokens") or {}
+    input_tokens = _estimated_json_tokens(nano_result.get("request"))
+    output_tokens = _estimated_json_tokens(nano_result.get("response")) if nano_result.get("status") == "response_recorded" else 0
+    input_cost = _token_cost_usd(input_tokens, pricing.get("input"))
+    output_cost = _token_cost_usd(output_tokens, pricing.get("output"))
+    dispatch_performed = nano_result.get("status") == "response_recorded"
+    return {
+        "schema_version": "pbp_nano_cost_estimate_v1",
+        "model": INTENDED_MODEL,
+        "dispatch_status": str(nano_result.get("status") or "unknown"),
+        "dispatch_performed": dispatch_performed,
+        "estimated_input_tokens": input_tokens if dispatch_performed else 0,
+        "estimated_output_tokens": output_tokens,
+        "estimated_input_tokens_if_dispatched": input_tokens,
+        "estimated_cost_usd": round(input_cost + output_cost, 8) if dispatch_performed else 0.0,
+        "estimated_cost_usd_if_dispatched": round(input_cost + output_cost, 8),
+        "estimation_method": "json_characters_divided_by_4",
+        "source_confidence": "estimated",
+    }
+
+
+def _estimated_json_tokens(value: Any) -> int:
+    if value in (None, ""):
+        return 0
+    text = json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+    return max(1, int((len(text) + 3) / 4))
+
+
+def _token_cost_usd(tokens: int, per_million_tokens: Any) -> float:
+    try:
+        rate = float(per_million_tokens)
+    except (TypeError, ValueError):
+        return 0.0
+    return (max(0, int(tokens)) / 1_000_000) * rate
 
 
 def _sanitize_nano_response(response: dict[str, Any]) -> dict[str, Any]:

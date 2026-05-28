@@ -36,6 +36,10 @@ def test_pbp_annotation_detects_score_run_without_emitting_trade_trigger_pytest(
     assert evidence["execution_boundary"] == "evidence_only"
     assert evidence["must_not_place_orders"] is True
     assert evidence["emit_trigger"] is False
+    assert evidence["call_budget"]["model"] == "gpt-5.4-nano"
+    assert evidence["cost_estimate"]["dispatch_performed"] is False
+    assert evidence["cost_estimate"]["estimated_cost_usd"] == 0.0
+    assert evidence["cost_estimate"]["estimated_input_tokens_if_dispatched"] > 0
     assert "grid_scalp" in evidence["plan_sleeve_roles"]
     assert any(tag["tag_type"] == "score_run" for tag in evidence["tags"])
     assert all(signal["emit_trigger"] is False for signal in evidence["signals"])
@@ -96,6 +100,7 @@ def test_pbp_annotation_can_dispatch_nano_and_emit_review_escalation_pytest() ->
     def dispatcher(payload: dict) -> dict:
         assert payload["model"] == "gpt-5.4-nano"
         assert payload["must_not_place_orders"] is True
+        assert payload["call_budget"]["trigger_type"] == "compression_or_tagging"
         return {
             "summary": "A bench shock and quick run make the underdog price worth review.",
             "llm_escalation": "mini_review_if_strategy_revision_triggered",
@@ -126,6 +131,10 @@ def test_pbp_annotation_can_dispatch_nano_and_emit_review_escalation_pytest() ->
 
     assert evidence["model_tier"] == "nano"
     assert evidence["nano_dispatch"]["status"] == "response_recorded"
+    assert evidence["cost_estimate"]["dispatch_performed"] is True
+    assert evidence["cost_estimate"]["estimated_input_tokens"] > 0
+    assert evidence["cost_estimate"]["estimated_output_tokens"] > 0
+    assert evidence["cost_estimate"]["estimated_cost_usd"] > 0
     assert evidence["recommended_escalation"] == "mini_review_if_strategy_revision_triggered"
     assert any(signal["emit_trigger"] is True for signal in evidence["signals"])
     assert all(signal["trigger_type"] in {"compression_or_tagging", "undervaluation"} for signal in evidence["signals"])
