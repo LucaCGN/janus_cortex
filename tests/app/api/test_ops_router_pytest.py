@@ -2159,33 +2159,53 @@ def test_postgame_review_autoloads_plan_events_and_pnl_attribution_pytest(tmp_pa
     )
     monkeypatch.setattr(
         ops_router,
-        "_read_postgame_replay_tick_stream_summary",
-        lambda *, day, event_id: {
-            "schema_version": "postgame_replay_tick_stream_summary_v1",
-            "status": "recorded",
-            "event_id": event_id,
-            "path": "local/shared/artifacts/live-strategy-worker/2026-05-10/ticks.jsonl",
-            "source_confidence": "runtime_artifact",
-            "tick_count": 2,
-            "intent_count": 1,
-            "executed_order_count": 0,
-            "order_intent_candidate_count": 1,
-            "decision_type_counts": {"candidate": 2},
-            "blocker_reason_counts": {"scoreboard_freshness_required": 1},
-            "sleeves": {
-                "grid-1": {
-                    "sleeve_id": "grid-1",
-                    "strategy_id": "grid-1",
-                    "sleeve_role": "grid_scalp",
-                    "sleeve_side": "Knicks",
-                    "strategy_family": "price_stability_micro_grid",
-                    "tick_count": 2,
-                    "intent_count": 1,
-                    "blocker_count": 1,
-                    "blocker_reasons": ["scoreboard_freshness_required"],
-                }
-            },
+        "_read_live_worker_tick_summaries",
+        lambda *, day, event_ids: {
+            event_id: {
+                "status": "recorded",
+                "tick_count": 2,
+                "heartbeat_present": True,
+                "heartbeat_event_match": True,
+                "heartbeat_event_ids": [event_id],
+            }
+            for event_id in event_ids
         },
+    )
+    replay_summary = lambda *, day, event_id: {
+        "schema_version": "postgame_replay_tick_stream_summary_v1",
+        "status": "recorded",
+        "event_id": event_id,
+        "path": "local/shared/artifacts/live-strategy-worker/2026-05-10/ticks.jsonl",
+        "source_confidence": "runtime_artifact",
+        "tick_count": 2,
+        "intent_count": 1,
+        "executed_order_count": 0,
+        "order_intent_candidate_count": 1,
+        "decision_type_counts": {"candidate": 2},
+        "blocker_reason_counts": {"scoreboard_freshness_required": 1},
+        "sleeves": {
+            "grid-1": {
+                "sleeve_id": "grid-1",
+                "strategy_id": "grid-1",
+                "sleeve_role": "grid_scalp",
+                "sleeve_side": "Knicks",
+                "strategy_family": "price_stability_micro_grid",
+                "tick_count": 2,
+                "intent_count": 1,
+                "blocker_count": 1,
+                "blocker_reasons": ["scoreboard_freshness_required"],
+            }
+        },
+    }
+    monkeypatch.setattr(
+        ops_router,
+        "_read_postgame_replay_tick_stream_summary",
+        replay_summary,
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_read_postgame_replay_tick_stream_summaries",
+        lambda *, day, event_ids: {event_id: replay_summary(day=day, event_id=event_id) for event_id in event_ids},
     )
 
     client = TestClient(create_app())
@@ -2608,6 +2628,11 @@ def test_postgame_evaluation_builds_p1_p2_strategy_learning_sections_pytest(monk
         ops_router,
         "_read_postgame_replay_tick_stream_summary",
         lambda *, day, event_id: replay_summary,
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "_read_postgame_replay_tick_stream_summaries",
+        lambda *, day, event_ids: {event_id: replay_summary for event_id in event_ids},
     )
 
     evaluation = ops_router._build_postgame_evaluation(

@@ -1410,10 +1410,7 @@ def _build_postgame_evaluation(
     ]
     pnl_status = str(portfolio_pnl_attribution.get("status") or "not_requested")
     live_status = str(postgame_live_evidence.get("status") or "unknown")
-    replay_inputs = {
-        event_id: _read_postgame_replay_tick_stream_summary(day=day, event_id=event_id)
-        for event_id in reviewed_event_ids
-    }
+    replay_inputs = _read_postgame_replay_tick_stream_summaries(day=day, event_ids=reviewed_event_ids)
     realized_live = {
         "schema_version": "postgame_realized_live_v1",
         "status": pnl_status,
@@ -2650,29 +2647,104 @@ def _cent_label(value: float) -> str:
 
 
 def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str) -> dict[str, Any]:
-    if not day:
-        return {
+    return _read_postgame_replay_tick_stream_summaries(day=day, event_ids=[event_id]).get(
+        event_id,
+        {
             "schema_version": "postgame_replay_tick_stream_summary_v1",
-            "status": "not_checked",
-            "reason": "session_date_missing",
+            "status": "missing",
+            "reason": "event_not_found_in_batch_summary",
             "event_id": event_id,
             "tick_count": 0,
             "source_confidence": "inferred",
+        },
+    )
+
+
+def _read_postgame_replay_tick_stream_summaries(*, day: str | None, event_ids: list[str]) -> dict[str, dict[str, Any]]:
+    requested_event_ids = _normalized_unique_values(event_ids)
+    if not day:
+        return {
+            event_id: _postgame_replay_tick_stream_status(
+                event_id=event_id,
+                status="not_checked",
+                reason="session_date_missing",
+            )
+            for event_id in requested_event_ids
         }
     root = ops_artifact_root(day).parent.parent / "live-strategy-worker" / day
     ticks_path = root / "ticks.jsonl"
     if not ticks_path.exists():
         return {
-            "schema_version": "postgame_replay_tick_stream_summary_v1",
-            "status": "missing",
-            "reason": "ticks_jsonl_missing",
-            "event_id": event_id,
-            "path": str(ticks_path),
-            "tick_count": 0,
-            "source_confidence": "inferred",
+            event_id: _postgame_replay_tick_stream_status(
+                event_id=event_id,
+                status="missing",
+                reason="ticks_jsonl_missing",
+                path=ticks_path,
+            )
+            for event_id in requested_event_ids
         }
 
-    summary = {
+    summaries = {
+        event_id: _new_postgame_replay_tick_stream_summary(event_id=event_id, ticks_path=ticks_path)
+        for event_id in requested_event_ids
+    }
+    if not summaries:
+        return {}
+
+    try:
+        with ticks_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    tick = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                stdout = tick.get("stdout") if isinstance(tick.get("stdout"), dict) else {}
+                events = stdout.get("events") if isinstance(stdout.get("events"), list) else []
+                for event_payload in events:
+                    if not isinstance(event_payload, dict):
+                        continue
+                    event_id = str(event_payload.get("event_id") or "").strip()
+                    summary = summaries.get(event_id)
+                    if summary is None:
+                        continue
+                    _accumulate_postgame_replay_tick_summary(summary, tick=tick, event_payload=event_payload)
+    except OSError as exc:
+        return {
+            event_id: {
+                **_finalized_postgame_replay_tick_stream_summary(summary),
+                "status": "error",
+                "error": str(exc),
+            }
+            for event_id, summary in summaries.items()
+        }
+    return {
+        event_id: _finalized_postgame_replay_tick_stream_summary(summary)
+        for event_id, summary in summaries.items()
+    }
+
+
+def _postgame_replay_tick_stream_status(
+    *,
+    event_id: str,
+    status: str,
+    reason: str,
+    path: Path | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "schema_version": "postgame_replay_tick_stream_summary_v1",
+        "status": status,
+        "reason": reason,
+        "event_id": event_id,
+        "tick_count": 0,
+        "source_confidence": "inferred",
+    }
+    if path is not None:
+        payload["path"] = str(path)
+    return payload
+
+
+def _new_postgame_replay_tick_stream_summary(*, event_id: str, ticks_path: Path) -> dict[str, Any]:
+    return {
         "schema_version": "postgame_replay_tick_stream_summary_v1",
         "status": "recorded",
         "event_id": event_id,
@@ -2698,24 +2770,9 @@ def _read_postgame_replay_tick_stream_summary(*, day: str | None, event_id: str)
         "_token_labels": {},
         "_outcome_to_token": {},
     }
-    try:
-        with ticks_path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                try:
-                    tick = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                event_payload = _live_worker_tick_event_payload(tick, event_id=event_id)
-                if not event_payload:
-                    continue
-                _accumulate_postgame_replay_tick_summary(summary, tick=tick, event_payload=event_payload)
-    except OSError as exc:
-        _finalize_postgame_replay_tick_summary(summary)
-        return {
-            **summary,
-            "status": "error",
-            "error": str(exc),
-        }
+
+
+def _finalized_postgame_replay_tick_stream_summary(summary: dict[str, Any]) -> dict[str, Any]:
     _finalize_postgame_replay_tick_summary(summary)
     if not summary["tick_count"]:
         summary["status"] = "missing"
@@ -3445,10 +3502,11 @@ def _build_postgame_live_evidence(
         }
 
     items: list[dict[str, Any]] = []
+    worker_summaries = _read_live_worker_tick_summaries(day=day, event_ids=event_ids)
     for event_id in event_ids:
         try:
             counts = _fetch_postgame_live_evidence_counts(connection, event_id=event_id)
-            worker_summary = _read_live_worker_tick_summary(day=day, event_id=event_id)
+            worker_summary = worker_summaries.get(event_id) or _read_live_worker_tick_summary(day=day, event_id=event_id)
             item = _classify_postgame_live_evidence_item(
                 event_id=event_id,
                 counts=counts,
@@ -4883,23 +4941,46 @@ def _classify_postgame_live_evidence_item(
 
 
 def _read_live_worker_tick_summary(*, day: str | None, event_id: str) -> dict[str, Any]:
+    return _read_live_worker_tick_summaries(day=day, event_ids=[event_id]).get(
+        event_id,
+        {"status": "missing", "reason": "event_not_found_in_batch_summary", "tick_count": 0},
+    )
+
+
+def _read_live_worker_tick_summaries(*, day: str | None, event_ids: list[str]) -> dict[str, dict[str, Any]]:
+    requested_event_ids = _normalized_unique_values(event_ids)
     if not day:
-        return {"status": "not_checked", "reason": "session_date_missing", "tick_count": 0}
+        return {
+            event_id: {"status": "not_checked", "reason": "session_date_missing", "tick_count": 0}
+            for event_id in requested_event_ids
+        }
     root = ops_artifact_root(day).parent.parent / "live-strategy-worker" / day
-    tick_count = 0
-    latest_tick_at = None
     ticks_path = root / "ticks.jsonl"
+    summaries = {
+        event_id: {
+            "status": "missing",
+            "tick_count": 0,
+            "latest_tick_at_utc": None,
+            "heartbeat_present": False,
+            "heartbeat_event_match": False,
+            "heartbeat_event_ids": [],
+        }
+        for event_id in requested_event_ids
+    }
     if ticks_path.exists():
         try:
-            for line in ticks_path.read_text(encoding="utf-8").splitlines():
-                try:
-                    tick = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                tick_event_ids = _normalized_unique_values(tick.get("event_ids") or [])
-                if event_id in tick_event_ids:
-                    tick_count += 1
-                    latest_tick_at = tick.get("finished_at_utc") or tick.get("started_at_utc") or latest_tick_at
+            with ticks_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    try:
+                        tick = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    tick_event_ids = set(_normalized_unique_values(tick.get("event_ids") or []))
+                    timestamp = tick.get("finished_at_utc") or tick.get("started_at_utc")
+                    for event_id in tick_event_ids.intersection(summaries):
+                        summaries[event_id]["tick_count"] += 1
+                        if timestamp:
+                            summaries[event_id]["latest_tick_at_utc"] = timestamp
         except OSError:
             pass
     heartbeat = None
@@ -4910,14 +4991,12 @@ def _read_live_worker_tick_summary(*, day: str | None, event_id: str) -> dict[st
         except (OSError, json.JSONDecodeError):
             heartbeat = None
     heartbeat_event_ids = _normalized_unique_values((heartbeat or {}).get("event_ids") or [])
-    return {
-        "status": "recorded" if tick_count or heartbeat_event_ids else "missing",
-        "tick_count": tick_count,
-        "latest_tick_at_utc": latest_tick_at,
-        "heartbeat_present": heartbeat is not None,
-        "heartbeat_event_match": event_id in heartbeat_event_ids,
-        "heartbeat_event_ids": heartbeat_event_ids,
-    }
+    for event_id, summary in summaries.items():
+        summary["heartbeat_present"] = heartbeat is not None
+        summary["heartbeat_event_match"] = event_id in heartbeat_event_ids
+        summary["heartbeat_event_ids"] = heartbeat_event_ids
+        summary["status"] = "recorded" if summary["tick_count"] or heartbeat_event_ids else "missing"
+    return summaries
 
 
 def _exception_detail(exc: Exception) -> Any:
