@@ -2656,6 +2656,12 @@ def test_postgame_evaluation_builds_p1_p2_strategy_learning_sections_pytest(monk
     assert why_no_trade["aggregate_blocker_scope_counts"]["local_sleeve"] == 4
     assert why_no_trade["aggregate_blocker_scope_counts"]["global_gate"] == 1
     assert why_no_trade["events"][0]["sleeves"][0]["sleeve_id"] == "blocked-grid"
+    llm_usage = evaluation["llm_usage_analysis"]
+    assert llm_usage["schema_version"] == "postgame_llm_usage_analysis_v1"
+    assert any(gap["expected_model"] == "gpt-5.4-nano" for gap in llm_usage["model_role_gaps"])
+    blocker_review = evaluation["blocker_efficacy_review"]
+    assert blocker_review["schema_version"] == "postgame_blocker_efficacy_review_v1"
+    assert any(row["reason"] == "price_band_not_met" for row in blocker_review["rows"])
     promotion = evaluation["strategy_promotion_review"]
     assert promotion["schema_version"] == "postgame_strategy_promotion_review_v1"
     assert promotion["status"] == "blocked_by_unresolved_realized_evidence"

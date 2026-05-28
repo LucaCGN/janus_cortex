@@ -41,6 +41,7 @@ This is not a new strategy lane and not a Codex portfolio-manager feature. It is
 | StrategyPlan bridge | Converts aggregated decisions into StrategyPlan revisions and order intents. | Existing StrategyPlan evaluator remains the execution gate. |
 | Execution and sleeve manager | Maintains per-event sleeves: core hold, grid/scalp, rebuy, reduce/stop, and settlement. | Minimum parallel test structure is 5-share grid plus 5-share core when risk gates allow. Grid/scalp sleeves require paired microcycle state, not repeated independent buys. |
 | Live game context layer | Classifies the current game scenario, reports sleeve-level ML/PBP confidence, computes dynamic realized-profit risk, and emits narrowly bounded opportunistic candidates when current sleeves miss a valid entry/exit point. | `app/modules/agentic/live_game_context.py`, wired into the live tick and aggregation artifact on 2026-05-27. |
+| Reduce/stop lifecycle layer | Converts StrategyPlan stop metadata, direct inventory, target state, CLOB exit price, and game phase into active reduce/exit evidence. | `app/modules/agentic/reduce_stop_lifecycle.py`, wired into the live tick and aggregation artifact on 2026-05-28 under #82. |
 | Postgame performance review | Reviews fired/missed/blocked signals, fills, orderbook, latency, PnL, and strategy confidence. | Must feed issue closure, strategy config, and Obsidian lessons. |
 
 ## Live Snapshot Contract
@@ -174,6 +175,22 @@ Standalone opportunistic candidates are allowed into aggregation only when:
 
 This gives Janus a controlled path for "proper entry/exit point detected outside current sleeves" without turning the context layer into an order executor.
 
+### Implemented Reduce/Stop Lifecycle Slice
+
+As of 2026-05-28, `app/modules/agentic/reduce_stop_lifecycle.py` is wired into `codex_tool/run_live_strategy_tick.py`.
+
+The live tick now emits `sports_live_reduce_stop_lifecycle_evidence_v1` under both `market_state["reduce_stop_lifecycle"]` and `live_signal_aggregation["reduce_stop_lifecycle"]`.
+
+This layer exists because the May 27 WNBA slate showed positive trading/scalping behavior but unresolved losing residuals. It answers:
+
+1. Does this sleeve have account-confirmed inventory?
+2. What is the weighted basis and current direct CLOB exit price?
+3. Have StrategyPlan stop thresholds been crossed?
+4. Is the game in Q4/endgame loss mode, adverse thesis failure, or final cleanup?
+5. Should Janus block new rebuys and attempt a reduce/exit candidate through normal gates?
+
+Reduce/stop lifecycle is deterministic app-owned evidence. It may emit `reduce` signals, but it never places or cancels orders directly. Final-state rows are cleanup/reconciliation rows and do not create new target orders.
+
 ### Implemented WNBA Live Adapter Slice
 
 As of 2026-05-24, WNBA event ticks route through WNBA-specific live sync and read endpoints before evaluation. NBA still uses NBA endpoints. This removes the previous NBA-only live-state dependency for WNBA covered-market tests, while preserving fail-closed behavior if WNBA scoreboard/play-by-play, CLOB, or orderbook freshness is missing.
@@ -205,6 +222,8 @@ Implementation child issues:
 | [#68](https://github.com/LucaCGN/janus_cortex/issues/68) | Closed foundation: deterministic fallback when pregame/LLM is missing. |
 | [#69](https://github.com/LucaCGN/janus_cortex/issues/69) | Closed foundation: runtime control endpoints for signal producer activation and event config changes. |
 | [#70](https://github.com/LucaCGN/janus_cortex/issues/70) | Closed foundation: postgame signal-performance review, missed-signal replay, no-bid/min-price quarantine, and project-chief readback synchronization. |
+| [#82](https://github.com/LucaCGN/janus_cortex/issues/82) | Active follow-up: reduce/stop lifecycle, Q4/endgame loss mode, adverse-thesis rebuy suppression, and final cleanup. |
+| [#83](https://github.com/LucaCGN/janus_cortex/issues/83) | Active follow-up: WNBA postgame evidence recovery, LLM usage analysis, blocker efficacy review, and account-trade backfill routing. |
 
 ## Acceptance Check
 

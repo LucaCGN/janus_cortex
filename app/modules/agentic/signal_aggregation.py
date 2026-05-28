@@ -15,6 +15,13 @@ _AGGREGATION_NAMESPACE = uuid.UUID("f34cf0ec-7b87-49e6-80d3-502f9873effc")
 _ACTIONABLE_TYPES = {"buy", "sell", "rebuy", "reduce"}
 _BUY_TYPES = {"buy", "rebuy"}
 _SELL_TYPES = {"sell", "reduce"}
+_EXIT_PRIORITY_REASONS = {
+    "reduce_stop_triggered",
+    "q4_endgame_loss_mode",
+    "adverse_thesis_failed",
+    "rebuy_blocked_adverse_thesis_failed",
+    "target_uncovered_reduce_review",
+}
 
 
 class LiveSignalAggregationControl(BaseModel):
@@ -180,7 +187,11 @@ def aggregate_live_signals(
         )
 
     conflict_groups = _conflict_groups(actionable)
+    blocking_conflict_groups: list[list[LiveSignal]] = []
     for group in conflict_groups:
+        if _conflict_group_has_exit_priority(group):
+            continue
+        blocking_conflict_groups.append(group)
         blockers.append(_blocker("conflicting_actionable_signals", group, {"conflict_key": _conflict_key(group[0])}))
 
     if (
@@ -218,7 +229,7 @@ def aggregate_live_signals(
     blocker_artifacts = _dedupe_blockers(blockers)
     order_candidates: list[LiveSignalOrderIntentCandidate] = []
     candidate_blockers = [blocker for blocker in blocker_artifacts if _candidate_blocking(blocker)]
-    if candidate is not None and not candidate_blockers and not conflict_groups:
+    if candidate is not None and not candidate_blockers and not blocking_conflict_groups:
         order_candidates.append(candidate)
 
     if candidate_blockers:
@@ -318,7 +329,43 @@ def _candidate_group(actionable: list[LiveSignal]) -> list[LiveSignal]:
     groups: dict[tuple[Any, ...], list[LiveSignal]] = {}
     for signal in actionable:
         groups.setdefault(_action_key(signal), []).append(signal)
-    return sorted(groups.values(), key=lambda group: (len(group), max(signal.confidence or 0.0 for signal in group)), reverse=True)[0]
+    return sorted(
+        groups.values(),
+        key=lambda group: (
+            _signal_group_exit_priority(group),
+            len(group),
+            max(signal.confidence or 0.0 for signal in group),
+        ),
+        reverse=True,
+    )[0]
+
+
+def _signal_group_exit_priority(signals: list[LiveSignal]) -> int:
+    if not any(signal.signal_type in _SELL_TYPES for signal in signals):
+        return 0
+    reasons = {reason for signal in signals for reason in signal.reason_codes}
+    if reasons & _EXIT_PRIORITY_REASONS:
+        return 1
+    for signal in signals:
+        payload = signal.payload if isinstance(signal.payload, dict) else {}
+        if str(payload.get("trigger_source") or "").strip().lower() == "reduce_stop_lifecycle":
+            return 1
+    return 0
+
+
+def _conflict_group_has_exit_priority(signals: list[LiveSignal]) -> bool:
+    has_exit = any(signal.signal_type in _SELL_TYPES for signal in signals)
+    has_buy = any(signal.signal_type in _BUY_TYPES for signal in signals)
+    if not has_exit or not has_buy:
+        return False
+    reasons = {reason for signal in signals for reason in signal.reason_codes}
+    if reasons & _EXIT_PRIORITY_REASONS:
+        return True
+    for signal in signals:
+        payload = signal.payload if isinstance(signal.payload, dict) else {}
+        if str(payload.get("trigger_source") or "").strip().lower() == "reduce_stop_lifecycle":
+            return True
+    return False
 
 
 def _block_signal_scope(signal: LiveSignal, candidate_group: list[LiveSignal]) -> dict[str, Any]:

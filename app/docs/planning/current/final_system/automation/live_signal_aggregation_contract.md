@@ -117,6 +117,27 @@ Required controls:
 
 Current implementation starts with realized-profit-funded underdog/opportunistic entries. It is intentionally narrow: if realized profit is too small to fund the exchange minimum, the artifact records `realized_profit_opportunistic_budget_below_minimum` instead of creating an order-intent candidate.
 
+## Reduce/Stop Lifecycle Evidence
+
+The May 27 WNBA slate proved that target-only lifecycle is insufficient. Entry, paired target, and position-limit blockers worked, but losing residual inventory survived because stop metadata was not an active deterministic state machine.
+
+Current implementation: `app/modules/agentic/reduce_stop_lifecycle.py`.
+
+Every live tick now records `sports_live_reduce_stop_lifecycle_evidence_v1` under `market_state["reduce_stop_lifecycle"]` and `live_signal_aggregation["reduce_stop_lifecycle"]`.
+
+The evidence evaluates, per sleeve:
+
+- direct event-scoped inventory and weighted basis;
+- current direct CLOB exit price;
+- StrategyPlan `stop_rules` such as `stop_price`, `max_adverse_cents`, and `max_loss_cents`;
+- target management status: covered, missing, stale, or final cleanup;
+- live game scenario: Q4/endgame, garbage-time/falling-knife, final state, or normal target management;
+- rebuy permission after adverse thesis failure.
+
+When fresh evidence shows `reduce_stop_triggered`, `q4_endgame_loss_mode`, `adverse_thesis_failed`, or `target_uncovered_reduce_review`, the lifecycle module emits a `reduce` signal. That signal can become a sell `OrderIntent` only through the normal Janus StrategyPlan/live-worker/order-management gates. Final-state rows are cleanup/reconciliation evidence and must not create new target orders.
+
+Exit signals have priority over new `buy`/`rebuy` candidates for the same sleeve when they carry reduce/stop/Q4/adverse-thesis reason codes. This prevents duplicate rebuy loops after a failed thesis while preserving unrelated sleeves.
+
 ## Gate Scope
 
 Strategy gates are local to the signal source or sleeve that owns them.
@@ -129,6 +150,7 @@ Examples:
 - A no-bid/min-price lottery component blocked as replay-only does not block ordinary target replacement for an existing filled lot.
 - A missing or stale LLM revision is advisory unless the selected sleeve explicitly requires LLM review.
 - A global kill switch, stale direct CLOB truth, missing token mapping, or event budget exhaustion blocks every live execution candidate.
+- A reduce/stop or final-cleanup blocker must never be suppressed by `position_limit_reached`, controlled-entry caps, or price-band entry gates.
 
 2026-05-27 OKC/SAS final readback added one more gate-scope rule: a token/outcome-level existing position is not automatically a global same-side blocker. Explicitly reviewed add-down sleeves may set `position_limit_scope=sleeve` plus `allow_existing_position_add=true`; this lets the sleeve reach event/sleeve budget and paired-exit evaluation while pending Janus intents, direct-truth gates, spread/fillability, kill switch, and event caps remain strict blockers. Default sleeves remain conservative unless they opt in.
 

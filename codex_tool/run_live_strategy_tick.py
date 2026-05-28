@@ -34,6 +34,10 @@ from app.modules.agentic.live_game_context import (
 from app.modules.agentic.live_snapshot import build_normalized_live_snapshot
 from app.modules.agentic.pbp_annotation import build_pbp_annotation_evidence
 from app.modules.agentic.pregame_priors import build_optional_pregame_prior_evidence
+from app.modules.agentic.reduce_stop_lifecycle import (
+    build_reduce_stop_lifecycle_evidence,
+    live_signals_from_reduce_stop_lifecycle,
+)
 from app.modules.agentic.signal_aggregation import (
     LiveSignalAggregationControl,
     LiveSignalAggregationInventory,
@@ -729,6 +733,16 @@ def _run_event_tick(
         min_buy_notional_usd=min_buy_notional_usd,
     )
     market_state["live_game_context"] = live_game_context
+    reduce_stop_lifecycle = build_reduce_stop_lifecycle_evidence(
+        event_id=event_id,
+        plan=plan,
+        market_state=market_state,
+        portfolio_state=portfolio_state,
+        direct_clob=event_direct_clob_state,
+        min_size=min_size,
+    )
+    market_state["reduce_stop_lifecycle"] = reduce_stop_lifecycle
+    portfolio_state["reduce_stop_lifecycle"] = reduce_stop_lifecycle
     llm_runtime_trace = build_llm_runtime_trace(
         event_id=event_id,
         market_id=str(plan.get("market_id") or "") or None,
@@ -924,6 +938,7 @@ def _build_live_signal_aggregation_evidence(
     market_state["sleeve_trigger_binding"] = sleeve_trigger_binding.model_dump(mode="json")
     signals = live_signals_from_sleeve_trigger_bindings(sleeve_trigger_binding)
     signals.extend(live_signals_from_live_game_context(market_state.get("live_game_context")))
+    signals.extend(live_signals_from_reduce_stop_lifecycle(market_state.get("reduce_stop_lifecycle")))
     budget_policy = EventRiskBudgetPolicy(absolute_event_cap_usd=max_buy_notional_usd or 10.0)
     position_notional = _event_position_notional(direct_clob)
     open_order_notional = _event_open_order_notional(direct_clob)
@@ -980,6 +995,7 @@ def _build_live_signal_aggregation_evidence(
         "event_risk_budget": budget.model_dump(mode="json"),
         "sleeve_transition_bundle": sleeve_bundle.model_dump(mode="json"),
         "live_game_context": market_state.get("live_game_context") if isinstance(market_state.get("live_game_context"), dict) else {},
+        "reduce_stop_lifecycle": market_state.get("reduce_stop_lifecycle") if isinstance(market_state.get("reduce_stop_lifecycle"), dict) else {},
         "persistence": persistence,
         "execution_boundary": "evidence_only",
     }

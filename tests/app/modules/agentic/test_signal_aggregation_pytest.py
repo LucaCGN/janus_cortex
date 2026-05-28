@@ -95,6 +95,37 @@ def test_aggregator_blocks_conflicting_signals_pytest() -> None:
     assert {blocker.reason_code for blocker in decision.blocker_artifacts} == {"conflicting_actionable_signals"}
 
 
+def test_aggregator_prioritizes_reduce_stop_over_rebuy_conflict_pytest() -> None:
+    rebuy = _signal(
+        signal_type="rebuy",
+        side="Thunder",
+        token="token-thunder",
+        confidence=0.99,
+        reason="sell_fill_allows_rebuy_review",
+    )
+    rebuy.payload = {"sleeve_id": "okc-grid", "trigger_source": "paired_microcycle"}
+    reduce = _signal(
+        signal_type="reduce",
+        side="Thunder",
+        token="token-thunder",
+        confidence=0.91,
+        reason="reduce_stop_triggered",
+    )
+    reduce.payload = {"sleeve_id": "okc-grid", "trigger_source": "reduce_stop_lifecycle"}
+
+    decision = aggregate_live_signals(
+        [rebuy, reduce],
+        event_id=EVENT_ID,
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert decision.decision_type == "order_intent_candidate"
+    assert decision.conflict_count == 1
+    assert decision.blocker_artifacts == []
+    assert decision.order_intent_candidates[0].signal_type == "reduce"
+    assert decision.order_intent_candidates[0].trigger_source == "reduce_stop_lifecycle"
+
+
 def test_aggregator_keeps_sleeve_local_blocker_from_suppressing_independent_candidate_pytest() -> None:
     blocked_sleeve = _signal(
         signal_type="block",

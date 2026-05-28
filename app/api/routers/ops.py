@@ -1448,6 +1448,11 @@ def _build_postgame_evaluation(
     )
     sleeve_scoreboard = _build_postgame_sleeve_scoreboard(replay_modes=replay_modes)
     why_no_trade = _build_postgame_why_no_trade(replay_inputs=replay_inputs)
+    llm_usage_analysis = _build_postgame_llm_usage_analysis(day=day, reviewed_event_ids=reviewed_event_ids)
+    blocker_efficacy_review = _build_postgame_blocker_efficacy_review(
+        replay_inputs=replay_inputs,
+        why_no_trade=why_no_trade,
+    )
     if not reviewed_event_ids:
         status_text = "not_requested"
     elif pnl_status == "ready" and not unresolved:
@@ -1466,6 +1471,7 @@ def _build_postgame_evaluation(
             "source_confidence_labels": {
                 "account_confirmed": "Metric is backed by account-scoped direct CLOB fills or Janus reconciliation.",
                 "db_confirmed": "Metric is backed by local Janus DB lifecycle rows.",
+                "runtime_artifact": "Metric is backed by local runtime artifacts such as live-worker ticks or LLM traces.",
                 "clob_market_tape": "Metric is direct CLOB token market tape for price path/fillability only.",
                 "ui_observed": "Metric is operator/UI display evidence and may be rounded.",
                 "inferred": "Metric is derived from incomplete evidence and must stay review-gated.",
@@ -1480,6 +1486,8 @@ def _build_postgame_evaluation(
             "mode_comparison": mode_comparison,
             "sleeve_scoreboard": sleeve_scoreboard,
             "why_no_trade": why_no_trade,
+            "llm_usage_analysis": llm_usage_analysis,
+            "blocker_efficacy_review": blocker_efficacy_review,
             "strategy_promotion_review": _build_postgame_strategy_promotion_review(
                 evaluation_status=status_text,
                 realized_live=realized_live,
@@ -1836,6 +1844,217 @@ def _build_postgame_why_no_trade(*, replay_inputs: dict[str, dict[str, Any]]) ->
         "aggregate_blocker_reason_counts": dict(sorted(aggregate_blockers.items())),
         "aggregate_blocker_scope_counts": dict(sorted(aggregate_scope_counts.items())),
         "events": event_rows,
+    }
+
+
+def _build_postgame_llm_usage_analysis(*, day: str | None, reviewed_event_ids: list[str]) -> dict[str, Any]:
+    if not day:
+        return {
+            "schema_version": "postgame_llm_usage_analysis_v1",
+            "status": "not_checked",
+            "reason": "session_date_missing",
+            "source_confidence": "runtime_artifact",
+            "events": [],
+        }
+    artifacts_root = ops_artifact_root(day).parent.parent
+    day_root = artifacts_root / "llm-runtime" / day
+    event_set = {str(event_id) for event_id in reviewed_event_ids}
+    rows: list[dict[str, Any]] = []
+    model_counts: dict[str, int] = {}
+    tier_counts: dict[str, int] = {}
+    status_counts: dict[str, int] = {}
+    trigger_counts: dict[str, int] = {}
+    total_estimated_cost = 0.0
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_reasoning_tokens = 0
+    if day_root.exists():
+        for path in sorted(day_root.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            event_id = str(payload.get("event_id") or "")
+            if event_set and event_id not in event_set:
+                continue
+            response = payload.get("response") if isinstance(payload.get("response"), dict) else {}
+            routing = payload.get("model_routing_decision") if isinstance(payload.get("model_routing_decision"), dict) else {}
+            telemetry = payload.get("llm_runtime_telemetry") if isinstance(payload.get("llm_runtime_telemetry"), dict) else {}
+            usage = telemetry.get("usage") if isinstance(telemetry.get("usage"), dict) else {}
+            selected_model = str(payload.get("selected_model") or response.get("selected_model") or routing.get("selected_model") or "")
+            selected_tier = str(routing.get("selected_tier") or "")
+            response_status = str(response.get("response_status") or payload.get("response_status") or "unknown")
+            model_counts[selected_model or "unknown"] = model_counts.get(selected_model or "unknown", 0) + 1
+            tier_counts[selected_tier or "unknown"] = tier_counts.get(selected_tier or "unknown", 0) + 1
+            status_counts[response_status] = status_counts.get(response_status, 0) + 1
+            for trigger in payload.get("trigger_list") or []:
+                if not isinstance(trigger, dict):
+                    continue
+                trigger_type = str(trigger.get("trigger_type") or "unknown")
+                trigger_counts[trigger_type] = trigger_counts.get(trigger_type, 0) + 1
+            estimated_cost = _safe_float(telemetry.get("estimated_cost_usd"))
+            total_estimated_cost += estimated_cost or 0.0
+            total_input_tokens += _safe_int(usage.get("input_tokens"))
+            total_output_tokens += _safe_int(usage.get("output_tokens"))
+            total_reasoning_tokens += _safe_int(usage.get("reasoning_tokens"))
+            rows.append(
+                {
+                    "event_id": event_id,
+                    "path": str(path),
+                    "selected_model": selected_model or None,
+                    "selected_tier": selected_tier or None,
+                    "response_status": response_status,
+                    "trigger_types": [
+                        str(trigger.get("trigger_type") or "unknown")
+                        for trigger in payload.get("trigger_list") or []
+                        if isinstance(trigger, dict)
+                    ],
+                    "estimated_cost_usd": round(estimated_cost, 6) if estimated_cost is not None else None,
+                    "input_tokens": usage.get("input_tokens"),
+                    "output_tokens": usage.get("output_tokens"),
+                    "reasoning_tokens": usage.get("reasoning_tokens"),
+                }
+            )
+    model_role_gaps: list[dict[str, Any]] = []
+    if tier_counts.get("nano", 0) <= 0:
+        model_role_gaps.append(
+            {
+                "role": "play_by_play_annotation",
+                "expected_model": "gpt-5.4-nano",
+                "status": "not_observed",
+                "issue": "#81",
+                "recommended_action": "wire optional real nano dispatcher while preserving deterministic fallback",
+            }
+        )
+    if tier_counts.get("frontier", 0) <= 0 and any(
+        trigger in trigger_counts for trigger in ("position_adverse_move", "garbage_time", "target_placement_failed")
+    ):
+        model_role_gaps.append(
+            {
+                "role": "deep_loss_or_critical_revision",
+                "expected_model": "gpt-5.5",
+                "status": "not_observed",
+                "issue": "#83",
+                "recommended_action": "escalate only deep loss exposure or critical operator-reviewed windows",
+            }
+        )
+    return {
+        "schema_version": "postgame_llm_usage_analysis_v1",
+        "status": "recorded" if rows else "missing",
+        "source_confidence": "runtime_artifact",
+        "artifact_root": str(day_root),
+        "event_count": len(reviewed_event_ids),
+        "trace_count": len(rows),
+        "model_counts": dict(sorted(model_counts.items())),
+        "tier_counts": dict(sorted(tier_counts.items())),
+        "response_status_counts": dict(sorted(status_counts.items())),
+        "trigger_type_counts": dict(sorted(trigger_counts.items())),
+        "estimated_cost_usd": round(total_estimated_cost, 6),
+        "usage": {
+            "input_tokens": total_input_tokens,
+            "output_tokens": total_output_tokens,
+            "reasoning_tokens": total_reasoning_tokens,
+        },
+        "model_role_policy": [
+            {
+                "role": "pregame_kickoff_or_deep_system_review",
+                "model": "gpt-5.5",
+                "expected_use": "Codex/frontier kickoff or deep loss exposure review only; not every tick.",
+            },
+            {
+                "role": "main_live_revision_engine",
+                "model": "gpt-5.4-mini",
+                "expected_use": "Live StrategyPlan revision and critical StrategyPlan review under budget gates.",
+            },
+            {
+                "role": "play_by_play_annotation",
+                "model": "gpt-5.4-nano",
+                "expected_use": "Cheap per-play tagging feeding evidence and escalating only meaningful windows.",
+            },
+        ],
+        "model_role_gaps": model_role_gaps,
+        "rows": rows[:100],
+    }
+
+
+def _build_postgame_blocker_efficacy_review(
+    *,
+    replay_inputs: dict[str, dict[str, Any]],
+    why_no_trade: dict[str, Any],
+) -> dict[str, Any]:
+    counts = why_no_trade.get("aggregate_blocker_reason_counts")
+    aggregate_counts = counts if isinstance(counts, dict) else {}
+    rows: list[dict[str, Any]] = []
+    blocker_policies = {
+        "position_limit_reached": {
+            "classification": "protective_if_sleeve_scoped",
+            "risk": "harmful_when_token_global_and_suppresses_explicit_parallel_sleeves",
+            "recommended_action": "keep as local exposure guard; require explicit sleeve/cycle opt-in for add-down lanes",
+        },
+        "price_band_not_met": {
+            "classification": "protective_local_threshold",
+            "risk": "harmful_when_used_as_global event blocker or stale strategy band",
+            "recommended_action": "keep local; postgame must compare against missed-window extrema before retuning bands",
+        },
+        "controlled_entry_requires_grid_spread_blocker": {
+            "classification": "protective_development_guard",
+            "risk": "can undertrade if grid blocker is too strict during good WNBA liquidity",
+            "recommended_action": "keep for first controlled entry; tune max controlled entries by risk mode and realized profit",
+        },
+        "controlled_entry_event_limit_reached": {
+            "classification": "protective_duplicate_guard",
+            "risk": "can cap useful two-sided participation if event risk remains available",
+            "recommended_action": "make cap dynamic by risk profile; never let it suppress reduce/exit signals",
+        },
+        "reduce_stop_triggered": {
+            "classification": "missing_or_new_protective_exit",
+            "risk": "harmful only if fired from stale score/CLOB evidence",
+            "recommended_action": "enforce with direct inventory and fresh CLOB; audit after every slate",
+        },
+        "q4_endgame_loss_mode": {
+            "classification": "required_protective_exit",
+            "risk": "too weak caused May 27 residual losses; too strong can cut live comeback scalps",
+            "recommended_action": "allow scalp-only when immediately targetable; block core/rebuy on failed thesis",
+        },
+        "rebuy_blocked_adverse_thesis_failed": {
+            "classification": "required_protective_rebuy_block",
+            "risk": "prevents duplicate same-price loss loops after thesis failure",
+            "recommended_action": "clear only after StrategyPlan/LLM reviewed reset or new game phase evidence",
+        },
+    }
+    for reason, policy in blocker_policies.items():
+        count = _safe_int(aggregate_counts.get(reason))
+        rows.append(
+            {
+                "reason": reason,
+                "observed_count": count,
+                "classification": policy["classification"],
+                "risk": policy["risk"],
+                "recommended_action": policy["recommended_action"],
+                "scope": _postgame_blocker_scope(reason),
+            }
+        )
+    missed_value = 0.0
+    missed_rows = 0
+    for summary in replay_inputs.values():
+        if not isinstance(summary, dict):
+            continue
+        missed = summary.get("missed_window_analysis") if isinstance(summary.get("missed_window_analysis"), dict) else {}
+        missed_value += _safe_float(missed.get("estimated_missed_value_usd")) or 0.0
+        missed_rows += len(missed.get("rows") or [])
+    return {
+        "schema_version": "postgame_blocker_efficacy_review_v1",
+        "status": "recorded",
+        "source_confidence": "runtime_artifact",
+        "aggregate_observed_blocker_count": sum(_safe_int(value) for value in aggregate_counts.values()),
+        "missed_window_count": missed_rows,
+        "missed_window_estimated_value_usd": round(missed_value, 6),
+        "rows": rows,
+        "policy": {
+            "good_blocker": "protects live safety, direct truth, event budget, or local sleeve lifecycle without suppressing unrelated sleeves",
+            "bad_blocker": "suppresses unrelated sleeves, blocks exits, or hides strategy-quality drift as runtime safety",
+            "exit_priority": "reduce/stop/final cleanup signals outrank new buy/rebuy candidates when evidence is fresh",
+        },
     }
 
 
