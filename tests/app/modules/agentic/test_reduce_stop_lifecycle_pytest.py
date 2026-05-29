@@ -111,6 +111,7 @@ def test_reduce_stop_lifecycle_classifies_q4_loss_mode_pytest() -> None:
 
     row = evidence["rows"][0]
     assert row["state"] == "q4_endgame_loss_mode"
+    assert row["active_reduce_signal"] is True
     assert row["rebuy_allowed"] is False
     assert "rebuy_blocked_adverse_thesis_failed" in row["reason_codes"]
 
@@ -135,3 +136,77 @@ def test_reduce_stop_lifecycle_final_cleanup_does_not_emit_sell_signal_pytest() 
     assert row["state"] == "final_cleanup"
     assert row["active_reduce_signal"] is False
     assert live_signals_from_reduce_stop_lifecycle(evidence) == []
+
+
+def test_reduce_stop_lifecycle_near_final_losing_position_emits_reduce_signal_pytest() -> None:
+    evidence = build_reduce_stop_lifecycle_evidence(
+        event_id="wnba-test-2026-05-27",
+        plan=_plan(),
+        market_state={
+            "token_states": {"token-sky": {"best_bid": 0.03}},
+            "live_game_context": {
+                "game_scenario": {"scenario_level": "D", "labels": ["late_adverse_position"]},
+                "classification_snapshot": {"period": 4, "clock_seconds_remaining": 90, "score_gap": 9},
+            },
+        },
+        portfolio_state=_portfolio_state(),
+        direct_clob=_direct_clob(),
+        min_size=5,
+    )
+
+    row = evidence["rows"][0]
+    assert row["state"] == "near_final_loss_cleanup"
+    assert row["active_reduce_signal"] is True
+    assert row["rebuy_allowed"] is False
+    assert evidence["near_final_loss_cleanup_count"] == 1
+    signals = live_signals_from_reduce_stop_lifecycle(evidence)
+    assert len(signals) == 1
+    assert signals[0].signal_type == "reduce"
+    assert signals[0].payload["trigger_type"] == "near_final_loss_cleanup"
+
+
+def test_reduce_stop_lifecycle_stale_target_with_direct_inventory_emits_reduce_signal_pytest() -> None:
+    evidence = build_reduce_stop_lifecycle_evidence(
+        event_id="wnba-test-2026-05-27",
+        plan=_plan(),
+        market_state={
+            "token_states": {"token-sky": {"best_bid": 0.64}},
+            "live_game_context": {
+                "game_scenario": {"scenario_level": "B", "labels": ["normal_live"]},
+                "classification_snapshot": {"period": 2, "clock_seconds_remaining": 480, "score_gap": 2},
+            },
+        },
+        portfolio_state=_portfolio_state(),
+        direct_clob=_direct_clob(),
+        min_size=5,
+    )
+
+    row = evidence["rows"][0]
+    assert row["state"] == "stale_target_exit"
+    assert row["active_reduce_signal"] is True
+    assert live_signals_from_reduce_stop_lifecycle(evidence)[0].reason_codes == ["target_uncovered_reduce_review"]
+
+
+def test_reduce_stop_lifecycle_adverse_thesis_failure_blocks_rebuy_pytest() -> None:
+    plan = _plan()
+    plan["active_strategies"][0]["stop_rules"] = {}
+    evidence = build_reduce_stop_lifecycle_evidence(
+        event_id="wnba-test-2026-05-27",
+        plan=plan,
+        market_state={
+            "token_states": {"token-sky": {"best_bid": 0.64}},
+            "live_game_context": {
+                "game_scenario": {"scenario_level": "C", "labels": ["adverse_thesis_failed"]},
+                "classification_snapshot": {"period": 3, "clock_seconds_remaining": 480, "score_gap": 4},
+            },
+        },
+        portfolio_state=_portfolio_state(),
+        direct_clob=_direct_clob(),
+        min_size=5,
+    )
+
+    row = evidence["rows"][0]
+    assert row["state"] == "adverse_thesis_failed"
+    assert row["active_reduce_signal"] is True
+    assert row["rebuy_allowed"] is False
+    assert "rebuy_blocked_adverse_thesis_failed" in row["reason_codes"]

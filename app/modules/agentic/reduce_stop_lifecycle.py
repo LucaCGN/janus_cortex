@@ -18,6 +18,7 @@ _EXIT_STATES = {
     "q4_endgame_loss_mode",
     "adverse_thesis_failed",
     "stale_target_exit",
+    "near_final_loss_cleanup",
 }
 _FINAL_STATES = {"final_cleanup"}
 
@@ -67,6 +68,12 @@ def build_reduce_stop_lifecycle_evidence(
         target_status = str(target.get("target_status") or "").strip().lower()
         target_price = _first_float(target, ("target_price", "target", "exit_price"))
         stop_threshold = _stop_threshold(strategy=strategy, basis=basis)
+        near_final_loss_cleanup = _near_final_loss_cleanup(
+            snapshot=snapshot,
+            scenario=scenario,
+            current_price=current_price,
+            basis=basis,
+        )
         adverse = _adverse_thesis_failed(
             current_price=current_price,
             basis=basis,
@@ -81,6 +88,7 @@ def build_reduce_stop_lifecycle_evidence(
             stop_threshold=stop_threshold,
             target_status=target_status,
             final_state=final_state,
+            near_final_loss_cleanup=near_final_loss_cleanup,
             q4_loss_mode=q4_loss_mode,
             adverse=adverse,
         )
@@ -112,6 +120,7 @@ def build_reduce_stop_lifecycle_evidence(
                     "exit_rules": strategy["exit_rules"],
                     "q4_endgame_loss_mode": q4_loss_mode,
                     "final_state_cleanup_only": final_state,
+                    "near_final_loss_cleanup": near_final_loss_cleanup,
                     "adverse_thesis_failed": adverse,
                 },
             }
@@ -119,6 +128,7 @@ def build_reduce_stop_lifecycle_evidence(
 
     active_rows = [row for row in rows if row["active_reduce_signal"]]
     final_rows = [row for row in rows if row["state"] in _FINAL_STATES]
+    near_final_rows = [row for row in rows if row["state"] == "near_final_loss_cleanup"]
     adverse_rows = [row for row in rows if row["state"] == "adverse_thesis_failed"]
     return {
         "schema_version": SCHEMA_VERSION,
@@ -131,11 +141,13 @@ def build_reduce_stop_lifecycle_evidence(
         "row_count": len(rows),
         "active_reduce_signal_count": len(active_rows),
         "final_cleanup_count": len(final_rows),
+        "near_final_loss_cleanup_count": len(near_final_rows),
         "adverse_thesis_failure_count": len(adverse_rows),
         "rows": rows,
         "notes": [
             "Reduce/stop lifecycle is deterministic app-owned evidence.",
-            "Final-state rows are cleanup/reconciliation evidence and do not emit new sell targets.",
+            "Settled final-state rows are cleanup/reconciliation evidence and do not emit new sell targets.",
+            "Near-final live losing positions may emit Janus-gated reduce candidates while a CLOB exit is still valid.",
             "All reduce signals still require Janus StrategyPlan/live-worker/order-management gates.",
         ],
     }
@@ -304,6 +316,7 @@ def _state_and_reasons(
     stop_threshold: float | None,
     target_status: str,
     final_state: bool,
+    near_final_loss_cleanup: bool,
     q4_loss_mode: bool,
     adverse: bool,
 ) -> tuple[str, list[str]]:
@@ -313,6 +326,11 @@ def _state_and_reasons(
         return "final_cleanup", ["final_cleanup_required", "no_new_targets_after_final"]
     if shares < min_size:
         return "below_minimum_reduce_size", ["position_below_minimum_reduce_size"]
+    if near_final_loss_cleanup:
+        return "near_final_loss_cleanup", [
+            "near_final_loss_cleanup",
+            "rebuy_blocked_adverse_thesis_failed",
+        ]
     if current_price is not None and stop_threshold is not None and current_price <= stop_threshold + 1e-9:
         return "stop_triggered", ["reduce_stop_triggered", "rebuy_blocked_adverse_thesis_failed"]
     if q4_loss_mode and adverse:
@@ -324,6 +342,27 @@ def _state_and_reasons(
     return "normal_target_management", ["normal_target_management"]
 
 
+def _near_final_loss_cleanup(
+    *,
+    snapshot: dict[str, Any],
+    scenario: dict[str, Any],
+    current_price: float | None,
+    basis: float | None,
+) -> bool:
+    period = _safe_int(snapshot.get("period") or snapshot.get("quarter")) or 0
+    clock_seconds = _first_float(snapshot, ("clock_seconds_remaining", "remaining_seconds", "game_clock_seconds"))
+    labels = {str(label).lower() for label in scenario.get("labels") or []}
+    if period < 4:
+        return False
+    if clock_seconds is not None and clock_seconds > 180:
+        return False
+    if current_price is None:
+        return False
+    if basis is not None and current_price < basis:
+        return True
+    return current_price <= 0.05 or "garbage_time_or_falling_knife" in labels
+
+
 def _adverse_thesis_failed(
     *,
     current_price: float | None,
@@ -333,7 +372,7 @@ def _adverse_thesis_failed(
     q4_loss_mode: bool,
 ) -> bool:
     labels = {str(label).lower() for label in scenario.get("labels") or []}
-    if "garbage_time_or_falling_knife" in labels or "final_state" in labels:
+    if "adverse_thesis_failed" in labels or "garbage_time_or_falling_knife" in labels or "final_state" in labels:
         return True
     if current_price is not None and stop_threshold is not None and current_price <= stop_threshold + 1e-9:
         return True

@@ -588,7 +588,9 @@ def _load_dotenv_if_available() -> None:
         from app.runtime.local_paths import repo_root
     except Exception:
         return
-    load_dotenv(repo_root() / ".env", override=False)
+    root = repo_root()
+    load_dotenv(root / ".env", override=False)
+    load_dotenv(root / ".env.local", override=False)
 
 
 def _plan_roles(plan: dict[str, Any] | None) -> set[str]:

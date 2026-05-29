@@ -19,8 +19,15 @@ _EXIT_PRIORITY_REASONS = {
     "reduce_stop_triggered",
     "q4_endgame_loss_mode",
     "adverse_thesis_failed",
+    "near_final_loss_cleanup",
     "rebuy_blocked_adverse_thesis_failed",
     "target_uncovered_reduce_review",
+}
+_ENTRY_ONLY_BLOCK_REASONS = {
+    "position_limit_reached",
+    "price_band_not_met",
+    "controlled_entry_requires_grid_spread_blocker",
+    "clock_inside_no_entry_window",
 }
 
 
@@ -371,6 +378,8 @@ def _conflict_group_has_exit_priority(signals: list[LiveSignal]) -> bool:
 def _block_signal_scope(signal: LiveSignal, candidate_group: list[LiveSignal]) -> dict[str, Any]:
     payload = signal.payload if isinstance(signal.payload, dict) else {}
     scope = str(payload.get("aggregation_scope") or payload.get("scope") or "").strip().lower()
+    if candidate_group and _signal_group_exit_priority(candidate_group) > 0 and _entry_only_block_signal(signal):
+        return {"scope": "local_sleeve", "candidate_blocking": False}
     if scope in {"global", "event", "live_safety"}:
         return {"scope": "global", "candidate_blocking": True}
     if scope not in {"local", "sleeve", "strategy", "local_sleeve"}:
@@ -386,6 +395,21 @@ def _block_signal_scope(signal: LiveSignal, candidate_group: list[LiveSignal]) -
         "scope": "local_sleeve",
         "candidate_blocking": bool(candidate_sleeves) and block_sleeve in candidate_sleeves,
     }
+
+
+def _entry_only_block_signal(signal: LiveSignal) -> bool:
+    payload = signal.payload if isinstance(signal.payload, dict) else {}
+    reasons = {
+        str(reason).strip().lower()
+        for reason in [
+            *signal.reason_codes,
+            payload.get("reason"),
+            payload.get("reason_code"),
+            payload.get("blocker_reason"),
+        ]
+        if str(reason or "").strip()
+    }
+    return bool(reasons & _ENTRY_ONLY_BLOCK_REASONS)
 
 
 def _signal_sleeve_id(signal: LiveSignal) -> str | None:
