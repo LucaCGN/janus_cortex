@@ -295,7 +295,7 @@ def calibrate_event_risk_policy_from_history(
     """
 
     base = build_event_risk_budget_policy(risk_mode)
-    realized_rows = [row for row in rows if row.get("source_confidence") in {None, "account_confirmed", "db_confirmed"}]
+    realized_rows = [row for row in rows if row.get("source_confidence") in {"account_confirmed", "db_confirmed"}]
     pnl_values = [_safe_float(row.get("realized_pnl_usd")) for row in realized_rows]
     pnl_values = [value for value in pnl_values if value is not None]
     if len(pnl_values) < min_sample_size:

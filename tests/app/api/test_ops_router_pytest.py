@@ -2408,6 +2408,97 @@ def test_postgame_portfolio_pnl_can_skip_direct_clob_fetch_pytest(monkeypatch) -
     assert result["items"][0]["ok"] is True
 
 
+def test_postgame_portfolio_pnl_loads_default_account_when_payload_omits_account_id_pytest(monkeypatch) -> None:
+    captured_account_ids: list[str] = []
+
+    monkeypatch.setattr(
+        ops_router,
+        "resolve_trading_account",
+        lambda connection, *, account_id=None: {"account_id": "default-account-id"},
+    )
+
+    def fake_direct_context(connection, **kwargs):
+        captured_account_ids.append(kwargs["account_id"])
+        return {
+            "direct_open_order_external_ids": [],
+            "direct_open_order_count": 0,
+            "direct_open_position_count": 0,
+            "direct_trade_rows": [],
+            "direct_evidence": {"enabled": True, "ok": True},
+        }
+
+    monkeypatch.setattr(ops_router, "_resolve_order_lifecycle_direct_context", fake_direct_context)
+    monkeypatch.setattr(ops_router, "_fetch_order_lifecycle_reconciliation_rows", lambda *args, **kwargs: [])
+    monkeypatch.setattr(ops_router, "_event_scoped_order_lifecycle_direct_context", lambda direct_context, **kwargs: direct_context)
+    monkeypatch.setattr(
+        ops_router,
+        "build_order_lifecycle_reconciliation_report",
+        lambda rows, **kwargs: {"status": "ready", "unknown_lifecycle_count": 0},
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "build_portfolio_pnl_attribution_report",
+        lambda report: {"pnl_attribution_ready": True, "known_cashflow_usd": 0.0},
+    )
+
+    result = ops_router._build_postgame_portfolio_pnl_attribution(
+        object(),
+        OpsCycleRequest(),
+        event_ids=["wnba-phx-nyl-2026-05-27"],
+        day="2026-05-27",
+    )
+
+    assert captured_account_ids == ["default-account-id"]
+    assert result["status"] == "ready"
+    assert result["account_id"] == "default-account-id"
+    assert result["account_resolution"]["status"] == "default_loaded"
+
+
+def test_postgame_portfolio_pnl_returns_partial_when_one_event_fails_pytest(monkeypatch) -> None:
+    monkeypatch.setattr(
+        ops_router,
+        "_resolve_order_lifecycle_direct_context",
+        lambda *args, **kwargs: {
+            "direct_open_order_external_ids": [],
+            "direct_open_order_count": 0,
+            "direct_open_position_count": 0,
+            "direct_trade_rows": [],
+            "direct_evidence": {"enabled": True, "ok": True},
+        },
+    )
+    monkeypatch.setattr(ops_router, "_event_scoped_order_lifecycle_direct_context", lambda direct_context, **kwargs: direct_context)
+
+    def fake_fetch_rows(connection, **kwargs):
+        if kwargs["event_slug"] == "event-fail":
+            raise TimeoutError("event reconciliation timed out")
+        return [{"order_id": "order-ok"}]
+
+    monkeypatch.setattr(ops_router, "_fetch_order_lifecycle_reconciliation_rows", fake_fetch_rows)
+    monkeypatch.setattr(
+        ops_router,
+        "build_order_lifecycle_reconciliation_report",
+        lambda rows, **kwargs: {"status": "ready", "unknown_lifecycle_count": 0},
+    )
+    monkeypatch.setattr(
+        ops_router,
+        "build_portfolio_pnl_attribution_report",
+        lambda report: {"pnl_attribution_ready": True, "known_cashflow_usd": 0.25},
+    )
+
+    result = ops_router._build_postgame_portfolio_pnl_attribution(
+        object(),
+        OpsCycleRequest(account_id="account-1"),
+        event_ids=["event-ok", "event-fail"],
+        day="2026-05-27",
+    )
+
+    assert result["status"] == "partial"
+    assert result["ready_event_count"] == 1
+    assert result["error_count"] == 1
+    assert result["items"][1]["ok"] is False
+    assert result["items"][1]["unresolved_evidence"][0]["reason"] == "event_pnl_attribution_failed"
+
+
 def test_postgame_ui_display_comparison_preserves_subcent_clob_truth_pytest() -> None:
     comparison = ops_router._build_ui_displayed_price_comparison(
         [

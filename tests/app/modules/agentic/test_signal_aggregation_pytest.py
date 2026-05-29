@@ -126,6 +126,36 @@ def test_aggregator_prioritizes_reduce_stop_over_rebuy_conflict_pytest() -> None
     assert decision.order_intent_candidates[0].trigger_source == "reduce_stop_lifecycle"
 
 
+def test_aggregator_keeps_entry_only_blockers_from_suppressing_reduce_exit_pytest() -> None:
+    reduce = _signal(
+        signal_type="reduce",
+        side="Thunder",
+        token="token-thunder",
+        confidence=0.91,
+        reason="near_final_loss_cleanup",
+    )
+    reduce.payload = {"sleeve_id": "okc-grid", "trigger_source": "reduce_stop_lifecycle"}
+    entry_block = _signal(
+        signal_type="block",
+        side="Thunder",
+        token="token-thunder",
+        reason="price_band_not_met",
+    )
+    entry_block.payload = {"aggregation_scope": "sleeve", "sleeve_id": "okc-grid"}
+
+    decision = aggregate_live_signals(
+        [entry_block, reduce],
+        event_id=EVENT_ID,
+        generated_at_utc=BASE_TIME + timedelta(seconds=5),
+    )
+
+    assert decision.decision_type == "order_intent_candidate"
+    assert decision.order_intent_candidates[0].signal_type == "reduce"
+    assert [(blocker.reason_code, blocker.detail["candidate_blocking"]) for blocker in decision.blocker_artifacts] == [
+        ("block_signal_present", False)
+    ]
+
+
 def test_aggregator_keeps_sleeve_local_blocker_from_suppressing_independent_candidate_pytest() -> None:
     blocked_sleeve = _signal(
         signal_type="block",

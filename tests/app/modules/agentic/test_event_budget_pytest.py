@@ -362,6 +362,24 @@ def test_calibrate_event_risk_policy_from_history_promotes_winning_sample_pytest
     assert calibration["policy"]["profit_ratcheted_reinvestment_pct"] > 0.40
 
 
+def test_calibrate_event_risk_policy_ignores_unconfirmed_realized_rows_pytest() -> None:
+    calibration = calibrate_event_risk_policy_from_history(
+        [
+            {"realized_pnl_usd": 1.2},
+            {"realized_pnl_usd": 0.7, "source_confidence": "inferred"},
+            {"realized_pnl_usd": 1.0, "source_confidence": "ui_observed"},
+            {"realized_pnl_usd": 0.9, "source_confidence": "clob_market_tape"},
+            {"realized_pnl_usd": 0.5, "source_confidence": "account_confirmed"},
+        ],
+        risk_mode="development",
+        min_sample_size=2,
+    )
+
+    assert calibration["status"] == "insufficient_sample"
+    assert calibration["sample_size"] == 1
+    assert calibration["policy"]["profit_ratcheted_reinvestment_pct"] == 0.40
+
+
 def test_same_side_exposure_cap_is_local_not_global_pytest() -> None:
     budget = derive_event_risk_budget(
         event_id=EVENT_ID,

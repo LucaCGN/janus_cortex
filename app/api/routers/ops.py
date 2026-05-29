@@ -1289,24 +1289,40 @@ def _build_postgame_portfolio_pnl_attribution(
             "event_count": 0,
             "items": [],
         }
-    if not payload.account_id:
+    account_id, account_resolution = _resolve_postgame_account_id(connection, payload)
+    if not account_id:
         return {
             "status": "skipped",
-            "reason": "account_id_required",
+            "reason": account_resolution.get("reason") or "account_id_required",
             "event_count": len(event_ids),
+            "account_resolution": account_resolution,
+            "unresolved_evidence": [
+                {
+                    "reason": account_resolution.get("reason") or "account_id_required",
+                    "source_confidence": "inferred",
+                }
+            ],
             "items": [],
         }
 
+    direct_unresolved: list[dict[str, Any]] = []
     try:
         direct_context = _resolve_order_lifecycle_direct_context(
             connection,
-            account_id=payload.account_id,
+            account_id=account_id,
             direct_open_order_external_id=None,
             direct_open_order_count=None,
             direct_open_position_count=None,
             include_direct_clob_evidence=payload.include_direct_clob_evidence,
         )
     except Exception as exc:  # noqa: BLE001
+        direct_unresolved = [
+            {
+                "reason": "direct_account_context_unavailable",
+                "error": _exception_detail(exc),
+                "source_confidence": "inferred",
+            }
+        ]
         direct_context = {
             "direct_open_order_external_ids": [],
             "direct_open_order_count": None,
@@ -1316,6 +1332,7 @@ def _build_postgame_portfolio_pnl_attribution(
                 "enabled": True,
                 "ok": False,
                 "error": _exception_detail(exc),
+                "unresolved_evidence": direct_unresolved,
             },
         }
 
@@ -1323,6 +1340,8 @@ def _build_postgame_portfolio_pnl_attribution(
     direct_evidence_summary = {
         key: value for key, value in direct_evidence.items() if key not in {"trades", "open_orders", "open_positions"}
     }
+    if direct_unresolved:
+        direct_evidence_summary["unresolved_evidence"] = direct_unresolved
     start_time, end_time = _postgame_account_window(day)
     items: list[dict[str, Any]] = []
     for event_id in event_ids:
@@ -1334,7 +1353,7 @@ def _build_postgame_portfolio_pnl_attribution(
             )
             rows = _fetch_order_lifecycle_reconciliation_rows(
                 connection,
-                account_id=payload.account_id,
+                account_id=account_id,
                 event_slug=event_id,
                 start_time=start_time,
                 end_time=end_time,
@@ -1353,6 +1372,7 @@ def _build_postgame_portfolio_pnl_attribution(
                     "event_id": event_id,
                     "event_slug": event_id,
                     "direct_event_scope": event_direct_context.get("direct_event_scope"),
+                    "unresolved_evidence": direct_unresolved,
                     "reconciliation": lifecycle_report,
                     "pnl_attribution": pnl_attribution,
                 }
@@ -1364,6 +1384,13 @@ def _build_postgame_portfolio_pnl_attribution(
                     "event_id": event_id,
                     "event_slug": event_id,
                     "error": _exception_detail(exc),
+                    "unresolved_evidence": [
+                        {
+                            "reason": "event_pnl_attribution_failed",
+                            "error": _exception_detail(exc),
+                            "source_confidence": "inferred",
+                        }
+                    ],
                 }
             )
 
@@ -1389,10 +1416,47 @@ def _build_postgame_portfolio_pnl_attribution(
             "event_count": len(items),
             "ready_event_count": ready_count,
             "error_count": error_count,
+            "account_id": account_id,
+            "account_resolution": account_resolution,
+            "unresolved_evidence": direct_unresolved,
             "direct_evidence": direct_evidence_summary,
             "items": items,
         }
     )
+
+
+def _resolve_postgame_account_id(
+    connection: PsycopgConnection,
+    payload: OpsCycleRequest,
+) -> tuple[str | None, dict[str, Any]]:
+    explicit = str(payload.account_id or "").strip()
+    if explicit:
+        return explicit, {
+            "status": "explicit",
+            "account_id": explicit,
+            "source_confidence": "account_confirmed",
+        }
+    try:
+        account = resolve_trading_account(connection, account_id=None)
+    except Exception as exc:  # noqa: BLE001
+        return None, {
+            "status": "unavailable",
+            "reason": "default_account_unavailable",
+            "error": _exception_detail(exc),
+            "source_confidence": "inferred",
+        }
+    account_id = str(account.get("account_id") or "").strip()
+    if not account_id:
+        return None, {
+            "status": "unavailable",
+            "reason": "default_account_missing_account_id",
+            "source_confidence": "inferred",
+        }
+    return account_id, {
+        "status": "default_loaded",
+        "account_id": account_id,
+        "source_confidence": "account_confirmed",
+    }
 
 
 def _postgame_account_window(day: str | None) -> tuple[datetime | None, datetime | None]:
