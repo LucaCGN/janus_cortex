@@ -81,6 +81,23 @@ FORBIDDEN_RUNTIME_PROCESS_PATTERNS = {
     "sqlite_hot_sync": "run_crypto_options_sqlite_to_postgres_copy",
 }
 
+RUNTIME_SQLITE_SCAN_ROOTS = ("api", "data_services", "feeds", "indicators", "reports", "signals", "strategies", "workers")
+SQLITE_USAGE_SCAN_ROOTS = (
+    "api",
+    "data_services",
+    "db",
+    "feeds",
+    "indicators",
+    "pipelines",
+    "reports",
+    "scripts",
+    "signals",
+    "strategies",
+    "workers",
+)
+SQLITE_IMPORT_RE = re.compile(r"(^|\n)\s*(import sqlite3|from sqlite3\b)")
+SQLITE_CONNECT_RE = re.compile(r"\bsqlite3\s*\.\s*connect\s*\(")
+
 
 @dataclass(frozen=True)
 class RuntimeAuditOptions:
@@ -183,6 +200,12 @@ def render_runtime_audit_markdown(audit: dict[str, Any]) -> str:
         lines.append(f"- `{group}`: `{payload.get('status')}`")
         for table, count in (payload.get("counts") or {}).items():
             lines.append(f"  - `{table}`: {count}")
+    runtime_code = audit.get("database", {}).get("runtime_code") or {}
+    lines.extend(["", "## Runtime SQLite Usage"])
+    lines.append(f"- Status: `{runtime_code.get('status', 'unknown')}`")
+    lines.append(f"- Runtime offenders: `{len(runtime_code.get('runtime_offenders') or [])}`")
+    lines.append(f"- Review required: `{len(runtime_code.get('review_required') or [])}`")
+    lines.append(f"- Allowed migration/test/compat usage: `{len(runtime_code.get('allowed_sqlite_usage') or [])}`")
     lines.extend(["", "## Processes"])
     for name, payload in (audit.get("processes", {}).get("required") or {}).items():
         lines.append(f"- `{name}`: {payload.get('status')} {payload.get('pids') or []}")
@@ -355,6 +378,7 @@ def _database_audit() -> dict[str, Any]:
             blockers.extend(f"{group}:{blocker}" for blocker in group_blockers)
     runtime_code = _runtime_code_audit()
     blockers.extend(runtime_code.get("blockers") or [])
+    warnings.extend(runtime_code.get("warnings") or [])
     return {
         "status": _status_from_blockers(blockers, warnings),
         "blockers": blockers,
@@ -366,35 +390,99 @@ def _database_audit() -> dict[str, Any]:
 
 
 def _runtime_code_audit() -> dict[str, Any]:
-    """Fail only on direct runtime sqlite connects, not migration/test helpers."""
+    """Fail on production runtime SQLite connects and classify the remaining footprint.
 
-    allowed_parts = {
-        str(Path("db") / "sqlite_compaction.py"),
-        str(Path("db") / "sqlite_retention.py"),
-        str(Path("db") / "postgres.py"),
-        str(Path("db") / "postgres_import.py"),
-        str(Path("scripts") / "run_crypto_options_sqlite_to_postgres_copy.py"),
-        str(Path("scripts") / "run_crypto_options_sqlite_to_postgres_plan.py"),
-    }
-    scan_roots = ["api", "data_services", "feeds", "indicators", "reports", "signals", "strategies", "workers"]
+    SQLite is still valid for migration, test, and explicit compatibility paths.
+    The transition blocker is direct production runtime access that can reintroduce
+    writer locks. Non-runtime direct SQLite users are surfaced as review work so
+    the DB transition can retire them intentionally.
+    """
+
     offenders: list[str] = []
-    for root_name in scan_roots:
+    runtime_offenders: list[dict[str, str]] = []
+    allowed: list[dict[str, str]] = []
+    review_required: list[dict[str, str]] = []
+    scanned_paths = 0
+    sqlite_usage_count = 0
+    for root_name in SQLITE_USAGE_SCAN_ROOTS:
         root = APP_ROOT / root_name
         if not root.exists():
             continue
         for path in root.rglob("*.py"):
+            scanned_paths += 1
             rel = path.relative_to(APP_ROOT)
-            if str(rel) in allowed_parts:
-                continue
             try:
                 text = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 text = path.read_text(errors="replace")
-            needle = "sqlite3" + ".connect("
-            if needle in text:
+            has_import = bool(SQLITE_IMPORT_RE.search(text))
+            has_direct_connect = bool(SQLITE_CONNECT_RE.search(text))
+            if not has_import and not has_direct_connect:
+                continue
+            sqlite_usage_count += 1
+            record: dict[str, Any] = {
+                "path": str(rel),
+                "category": _sqlite_usage_category(rel, has_direct_connect=has_direct_connect),
+                "direct_connect": has_direct_connect,
+            }
+            if _is_runtime_sqlite_blocker(rel, has_direct_connect=has_direct_connect):
                 offenders.append(str(rel))
+                runtime_offenders.append(record)
+            elif record["category"].startswith("allowed_"):
+                allowed.append(record)
+            else:
+                review_required.append(record)
     blockers = [f"runtime_sqlite_connect:{path}" for path in offenders]
-    return {"status": "blocked" if blockers else "ok", "offenders": offenders, "blockers": blockers}
+    warnings = ["sqlite_usage_review_required"] if review_required and not blockers else []
+    return {
+        "status": _status_from_blockers(blockers, warnings),
+        "offenders": offenders,
+        "runtime_offenders": runtime_offenders,
+        "allowed_sqlite_usage": sorted(allowed, key=lambda row: row["path"]),
+        "review_required": sorted(review_required, key=lambda row: row["path"]),
+        "sqlite_usage_count": sqlite_usage_count,
+        "scanned_paths": scanned_paths,
+        "blockers": blockers,
+        "warnings": warnings,
+    }
+
+
+def _is_runtime_sqlite_blocker(rel: Path, *, has_direct_connect: bool) -> bool:
+    if not has_direct_connect:
+        return False
+    if _sqlite_usage_category(rel, has_direct_connect=has_direct_connect).startswith("allowed_"):
+        return False
+    return bool(rel.parts and rel.parts[0] in RUNTIME_SQLITE_SCAN_ROOTS)
+
+
+def _sqlite_usage_category(rel: Path, *, has_direct_connect: bool) -> str:
+    rel_text = rel.as_posix()
+    if rel.parts and rel.parts[0] == "db":
+        if rel_text in {
+            "db/connection.py",
+            "db/imports.py",
+            "db/postgres.py",
+            "db/postgres_connection.py",
+            "db/postgres_import.py",
+            "db/postgres_shadow.py",
+            "db/runtime_persistence.py",
+            "db/schema.py",
+            "db/sqlite_compaction.py",
+            "db/sqlite_retention.py",
+        }:
+            return "allowed_db_adapter_migration_compat"
+    if rel.parts and rel.parts[0] == "scripts":
+        if "sqlite_to_postgres" in rel.name or "sqlite" in rel.name:
+            return "allowed_migration_cli"
+        return "review_script_sqlite_usage"
+    if rel_text in {
+        "pipelines/options/profile_store.py",
+        "pipelines/options/market_data_store.py",
+    }:
+        return "review_legacy_sqlite_side_store"
+    if has_direct_connect:
+        return "review_non_runtime_direct_sqlite_connect"
+    return "review_sqlite_import"
 
 
 def _process_audit() -> dict[str, Any]:

@@ -1,6 +1,6 @@
 # GitHub Source Of Truth Sync
 
-Updated: 2026-06-07T05:55:00Z
+Updated: 2026-06-07T06:05:00Z
 
 Repository: `LucaCGN/janus_cortex`
 
@@ -9,6 +9,8 @@ Repository: `LucaCGN/janus_cortex`
 - Labels created: `crypto-options`, `transition`, `db-data`, `signals`, `strategies`, `frontend`, `promotion-policy`, `safety`, `repo-cleanup`, `blocked`, `ready-for-fixed-chat`.
 - Milestones created: `CRYPTO-P4 Transition Control Plane`, `CRYPTO-P5 Signal And Strategy Queue Trust`, `CRYPTO-P6 Frontend Control Center`, `CRYPTO-P7 Supervised Live Readiness`.
 - Issues created: `20`.
+- Draft PR created: [#170 Crypto options compatibility wrapper cutover](https://github.com/LucaCGN/janus_cortex/pull/170).
+- Runtime DB adapter audit: 0 production runtime direct SQLite blockers, 13 review-required SQLite usages, tracked under issue [#152](https://github.com/LucaCGN/janus_cortex/issues/152).
 - Frontend fixed chat: ready.
 - Signal/strategy cleanup fixed chat: ready to start from GitHub issue source-of-truth.
 

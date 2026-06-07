@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T05:55:00Z
+Updated: 2026-06-07T06:05:00Z
 
 ## Objective
 
@@ -20,8 +20,10 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Master hedge-grid track: valid north star, but protected-floor variants replay only when closed-cycle candidates exist.
 - Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated.
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports Postgres, orders disabled, live false.
+- Runtime SQLite audit latest: 0 production runtime direct-connect blockers, 13 review-required SQLite usages, 9 allowed migration/test/compat usages; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`.
 - Transition readiness review: `degraded`, broad automation `not_ready`, no accidental live candidates.
 - GitHub issue/milestone source-of-truth: created in `LucaCGN/janus_cortex`; sync report at `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`.
+- Review branch: draft PR [#170 Crypto options compatibility wrapper cutover](https://github.com/LucaCGN/janus_cortex/pull/170).
 - Repo cleanup inventory: path-level artifact generated; 534 dirty/status paths, 132 review-required paths, 402 active crypto paths, 131 crypto compatibility wrapper candidates, 0 legacy move candidates.
 - Repo cleanup batches: artifact generated; Batch 0 active crypto baseline branch is `codex/crypto-transition-control-plane`; Batch 1 local/root branch is `codex/crypto-repo-local-state-cleanup`; Batch 2 WNBA/NBA branch is `codex/crypto-repo-wnba-nba-reference`; Batch 3 global reference branch is `codex/crypto-repo-global-reference`; Batch 4 compatibility review branch is `codex/crypto-compatibility-wrapper-cutover`.
 - Batch 0 staging plan: 295 stage candidates, 386 hold paths, 0 manual-review paths.
@@ -55,6 +57,6 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 2. Start fixed chats from their prompt files and linked GitHub issues when user is ready.
 3. Use the GitHub issue source-of-truth before starting any bounded automation beyond the single master heartbeat.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
-5. Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.
+5. Review the 13 runtime SQLite audit review-required usages and cut over legacy side stores/import-only callers through the Postgres runtime adapter where they are still active.
 6. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
 7. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.

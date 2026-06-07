@@ -66,6 +66,45 @@ def test_runtime_audit_reports_runtime_sqlite_connect_offenders(monkeypatch, tmp
     assert audit["offenders"] == ["api\\bad.py"] or audit["offenders"] == ["api/bad.py"]
 
 
+def test_runtime_audit_allows_explicit_db_compat_sqlite_connect(monkeypatch, tmp_path) -> None:
+    fake_root = tmp_path / "crypto_options_app"
+    db_dir = fake_root / "db"
+    db_dir.mkdir(parents=True)
+    (db_dir / "connection.py").write_text("import sqlite3\nsqlite3.connect('fallback')\n", encoding="utf-8")
+    monkeypatch.setattr(runtime_audit, "APP_ROOT", fake_root)
+
+    audit = runtime_audit._runtime_code_audit()
+
+    assert audit["status"] == "ok"
+    assert audit["blockers"] == []
+    assert audit["runtime_offenders"] == []
+    assert audit["review_required"] == []
+    assert len(audit["allowed_sqlite_usage"]) == 1
+    assert audit["allowed_sqlite_usage"][0]["path"].replace("\\", "/") == "db/connection.py"
+    assert audit["allowed_sqlite_usage"][0]["category"] == "allowed_db_adapter_migration_compat"
+    assert audit["allowed_sqlite_usage"][0]["direct_connect"] is True
+
+
+def test_runtime_audit_surfaces_legacy_sqlite_side_stores_for_review(monkeypatch, tmp_path) -> None:
+    fake_root = tmp_path / "crypto_options_app"
+    store_dir = fake_root / "pipelines" / "options"
+    store_dir.mkdir(parents=True)
+    (store_dir / "profile_store.py").write_text(
+        "import sqlite3\nsqlite3.connect('profile-store.sqlite')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(runtime_audit, "APP_ROOT", fake_root)
+
+    audit = runtime_audit._runtime_code_audit()
+
+    assert audit["status"] == "degraded"
+    assert audit["blockers"] == []
+    assert audit["runtime_offenders"] == []
+    assert audit["allowed_sqlite_usage"] == []
+    assert len(audit["review_required"]) == 1
+    assert audit["review_required"][0]["category"] == "review_legacy_sqlite_side_store"
+
+
 def test_parse_memory_size_bytes() -> None:
     assert runtime_audit._parse_memory_size_bytes("512.3MiB") == int(512.3 * 1024**2)
     assert runtime_audit._parse_memory_size_bytes("3.5GiB") == int(3.5 * 1024**3)
