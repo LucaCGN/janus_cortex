@@ -121,8 +121,9 @@ def build_repo_cleanup_batches(
         "batch_counts": dict(sorted(batch_counts.items())),
         "batches": batches,
         "next_actions": [
-            "Create or switch to batch_0 branch before staging active crypto baseline.",
-            "Keep reference moves separate from active crypto baseline.",
+            "Review and commit the current batch branch before opening reference-move branches.",
+            "Keep reference moves separate from active crypto baseline and local-state cleanup.",
+            "Hold root dependency changes until their owning app/tooling branch is clear.",
             "Review batch_4 compatibility wrappers before moving any wrapper paths.",
             "Create GitHub milestones/issues only after cleanup branches are reviewable.",
         ],

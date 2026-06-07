@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T04:40:00Z
+Updated: 2026-06-07T04:47:00Z
 
 ## Rule
 
@@ -32,22 +32,22 @@ Source artifact: `crypto_options_app/artifacts/reports/repo_cleanup_inventory_la
 Batch artifact: `crypto_options_app/artifacts/reports/repo_cleanup_batches_latest.json`
 Batch 0 staging artifact: `crypto_options_app/artifacts/reports/repo_baseline_staging_plan_latest.json`
 
-- Dirty/status paths: 902
-- Active crypto paths: 681
-- Review-required paths: 219
+- Dirty/status paths: 602
+- Active crypto paths: 395
+- Review-required paths: 205
 - Crypto compatibility wrapper candidates: 131
 - Global reference candidates: 69
 - WNBA/NBA reference candidates: 3
-- Local automation state review paths: 15
-- Root config review paths: 1
+- Local automation state review paths: 0
+- Root config review paths: 2
 - Unknown/root review paths: 0
 
 Automatic moves remain disabled.
 
 Current batch summary:
 
-- Batch 0 active crypto baseline: 656 paths, branch `codex/crypto-transition-control-plane`
-- Batch 1 local/root review: 16 paths, branch `codex/crypto-repo-local-state-cleanup`
+- Batch 0 active crypto baseline: 395 paths, branch `codex/crypto-transition-control-plane`
+- Batch 1 local/root review: 2 paths, branch `codex/crypto-repo-local-state-cleanup`
 - Batch 2 WNBA/NBA reference: 3 paths, branch `codex/crypto-repo-wnba-nba-reference`
 - Batch 3 global reference: 69 paths, branch `codex/crypto-repo-global-reference`
 - Batch 4 crypto compatibility wrapper decision: 131 paths, branch `codex/crypto-compatibility-wrapper-cutover`
@@ -77,6 +77,7 @@ Batch 0 result:
 
 - Branch: `codex/crypto-transition-control-plane`
 - Commit: `d642702` (`Add crypto options transition control plane baseline`)
+- Handoff commit: `b995271` (`Record crypto baseline handoff`)
 - Committed paths: 295 source-of-truth files
 - Held paths: generated/data/runtime artifacts remain unstaged
 
@@ -84,11 +85,18 @@ Batch 0 result:
 
 Purpose: avoid accidentally committing local automation memory or broad dependency churn.
 
-- Review `.codex_automation_memory/` and decide ignore/archive behavior.
-- Review `requirements.txt` changes before any reference move.
-- Add/update ignore rules only if needed after inspection.
+- `.codex_automation_memory/` is local Codex/thread/automation state; ignore it instead of committing or moving it.
+- `requirements.txt` currently adds `streamlit>=1.35,<2`, used only by the untracked `tools/crypto_options_v3_observer_app.py` compatibility/UI tool. Hold this dependency change until the frontend/tooling branch decides whether that observer remains active.
+- Commit only the ignore guard and coordination decision in this batch.
 
 Suggested branch: `codex/crypto-repo-local-state-cleanup`.
+
+Current Batch 1 decision:
+
+- Branch: `codex/crypto-repo-local-state-cleanup`
+- Commit candidate: `.gitignore`, cleanup batch report next-action fix, and coordination docs only.
+- Held path: `requirements.txt`
+- No local automation memory files should be staged.
 
 ### Batch 2: WNBA/NBA Reference Move
 

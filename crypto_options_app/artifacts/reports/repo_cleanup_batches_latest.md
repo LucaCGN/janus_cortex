@@ -1,8 +1,8 @@
 # Crypto Options Repo Cleanup Batches
 
-- Generated: `2026-06-07T04:35:04.621148+00:00`
+- Generated: `2026-06-07T04:46:53.724471+00:00`
 - Status: `degraded`
-- Source inventory: `2026-06-07T04:34:52.750518+00:00`
+- Source inventory: `2026-06-07T04:46:21.211472+00:00`
 - Manual orders avoided: `True`
 
 ## Gates
@@ -17,38 +17,31 @@
 ### No-Move Active Crypto Baseline
 - ID: `batch_0_active_crypto_baseline`
 - Branch: `codex/crypto-transition-control-plane`
-- Entries: `681`
+- Entries: `395`
 - Review required: `0`
 - Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Establish active crypto baseline and focused tests before reference moves.
-  - `crypto_options_app/.env.postgres.example` -> `none`
-  - `crypto_options_app/__init__.py` -> `none`
-  - `crypto_options_app/api/__init__.py` -> `none`
-  - `crypto_options_app/api/app.py` -> `none`
-  - `crypto_options_app/api/routers/__init__.py` -> `none`
-  - `crypto_options_app/api/routers/dashboard.py` -> `none`
-  - `crypto_options_app/api/routers/health.py` -> `none`
-  - `crypto_options_app/api/routers/signals.py` -> `none`
-  - ... `673` additional paths in JSON artifact
+  - `crypto_options_app/artifacts/team_coordination/handoff_queue.jsonl` -> `none`
+  - `crypto_options_app/artifacts/team_coordination/master_status.md` -> `none`
+  - `crypto_options_app/artifacts/team_coordination/repo_cleanup_plan.md` -> `none`
+  - `crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.err.txt` -> `none`
+  - `crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.out.json` -> `none`
+  - `crypto_options_app/artifacts/automation/codex-signal-v5-retry-complete-20260605T192649Z.err.txt` -> `none`
+  - `crypto_options_app/artifacts/automation/codex-signal-v5-retry-complete-20260605T192649Z.out.json` -> `none`
+  - `crypto_options_app/artifacts/automation/option_price_capture_active_process.json` -> `none`
+  - ... `387` additional paths in JSON artifact
 
 ### Local State And Root Config Review
 - ID: `batch_1_local_state_root_config_review`
 - Branch: `codex/crypto-repo-local-state-cleanup`
-- Entries: `16`
-- Review required: `16`
-- Move candidates: `15`
+- Entries: `2`
+- Review required: `2`
+- Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Decide ignore/archive behavior for local automation state and root config churn.
+  - `.gitignore` -> `none`
   - `requirements.txt` -> `none`
-  - `.codex_automation_memory/automations/crypto-options-frontend-developer/memory.md` -> `global_app_reference/.codex_automation_memory/automations/crypto-options-frontend-developer/memory.md`
-  - `.codex_automation_memory/automations/crypto-options-indicator-dev/memory.md` -> `global_app_reference/.codex_automation_memory/automations/crypto-options-indicator-dev/memory.md`
-  - `.codex_automation_memory/automations/crypto-options-indicator-qa/memory.md` -> `global_app_reference/.codex_automation_memory/automations/crypto-options-indicator-qa/memory.md`
-  - `.codex_automation_memory/automations/crypto-options-signal-validator-worker/memory.md` -> `global_app_reference/.codex_automation_memory/automations/crypto-options-signal-validator-worker/memory.md`
-  - `.codex_automation_memory/automations/crypto-options-strategy-dev/memory.md` -> `global_app_reference/.codex_automation_memory/automations/crypto-options-strategy-dev/memory.md`
-  - `.codex_automation_memory/crypto-options-db-data-observability/memory.md` -> `global_app_reference/.codex_automation_memory/crypto-options-db-data-observability/memory.md`
-  - `.codex_automation_memory/crypto-options-frontend-developer.md` -> `global_app_reference/.codex_automation_memory/crypto-options-frontend-developer.md`
-  - ... `8` additional paths in JSON artifact
 
 ### WNBA/NBA Reference Move
 - ID: `batch_2_wnba_nba_reference_move`
@@ -128,7 +121,8 @@
 - Purpose: Paths that do not fit a safe automatic batch.
 
 ## Next Actions
-- Create or switch to batch_0 branch before staging active crypto baseline.
-- Keep reference moves separate from active crypto baseline.
+- Review and commit the current batch branch before opening reference-move branches.
+- Keep reference moves separate from active crypto baseline and local-state cleanup.
+- Hold root dependency changes until their owning app/tooling branch is clear.
 - Review batch_4 compatibility wrappers before moving any wrapper paths.
 - Create GitHub milestones/issues only after cleanup branches are reviewable.

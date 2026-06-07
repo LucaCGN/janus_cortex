@@ -1,13 +1,13 @@
 # Crypto Options Repo Cleanup Inventory
 
-- Generated: `2026-06-07T04:34:52.750518+00:00`
+- Generated: `2026-06-07T04:46:21.211472+00:00`
 - Status: `degraded`
 - Manual orders avoided: `True`
 
 ## Summary
-- Dirty paths: `902`
-- Review-required paths: `219`
-- Active crypto paths: `681`
+- Dirty paths: `602`
+- Review-required paths: `205`
+- Active crypto paths: `395`
 - Crypto compatibility wrapper candidates: `131`
 - Legacy move candidates: `72`
 - Unknown/root review paths: `0`
@@ -20,12 +20,11 @@
 - GitHub issue creation ready: `False`
 
 ## Classification Counts
-- `crypto_active`: `681`
+- `crypto_active`: `395`
 - `crypto_compatibility_wrapper_candidate`: `131`
 - `global_reference`: `1`
 - `global_reference_candidate`: `69`
-- `local_automation_state_review`: `15`
-- `root_config_review`: `1`
+- `root_config_review`: `2`
 - `wnba_nba_reference`: `1`
 - `wnba_nba_reference_candidate`: `3`
 
@@ -35,6 +34,7 @@
 - `legacy_reference_candidates_need_inventory_review`
 
 ## Proposed Move Samples
+- `M` `.gitignore` -> `root_config_review` / `manual_root_config_review` / `none`
 - `M` `app/api/main.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/main.py`
 - `M` `app/api/models.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/models.py`
 - `M` `app/api/routers/__init__.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/routers/__init__.py`
@@ -54,8 +54,7 @@
 - `M` `app/modules/agentic/engine.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/engine.py`
 - `M` `app/modules/agentic/event_budget.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/event_budget.py`
 - `M` `app/modules/agentic/global_portfolio.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/global_portfolio.py`
-- `M` `app/modules/agentic/live_game_context.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/live_game_context.py`
-- ... `882` additional paths in JSON artifact
+- ... `582` additional paths in JSON artifact
 
 ## Next Actions
 - Review the JSON path_entries list before moving files.
