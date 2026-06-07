@@ -201,6 +201,7 @@ def test_crypto_options_app_builder_mounts_dashboard_routes_pytest() -> None:
 
     assert command_center.status_code == 200
     assert "Crypto Options Control Surface" in command_center.text
+    assert "strategyPolicyPanel" in command_center.text
     assert page.status_code == 200
     assert "Crypto Options Live Console" in page.text
     assert state.status_code == 200
@@ -1463,6 +1464,12 @@ def test_crypto_options_app_builder_mounts_strategy_lab_routes_pytest(tmp_path) 
     assert validation_lab_payload["live_trading_authorized"] is False
     assert promotion_payload["schema_version"] == "crypto_options_strategy_promotion_summary_v1"
     assert promotion_payload["strategy_count"] == catalog_payload["strategy_count"]
+    assert promotion_payload["policy_contract"]["schema_version"] == "crypto_options_promotion_policy_contract_v1"
+    assert promotion_payload["policy_contract"]["signals"]["promotable_state"] == "PROMOTION_READY"
+    assert "PASSED" in promotion_payload["policy_contract"]["signals"]["not_promotable_labels"]
+    live_requirements = promotion_payload["policy_contract"]["strategies"]["live_candidate_requirements"]
+    assert live_requirements["recent_distinct_economic_samples"] == 12
+    assert live_requirements["recent_shadow_live_win_rate_gt"] == 0.7
     assert promotion_payload["orders_allowed"] is False
     assert promotion_payload["live_trading_authorized"] is False
     assert historical_replay.json()["schema_version"] == "crypto_options_strategy_replay_summary_v1"

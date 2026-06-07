@@ -950,6 +950,66 @@ tbody tr.is-selected {
   grid-template-columns: minmax(160px, 210px) minmax(170px, 220px) minmax(170px, 210px) minmax(260px, 1fr);
 }
 
+.policy-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px 17px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(8, 13, 19, 0.72);
+}
+
+.policy-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.policy-summary > div {
+  min-width: 0;
+  padding: 11px 12px;
+  background: rgba(12, 18, 25, 0.96);
+}
+
+.policy-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.policy-summary strong {
+  display: block;
+  margin-top: 6px;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.policy-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.policy-tags span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid rgba(244, 189, 68, 0.42);
+  border-radius: 999px;
+  color: var(--amber);
+  background: rgba(244, 189, 68, 0.08);
+  font-size: 11px;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
 .flow-toolbar {
   grid-template-columns: minmax(190px, 260px);
 }
@@ -1119,6 +1179,10 @@ tbody tr.is-selected {
   .signal-evidence-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .policy-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 520px) {
@@ -1136,6 +1200,10 @@ tbody tr.is-selected {
 
   .summary-strip > div {
     border-right: 0;
+  }
+
+  .policy-summary {
+    grid-template-columns: 1fr;
   }
 
   .module-row,

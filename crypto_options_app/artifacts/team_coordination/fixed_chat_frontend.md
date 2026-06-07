@@ -44,3 +44,9 @@ The UI must show:
 ## Safety
 
 The frontend cannot authorize orders. Live trading must remain disabled in UI unless the backend explicitly reports authorized supervised runtime state.
+
+## Current Contract Surface
+
+- The strategy lab has a read-only promotion policy panel backed by `/v1/crypto-options-app/strategies/promotion.policy_contract`.
+- It renders the policy schema version, `PROMOTION_READY` signal gate, 12-sample / >70% / positive-PnL live-candidate threshold, zero strict-signal-blocker allowance, non-promotable labels such as `PASSED` and `STRUCTURAL_PASS`, and supervised-runtime-only live authority.
+- Future frontend work should keep this panel aligned with the machine contract instead of hard-coding separate promotion rules.

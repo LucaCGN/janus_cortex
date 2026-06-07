@@ -283,6 +283,10 @@ function strategyRows() {
   return state.strategies?.strategies || [];
 }
 
+function promotionPolicyContract() {
+  return state.strategies?.policy_contract || {};
+}
+
 function eventRows() {
   return state.control?.events || [];
 }
@@ -955,6 +959,7 @@ function renderStrategyFilters() {
 
 function renderStrategies() {
   renderStrategyFilters();
+  renderStrategyPolicy();
   const rows = filteredStrategies();
   const body = $("strategyRows");
   if (!body) return;
@@ -981,6 +986,54 @@ function renderStrategies() {
       </tr>
     `;
   }).join("") : emptyRow(10, endpointEmptyState("strategies", "No strategy promotion rows available."));
+}
+
+function renderStrategyPolicy() {
+  const node = $("strategyPolicyPanel");
+  if (!node) return;
+  const contract = promotionPolicyContract();
+  const status = getEndpointStatus("strategies");
+  if (!contract.schema_version) {
+    node.innerHTML = `<div class="empty-state">${escapeHtml(endpointEmptyState("strategies", "Promotion policy contract is not available."))}</div>`;
+    node.classList.toggle("is-loading", status.state === "loading");
+    return;
+  }
+  const requirements = contract.strategies?.live_candidate_requirements || {};
+  const signalPolicy = contract.signals || {};
+  const liveSafety = contract.live_safety || {};
+  const blockedLabels = asList(signalPolicy.not_promotable_labels).slice(0, 8);
+  const minWinRate = requirements.recent_shadow_live_win_rate_gt;
+  const sampleCount = requirements.recent_distinct_economic_samples;
+  const pnlGate = requirements.recent_shadow_live_pnl_usd_gt;
+  const strictBlockers = requirements.strict_signal_blockers;
+  node.classList.remove("is-loading");
+  node.innerHTML = `
+    <div class="policy-summary">
+      <div>
+        <span>Policy Contract</span>
+        <strong>${escapeHtml(contract.schema_version)}</strong>
+      </div>
+      <div>
+        <span>Signal Gate</span>
+        <strong>${escapeHtml(signalPolicy.promotable_state || "PROMOTION_READY")}</strong>
+      </div>
+      <div>
+        <span>Live Candidate Gate</span>
+        <strong>${escapeHtml(number(sampleCount))} samples, >${escapeHtml(pct(minWinRate))}, ${escapeHtml(money(pnlGate))}+ PnL</strong>
+      </div>
+      <div>
+        <span>Strict Blockers</span>
+        <strong>${escapeHtml(number(strictBlockers))} allowed</strong>
+      </div>
+      <div>
+        <span>Live Authority</span>
+        <strong>${liveSafety.chat_judgment_can_authorize_live || liveSafety.automation_can_authorize_live ? "unsafe review" : "supervised runtime only"}</strong>
+      </div>
+    </div>
+    <div class="policy-tags" aria-label="Not promotable signal labels">
+      ${blockedLabels.map((label) => `<span>${escapeHtml(displayStatus(label))}</span>`).join("")}
+    </div>
+  `;
 }
 
 function renderSystem() {

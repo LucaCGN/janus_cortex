@@ -39,6 +39,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 - Promotion policy contract: strategy promotion summaries expose `crypto_options_promotion_policy_contract_v1`; `PASSED`/`SELECTED`/`STRUCTURAL_PASS`/`STRUCTURAL_ALTERNATE` are not promotable signal states, exactly 70% win rate is not enough for live candidacy, and chat/automation cannot authorize live orders.
 - Transition readiness now blocks if the strategy promotion endpoint lacks `crypto_options_promotion_policy_contract_v1`.
+- Frontend strategy lab now renders the `policy_contract` from `/strategies/promotion`, including live-candidate gates, the `PROMOTION_READY` signal gate, non-promotable signal labels, strict blocker allowance, and supervised-runtime-only live authority.
 
 ## Active Fixed Chats
 
@@ -61,5 +62,5 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
-7. Continue issue #153 by wiring `policy_contract` into frontend rendering and signal/strategy queue worker decisions; readiness already verifies the endpoint contract is present.
+7. Continue issue #153 by wiring `policy_contract` into signal/strategy queue worker decisions; readiness verifies the endpoint contract is present and the frontend strategy lab now renders it.
 8. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.
