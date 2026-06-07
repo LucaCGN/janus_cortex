@@ -8,26 +8,26 @@ from typing import Any
 
 from crypto_options_app.db.connection import connect
 from crypto_options_app.signals.validation.result_store import validation_status
+from crypto_options_app.strategies.promotion import promotion_policy_contract
 
 
 def build_strategy_revision_scout(conn: Any) -> dict[str, Any]:
+    policy_contract = promotion_policy_contract()
     signal_status = validation_status(conn)
     signal_rows = list(signal_status.get("signals") or [])
     strategy_rows = _strategy_promotion_rows(conn)
-    signal_coverage = summarize_signal_coverage(signal_rows)
-    strategy_summary = summarize_strategy_promotion(strategy_rows)
+    signal_coverage = summarize_signal_coverage(signal_rows, policy_contract=policy_contract)
+    strategy_summary = summarize_strategy_promotion(strategy_rows, policy_contract=policy_contract)
+    signal_gate = summarize_signal_gate(signal_status, signal_rows, policy_contract=policy_contract)
     return {
         "schema_version": "crypto_options_strategy_revision_scout_v1",
+        "policy_contract_schema_version": policy_contract["schema_version"],
+        "policy_contract": policy_contract,
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "orders_allowed": False,
         "live_trading_authorized": False,
         "manual_orders_avoided": True,
-        "signal_gate": {
-            "signal_count": signal_status.get("signal_count", 0),
-            "promotion_ready_signal_count": signal_status.get("by_promotion_state", {}).get("PROMOTION_READY", 0),
-            "revision_signal_count": signal_status.get("by_promotion_state", {}).get("NEEDS_V2_REVIEW", 0),
-            "strict_replay_required_count": signal_status.get("by_promotion_state", {}).get("STRUCTURAL_PASS", 0),
-        },
+        "signal_gate": signal_gate,
         "signal_coverage": signal_coverage,
         "strategy_summary": strategy_summary,
         "recommended_next_lanes": recommend_next_lanes(
@@ -51,6 +51,8 @@ def write_strategy_revision_scout_report(payload: dict[str, Any], output_path: s
         f"- Signals: {payload['signal_gate']['signal_count']}",
         f"- Promotion ready: {payload['signal_gate']['promotion_ready_signal_count']}",
         f"- Needs revision: {payload['signal_gate']['revision_signal_count']}",
+        f"- Strict replay / not promotable labels: {payload['signal_gate']['strict_replay_required_count']}",
+        f"- Policy contract: `{payload.get('policy_contract_schema_version') or 'missing'}`",
         "",
         "## Strategy State",
         "",
@@ -88,18 +90,64 @@ def write_strategy_revision_scout_report(payload: dict[str, Any], output_path: s
     return path
 
 
-def summarize_signal_coverage(signal_rows: list[dict[str, Any]]) -> dict[str, Any]:
-    promotion_ready = _count_signal_rows(signal_rows, promotion_state="PROMOTION_READY")
-    revision = _count_signal_rows(signal_rows, promotion_state="NEEDS_V2_REVIEW")
+def summarize_signal_gate(
+    signal_status: dict[str, Any],
+    signal_rows: list[dict[str, Any]],
+    *,
+    policy_contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    contract = policy_contract or promotion_policy_contract()
+    signal_policy = contract.get("signals") if isinstance(contract.get("signals"), dict) else {}
+    promotable_state = str(signal_policy.get("promotable_state") or "PROMOTION_READY")
+    not_promotable_labels = {str(label) for label in signal_policy.get("not_promotable_labels") or ()}
+    by_state = dict(signal_status.get("by_promotion_state") or {})
     return {
-        "promotion_ready_by_type_source": promotion_ready,
-        "revision_by_type_source": revision,
-        "top_promotion_ready": _top_counts(promotion_ready),
-        "top_revision": _top_counts(revision),
+        "signal_count": signal_status.get("signal_count", 0),
+        "promotable_state": promotable_state,
+        "promotion_ready_signal_count": by_state.get(promotable_state, 0),
+        "revision_signal_count": by_state.get("NEEDS_V2_REVIEW", 0),
+        "strict_replay_required_count": sum(1 for row in signal_rows if str(row.get("promotion_state") or "") in not_promotable_labels),
+        "not_promotable_labels": sorted(not_promotable_labels),
+        "policy_contract_schema_version": contract.get("schema_version"),
     }
 
 
-def summarize_strategy_promotion(strategy_rows: list[dict[str, Any]]) -> dict[str, Any]:
+def summarize_signal_coverage(
+    signal_rows: list[dict[str, Any]],
+    *,
+    policy_contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    contract = policy_contract or promotion_policy_contract()
+    signal_policy = contract.get("signals") if isinstance(contract.get("signals"), dict) else {}
+    promotable_state = str(signal_policy.get("promotable_state") or "PROMOTION_READY")
+    not_promotable_labels = {str(label) for label in signal_policy.get("not_promotable_labels") or ()}
+    promotion_ready = _count_signal_rows(signal_rows, promotion_state=promotable_state)
+    revision = _count_signal_rows(signal_rows, promotion_state="NEEDS_V2_REVIEW")
+    not_promotable = _count_signal_rows_by_states(signal_rows, promotion_states=not_promotable_labels)
+    return {
+        "promotable_state": promotable_state,
+        "not_promotable_labels": sorted(not_promotable_labels),
+        "promotion_ready_by_type_source": promotion_ready,
+        "revision_by_type_source": revision,
+        "not_promotable_by_state": not_promotable["by_state"],
+        "not_promotable_by_type_source": not_promotable["by_type_source"],
+        "top_promotion_ready": _top_counts(promotion_ready),
+        "top_revision": _top_counts(revision),
+        "top_not_promotable": _top_counts(not_promotable["by_type_source"]),
+    }
+
+
+def summarize_strategy_promotion(
+    strategy_rows: list[dict[str, Any]],
+    *,
+    policy_contract: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    contract = policy_contract or promotion_policy_contract()
+    strategy_policy = contract.get("strategies") if isinstance(contract.get("strategies"), dict) else {}
+    requirements = strategy_policy.get("live_candidate_requirements") if isinstance(strategy_policy.get("live_candidate_requirements"), dict) else {}
+    sample_threshold = int(requirements.get("recent_distinct_economic_samples") or 12)
+    win_rate_threshold = float(requirements.get("recent_shadow_live_win_rate_gt") or 0.70)
+    pnl_threshold = float(requirements.get("recent_shadow_live_pnl_usd_gt") or 0.0)
     by_state = Counter(str(row.get("promotion_state") or "UNKNOWN") for row in strategy_rows)
     strategies_with_recent = 0
     strategies_clearing = 0
@@ -110,9 +158,16 @@ def summarize_strategy_promotion(strategy_rows: list[dict[str, Any]]) -> dict[st
         recent_samples = int(evidence.get("recent_shadow_live_economic_sample_count") or 0)
         recent_win_rate = evidence.get("recent_shadow_live_win_rate")
         recent_pnl = float(evidence.get("recent_shadow_live_simulated_pnl_usd") or 0.0)
+        blockers = list(evidence_payload.get("blockers") or [])
         if recent_samples > 0:
             strategies_with_recent += 1
-        clears = recent_samples >= 12 and recent_win_rate is not None and float(recent_win_rate) > 0.70 and recent_pnl > 0
+        clears = (
+            recent_samples >= sample_threshold
+            and recent_win_rate is not None
+            and float(recent_win_rate) > win_rate_threshold
+            and recent_pnl > pnl_threshold
+            and not blockers
+        )
         if clears:
             strategies_clearing += 1
         reviewed.append(
@@ -123,7 +178,7 @@ def summarize_strategy_promotion(strategy_rows: list[dict[str, Any]]) -> dict[st
                 "recent_win_rate": recent_win_rate,
                 "recent_pnl": recent_pnl,
                 "clears_live_policy": clears,
-                "blockers": list(evidence_payload.get("blockers") or []),
+                "blockers": blockers,
                 "next_action": evidence_payload.get("next_action"),
             }
         )
@@ -132,6 +187,12 @@ def summarize_strategy_promotion(strategy_rows: list[dict[str, Any]]) -> dict[st
         "by_promotion_state": dict(sorted(by_state.items())),
         "strategies_with_recent_economics": strategies_with_recent,
         "strategies_clearing_live_policy": strategies_clearing,
+        "policy_contract_schema_version": contract.get("schema_version"),
+        "live_candidate_requirements": {
+            "recent_distinct_economic_samples": sample_threshold,
+            "recent_shadow_live_win_rate_gt": win_rate_threshold,
+            "recent_shadow_live_pnl_usd_gt": pnl_threshold,
+        },
         "strategies": reviewed,
     }
 
@@ -214,6 +275,27 @@ def _count_signal_rows(signal_rows: list[dict[str, Any]], *, promotion_state: st
         blocks = ",".join(str(block) for block in (row.get("source_blocks") or [])) or "unknown"
         counter[f"{signal_type}|{blocks}"] += 1
     return dict(sorted(counter.items()))
+
+
+def _count_signal_rows_by_states(
+    signal_rows: list[dict[str, Any]],
+    *,
+    promotion_states: set[str],
+) -> dict[str, dict[str, int]]:
+    by_state: Counter[str] = Counter()
+    by_type_source: Counter[str] = Counter()
+    for row in signal_rows:
+        state = str(row.get("promotion_state") or "")
+        if state not in promotion_states:
+            continue
+        by_state[state] += 1
+        signal_type = str(row.get("signal_type") or row.get("type") or "unknown")
+        blocks = ",".join(str(block) for block in (row.get("source_blocks") or [])) or "unknown"
+        by_type_source[f"{signal_type}|{blocks}"] += 1
+    return {
+        "by_state": dict(sorted(by_state.items())),
+        "by_type_source": dict(sorted(by_type_source.items())),
+    }
 
 
 def _top_counts(counts: dict[str, int], *, limit: int = 12) -> list[dict[str, Any]]:

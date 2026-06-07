@@ -23,6 +23,7 @@ Coordination root: `crypto_options_app/artifacts/team_coordination`
 - `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`
 - `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.json`
 - `crypto_options_app/artifacts/reports/transition_readiness_latest.json`
+- Strategy revision scout payload/report when available; it now includes `policy_contract_schema_version`, `signal_gate.not_promotable_labels`, `signal_coverage.not_promotable_by_state`, and policy-derived live-candidate thresholds.
 
 ## Scope
 
@@ -46,6 +47,8 @@ Do not work on:
 3. Create V2-V5 only when the variant covers a real gap or fixes a concrete blocker.
 4. Do not treat `PASSED`, `SELECTED`, or `STRUCTURAL_ALTERNATE` as live-safe without strict replay and strategy evidence.
 5. Never promote live from chat judgment.
+6. Use `crypto_options_promotion_policy_contract_v1` as the promotion source of truth. `PROMOTION_READY` is the only promotable signal state; labels listed in `policy_contract.signals.not_promotable_labels` are review-only even if they look positive.
+7. Use policy-derived thresholds from the strategy revision scout or `/strategies/promotion.policy_contract`; do not hard-code different sample, win-rate, PnL, lifecycle, reconciliation, blocker, or drift rules.
 
 ## Strategy Direction
 
