@@ -86,3 +86,11 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Storage and transition readiness audits now call summary mode. Latest storage audit measured `signals_validation_status` at 86.31 ms and 596 bytes, down from roughly 1.4-1.5 s and ~988 KB.
 - Fixed chat startup readiness remains `ready` for both immediate fixed chats, with no live authority.
 - Remaining storage warning is Postgres memory over 6GiB; next pressure targets are dashboard/control-center payload size and Postgres memory behavior, not signal status.
+
+## 2026-06-07T11:29Z Control Center Summary Mode
+
+- Control-center state now supports `include_details=false` for audits and automation status checks while preserving the full default payload for the working UI.
+- Summary mode strips embedded positions, orders, history, event rows, profile-distribution rows, portfolio ledger rows, and crypto indicator detail lists, while preserving counts, modules, module blocks, live safety flags, and high-level state.
+- Storage and transition readiness audits now call `/dashboard/control-center-state?include_details=false`.
+- Latest storage audit measured `dashboard_control_center_state` at 44.36 ms and 15,993 bytes, down from roughly 1.0 MB.
+- Remaining storage degradation is Postgres memory over 6GiB. Redis remains disabled and non-authoritative until a measured hot-plane use case survives adapter tests.

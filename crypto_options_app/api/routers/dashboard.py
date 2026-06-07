@@ -50,6 +50,8 @@ def crypto_options_control_center_state(request: Request) -> dict[str, Any]:
     config = getattr(request.app.state, "crypto_options_config", DEFAULT_CONFIG)
     db_path = Path(getattr(config, "db_path", DEFAULT_CONFIG.db_path))
     artifact_root = Path(getattr(config, "artifact_root", DEFAULT_CONFIG.artifact_root))
+    include_details = str(request.query_params.get("include_details", "true")).lower() not in {"0", "false", "no"}
+    detail_limit = _bounded_int_query(request.query_params.get("detail_limit"), default=None, minimum=1, maximum=500)
     if not db_path.exists():
         initialize_schema(db_path)
     live_state = build_live_dashboard_state(artifact_root=artifact_root)
@@ -57,11 +59,11 @@ def crypto_options_control_center_state(request: Request) -> dict[str, Any]:
     if not force_refresh:
         cached = _fresh_control_center_cache(artifact_root=artifact_root, live_state=live_state, max_age_seconds=60.0)
         if cached is not None:
-            return cached
+            return _control_center_detail_view(cached, include_details=include_details, detail_limit=detail_limit)
     if not force_refresh:
         stale_cached = _control_center_cache_fallback(artifact_root=artifact_root, live_state=live_state)
         if stale_cached is not None:
-            return stale_cached
+            return _control_center_detail_view(stale_cached, include_details=include_details, detail_limit=detail_limit)
     try:
         with _connect_dashboard_read_only(db_path) as conn:
             db_connection_is_postgres = bool(getattr(conn, "is_postgres", False))
@@ -83,7 +85,7 @@ def crypto_options_control_center_state(request: Request) -> dict[str, Any]:
         result = _with_control_center_cache(result, artifact_root=artifact_root)
         result["db_read_status"] = "blocked"
         result["db_read_error"] = f"{type(exc).__name__}:{exc}"
-        return result
+        return _control_center_detail_view(result, include_details=include_details, detail_limit=detail_limit)
 
     result = _base_control_center_state(
         db_path=db_path,
@@ -103,7 +105,7 @@ def crypto_options_control_center_state(request: Request) -> dict[str, Any]:
     result["db_connection_is_postgres"] = db_connection_is_postgres
     result["postgres_runtime_expected"] = should_use_postgres_runtime(db_path)
     result = _with_control_center_cache(result, artifact_root=artifact_root)
-    return result
+    return _control_center_detail_view(result, include_details=include_details, detail_limit=detail_limit)
 
 
 @router.post("/stop-for-review")
@@ -1005,6 +1007,78 @@ def _connect_dashboard_read_only(db_path: str | Path):
 
 def _preflight_dashboard_read(conn) -> None:
     conn.execute("SELECT 1").fetchone()
+
+
+_CONTROL_CENTER_DETAIL_LIST_KEYS = ("positions", "orders", "history", "events", "profile_distributions")
+_CONTROL_CENTER_CRYPTO_LIST_KEYS = ("technicals", "latest_prices", "indicator_snapshots")
+
+
+def _bounded_int_query(value: Any, *, default: int | None, minimum: int, maximum: int) -> int | None:
+    if value is None or value == "":
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, min(maximum, parsed))
+
+
+def _control_center_detail_view(
+    result: dict[str, Any],
+    *,
+    include_details: bool,
+    detail_limit: int | None,
+) -> dict[str, Any]:
+    if include_details:
+        if detail_limit is None:
+            return result | {"details_included": True, "detail_limit": None}
+        return _trim_control_center_details(result, detail_limit=detail_limit) | {
+            "details_included": True,
+            "detail_limit": detail_limit,
+        }
+    compact = dict(result)
+    detail_counts: dict[str, Any] = {}
+    for key in _CONTROL_CENTER_DETAIL_LIST_KEYS:
+        rows = compact.get(key) if isinstance(compact.get(key), list) else []
+        detail_counts[key] = len(rows)
+        compact[key] = []
+    portfolio = dict(compact.get("portfolio") or {})
+    ledger_rows = portfolio.get("ledger_rows") if isinstance(portfolio.get("ledger_rows"), list) else []
+    detail_counts["portfolio_ledger_rows"] = len(ledger_rows)
+    portfolio["ledger_rows"] = []
+    compact["portfolio"] = portfolio
+    crypto = dict(compact.get("crypto_indicators") or {})
+    crypto_counts: dict[str, int] = {}
+    for key in _CONTROL_CENTER_CRYPTO_LIST_KEYS:
+        rows = crypto.get(key) if isinstance(crypto.get(key), list) else []
+        crypto_counts[key] = len(rows)
+        crypto[key] = []
+    detail_counts["crypto_indicators"] = crypto_counts
+    compact["crypto_indicators"] = crypto
+    compact["details_included"] = False
+    compact["detail_limit"] = detail_limit
+    compact["detail_counts"] = detail_counts
+    return compact
+
+
+def _trim_control_center_details(result: dict[str, Any], *, detail_limit: int) -> dict[str, Any]:
+    trimmed = dict(result)
+    for key in _CONTROL_CENTER_DETAIL_LIST_KEYS:
+        rows = trimmed.get(key)
+        if isinstance(rows, list):
+            trimmed[key] = rows[:detail_limit]
+    portfolio = dict(trimmed.get("portfolio") or {})
+    ledger_rows = portfolio.get("ledger_rows")
+    if isinstance(ledger_rows, list):
+        portfolio["ledger_rows"] = ledger_rows[:detail_limit]
+    trimmed["portfolio"] = portfolio
+    crypto = dict(trimmed.get("crypto_indicators") or {})
+    for key in _CONTROL_CENTER_CRYPTO_LIST_KEYS:
+        rows = crypto.get(key)
+        if isinstance(rows, list):
+            crypto[key] = rows[:detail_limit]
+    trimmed["crypto_indicators"] = crypto
+    return trimmed
 
 
 def _base_control_center_state(

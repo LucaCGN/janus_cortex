@@ -193,7 +193,7 @@ def _endpoint_state(options: TransitionReadinessOptions) -> dict[str, Any]:
             timeout_seconds=options.endpoint_timeout_seconds,
         ),
         "dashboard_control_center_state": _timed_json_get(
-            f"{base}/dashboard/control-center-state",
+            f"{base}/dashboard/control-center-state?include_details=false",
             timeout_seconds=options.endpoint_timeout_seconds,
         ),
     }

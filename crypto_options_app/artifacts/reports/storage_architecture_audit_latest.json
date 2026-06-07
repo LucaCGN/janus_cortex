@@ -12,25 +12,25 @@
     "blockers": [],
     "endpoints": {
       "dashboard_control_center_state": {
-        "elapsed_ms": 41.21,
-        "payload_bytes": 1017681,
+        "elapsed_ms": 44.36,
+        "payload_bytes": 15993,
         "status": "ok",
         "status_code": 200
       },
       "health": {
-        "elapsed_ms": 41.26,
-        "payload_bytes": 100461,
+        "elapsed_ms": 29.31,
+        "payload_bytes": 100629,
         "status": "ok",
         "status_code": 200
       },
       "signals_validation_status": {
-        "elapsed_ms": 86.31,
+        "elapsed_ms": 106.39,
         "payload_bytes": 596,
         "status": "ok",
         "status_code": 200
       },
       "strategies_promotion": {
-        "elapsed_ms": 47.13,
+        "elapsed_ms": 50.59,
         "payload_bytes": 254527,
         "status": "ok",
         "status_code": 200
@@ -39,7 +39,7 @@
     "status": "ok",
     "warnings": []
   },
-  "generated_at_utc": "2026-06-07T11:21:17.798510+00:00",
+  "generated_at_utc": "2026-06-07T11:29:15.538299+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "postgres_role": "durable_source_of_truth",
@@ -58,9 +58,9 @@
     "db_connection_backend": "postgres",
     "postgres_container": {
       "blockers": [],
-      "cpu_percent": "109.26%",
-      "mem_usage": "6.714GiB / 15.47GiB",
-      "mem_used_bytes": 7209102606,
+      "cpu_percent": "121.82%",
+      "mem_usage": "6.743GiB / 15.47GiB",
+      "mem_used_bytes": 7240241119,
       "status": "degraded",
       "warnings": [
         "postgres_container_memory_over_6gib"

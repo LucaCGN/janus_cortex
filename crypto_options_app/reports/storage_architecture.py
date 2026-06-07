@@ -167,7 +167,7 @@ def _endpoint_timing_audit(options: StorageArchitectureAuditOptions) -> dict[str
     base = options.backend_base_url.rstrip("/")
     endpoints = {
         "health": f"{base}/health",
-        "dashboard_control_center_state": f"{base}/dashboard/control-center-state",
+        "dashboard_control_center_state": f"{base}/dashboard/control-center-state?include_details=false",
         "signals_validation_status": f"{base}/signals/validation/status?include_signals=false",
         "strategies_promotion": f"{base}/strategies/promotion",
     }

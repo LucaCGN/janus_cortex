@@ -198,6 +198,7 @@ def test_crypto_options_app_builder_mounts_dashboard_routes_pytest() -> None:
     page = client.get("/v1/crypto-options-app/dashboard")
     state = client.get("/v1/crypto-options-app/dashboard/state")
     control_center = client.get("/v1/crypto-options-app/dashboard/control-center-state")
+    control_summary = client.get("/v1/crypto-options-app/dashboard/control-center-state?include_details=false")
 
     assert command_center.status_code == 200
     assert "Crypto Options Control Surface" in command_center.text
@@ -206,6 +207,7 @@ def test_crypto_options_app_builder_mounts_dashboard_routes_pytest() -> None:
     assert "Crypto Options Live Console" in page.text
     assert state.status_code == 200
     assert control_center.status_code == 200
+    assert control_summary.status_code == 200
     payload = state.json()
     assert payload["schema_version"] == "crypto_options_live_dashboard_state_v1"
     assert payload["manual_orders_avoided"] is True
@@ -213,6 +215,18 @@ def test_crypto_options_app_builder_mounts_dashboard_routes_pytest() -> None:
     assert control_payload["schema_version"] == "crypto_options_control_center_state_v1"
     assert control_payload["orders_allowed"] is False
     assert control_payload["manual_orders_avoided"] is True
+    assert control_payload["details_included"] is True
+    summary_payload = control_summary.json()
+    assert summary_payload["schema_version"] == "crypto_options_control_center_state_v1"
+    assert summary_payload["details_included"] is False
+    assert summary_payload["positions"] == []
+    assert summary_payload["orders"] == []
+    assert summary_payload["history"] == []
+    assert summary_payload["events"] == []
+    assert summary_payload["profile_distributions"] == []
+    assert "detail_counts" in summary_payload
+    assert summary_payload["orders_allowed"] is False
+    assert summary_payload["manual_orders_avoided"] is True
 
 
 def test_control_center_state_stays_online_when_dashboard_db_read_is_locked_pytest(
