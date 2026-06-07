@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T08:00:00Z
+Updated: 2026-06-07T08:14:12Z
 
 ## Objective
 
@@ -48,7 +48,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Limited automations activated: `crypto-options-db-data-observability` every 15 minutes, `crypto-options-signal-strategy-queue-worker` every 15 minutes, and `crypto-options-frontend-status-reporter` hourly. Existing `crypto-options-unified-dev-loop` heartbeat remains paused in the app automation store; current master control is this active chat goal/thread.
 - Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `fresh`. DB/data observability, signal/strategy queue worker, and frontend status reporter all have fresh latest reports.
 - Signal/strategy queue worker latest proposals: keep `buying_ahead_pre_event_v1` blocked until a pre-event universe/feed handoff exists; retire `a_fallback_outcome_probe_v1` from queue-management consideration until a replacement fallback design or curated bundle swap is explicitly requested; keep `crypto_direction_option_context_hold_60s_v1` as `SHADOW_REQUIRED` until a bounded forward-mark shadow sampler/evidence pass is explicitly handed off.
-- DB/data observability latest: Postgres runtime reads are ok, Redis remains disabled, runtime SQLite audit is ok, and the stale C ETH core data blocker was repaired in this master pass. Root cause: C option capture used a global bounded target slice, so `--max-tokens 8` selected BTC targets first and starved ETH. The service now preserves complete symbol pairs under the cap, C ETH events/readiness recovered, and B Profiles resumed after current ETH events became available. Remaining DB/data warnings are B profile stale-source coverage warnings, Postgres memory over 6GiB/high CPU during reporting, and inactive D portfolio/order lifecycle tables.
+- DB/data observability latest: Postgres runtime reads are ok, Redis remains disabled, runtime SQLite audit is ok, and the stale C ETH core data blocker was repaired in this master pass. Root cause: C option capture used a global bounded target slice, so `--max-tokens 8` selected BTC targets first and starved ETH. The service now preserves complete symbol pairs under the cap, C ETH events/readiness recovered, and B Profiles resumed after current ETH events became available. System health now computes data-service watermark freshness from `last_run_at_utc`, so the D `polymarket_live_activity_capture` watermark is explicitly downgraded from raw `healthy` to `stale` and exposed as `data_service:stale_data_service_watermark:polymarket_live_activity_capture`. Remaining DB/data warnings are B profile stale-source coverage warnings, Postgres memory over 6GiB/high CPU during reporting, and inactive D portfolio/order lifecycle tables.
 - Frontend status latest: backend-rendered UI and key API contracts are reachable on canonical `8011`; separate frontend service `8012` is currently offline, so fixed-chat frontend work should treat `8011` as the working target until a separate React/frontend service is intentionally started.
 
 ## Active Fixed Chats
@@ -75,4 +75,5 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 7. Let the Signal/Strategy Management Cleanup fixed chat start from `signal_strategy_cleanup_batch_latest.md` and GitHub issues #155-#159; first work should retire or create justified V2-V5 variants for the first weak hedge-grid signal rows and revise/retire the first six stale strategy rows.
 8. Continue issue #153 by wiring the same cleanup classifications into a bounded queue-worker automation after the fixed-chat workflow proves the handoff path.
 9. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.
-10. Monitor the repaired B/C services for at least one more DB/data observability cycle; if they remain fresh, resume transition work on D lifecycle observability, Postgres memory pressure, and the Batch 4/GitHub-source-of-truth gates.
+10. Continue D lifecycle observability next: inspect whether `polymarket_live_activity_capture` should run as a bounded read-only service or remain explicitly inactive while live is disabled; do not start it until the lifecycle/read-only contract and resource footprint are verified.
+11. Keep Postgres memory pressure under review; current health/readiness must stay bounded and Redis remains disabled unless a measured hot-plane use case is selected.

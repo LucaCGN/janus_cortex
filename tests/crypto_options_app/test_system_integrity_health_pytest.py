@@ -8,10 +8,12 @@ from pathlib import Path
 
 import crypto_options_app.reports.system_integrity as system_integrity
 from crypto_options_app.config import CryptoOptionsAppConfig
+from crypto_options_app.db.connection import connect
 from crypto_options_app.db.schema import initialize_schema
 from crypto_options_app.db.postgres_shadow import write_postgres_shadow_parity_report
 from crypto_options_app.reports.live_order_audit import audit_validation_orders_against_exchange
 from crypto_options_app.reports.system_integrity import HealthBuildOptions, build_system_integrity_health
+from crypto_options_app.workers.feed_worker import write_watermark
 
 
 def _operational_polymarket_status() -> dict:
@@ -85,6 +87,57 @@ def test_system_integrity_health_reports_canonical_db_tables_pytest(tmp_path: Pa
     assert health["db"]["validation_budget"]["validation_budget_cap_usd"] == 50.0
     assert health["prepared_tests"]["core_flow"]["may_begin_after_operator_live_gate"] is True
     assert "missing_live_validation_artifact" in set(health["integrity"]["readiness_blockers"])
+
+
+def test_system_integrity_health_marks_stale_live_activity_watermark_pytest(tmp_path: Path) -> None:
+    db_path = initialize_schema(tmp_path / "crypto_options.sqlite")
+    now = datetime.now(UTC)
+    fresh = now.isoformat()
+    stale = (now - timedelta(days=3)).isoformat()
+
+    with connect(db_path) as conn:
+        for module_id in (
+            "underlying_market_prices",
+            "underlying_technical_observers",
+            "top_profiles_distribution",
+            "polymarket_option_price_capture",
+        ):
+            write_watermark(
+                conn,
+                service_name="crypto_options_app",
+                module_id=module_id,
+                status="healthy",
+                last_run_at_utc=fresh,
+                rows_observed=1,
+                rows_inserted=1,
+                source="pytest",
+            )
+        write_watermark(
+            conn,
+            service_name="crypto_options_app",
+            module_id="polymarket_live_activity_capture",
+            status="healthy",
+            last_run_at_utc=stale,
+            rows_observed=1,
+            rows_inserted=0,
+            source="pytest",
+        )
+
+    health = build_system_integrity_health(
+        CryptoOptionsAppConfig(db_path=db_path),
+        options=_health_options(tmp_path / "missing-artifacts"),
+    )
+
+    freshness = health["db"]["watermark_freshness"]
+    by_module = {row["module_id"]: row for row in freshness["modules"]}
+    live_activity = by_module["polymarket_live_activity_capture"]
+    assert live_activity["raw_status"] == "healthy"
+    assert live_activity["status"] == "stale"
+    assert "stale_data_service_watermark:polymarket_live_activity_capture" in live_activity["blockers"]
+    assert (
+        "data_service:stale_data_service_watermark:polymarket_live_activity_capture"
+        in set(health["integrity"]["readiness_blockers"])
+    )
 
 
 def test_system_integrity_db_report_marks_postgres_runtime_without_sqlite_file_pytest(

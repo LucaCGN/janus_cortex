@@ -72,6 +72,13 @@ DATA_SERVICE_TABLES = (
     "profile_distribution_components",
     "data_signal_readiness_snapshots",
 )
+DATA_SERVICE_WATERMARK_FRESHNESS: dict[str, dict[str, Any]] = {
+    "underlying_market_prices": {"data_block": "A", "stale_after_seconds": 180, "critical_for_live_readiness": True},
+    "underlying_technical_observers": {"data_block": "A", "stale_after_seconds": 180, "critical_for_live_readiness": True},
+    "top_profiles_distribution": {"data_block": "B", "stale_after_seconds": 180, "critical_for_live_readiness": True},
+    "polymarket_option_price_capture": {"data_block": "C", "stale_after_seconds": 180, "critical_for_live_readiness": True},
+    "polymarket_live_activity_capture": {"data_block": "D", "stale_after_seconds": 300, "critical_for_live_readiness": True},
+}
 VALIDATION_ROW_AUDIT_FIELDS = (
     "strategy_id",
     "status",
@@ -653,6 +660,7 @@ def _db_report(
                         """
                     ).fetchall()
                 ]
+                report["watermark_freshness"] = _watermark_freshness_report(report["watermarks"])
             if table_exists(conn, "polymarket_event_path_stats"):
                 report["latest_completed_event_path_stats"] = _latest_completed_event_path_stats(conn)
             if table_exists(conn, "external_technical_observer_snapshots"):
@@ -708,6 +716,75 @@ def _health_row_count(conn: Any, table_name: str) -> int:
             return 1
         return estimate
     return count_rows(conn, table_name)
+
+
+def _watermark_freshness_report(
+    watermarks: list[dict[str, Any]],
+    *,
+    now_utc: datetime | None = None,
+) -> dict[str, Any]:
+    now = now_utc or datetime.now(UTC)
+    by_module = {
+        str(row.get("module_id") or ""): row
+        for row in watermarks
+        if str(row.get("module_id") or "")
+    }
+    if not by_module:
+        return {
+            "generated_at_utc": now.isoformat(),
+            "status": "unobserved",
+            "modules": [],
+            "blockers": [],
+        }
+
+    modules: list[dict[str, Any]] = []
+    blockers: list[str] = []
+    for module_id, config in DATA_SERVICE_WATERMARK_FRESHNESS.items():
+        watermark = by_module.get(module_id)
+        stale_after_seconds = float(config["stale_after_seconds"])
+        row_blockers: list[str] = []
+        if watermark is None:
+            status = "missing"
+            age_seconds = None
+            last_run_at_utc = None
+            raw_status = "missing"
+            if config.get("critical_for_live_readiness"):
+                row_blockers.append(f"missing_data_service_watermark:{module_id}")
+        else:
+            raw_status = str(watermark.get("status") or "unknown")
+            last_run_at_utc = watermark.get("last_run_at_utc") or watermark.get("updated_at_utc")
+            parsed_last_run = _parse_utc(last_run_at_utc)
+            age_seconds = None if parsed_last_run is None else max(0.0, (now - parsed_last_run).total_seconds())
+            status = raw_status
+            if age_seconds is None:
+                status = "unknown"
+                row_blockers.append(f"unknown_data_service_watermark_age:{module_id}")
+            elif age_seconds > stale_after_seconds:
+                status = "stale"
+                row_blockers.append(f"stale_data_service_watermark:{module_id}")
+            if raw_status in {"degraded", "failed", "stale"} and not row_blockers:
+                row_blockers.append(f"{raw_status}_data_service_watermark:{module_id}")
+        blockers.extend(row_blockers)
+        modules.append(
+            {
+                "module_id": module_id,
+                "data_block": config.get("data_block"),
+                "status": status,
+                "raw_status": raw_status,
+                "age_seconds": age_seconds,
+                "stale_after_seconds": stale_after_seconds,
+                "last_run_at_utc": last_run_at_utc,
+                "critical_for_live_readiness": bool(config.get("critical_for_live_readiness")),
+                "blockers": row_blockers,
+            }
+        )
+
+    return {
+        "generated_at_utc": now.isoformat(),
+        "status": "degraded" if blockers else "ok",
+        "modules": modules,
+        "blockers": sorted(set(blockers)),
+    }
 
 
 def _db_report_cache_path(*, artifact_root: Path) -> Path:
@@ -1424,6 +1501,9 @@ def _readiness_blockers(
     table_counts = db_report.get("table_counts") if isinstance(db_report.get("table_counts"), dict) else {}
     validation_budget = db_report.get("validation_budget") if isinstance(db_report.get("validation_budget"), dict) else {}
     signal_validation = db_report.get("signal_validation") if isinstance(db_report.get("signal_validation"), dict) else {}
+    watermark_freshness = db_report.get("watermark_freshness") if isinstance(db_report.get("watermark_freshness"), dict) else {}
+    for blocker in watermark_freshness.get("blockers") or []:
+        blockers.append(f"data_service:{blocker}")
     if artifact_report.get("successful_strategy_count", 0) > 0 and not any(
         int(table_counts.get(table_name, 0)) > 0
         for table_name in ("strategy_candidates", "execution_intents", "orders", "fills", "positions", "run_reports")
