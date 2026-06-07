@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crypto Options Command Center</title>
+  <link rel="stylesheet" href="/v1/crypto-options-app/ui/assets/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="side-rail" aria-label="Crypto options workspace">
+      <div class="brand">
+        <div class="brand-mark">CO</div>
+        <div class="brand-copy">
+          <div class="brand-title">Crypto Options</div>
+          <div class="brand-subtitle">command center</div>
+        </div>
+      </div>
+
+      <nav class="nav-tabs" aria-label="Primary views">
+        <button class="nav-tab is-active" data-view="overview" type="button">Command</button>
+        <button class="nav-tab" data-view="events" type="button">Events</button>
+        <button class="nav-tab" data-view="portfolio" type="button">Portfolio</button>
+        <button class="nav-tab" data-view="positions" type="button">Positions</button>
+        <button class="nav-tab" data-view="orders" type="button">Orders</button>
+        <button class="nav-tab" data-view="history" type="button">History</button>
+        <button class="nav-tab" data-view="signals" type="button">Signals</button>
+        <button class="nav-tab" data-view="strategies" type="button">Strategies</button>
+        <button class="nav-tab" data-view="system" type="button">System</button>
+      </nav>
+
+      <div class="rail-block">
+        <span class="rail-label">Runtime</span>
+        <strong id="railRuntime">loading</strong>
+        <p id="railAudit">Audit state pending.</p>
+      </div>
+      <div class="rail-block">
+        <span class="rail-label">Safety</span>
+        <p>Manual orders avoided. Global live/API flags stay false; live orders only flow through supervised child runtimes.</p>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="workspace-header">
+        <div class="title-stack">
+          <p class="eyebrow">End-to-end loop</p>
+          <h1>Crypto Options Control Surface</h1>
+          <p class="header-copy">Sources, indicators, signals, strategy shadow, live promotion, positions, orders, and event intelligence in one read-only operating view.</p>
+        </div>
+        <div class="status-strip" aria-live="polite">
+          <span class="status-pill" id="runtimeStatus">loading</span>
+          <span class="status-pill" id="auditStatus">audit</span>
+          <span class="status-pill" id="orphanRuns">orphan runs --</span>
+          <span class="status-pill safe">manual orders avoided</span>
+          <span class="status-pill safe">orders disabled in UI</span>
+          <span class="status-pill" id="lastUpdated">loading</span>
+        </div>
+      </header>
+
+      <section class="loop-board" aria-label="Promotion loop">
+        <article class="loop-node" data-loop-step="sources">
+          <span>01</span>
+          <h2>Sources</h2>
+          <p>Events, profiles, and crypto streams.</p>
+          <strong id="sourceLoopState">loading</strong>
+        </article>
+        <article class="loop-node" data-loop-step="indicators">
+          <span>02</span>
+          <h2>Indicators</h2>
+          <p>Derived bands, distributions, and technical summaries.</p>
+          <strong id="indicatorLoopState">loading</strong>
+        </article>
+        <article class="loop-node" data-loop-step="signals">
+          <span>03</span>
+          <h2>Signals</h2>
+          <p>Backtested and strict-reviewed building blocks.</p>
+          <strong id="signalLoopState">loading</strong>
+        </article>
+        <article class="loop-node" data-loop-step="shadow">
+          <span>04</span>
+          <h2>Shadow</h2>
+          <p>Strategy replay and live-shadow validation.</p>
+          <strong id="shadowLoopState">loading</strong>
+        </article>
+        <article class="loop-node" data-loop-step="live">
+          <span>05</span>
+          <h2>Live</h2>
+          <p>Supervised runtime, reconciliation, and stop gates.</p>
+          <strong id="liveLoopState">loading</strong>
+        </article>
+      </section>
+
+      <section class="summary-strip" aria-label="Top metrics">
+        <div><span>Recorded Cash</span><strong id="metricCash">--</strong></div>
+        <div><span>Validation Spend</span><strong id="metricSpend">--</strong></div>
+        <div><span>Realized PnL</span><strong id="metricPnl">--</strong></div>
+        <div><span>Open Cost</span><strong id="metricOpenCost">--</strong></div>
+        <div><span>Signals</span><strong id="metricSignals">--</strong></div>
+        <div><span>Strategies</span><strong id="metricStrategies">--</strong></div>
+      </section>
+
+      <section class="view-panel is-active" data-panel="overview">
+        <div class="overview-grid">
+          <section class="work-panel large-panel">
+            <div class="section-bar">
+              <div>
+                <h2>Operating Report</h2>
+                <p>Current state across data services, signal lab, strategy promotion, and supervised live proof.</p>
+              </div>
+              <button id="refreshButton" type="button">Refresh</button>
+            </div>
+            <div class="module-grid" id="moduleGrid"></div>
+          </section>
+
+          <section class="work-panel">
+            <div class="section-bar">
+              <div>
+                <h2>Latest Event</h2>
+                <p>Captured Up/Down path, spread, latency, and rebound stats.</p>
+              </div>
+              <span class="mini-pill" id="eventCountPill">0 events</span>
+            </div>
+            <div id="overviewEvent" class="event-card"></div>
+          </section>
+
+          <section class="work-panel">
+            <div class="section-bar">
+              <div>
+                <h2>Profile Distribution</h2>
+                <p>Latest top-profile Up/Down pressure snapshot.</p>
+              </div>
+              <span class="mini-pill">Block B</span>
+            </div>
+            <div id="profilePressurePanel" class="pressure-panel"></div>
+          </section>
+
+          <section class="work-panel">
+            <div class="section-bar">
+              <div>
+                <h2>Strategy Runtime</h2>
+                <p>Latest live/shadow status from the strategy promotion and live dashboard layers.</p>
+              </div>
+              <span class="mini-pill" id="strategyRuntimePill">loading</span>
+            </div>
+            <div id="strategyRuntimePanel" class="runtime-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view-panel" data-panel="events">
+        <div class="split-view">
+          <section class="work-panel table-panel">
+            <div class="section-bar">
+              <div>
+                <h2>Event Intelligence</h2>
+                <p>Completed and captured 5-minute event paths with option price movement and latency stats.</p>
+              </div>
+              <span class="mini-pill" id="eventsShown">--</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Event</th>
+                    <th>Symbol</th>
+                    <th>Snapshots</th>
+                    <th>Path</th>
+                    <th>Range</th>
+                    <th>Vol/min</th>
+                    <th>Swings</th>
+                    <th>Rebounds</th>
+                    <th>Latency</th>
+                  </tr>
+                </thead>
+                <tbody id="eventRows"></tbody>
+              </table>
+            </div>
+          </section>
+          <aside class="work-panel inspector">
+            <div class="section-bar compact"><h2>Event View</h2><span id="selectedEventPill" class="mini-pill">none</span></div>
+            <div id="eventInspector" class="inspector-body"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="view-panel" data-panel="portfolio">
+        <div class="portfolio-grid">
+          <section class="work-panel">
+            <div class="section-bar">
+              <div><h2>Portfolio View</h2><p>Internal validation ledger and Polymarket-account style balance evidence.</p></div>
+              <span class="mini-pill" id="cashStatusPill">cash unknown</span>
+            </div>
+            <div class="ledger-summary" id="portfolioSummary"></div>
+          </section>
+          <section class="work-panel table-panel">
+            <div class="section-bar">
+              <div><h2>Budget Ledger</h2><p>Most recent supervised validation budget entries.</p></div>
+              <span class="mini-pill" id="ledgerCountPill">0 shown</span>
+            </div>
+            <div class="toolbar flow-toolbar" aria-label="Portfolio ledger filters">
+              <select id="ledgerScopeFilter" aria-label="Ledger scope">
+                <option value="flow">Flow-critical rows</option>
+                <option value="exceptions">Exceptions only</option>
+                <option value="all">All ledger rows</option>
+              </select>
+            </div>
+            <div class="table-wrap compact-table">
+              <table>
+                <thead><tr><th>Run</th><th>Component</th><th>Cap</th><th>Filled</th><th>PnL</th><th>Open</th><th>Cash</th><th>Status</th></tr></thead>
+                <tbody id="ledgerRows"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="view-panel" data-panel="positions">
+        <section class="work-panel table-panel">
+          <div class="section-bar">
+            <div><h2>Positions</h2><p>Canonical positions persisted through candidate, intent, order, fill, and exit-plan lifecycle.</p></div>
+            <span class="mini-pill" id="positionsCount">0</span>
+          </div>
+          <div class="toolbar flow-toolbar" aria-label="Position filters">
+            <select id="positionScopeFilter" aria-label="Position scope">
+              <option value="grouped">Grouped open exposure</option>
+              <option value="open">Raw open fills</option>
+              <option value="all">All position rows</option>
+            </select>
+          </div>
+          <div class="ledger-summary" id="positionSummary"></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Strategy</th><th>Event</th><th>Outcome</th><th>Shares</th><th>Cost</th><th>Status</th><th>Opened</th><th>Updated</th></tr></thead>
+              <tbody id="positionRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view-panel" data-panel="orders">
+        <section class="work-panel table-panel">
+          <div class="section-bar">
+            <div><h2>Open Orders And Intents</h2><p>Exchange order IDs, strategy intents, and current recorded lifecycle status.</p></div>
+            <span class="mini-pill" id="ordersCount">0</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Strategy</th><th>Event</th><th>Outcome</th><th>Intent</th><th>Order Type</th><th>Side</th><th>Status</th><th>Exchange ID</th><th>Updated</th></tr></thead>
+              <tbody id="orderRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view-panel" data-panel="history">
+        <section class="work-panel table-panel">
+          <div class="section-bar">
+            <div><h2>History</h2><p>Recorded fills, settlements, and lifecycle events from the canonical app ledger.</p></div>
+            <span class="mini-pill" id="historyCount">0</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Type</th><th>Strategy</th><th>Event</th><th>Outcome</th><th>Side</th><th>Size</th><th>Price</th><th>Notional</th><th>Time</th></tr></thead>
+              <tbody id="historyRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view-panel" data-panel="signals">
+        <section class="work-panel table-panel">
+          <div class="section-bar">
+            <div>
+              <h2>Signal Backtest Lab</h2>
+              <p>Validated signal variants, strict review status, next actions, and expandable replay-test evidence.</p>
+            </div>
+            <span class="mini-pill" id="signalShown">read-only</span>
+          </div>
+          <div class="toolbar" aria-label="Signal filters">
+            <select id="filterType" aria-label="Signal type"><option value="">All signal types</option></select>
+            <select id="filterTier" aria-label="Signal tier">
+              <option value="">All tiers</option>
+              <option value="selected">Selected</option>
+              <option value="structural">Structural</option>
+              <option value="review">Needs Revision</option>
+              <option value="discarded">Discarded</option>
+            </select>
+            <input id="filterText" type="search" placeholder="Search signal, source, variant..." aria-label="Search signals" />
+          </div>
+          <div class="table-wrap signal-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tier</th><th>Type</th><th>Sources</th><th>Variant</th><th>Version</th><th>Status</th><th>Hit</th><th>Samples</th><th>Events</th><th>Impact</th><th>Strict Review</th><th>Next Action</th>
+                </tr>
+              </thead>
+              <tbody id="signalRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view-panel" data-panel="strategies">
+        <section class="work-panel table-panel">
+          <div class="section-bar">
+            <div>
+              <h2>Strategy Lab</h2>
+              <p>Backtest, shadow, live-candidate, supervised-live, review states, and Budget Guardrail evidence for modular strategies.</p>
+            </div>
+            <span class="mini-pill" id="strategyShown">loading</span>
+          </div>
+          <div class="toolbar strategy-toolbar" aria-label="Strategy filters">
+            <select id="strategyStateFilter" aria-label="Strategy state"><option value="">All states</option></select>
+            <select id="strategyFamilyFilter" aria-label="Strategy family"><option value="">All families</option></select>
+            <select id="strategyTrackFilter" aria-label="Strategy evidence track"><option value="">All tracks</option></select>
+            <input id="strategyTextFilter" type="search" placeholder="Search strategy, family, blocker, next action..." aria-label="Search strategies" />
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Strategy</th><th>Version</th><th>State</th><th>Backtests</th><th>Shadow</th><th>Recent Shadow</th><th>Shadow PnL</th><th>Live Proof</th><th>Blockers</th><th>Next Action</th></tr>
+              </thead>
+              <tbody id="strategyRows"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section class="view-panel" data-panel="system">
+        <div class="system-grid">
+          <section class="work-panel">
+            <div class="section-bar"><div><h2>System Health</h2><p>Compact module status and readiness blockers.</p></div></div>
+            <div id="systemHealth" class="json-lite"></div>
+          </section>
+          <section class="work-panel">
+            <div class="section-bar"><div><h2>Crypto Indicators</h2><p>Latest underlying prices and external technical observer snapshots.</p></div></div>
+            <div id="cryptoIndicators" class="runtime-list"></div>
+          </section>
+        </div>
+      </section>
+
+      <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    </main>
+  </div>
+  <script src="/v1/crypto-options-app/ui/assets/app.js" defer></script>
+</body>
+</html>

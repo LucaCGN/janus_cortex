@@ -1,0 +1,88 @@
+{
+  "decision": {
+    "decision": "postgres_plus_redis_hot_plane_candidate",
+    "non_redis_fixes_still_required": [],
+    "postgres": "required_durable_source_of_truth",
+    "reasons": [
+      "postgres_container_memory_over_6gib"
+    ],
+    "redis": "enable_only_for_cache_queue_ttl_and_pubsub_after_adapter_tests"
+  },
+  "endpoint_timings": {
+    "blockers": [],
+    "endpoints": {
+      "dashboard_control_center_state": {
+        "elapsed_ms": 66.82,
+        "payload_bytes": 1017371,
+        "status": "ok",
+        "status_code": 200
+      },
+      "health": {
+        "elapsed_ms": 1097.92,
+        "payload_bytes": 94894,
+        "status": "ok",
+        "status_code": 200
+      },
+      "signals_validation_status": {
+        "elapsed_ms": 1892.86,
+        "payload_bytes": 987507,
+        "status": "ok",
+        "status_code": 200
+      },
+      "strategies_promotion": {
+        "elapsed_ms": 67.49,
+        "payload_bytes": 199080,
+        "status": "ok",
+        "status_code": 200
+      }
+    },
+    "status": "ok",
+    "warnings": []
+  },
+  "generated_at_utc": "2026-06-07T04:18:03.962532+00:00",
+  "live_trading_authorized": false,
+  "manual_orders_avoided": true,
+  "postgres_role": "durable_source_of_truth",
+  "redis_hot_plane": {
+    "database": 0,
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 56379,
+    "role": "gated_hot_plane_candidate",
+    "status": "disabled"
+  },
+  "redis_must_not_store_authoritative_trading_truth": true,
+  "redis_role": "gated_hot_plane_candidate",
+  "runtime": {
+    "blockers": [],
+    "db_connection_backend": "postgres",
+    "postgres_container": {
+      "blockers": [],
+      "cpu_percent": "6.84%",
+      "mem_usage": "6.144GiB / 15.47GiB",
+      "mem_used_bytes": 6597069766,
+      "status": "degraded",
+      "warnings": [
+        "postgres_container_memory_over_6gib"
+      ]
+    },
+    "runtime_code_status": "ok",
+    "status": "degraded",
+    "warnings": [
+      "docker_postgres_degraded",
+      "postgres_container_memory_over_6gib"
+    ]
+  },
+  "schema_version": "crypto_options_storage_architecture_audit_v1",
+  "signals": {
+    "blockers": [],
+    "hot_plane_reasons": [
+      "postgres_container_memory_over_6gib"
+    ],
+    "query_layer_reasons": [],
+    "warnings": [
+      "postgres_container_memory_over_6gib"
+    ]
+  },
+  "status": "degraded"
+}

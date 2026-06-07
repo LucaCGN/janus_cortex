@@ -1,0 +1,339 @@
+{
+  "blockers": [],
+  "coordination": {
+    "files": {
+      "automation_registry.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\automation_registry.md"
+      },
+      "fixed_chat_bootstrap.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_bootstrap.md"
+      },
+      "fixed_chat_frontend.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_frontend.md"
+      },
+      "fixed_chat_signal_strategy.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_signal_strategy.md"
+      },
+      "github_issue_milestone_plan.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\github_issue_milestone_plan.md"
+      },
+      "handoff_queue.jsonl": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\handoff_queue.jsonl"
+      },
+      "master_status.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\master_status.md"
+      },
+      "promotion_policy.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\promotion_policy.md"
+      },
+      "repo_cleanup_inventory.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\repo_cleanup_inventory.md"
+      },
+      "repo_cleanup_plan.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\repo_cleanup_plan.md"
+      },
+      "storage_architecture_decision.md": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\storage_architecture_decision.md"
+      }
+    },
+    "missing_files": [],
+    "root": "crypto_options_app\\artifacts\\team_coordination",
+    "status": "ok"
+  },
+  "endpoints": {
+    "dashboard_control_center_state": {
+      "elapsed_ms": 60.47,
+      "error": null,
+      "payload_bytes": 1017371,
+      "status": "ok",
+      "status_code": 200
+    },
+    "health": {
+      "elapsed_ms": 1155.84,
+      "error": null,
+      "payload_bytes": 94861,
+      "status": "ok",
+      "status_code": 200
+    },
+    "signals_validation_status": {
+      "elapsed_ms": 2517.35,
+      "error": null,
+      "payload_bytes": 987507,
+      "status": "ok",
+      "status_code": 200
+    },
+    "strategies_promotion": {
+      "elapsed_ms": 38.76,
+      "error": null,
+      "payload_bytes": 199080,
+      "status": "ok",
+      "status_code": 200
+    }
+  },
+  "generated_at_utc": "2026-06-07T04:24:33.405048+00:00",
+  "live_trading_authorized": false,
+  "manual_orders_avoided": true,
+  "next_actions": [
+    "Run path-level repo cleanup inventory before moving legacy files.",
+    "Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.",
+    "Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.",
+    "Review SHADOW_READY rows for recent one-hour economic proof before any live promotion.",
+    "Create GitHub milestones/issues from team_coordination issue plan before starting fixed chats."
+  ],
+  "promotion": {
+    "accidental_live_authorized_count": 0,
+    "by_promotion_state": {
+      "BACKTEST_READY": 2,
+      "NEEDS_BACKTEST": 25,
+      "REVIEW_BLOCKED": 1,
+      "SHADOW_READY": 8,
+      "SHADOW_REVIEW": 54
+    },
+    "live_candidate_count": 0,
+    "live_trading_authorized": false,
+    "manual_orders_avoided": true,
+    "orders_allowed": false,
+    "review_count": 55,
+    "shadow_ready_count": 8,
+    "strategy_count": 90,
+    "strict_signal_blocker_count": 0
+  },
+  "readiness": {
+    "broad_automation_readiness": "not_ready",
+    "coordination_readiness": "70%",
+    "frontend_control_center_readiness": "45%",
+    "promotion_demotion_trust": "50%",
+    "replay_integrity": "75%",
+    "repo_github_workflow_readiness": "40%",
+    "runtime_data_stability": "70%",
+    "signal_strategy_queue_readiness": "55-60%",
+    "storage_architecture_readiness": "60%"
+  },
+  "repo": {
+    "classification_counts": {
+      "crypto_active": 656,
+      "crypto_compatibility_wrapper_candidate": 131,
+      "global_reference": 1,
+      "global_reference_candidate": 69,
+      "local_automation_state_review": 15,
+      "root_config_review": 1,
+      "wnba_nba_reference": 1,
+      "wnba_nba_reference_candidate": 3
+    },
+    "cleanup_reference_roots": [
+      "wnba_nba_app_reference",
+      "global_app_reference"
+    ],
+    "dirty_path_count": 877,
+    "dirty_paths_sample": [
+      {
+        "path": "app/api/main.py",
+        "status": "M"
+      },
+      {
+        "path": "app/api/models.py",
+        "status": "M"
+      },
+      {
+        "path": "app/api/routers/__init__.py",
+        "status": "M"
+      },
+      {
+        "path": "app/api/routers/ops.py",
+        "status": "M"
+      },
+      {
+        "path": "app/api/routers/portfolio.py",
+        "status": "M"
+      },
+      {
+        "path": "app/data/nodes/polymarket/blockchain/manage_portfolio.py",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/automation/backlog_layers.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/automation/issue_task_register.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/market_scope_registry.md",
+        "status": "M"
+      },
+      {
+        "path": "app/docs/planning/current/final_system/source_of_truth_map.md",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/contracts.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/engine.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/event_budget.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/global_portfolio.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/live_game_context.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/live_strategy_worker.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/llm_runtime.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/pbp_annotation.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/reduce_stop_lifecycle.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/runtime_control.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/signal_aggregation.py",
+        "status": "M"
+      },
+      {
+        "path": "app/modules/agentic/store.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tool/_client.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tool/run_live_strategy_tick.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tool/run_live_strategy_worker_tick.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tool/start_live_strategy_worker.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/janus/__init__.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/janus/live_activation.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/janus/live_strategy_tick.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/janus/worker.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/polymarket/__init__.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/polymarket/cli.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/polymarket/execution_gate.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/polymarket/manager.py",
+        "status": "M"
+      },
+      {
+        "path": "codex_tools/polymarket/safety.py",
+        "status": "M"
+      }
+    ],
+    "gates": {
+      "automatic_moves_allowed": false,
+      "fixed_chats_start_gate": "blocked_until_repo_cleanup_and_github_milestones_are_reviewed",
+      "fixed_chats_start_ready": false,
+      "github_issue_creation_ready": false,
+      "github_issue_gate": "blocked_until_cleanup_inventory_reviewable_and_branch_plan_exists",
+      "path_level_inventory_ready": true,
+      "repo_move_ready": false
+    },
+    "path_level_inventory_path": "crypto_options_app\\artifacts\\reports\\repo_cleanup_inventory_latest.json",
+    "reference_candidate_count": 72,
+    "review_required_count": 219,
+    "source": "repo_cleanup_inventory_latest",
+    "status": "degraded"
+  },
+  "schema_version": "crypto_options_transition_readiness_v1",
+  "signals": {
+    "live_trading_authorized": false,
+    "pending_review_request_count": 0,
+    "schema_version": "crypto_options_signal_validation_status_v1"
+  },
+  "status": "degraded",
+  "storage": {
+    "blockers": [],
+    "decision": "postgres_plus_redis_hot_plane_candidate",
+    "path": "crypto_options_app\\artifacts\\reports\\storage_architecture_audit_latest.json",
+    "postgres_memory": "6.144GiB / 15.47GiB",
+    "redis_status": "disabled",
+    "status": "degraded",
+    "warnings": [
+      "postgres_container_memory_over_6gib"
+    ]
+  },
+  "warnings": [
+    "health_degraded",
+    "repo_dirty_requires_inventory_cleanup",
+    "storage_audit_degraded"
+  ]
+}
