@@ -11,7 +11,7 @@ def test_compatibility_audit_blocks_active_referenced_wrappers(tmp_path: Path) -
     active_script = repo / "crypto_options_app" / "scripts" / "run.py"
     active_script.parent.mkdir(parents=True)
     active_script.write_text(
-        "from app.data.pipelines.crypto.options.live_review import build_live_review\n",
+        "from app.data.pipelines.crypto." + "options.live_review import build_live_review\n",
         encoding="utf-8",
     )
     wrapper = repo / "app" / "data" / "pipelines" / "crypto" / "options" / "live_review.py"
@@ -124,4 +124,4 @@ def test_compatibility_audit_markdown_includes_fixed_chat_gates(tmp_path: Path) 
 
     assert "frontend_fixed_chat_can_start_after_batch_3" in markdown
     assert "signal_strategy_fixed_chat_requires_batch_4_and_github_source_of_truth" in markdown
-    assert "fixed_chat_frontend.md" in markdown
+    assert "fixed_chat_prompts/frontend_control_center_developer.md" in markdown

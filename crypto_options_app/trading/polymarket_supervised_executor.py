@@ -252,13 +252,13 @@ def reconcile_ambiguous_submission_from_recent_trades(
 
 
 def _legacy_live_micro_submitter(order_request: dict[str, Any]) -> dict[str, Any]:
-    from app.data.pipelines.crypto.options.live_micro_executor import submit_live_micro_order
+    from crypto_options_app.pipelines.options.live_micro_executor import submit_live_micro_order
 
     return submit_live_micro_order(order_request)
 
 
 def _default_recent_trade_provider() -> Iterable[Any]:
-    from app.data.nodes.polymarket.blockchain.manage_portfolio import PolymarketCredentials, view_trades
+    from crypto_options_app.trading.polymarket_portfolio import PolymarketCredentials, view_trades
 
     return view_trades(PolymarketCredentials.from_env())
 

@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T05:23:00Z
+Updated: 2026-06-07T05:38:00Z
 
 ## Objective
 
@@ -30,15 +30,15 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Batch 1 local/root review commit: `645eb99` (`Ignore local Codex automation memory`); `.codex_automation_memory/` is ignored, and the `streamlit` dependency change remains held until the frontend/tooling path decides whether the observer app stays active.
 - Batch 2 WNBA/NBA reference move commit: `c67705e` (`Move WNBA NBA docs into reference root`).
 - Batch 3 global reference move commit: `659a722` (`Move global legacy files into reference root`).
-- Batch 4 compatibility wrapper audit: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`; 131 candidates, 21 referenced by active crypto code/tests, 52 docs/reference-only wrappers, 57 no-reference wrappers, automatic wrapper moves blocked.
-- Batch 4 cutover progress: Polymarket crypto data-node active callers now import `crypto_options_app.data_nodes.polymarket_crypto`; exchange/reference crypto data-node active callers now import `crypto_options_app.data_nodes.crypto`; both old `app.data.nodes.*crypto*` families have 0 active crypto code/test imports.
-- Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/`. Frontend fixed chat can start after Batch 3 from `fixed_chat_frontend.md`; signal/strategy cleanup should wait for Batch 4 wrapper decisions plus GitHub milestones/issues.
+- Batch 4 compatibility wrapper audit: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`; 131 candidates, 0 referenced by active crypto code/tests, 52 docs/reference-only wrappers, 60 no-reference wrappers, automatic wrapper moves still blocked until non-active wrapper decisions are reviewed.
+- Batch 4 cutover progress: active crypto callers now use `crypto_options_app.data_nodes.polymarket_crypto`, `crypto_options_app.data_nodes.crypto`, `crypto_options_app.pipelines.options`, `crypto_options_app.services.crypto_options`, `crypto_options_app.runtime.local_paths`, `crypto_options_app.api.db`, and `crypto_options_app.trading.polymarket_portfolio` instead of old `app.*` runtime imports.
+- Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/`. Frontend fixed chat can start after Batch 3 from `fixed_chat_prompts/frontend_control_center_developer.md`; signal/strategy cleanup should wait for Batch 4 non-active wrapper decisions plus GitHub milestones/issues.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 
 ## Active Fixed Chats
 
-- Signal And Strategy Management Cleanup: pending creation from `fixed_chat_signal_strategy.md`; gated by Batch 4 compatibility decisions and GitHub source-of-truth.
-- Frontend Control Center Developer: eligible to start from `fixed_chat_frontend.md` after Batch 3; must avoid backend, DB, promotion, and trading runtime changes.
+- Signal And Strategy Management Cleanup: pending creation from `fixed_chat_prompts/signal_strategy_management_cleanup.md`; gated by Batch 4 compatibility decisions and GitHub source-of-truth.
+- Frontend Control Center Developer: eligible to start from `fixed_chat_prompts/frontend_control_center_developer.md` after Batch 3; must avoid backend, DB, promotion, and trading runtime changes.
 
 ## Master Rules
 
@@ -50,10 +50,10 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 ## Next Transition Actions
 
-1. Cut active crypto callers away from the remaining 21 old `app.*`/`codex_tool.*` compatibility wrappers in small tested groups.
-2. Review the 57 no-reference wrappers for compatibility archive or removal after active tests prove they are unused.
+1. Review non-active compatibility wrappers: 10 runtime-import-audit holds, 45 strategy/signal cutover holds, 49 duplicate legacy test wrappers, 23 CLI wrappers, 3 legacy docs, and 60 no-reference wrappers.
+2. Decide keep/archive/remove/replace for old wrappers after active tests prove the central `crypto_options_app` paths are stable.
 3. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 4. Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.
 5. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
 6. Create GitHub milestones/issues from `github_issue_milestone_plan.md` after Batch 4 decisions are reviewable.
-7. Use `fixed_chat_bootstrap.md` before starting any fixed chat.
+7. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.

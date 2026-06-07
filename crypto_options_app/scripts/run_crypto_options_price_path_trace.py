@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Read-only price-path trace artifact generator for issue #93/#95."""
 
@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.price_path_trace import (  # noqa: E402
+from crypto_options_app.pipelines.options.price_path_trace import (  # noqa: E402
     build_price_path_trace_report_from_paths,
     write_price_path_trace_artifacts,
 )

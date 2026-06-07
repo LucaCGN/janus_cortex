@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Continuously run the Crypto Options V2 supervised candidate service.
 
@@ -21,28 +21,28 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.nodes.polymarket.blockchain.manage_portfolio import PolymarketCredentials  # noqa: E402
-from app.data.pipelines.crypto.options.live_micro_executor import (  # noqa: E402
+from crypto_options_app.trading.polymarket_portfolio import PolymarketCredentials  # noqa: E402
+from crypto_options_app.pipelines.options.live_micro_executor import (  # noqa: E402
     load_json_object,
     reconcile_live_execution_ledger,
     write_json_object,
 )
-from app.data.pipelines.crypto.options.live_micro_executor import parse_clob_orderbook_quote  # noqa: E402
-from app.data.pipelines.crypto.options.v2_service import (  # noqa: E402
+from crypto_options_app.pipelines.options.live_micro_executor import parse_clob_orderbook_quote  # noqa: E402
+from crypto_options_app.pipelines.options.v2_service import (  # noqa: E402
     build_v2_decision_set,
     build_v2_execution_packet_bundle,
     evaluate_v2_promotion_states,
     load_v2_candidate_ledgers,
     write_v2_execution_packets,
 )
-from app.data.pipelines.crypto.options.v2_candidates import (  # noqa: E402
+from crypto_options_app.pipelines.options.v2_candidates import (  # noqa: E402
     default_v2_candidate_configs,
     default_v3_candidate_configs,
     default_v3_validation_candidate_configs,
     default_v4_candidate_configs,
 )
-from app.services.crypto_options.v3_policy import default_v3_budget_policy, evaluate_v3_component_state  # noqa: E402
-from app.services.crypto_options.v3_policy import classify_quote_health  # noqa: E402
+from crypto_options_app.services.crypto_options.v3_policy import default_v3_budget_policy, evaluate_v3_component_state  # noqa: E402
+from crypto_options_app.services.crypto_options.v3_policy import classify_quote_health  # noqa: E402
 
 _CASHOUT_SHARE_COVERAGE_EPSILON = 0.01
 

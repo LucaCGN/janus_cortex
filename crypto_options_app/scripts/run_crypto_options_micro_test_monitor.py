@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Evaluate a fresh decision-review artifact against the approved micro-test protocol."""
 
@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.micro_test_monitor import (  # noqa: E402
+from crypto_options_app.pipelines.options.micro_test_monitor import (  # noqa: E402
     build_micro_test_monitor,
     write_micro_test_monitor_artifacts,
 )

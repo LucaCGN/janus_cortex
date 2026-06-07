@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Manage the crypto options underlying market-data store."""
 
@@ -13,7 +13,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from crypto_options_app.config import CENTRAL_DB_PATH  # noqa: E402
-from app.data.pipelines.crypto.options.market_data_store import (  # noqa: E402
+from crypto_options_app.pipelines.options.market_data_store import (  # noqa: E402
     fresh_polymarket_event_universe,
     initialize_market_data_store,
     latest_indicator_snapshots,
@@ -21,18 +21,18 @@ from app.data.pipelines.crypto.options.market_data_store import (  # noqa: E402
     latest_price_ticks,
     market_data_store_summary,
 )
-from app.data.pipelines.crypto.options.polymarket_event_price_service import (  # noqa: E402
+from crypto_options_app.pipelines.options.polymarket_event_price_service import (  # noqa: E402
     capture_polymarket_event_price_stream,
     discover_and_store_polymarket_event_universe,
     run_polymarket_event_price_collection_loop,
 )
-from app.data.pipelines.crypto.options.price_stream_service import (  # noqa: E402
+from crypto_options_app.pipelines.options.price_stream_service import (  # noqa: E402
     capture_binance_trade_stream,
     compute_and_store_market_indicators,
     fetch_and_store_binance_klines,
     run_market_data_collection_loop,
 )
-from app.data.pipelines.crypto.options.profile_store import profile_store_buying_ahead_profiles  # noqa: E402
+from crypto_options_app.pipelines.options.profile_store import profile_store_buying_ahead_profiles  # noqa: E402
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Aggregate read-only crypto-options live gate evidence across capture dirs."""
 
@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.live_review import (  # noqa: E402
+from crypto_options_app.pipelines.options.live_review import (  # noqa: E402
     build_live_gate_aggregate,
     write_live_gate_aggregate_artifacts,
 )

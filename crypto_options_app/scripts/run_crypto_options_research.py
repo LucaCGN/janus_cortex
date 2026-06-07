@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Generate the issue #47 crypto-options research artifact.
 
@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.api.db import to_jsonable  # noqa: E402
+from crypto_options_app.api.db import to_jsonable  # noqa: E402
 from crypto_options_app.data_nodes.crypto.candles import fetch_binance_candles_for_events, normalize_candle_records  # noqa: E402
 from crypto_options_app.data_nodes.crypto.reference import normalize_reference_price_reports  # noqa: E402
 from crypto_options_app.data_nodes.crypto.reference import ChainlinkDataStreamsRestProvider, CryptoReferenceSourceUnavailable  # noqa: E402
@@ -38,8 +38,8 @@ from crypto_options_app.data_nodes.polymarket_crypto.markets import (  # noqa: E
     fetch_recurring_updown_events_by_slug_range,
     normalize_polymarket_crypto_events,
 )
-from app.data.pipelines.crypto.options.reporting import strict_jsonable, write_research_artifacts  # noqa: E402
-from app.services.crypto_options.service import build_crypto_options_service_report  # noqa: E402
+from crypto_options_app.pipelines.options.reporting import strict_jsonable, write_research_artifacts  # noqa: E402
+from crypto_options_app.services.crypto_options.service import build_crypto_options_service_report  # noqa: E402
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:

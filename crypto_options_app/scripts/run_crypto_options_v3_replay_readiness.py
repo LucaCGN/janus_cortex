@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import argparse
 import json
@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.services.crypto_options.v3_replay_readiness import (  # noqa: E402
+from crypto_options_app.services.crypto_options.v3_replay_readiness import (  # noqa: E402
     apply_v3_passive_reconciliation,
     build_v3_replay_readiness_report,
     write_v3_replay_readiness_artifacts,

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Submit at most one gated crypto-options live micro-test order.
 
@@ -20,7 +20,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.live_micro_executor import (  # noqa: E402
+from crypto_options_app.pipelines.options.live_micro_executor import (  # noqa: E402
     LiveExecutorApproval,
     build_live_micro_execution_tick,
     latest_monitor_artifact,

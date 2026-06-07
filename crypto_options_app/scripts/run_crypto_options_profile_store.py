@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Initialize and inspect the crypto options profile SQLite store."""
 
@@ -13,12 +13,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from crypto_options_app.config import CENTRAL_DB_PATH  # noqa: E402
-from app.data.pipelines.crypto.options.profile_store import (  # noqa: E402
+from crypto_options_app.pipelines.options.profile_store import (  # noqa: E402
     ingest_profile_signal_artifact,
     initialize_profile_store,
     profile_store_summary,
 )
-from app.data.pipelines.crypto.options.profile_fetch_service import (  # noqa: E402
+from crypto_options_app.pipelines.options.profile_fetch_service import (  # noqa: E402
     ProfileFetchServiceConfig,
     run_active_pool_profile_fetch_once,
 )

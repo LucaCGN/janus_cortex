@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
-from app.data.nodes.polymarket.blockchain.manage_portfolio import PolymarketCredentials, view_trades
+from crypto_options_app.trading.polymarket_portfolio import PolymarketCredentials, view_trades
 from crypto_options_app.data_nodes.polymarket_crypto.history import fetch_current_order_book, normalize_order_book_snapshot
 from crypto_options_app.data_nodes.polymarket_crypto.live_capture import LiveCaptureTarget, discover_live_crypto_updown_targets
-from app.data.pipelines.crypto.options.live_micro_executor import inspect_polymarket_credentials
+from crypto_options_app.pipelines.options.live_micro_executor import inspect_polymarket_credentials
 
 from crypto_options_app.config import CENTRAL_ARTIFACT_ROOT, CENTRAL_DB_PATH
 from crypto_options_app.db.schema import initialize_schema

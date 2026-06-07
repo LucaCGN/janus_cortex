@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Build the issue #47 five-lane crypto-options profile aggregation package."""
 
@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.lane_system import (  # noqa: E402
+from crypto_options_app.pipelines.options.lane_system import (  # noqa: E402
     build_five_lane_comparison,
     build_five_lane_system_package,
     build_lane_execution_packets,
@@ -22,7 +22,7 @@ from app.data.pipelines.crypto.options.lane_system import (  # noqa: E402
     write_lane_execution_packets,
     write_five_lane_system_artifacts,
 )
-from app.data.pipelines.crypto.options.live_micro_executor import load_json_object  # noqa: E402
+from crypto_options_app.pipelines.options.live_micro_executor import load_json_object  # noqa: E402
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:

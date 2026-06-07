@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Run profile-signal monitoring ticks for crypto up/down markets."""
 
@@ -15,7 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from crypto_options_app.config import CENTRAL_ACTIVE_PROFILE_POOL  # noqa: E402
-from app.data.pipelines.crypto.options.profile_signal_monitor import (  # noqa: E402
+from crypto_options_app.pipelines.options.profile_signal_monitor import (  # noqa: E402
     build_profile_signal_monitor_tick,
     build_profile_signal_protocol,
     write_profile_signal_monitor_artifacts,

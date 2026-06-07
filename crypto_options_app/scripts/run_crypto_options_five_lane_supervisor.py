@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Guard and run five crypto-options lane packets through the live executor."""
 
@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.live_micro_executor import (  # noqa: E402
+from crypto_options_app.pipelines.options.live_micro_executor import (  # noqa: E402
     load_json_object,
     reconcile_live_execution_ledger,
     write_json_object,

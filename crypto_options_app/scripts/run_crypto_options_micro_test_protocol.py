@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 """Build the read-only $20 crypto-options micro-test protocol artifact."""
 
@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.data.pipelines.crypto.options.micro_test_protocol import (  # noqa: E402
+from crypto_options_app.pipelines.options.micro_test_protocol import (  # noqa: E402
     build_micro_test_protocol,
     write_micro_test_protocol_artifacts,
 )
