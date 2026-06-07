@@ -17,6 +17,7 @@ All fixed chats must read and write:
 - `frontend_control_center_developer.md`: can start after Batch 3. It must stay frontend/API-contract scoped.
 - `signal_strategy_management_cleanup.md`: ready. Use GitHub issues #155-#159.
 - The DB/data, indicator, signal, and strategy specialist prompts exist as future lane contracts. Do not start them as standing fixed chats until the master chat opens that lane.
+- Before starting any fixed chat, run `python -m crypto_options_app.scripts.run_crypto_options_fixed_chat_startup_readiness --write-artifacts --markdown` and require `fixed_chat_startup_readiness_latest.md` to show the selected chat as `ready`.
 
 ## Required Behavior
 

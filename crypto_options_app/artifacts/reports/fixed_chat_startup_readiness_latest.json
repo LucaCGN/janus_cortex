@@ -1,0 +1,124 @@
+{
+  "chat_count": 2,
+  "common": {
+    "blockers": [],
+    "files": {
+      "fixed_chat_bootstrap": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_bootstrap.md"
+      },
+      "github_source_of_truth_sync": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\github_source_of_truth_sync.md"
+      },
+      "handoff_queue": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\handoff_queue.jsonl"
+      },
+      "master_status": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\master_status.md"
+      },
+      "promotion_policy": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\promotion_policy.md"
+      },
+      "transition_readiness_latest": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\reports\\transition_readiness_latest.json"
+      }
+    },
+    "github_source_mentions_ready_fixed_chats": true,
+    "status": "ok",
+    "transition_readiness_path": "crypto_options_app\\artifacts\\reports\\transition_readiness_latest.json",
+    "transition_readiness_status": "degraded"
+  },
+  "fixed_chats": {
+    "frontend_control_center_developer": {
+      "blockers": [],
+      "first_artifacts": [
+        "crypto_options_app/artifacts/team_coordination/fixed_chat_frontend.md",
+        "crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md",
+        "crypto_options_app/artifacts/reports/transition_readiness_latest.json"
+      ],
+      "github_issues": [
+        "#160",
+        "#161",
+        "#162",
+        "#163",
+        "#164"
+      ],
+      "lane_file": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_frontend.md",
+      "prompt_path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\frontend_control_center_developer.md",
+      "status": "ready",
+      "warnings": []
+    },
+    "signal_strategy_management_cleanup": {
+      "blockers": [],
+      "first_artifacts": [
+        "crypto_options_app/artifacts/team_coordination/fixed_chat_signal_strategy.md",
+        "crypto_options_app/artifacts/reports/signal_strategy_cleanup_batch_latest.md",
+        "crypto_options_app/artifacts/team_coordination/promotion_policy.md"
+      ],
+      "github_issues": [
+        "#155",
+        "#156",
+        "#157",
+        "#158",
+        "#159"
+      ],
+      "lane_file": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_signal_strategy.md",
+      "prompt_path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\signal_strategy_management_cleanup.md",
+      "status": "ready",
+      "warnings": []
+    }
+  },
+  "future_only_prompts": [
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\db_data_observability.md",
+      "status": "future_only"
+    },
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\indicator_dev.md",
+      "status": "future_only"
+    },
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\indicator_qa.md",
+      "status": "future_only"
+    },
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\signal_dev.md",
+      "status": "future_only"
+    },
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\signal_qa.md",
+      "status": "future_only"
+    },
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\strategy_dev.md",
+      "status": "future_only"
+    },
+    {
+      "exists": true,
+      "path": "crypto_options_app\\artifacts\\team_coordination\\fixed_chat_prompts\\strategy_qa.md",
+      "status": "future_only"
+    }
+  ],
+  "generated_at_utc": "2026-06-07T07:04:01.396435+00:00",
+  "ready_count": 2,
+  "safety": {
+    "live_trading_authorized": false,
+    "manual_orders_avoided": true,
+    "note": "Fixed-chat readiness does not authorize live trading or manual orders.",
+    "orders_allowed": false
+  },
+  "schema_version": "crypto_options_fixed_chat_startup_readiness_v1",
+  "shared_blockers": [],
+  "status": "ready"
+}

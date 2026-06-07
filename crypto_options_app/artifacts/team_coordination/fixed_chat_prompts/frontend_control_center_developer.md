@@ -33,7 +33,9 @@ Work on:
 Do not work on:
 
 - DB/storage changes
+- DB infrastructure
 - promotion/demotion policy
+- promotion logic
 - replay/strategy logic
 - trading runtime or live execution
 

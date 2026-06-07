@@ -71,3 +71,9 @@ The current first slice contains 12 weak `master_hedge_grid_scalping` signal row
 Keep the global classification vocabulary:
 
 `PROMOTED`, `REVIEW`, `RETIRED`, `BLOCKED`, `NEEDS_VARIANT`, `STRICT_REPLAY_REQUIRED`, or `SHADOW_REQUIRED`.
+
+## Safety
+
+No live trading.
+No manual orders.
+No executor changes.
