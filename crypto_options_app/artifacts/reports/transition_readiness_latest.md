@@ -1,6 +1,6 @@
 # Crypto Options Transition Readiness Review
 
-- Generated: `2026-06-07T07:39:59.566623+00:00`
+- Generated: `2026-06-07T10:51:36.626685+00:00`
 - Status: `degraded`
 - Manual orders avoided: `True`
 
@@ -19,7 +19,6 @@
 - `none`
 
 ## Warnings
-- `health_degraded`
 - `repo_dirty_requires_inventory_cleanup`
 - `storage_audit_degraded`
 
@@ -36,8 +35,7 @@
 - Reference candidate dirty paths: `0`
 
 ## Next Actions
-- Run path-level repo cleanup inventory before moving legacy files.
-- Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.
-- Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
+- Continue Batch 4 compatibility-wrapper review and keep generated/runtime artifacts unstaged.
+- Reduce measured Postgres memory/query pressure before enabling Redis or widening replay/data-service workers.
 - Review SHADOW_READY rows for recent one-hour economic proof before any live promotion.
-- Create GitHub milestones/issues from team_coordination issue plan before starting fixed chats.
+- Keep fixed chats and limited automations on their GitHub issue and team_coordination handoff contracts.

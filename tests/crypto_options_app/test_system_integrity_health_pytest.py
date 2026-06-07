@@ -87,6 +87,14 @@ def test_system_integrity_health_reports_canonical_db_tables_pytest(tmp_path: Pa
     assert health["db"]["validation_budget"]["validation_budget_cap_usd"] == 50.0
     assert health["prepared_tests"]["core_flow"]["may_begin_after_operator_live_gate"] is True
     assert "missing_live_validation_artifact" in set(health["integrity"]["readiness_blockers"])
+    assert "fewer_than_10_successful_live_structural_strategy_artifacts" not in set(
+        health["integrity"]["readiness_blockers"]
+    )
+    assert "fewer_than_10_successful_live_structural_strategy_artifacts" in set(
+        health["integrity"]["supervised_live_readiness_blockers"]
+    )
+    assert health["integrity"]["supervised_live_ready"] is False
+    assert health["integrity"]["longer_live_tests_blocked_until_review"] is True
 
 
 def test_system_integrity_health_marks_stale_live_activity_watermark_pytest(tmp_path: Path) -> None:

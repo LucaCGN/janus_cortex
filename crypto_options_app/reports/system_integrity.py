@@ -218,6 +218,7 @@ def build_system_integrity_health(
         artifact_report=artifact_report,
         external_services_report=external_services_report,
     )
+    supervised_live_readiness_blockers = _supervised_live_readiness_blockers(artifact_report=artifact_report)
     core_flow_plan = _core_flow_plan_report(db_report=db_report)
     status = "ok" if not readiness_blockers else "degraded"
     return {
@@ -242,9 +243,11 @@ def build_system_integrity_health(
         },
         "integrity": {
             "readiness_blockers": readiness_blockers,
+            "supervised_live_readiness_blockers": supervised_live_readiness_blockers,
+            "supervised_live_ready": not readiness_blockers and not supervised_live_readiness_blockers,
             "strategy_bundle_comparison_may_begin": False,
             "core_flow_test_may_begin_after_operator_live_gate": core_flow_plan["may_begin_after_operator_live_gate"],
-            "longer_live_tests_blocked_until_review": bool(readiness_blockers),
+            "longer_live_tests_blocked_until_review": bool(readiness_blockers or supervised_live_readiness_blockers),
         },
     }
 
@@ -1545,6 +1548,11 @@ def _readiness_blockers(
     settlement_run_id = settlement_report.get("run_id") if isinstance(settlement_report, dict) else None
     if latest_has_fills and latest_run_id and settlement_run_id != latest_run_id:
         blockers.append("latest_live_run_missing_settlement_performance")
+    return blockers
+
+
+def _supervised_live_readiness_blockers(*, artifact_report: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
     if int(artifact_report.get("successful_strategy_count") or 0) < 10:
         blockers.append("fewer_than_10_successful_live_structural_strategy_artifacts")
     return blockers

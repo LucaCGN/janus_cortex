@@ -417,12 +417,13 @@ def _next_actions(*, blockers: list[str], warnings: list[str], promotion: dict[s
     actions: list[str] = []
     if blockers:
         actions.append("Fix transition blockers before adding automations or fixed-chat execution.")
-    actions.append("Run path-level repo cleanup inventory before moving legacy files.")
-    actions.append("Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.")
-    actions.append("Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.")
+    if "repo_dirty_requires_inventory_cleanup" in warnings:
+        actions.append("Continue Batch 4 compatibility-wrapper review and keep generated/runtime artifacts unstaged.")
+    if "storage_audit_degraded" in warnings:
+        actions.append("Reduce measured Postgres memory/query pressure before enabling Redis or widening replay/data-service workers.")
     if promotion.get("shadow_ready_count"):
         actions.append("Review SHADOW_READY rows for recent one-hour economic proof before any live promotion.")
-    actions.append("Create GitHub milestones/issues from team_coordination issue plan before starting fixed chats.")
+    actions.append("Keep fixed chats and limited automations on their GitHub issue and team_coordination handoff contracts.")
     return actions
 
 
