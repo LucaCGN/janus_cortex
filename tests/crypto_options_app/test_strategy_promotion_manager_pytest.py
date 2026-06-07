@@ -6,7 +6,12 @@ from pathlib import Path
 from crypto_options_app.db.connection import connect, count_rows
 from crypto_options_app.db.schema import initialize_schema
 from crypto_options_app.strategies import promotion
-from crypto_options_app.strategies.promotion import StrategyPromotionPolicy, evaluate_and_persist_strategy_promotions
+from crypto_options_app.strategies.promotion import (
+    StrategyPromotionPolicy,
+    evaluate_and_persist_strategy_promotions,
+    promotion_policy_contract,
+    promotion_state_summary,
+)
 from crypto_options_app.workers.strategy_backtest_replay import StrategyBacktestReplayConfig, run_strategy_backtest_replay
 from crypto_options_app.workers.strategy_live_replay import StrategyLiveReplayConfig, run_strategy_live_replay
 
@@ -138,6 +143,81 @@ def test_strategy_promotion_signal_gate_blocks_selected_strict_replay_candidates
     assert "strict_replay_required_for_selected_signals" in summary["signal_gate"]["blockers"]
     by_id = {row["strategy_id"]: row for row in summary["strategies"]}
     assert "selected_signals_require_strict_replay" in by_id["profile_hedge_scalping_v1"]["blockers"]
+
+
+def test_strategy_promotion_signal_gate_does_not_treat_passed_as_promotable_pytest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = initialize_schema(tmp_path / "strategy-promotion-passed-label.sqlite")
+
+    monkeypatch.setattr(
+        promotion,
+        "validation_status",
+        lambda conn: {
+            "signal_count": 1,
+            "by_promotion_state": {"PASSED": 1},
+            "signals": [
+                {
+                    "signal_id": "pytest_passed_is_not_promoted",
+                    "promotion_state": "PASSED",
+                    "status": "PASSED",
+                    "queue_status": "PASSED",
+                    "signal_type": "support_resistance",
+                    "source_blocks": ["C"],
+                    "sources": ["optionprice"],
+                    "impact_if_degraded": "critical",
+                    "distinct_event_count": 120,
+                    "strict_review_reasons": [],
+                }
+            ],
+        },
+    )
+
+    with connect(db_path) as conn:
+        summary = evaluate_and_persist_strategy_promotions(conn)
+
+    assert summary["signal_gate"]["promotion_ready_signal_count"] == 0
+    assert summary["signal_gate"]["signal_gate_status"] == "blocked"
+    assert "no_promotion_ready_signals" in summary["signal_gate"]["blockers"]
+    by_id = {row["strategy_id"]: row for row in summary["strategies"]}
+    assert "no_promotion_ready_signals" in by_id["profile_hedge_scalping_v1"]["blockers"]
+
+
+def test_strategy_promotion_summary_renders_policy_contract_pytest(tmp_path: Path) -> None:
+    db_path = initialize_schema(tmp_path / "strategy-promotion-policy-contract.sqlite")
+
+    with connect(db_path) as conn:
+        refreshed = evaluate_and_persist_strategy_promotions(
+            conn,
+            policy=StrategyPromotionPolicy(min_promotion_ready_signals=0),
+        )
+        cached = promotion_state_summary(conn)
+
+    contract = refreshed["policy_contract"]
+    assert contract["schema_version"] == "crypto_options_promotion_policy_contract_v1"
+    assert "PASSED" in contract["signals"]["not_promotable_labels"]
+    assert contract["signals"]["strict_replay_required_means_promotable"] is False
+    assert contract["strategies"]["live_candidate_requirements"]["recent_distinct_economic_samples"] == 12
+    assert contract["strategies"]["live_candidate_requirements"]["recent_shadow_live_win_rate_gt"] == 0.7
+    assert contract["strategies"]["live_candidate_requirements"]["strict_signal_blockers"] == 0
+    assert contract["live_safety"]["chat_judgment_can_authorize_live"] is False
+    assert contract["live_safety"]["automation_can_authorize_live"] is False
+    assert cached["policy_contract"]["schema_version"] == contract["schema_version"]
+
+
+def test_promotion_policy_contract_reflects_custom_thresholds_pytest() -> None:
+    contract = promotion_policy_contract(
+        StrategyPromotionPolicy(
+            min_recent_shadow_live_sample_count=24,
+            min_recent_shadow_live_win_rate=0.8,
+            live_budget_cap_usd=25.0,
+        )
+    )
+
+    assert contract["strategies"]["live_candidate_requirements"]["recent_distinct_economic_samples"] == 24
+    assert contract["strategies"]["live_candidate_requirements"]["recent_shadow_live_win_rate_gt"] == 0.8
+    assert contract["strategies"]["budget_policy"]["live_budget_cap_usd"] == 25.0
 
 
 def test_strategy_promotion_demotes_losing_supervised_live_evidence_pytest(tmp_path: Path) -> None:
@@ -466,6 +546,39 @@ def test_strategy_promotion_routes_weak_recent_shadow_to_review_pytest(tmp_path:
     assert row["promotion_state"] == "SHADOW_REVIEW"
     assert row["evidence"]["recent_shadow_live_economic_sample_count"] == 12
     assert row["evidence"]["recent_shadow_live_win_rate"] == 0.69
+    assert "recent_shadow_live_win_rate_below_70" in row["blockers"]
+
+
+def test_strategy_promotion_requires_win_rate_strictly_above_70_percent_pytest(tmp_path: Path) -> None:
+    db_path = initialize_schema(tmp_path / "strategy-promotion-exact-70-shadow.sqlite")
+    strategy_id = "profile_hedge_scalping_v1"
+
+    run_strategy_backtest_replay(
+        StrategyBacktestReplayConfig(
+            db_path=db_path,
+            run_id="pytest-exact-70-shadow-backtest",
+            strategy_ids=(strategy_id,),
+            max_trades_per_strategy=1,
+        )
+    )
+
+    with connect(db_path) as conn:
+        _insert_shadow_economics_row(
+            conn,
+            row_key="pytest-exact-70-shadow-row",
+            strategy_id=strategy_id,
+            pnl_usd=1.0,
+            win_rate=0.7,
+            sample_count=12,
+        )
+        summary = evaluate_and_persist_strategy_promotions(
+            conn,
+            policy=StrategyPromotionPolicy(min_promotion_ready_signals=0),
+        )
+
+    row = {item["strategy_id"]: item for item in summary["strategies"]}[strategy_id]
+    assert row["promotion_state"] == "SHADOW_REVIEW"
+    assert row["evidence"]["recent_shadow_live_win_rate"] == 0.7
     assert "recent_shadow_live_win_rate_below_70" in row["blockers"]
 
 

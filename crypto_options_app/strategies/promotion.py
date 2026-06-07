@@ -31,12 +31,84 @@ class StrategyPromotionPolicy:
     auto_promotion_enabled: bool = True
 
 
+def promotion_policy_contract(policy: StrategyPromotionPolicy | None = None) -> dict[str, Any]:
+    policy = policy or StrategyPromotionPolicy()
+    return {
+        "schema_version": "crypto_options_promotion_policy_contract_v1",
+        "signals": {
+            "promotable_state": "PROMOTION_READY",
+            "terminal_review_states": ["PROMOTED", "REVIEW", "RETIRED", "BLOCKED", "NEEDS_VARIANT"],
+            "not_promotable_labels": [
+                "PASSED",
+                "SELECTED",
+                "STRUCTURAL_PASS",
+                "STRUCTURAL_ALTERNATE",
+                "STRICT_REPLAY_REQUIRED",
+            ],
+            "strict_replay_required_means_promotable": False,
+            "required_engine_evidence": [
+                "strict replay or live-shadow evidence is complete",
+                "no selected signal has strict review blockers",
+                "signal validation result state is PROMOTION_READY",
+            ],
+        },
+        "strategies": {
+            "states": [
+                "NEEDS_BACKTEST",
+                "BACKTEST_READY",
+                "SHADOW_READY",
+                "SHADOW_REVIEW",
+                "REVIEW_BLOCKED",
+                "LIVE_CANDIDATE",
+                "LIVE_RUNNING",
+                "DEMOTED_TO_SHADOW",
+            ],
+            "live_candidate_requirements": {
+                "historical_replay_passes": policy.min_historical_replay_passes,
+                "live_replay_passes": policy.min_live_replay_passes,
+                "promotion_ready_signals": policy.min_promotion_ready_signals,
+                "recent_distinct_economic_samples": policy.min_recent_shadow_live_sample_count,
+                "recent_shadow_live_win_rate_gt": policy.min_recent_shadow_live_win_rate,
+                "recent_shadow_live_pnl_usd_gt": policy.min_recent_shadow_live_pnl_usd,
+                "lifecycle_audit_status": "passed",
+                "reconciliation_status": "reconciled",
+                "strict_signal_blockers": 0,
+                "shadow_live_drift_within_tolerance": True,
+            },
+            "demotion_blockers": [
+                "supervised_live_negative_realized_pnl",
+                "latest_lifecycle_not_passed",
+                "latest_reconciliation_not_reconciled",
+                "live_shadow_actual_drift_exceeds_limit",
+                "live_shadow_win_rate_drift_exceeds_limit",
+                "supervised_live_hard_stop_triggered",
+            ],
+            "budget_policy": {
+                "live_budget_cap_usd": policy.live_budget_cap_usd,
+                "cash_balance_hard_stop_usd": policy.cash_balance_hard_stop_usd,
+                "scale_requires_repeated_positive_reconciled_live_evidence": True,
+                "descale_on_loss_streak_or_negative_pnl_or_drift": True,
+            },
+        },
+        "live_safety": {
+            "chat_judgment_can_authorize_live": False,
+            "automation_can_authorize_live": False,
+            "orders_allowed_default": False,
+            "live_trading_authorized_default": False,
+            "requires_supervised_runtime": True,
+            "requires_scoped_child_process_flags": True,
+            "manual_orders_avoided": True,
+        },
+    }
+
+
 def evaluate_and_persist_strategy_promotions(
     conn: Any,
     *,
     policy: StrategyPromotionPolicy | None = None,
 ) -> dict[str, Any]:
     policy = policy or StrategyPromotionPolicy()
+    policy_contract = promotion_policy_contract(policy)
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
     signal_gate = _signal_gate(conn, policy=policy)
@@ -71,6 +143,7 @@ def evaluate_and_persist_strategy_promotions(
                 "cash_balance_hard_stop_usd": policy.cash_balance_hard_stop_usd,
                 "auto_promotion_enabled": policy.auto_promotion_enabled,
             },
+            "policy_contract_schema_version": policy_contract["schema_version"],
             "orders_allowed": False,
             "live_trading_authorized": False,
         }
@@ -120,6 +193,7 @@ def evaluate_and_persist_strategy_promotions(
             "max_live_vs_shadow_win_rate_gap": policy.max_live_vs_shadow_win_rate_gap,
             "promotion_means": "automatic state transition only; live orders still require supervised runtime gates",
         },
+        "policy_contract": policy_contract,
         "strategies": rows,
         "orders_allowed": False,
         "live_trading_authorized": False,
@@ -159,6 +233,7 @@ def promotion_state_summary(conn: Any) -> dict[str, Any]:
         "schema_version": "crypto_options_strategy_promotion_summary_v1",
         "strategy_count": len(rows),
         "by_promotion_state": dict(sorted(by_state.items())),
+        "policy_contract": promotion_policy_contract(),
         "strategies": rows,
         "orders_allowed": False,
         "live_trading_authorized": False,
@@ -184,7 +259,7 @@ def _promotion_decision(
             blockers.append("shadow_live_non_positive_pnl")
         elif (
             evidence["live_replay_win_rate"] is not None
-            and evidence["live_replay_win_rate"] < policy.min_shadow_live_win_rate
+            and evidence["live_replay_win_rate"] <= policy.min_shadow_live_win_rate
         ):
             blockers.append("shadow_live_win_rate_below_floor")
         if evidence["recent_shadow_live_economic_sample_count"] <= 0:
@@ -198,7 +273,7 @@ def _promotion_decision(
                 blockers.append("recent_shadow_live_non_positive_pnl")
             if (
                 evidence["recent_shadow_live_win_rate"] is None
-                or evidence["recent_shadow_live_win_rate"] < policy.min_recent_shadow_live_win_rate
+                or evidence["recent_shadow_live_win_rate"] <= policy.min_recent_shadow_live_win_rate
             ):
                 blockers.append("recent_shadow_live_win_rate_below_70")
     if evidence["latest_lifecycle_audit_status"] not in {None, "passed"}:

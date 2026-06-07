@@ -1,6 +1,6 @@
 ﻿# Crypto Options Promotion And Demotion Policy
 
-Updated: 2026-06-07T03:35:00Z
+Updated: 2026-06-07T06:40:00Z
 
 ## Signal Promotion
 
@@ -16,17 +16,25 @@ Valid terminal states:
 
 `Strict replay required` means not promotable.
 
+Machine-readable contract: strategy promotion summaries expose
+`policy_contract.schema_version = crypto_options_promotion_policy_contract_v1`.
+Fixed chats and frontend views should render that contract rather than
+recreating promotion rules from prose.
+
 ## Strategy Promotion
 
 Supervised live promotion requires all of:
 
 - 12+ recent distinct economic samples.
-- Win rate greater than 70%.
+- Win rate greater than 70%; exactly `70.0%` remains `SHADOW_REVIEW`.
 - Positive simulated PnL.
 - Lifecycle coverage passed.
 - Reconciliation passed.
 - No strict signal blockers.
 - Shadow/live-replay drift within strategy tolerance.
+
+`LIVE_CANDIDATE` still does not authorize orders. It only means a supervised
+runtime can be considered under scoped live flags and the budget cap.
 
 ## Demotion
 
