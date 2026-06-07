@@ -53,35 +53,35 @@
   },
   "endpoints": {
     "dashboard_control_center_state": {
-      "elapsed_ms": 60.47,
+      "elapsed_ms": 41.27,
       "error": null,
-      "payload_bytes": 1017371,
+      "payload_bytes": 1017381,
       "status": "ok",
       "status_code": 200
     },
     "health": {
-      "elapsed_ms": 1155.84,
+      "elapsed_ms": 1065.34,
       "error": null,
-      "payload_bytes": 94861,
+      "payload_bytes": 95390,
       "status": "ok",
       "status_code": 200
     },
     "signals_validation_status": {
-      "elapsed_ms": 2517.35,
+      "elapsed_ms": 1573.88,
       "error": null,
       "payload_bytes": 987507,
       "status": "ok",
       "status_code": 200
     },
     "strategies_promotion": {
-      "elapsed_ms": 38.76,
+      "elapsed_ms": 58.31,
       "error": null,
-      "payload_bytes": 199080,
+      "payload_bytes": 254527,
       "status": "ok",
       "status_code": 200
     }
   },
-  "generated_at_utc": "2026-06-07T04:24:33.405048+00:00",
+  "generated_at_utc": "2026-06-07T07:31:13.493885+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "next_actions": [
@@ -95,18 +95,20 @@
     "accidental_live_authorized_count": 0,
     "by_promotion_state": {
       "BACKTEST_READY": 2,
-      "NEEDS_BACKTEST": 25,
+      "NEEDS_BACKTEST": 38,
       "REVIEW_BLOCKED": 1,
-      "SHADOW_READY": 8,
-      "SHADOW_REVIEW": 54
+      "SHADOW_READY": 12,
+      "SHADOW_REVIEW": 57
     },
     "live_candidate_count": 0,
     "live_trading_authorized": false,
     "manual_orders_avoided": true,
     "orders_allowed": false,
-    "review_count": 55,
-    "shadow_ready_count": 8,
-    "strategy_count": 90,
+    "policy_contract_present": true,
+    "policy_contract_schema_version": "crypto_options_promotion_policy_contract_v1",
+    "review_count": 58,
+    "shadow_ready_count": 12,
+    "strategy_count": 110,
     "strict_signal_blocker_count": 0
   },
   "readiness": {
@@ -122,180 +124,175 @@
   },
   "repo": {
     "classification_counts": {
-      "crypto_active": 656,
+      "crypto_active": 402,
       "crypto_compatibility_wrapper_candidate": 131,
-      "global_reference": 1,
-      "global_reference_candidate": 69,
-      "local_automation_state_review": 15,
-      "root_config_review": 1,
-      "wnba_nba_reference": 1,
-      "wnba_nba_reference_candidate": 3
+      "root_config_review": 1
     },
     "cleanup_reference_roots": [
       "wnba_nba_app_reference",
       "global_app_reference"
     ],
-    "dirty_path_count": 877,
+    "dirty_path_count": 534,
     "dirty_paths_sample": [
       {
-        "path": "app/api/main.py",
+        "path": "requirements.txt",
         "status": "M"
       },
       {
-        "path": "app/api/models.py",
-        "status": "M"
+        "path": "app/api/routers/crypto_options_market_data.py",
+        "status": "??"
       },
       {
-        "path": "app/api/routers/__init__.py",
-        "status": "M"
+        "path": "app/api/routers/crypto_options_signals.py",
+        "status": "??"
       },
       {
-        "path": "app/api/routers/ops.py",
-        "status": "M"
+        "path": "app/data/nodes/crypto/__init__.py",
+        "status": "??"
       },
       {
-        "path": "app/api/routers/portfolio.py",
-        "status": "M"
+        "path": "app/data/nodes/crypto/candles.py",
+        "status": "??"
       },
       {
-        "path": "app/data/nodes/polymarket/blockchain/manage_portfolio.py",
-        "status": "M"
+        "path": "app/data/nodes/crypto/reference.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md",
-        "status": "M"
+        "path": "app/data/nodes/polymarket/crypto/__init__.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/automation/backlog_layers.md",
-        "status": "M"
+        "path": "app/data/nodes/polymarket/crypto/accounts.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md",
-        "status": "M"
+        "path": "app/data/nodes/polymarket/crypto/history.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md",
-        "status": "M"
+        "path": "app/data/nodes/polymarket/crypto/live_capture.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/automation/issue_task_register.md",
-        "status": "M"
+        "path": "app/data/nodes/polymarket/crypto/markets.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/__init__.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/__init__.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/market_scope_registry.md",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/audit.py",
+        "status": "??"
       },
       {
-        "path": "app/docs/planning/current/final_system/source_of_truth_map.md",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/backtests.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/contracts.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/candidate_report.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/engine.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/cashout_simulator.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/event_budget.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/contracts.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/global_portfolio.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/engine.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/live_game_context.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/exit_execution_policy.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/live_strategy_worker.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/indicators.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/llm_runtime.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/labels.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/pbp_annotation.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/lane_system.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/reduce_stop_lifecycle.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/live_micro_executor.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/runtime_control.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/live_review.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/signal_aggregation.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/market_data_store.py",
+        "status": "??"
       },
       {
-        "path": "app/modules/agentic/store.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/metrics.py",
+        "status": "??"
       },
       {
-        "path": "codex_tool/_client.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/micro_test_monitor.py",
+        "status": "??"
       },
       {
-        "path": "codex_tool/run_live_strategy_tick.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/micro_test_protocol.py",
+        "status": "??"
       },
       {
-        "path": "codex_tool/run_live_strategy_worker_tick.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/panels.py",
+        "status": "??"
       },
       {
-        "path": "codex_tool/start_live_strategy_worker.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/polymarket_event_price_service.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/janus/__init__.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/price_path_trace.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/janus/live_activation.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/price_stream_service.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/janus/live_strategy_tick.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/profile_fetch_service.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/janus/worker.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/profile_signal_monitor.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/polymarket/__init__.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/profile_signals.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/polymarket/cli.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/profile_store.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/polymarket/execution_gate.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/promotion_policy.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/polymarket/manager.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/reporting.py",
+        "status": "??"
       },
       {
-        "path": "codex_tools/polymarket/safety.py",
-        "status": "M"
+        "path": "app/data/pipelines/crypto/options/statistical_components.py",
+        "status": "??"
       }
     ],
     "gates": {
@@ -308,8 +305,8 @@
       "repo_move_ready": false
     },
     "path_level_inventory_path": "crypto_options_app\\artifacts\\reports\\repo_cleanup_inventory_latest.json",
-    "reference_candidate_count": 72,
-    "review_required_count": 219,
+    "reference_candidate_count": 0,
+    "review_required_count": 132,
     "source": "repo_cleanup_inventory_latest",
     "status": "degraded"
   },

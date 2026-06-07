@@ -1,6 +1,6 @@
 # Crypto Options Transition Readiness Review
 
-- Generated: `2026-06-07T04:24:33.405048+00:00`
+- Generated: `2026-06-07T07:31:13.493885+00:00`
 - Status: `degraded`
 - Manual orders avoided: `True`
 
@@ -24,15 +24,16 @@
 - `storage_audit_degraded`
 
 ## Promotion Summary
-- Strategy count: `90`
+- Strategy count: `110`
 - Live candidates: `0`
-- Shadow ready: `8`
+- Shadow ready: `12`
 - Strict signal blockers: `0`
+- Policy contract: `crypto_options_promotion_policy_contract_v1`
 
 ## Repo Summary
-- Dirty paths: `877`
-- Crypto active dirty paths: `656`
-- Reference candidate dirty paths: `72`
+- Dirty paths: `534`
+- Crypto active dirty paths: `402`
+- Reference candidate dirty paths: `0`
 
 ## Next Actions
 - Run path-level repo cleanup inventory before moving legacy files.

@@ -25,19 +25,16 @@
       "status": "pending_first_report"
     },
     "crypto-options-signal-strategy-queue-worker": {
-      "age_minutes": null,
-      "exists": false,
+      "age_minutes": 0.48,
+      "exists": true,
       "latest_markdown_path": "crypto_options_app\\artifacts\\team_coordination\\automation_status\\signal_strategy_queue_worker_latest.md",
       "max_age_minutes": 45,
-      "missing_sections": [
-        "Rows considered",
-        "Decision",
-        "Manual orders avoided"
-      ],
-      "status": "pending_first_report"
+      "missing_sections": [],
+      "modified_at_utc": "2026-06-07T07:31:13.562374+00:00",
+      "status": "fresh"
     }
   },
-  "generated_at_utc": "2026-06-07T07:21:54.128321+00:00",
+  "generated_at_utc": "2026-06-07T07:31:42.604144+00:00",
   "safety": {
     "live_trading_authorized": false,
     "manual_orders_avoided": true,
@@ -45,9 +42,10 @@
     "orders_allowed": false
   },
   "schema_version": "crypto_options_automation_report_status_v1",
-  "status": "pending_first_reports",
+  "status": "degraded",
   "status_counts": {
-    "pending_first_report": 3
+    "fresh": 1,
+    "pending_first_report": 2
   },
   "status_root": "crypto_options_app\\artifacts\\team_coordination\\automation_status"
 }

@@ -1,7 +1,7 @@
 # Crypto Options Automation Report Status
 
-- Generated: `2026-06-07T07:21:54.128321+00:00`
-- Status: `pending_first_reports`
+- Generated: `2026-06-07T07:31:42.604144+00:00`
+- Status: `degraded`
 - Status root: `crypto_options_app\artifacts\team_coordination\automation_status`
 - Live authority: `none`
 
@@ -17,11 +17,11 @@
 
 ### `crypto-options-signal-strategy-queue-worker`
 
-- Status: `pending_first_report`
+- Status: `fresh`
 - Latest markdown: `crypto_options_app\artifacts\team_coordination\automation_status\signal_strategy_queue_worker_latest.md`
-- Age minutes: `None`
+- Age minutes: `0.48`
 - Max age minutes: `45`
-- Missing sections: `Rows considered`, `Decision`, `Manual orders avoided`
+- Missing sections: `none`
 
 ### `crypto-options-frontend-status-reporter`
 

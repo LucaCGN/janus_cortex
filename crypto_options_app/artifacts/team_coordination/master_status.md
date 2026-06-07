@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T07:21:14Z
+Updated: 2026-06-07T07:31:00Z
 
 ## Objective
 
@@ -21,7 +21,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated behind tested TTL cache/lock adapter semantics.
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports Postgres, orders disabled, live false.
 - Runtime SQLite audit latest: 0 production runtime direct-connect blockers, 0 review-required SQLite usages, 11 allowed migration/test/compat usages; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`.
-- Transition readiness review: `degraded`, broad automation `not_ready`, no accidental live candidates.
+- Transition readiness review: `degraded`, broad automation `not_ready`, no blockers, no accidental live candidates. The live `/strategies/promotion` endpoint exposes `crypto_options_promotion_policy_contract_v1`.
 - GitHub issue/milestone source-of-truth: created in `LucaCGN/janus_cortex`; sync report at `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`.
 - Review branch: draft PR [#170 Crypto options compatibility wrapper cutover](https://github.com/LucaCGN/janus_cortex/pull/170).
 - Repo cleanup inventory: path-level artifact generated; 534 dirty/status paths, 132 review-required paths, 402 active crypto paths, 131 crypto compatibility wrapper candidates, 0 legacy move candidates.
@@ -36,7 +36,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Batch 4 compatibility wrapper decision plan: `crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_latest.md`; active import blockers cleared, non-active wrapper decisions reviewable, GitHub issue creation can start after this branch is reviewable.
 - Batch 4 cutover progress: active crypto callers now use `crypto_options_app.data_nodes.polymarket_crypto`, `crypto_options_app.data_nodes.crypto`, `crypto_options_app.pipelines.options`, `crypto_options_app.services.crypto_options`, `crypto_options_app.runtime.local_paths`, `crypto_options_app.api.db`, and `crypto_options_app.trading.polymarket_portfolio` instead of old `app.*` runtime imports.
 - Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/`. Frontend fixed chat can start from `fixed_chat_prompts/frontend_control_center_developer.md`; signal/strategy cleanup can start from `fixed_chat_prompts/signal_strategy_management_cleanup.md`.
-- Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
+- Promotion state: 110 strategies, 12 shadow-ready, 0 live candidates, 0 strict signal blockers.
 - Promotion policy contract: strategy promotion summaries expose `crypto_options_promotion_policy_contract_v1`; `PASSED`/`SELECTED`/`STRUCTURAL_PASS`/`STRUCTURAL_ALTERNATE` are not promotable signal states, exactly 70% win rate is not enough for live candidacy, and chat/automation cannot authorize live orders.
 - Transition readiness now blocks if the strategy promotion endpoint lacks `crypto_options_promotion_policy_contract_v1`.
 - Frontend strategy lab now renders the `policy_contract` from `/strategies/promotion`, including live-candidate gates, the `PROMOTION_READY` signal gate, non-promotable signal labels, strict blocker allowance, and supervised-runtime-only live authority.
@@ -46,7 +46,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Fixed chat startup readiness artifact: `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md`; status `ready`, `2/2` current fixed chats ready, future specialist prompts remain future-only, and no fixed chat has live authority.
 - Limited automation startup readiness artifact: `crypto_options_app/artifacts/reports/automation_startup_readiness_latest.md`; status `ready_to_schedule`, `3/3` planned limited automations ready, `create_immediately=false`, no live authority.
 - Limited automations activated: `crypto-options-db-data-observability` every 15 minutes, `crypto-options-signal-strategy-queue-worker` every 15 minutes, and `crypto-options-frontend-status-reporter` hourly. Existing `crypto-options-unified-dev-loop` heartbeat remains paused in the app automation store; current master control is this active chat goal/thread.
-- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `pending_first_reports`. The three active automations now have exact required latest report paths under `crypto_options_app/artifacts/team_coordination/automation_status/`.
+- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `degraded`. The signal/strategy queue worker has a fresh first report; DB/data observability and frontend status reporter are still pending first reports.
 
 ## Active Fixed Chats
 
@@ -64,8 +64,8 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 ## Next Transition Actions
 
 1. Commit the Batch 4 decision plan so non-active wrapper handling is reviewable.
-2. Start fixed chats from their prompt files and linked GitHub issues when user is ready; verify `fixed_chat_startup_readiness_latest.md` remains `ready` first.
-3. Monitor `automation_report_status_latest.md`; do not add or reactivate any other standing automation until all three active limited lanes produce fresh reports.
+2. Start fixed chats from their prompt files and linked GitHub issues when user is ready; verify `fixed_chat_startup_readiness_latest.md` remains `ready` and `transition_readiness_latest.md` has no blockers first.
+3. Monitor `automation_report_status_latest.md`; do not add or reactivate any other standing automation until DB/data, signal/strategy, and frontend limited lanes all produce fresh reports.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
