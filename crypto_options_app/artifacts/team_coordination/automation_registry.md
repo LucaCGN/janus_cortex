@@ -1,6 +1,6 @@
 ﻿# Crypto Options Automation Registry
 
-Updated: 2026-06-07T07:37:00Z
+Updated: 2026-06-07T07:45:00Z
 
 ## Active
 
@@ -34,7 +34,7 @@ Latest machine-readable gate:
 Latest report freshness gate:
 
 - `crypto_options_app/artifacts/reports/automation_report_status_latest.md`
-- Current status: `degraded`; DB/data observability and signal/strategy queue worker are fresh, and frontend status reporter is pending its first report.
+- Current status: `fresh`; DB/data observability, signal/strategy queue worker, and frontend status reporter all have required latest reports.
 
 ## Not Allowed Yet
 

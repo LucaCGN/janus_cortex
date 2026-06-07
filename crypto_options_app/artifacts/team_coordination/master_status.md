@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T07:37:00Z
+Updated: 2026-06-07T07:45:00Z
 
 ## Objective
 
@@ -46,8 +46,9 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Fixed chat startup readiness artifact: `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md`; status `ready`, `2/2` current fixed chats ready, future specialist prompts remain future-only, and no fixed chat has live authority.
 - Limited automation startup readiness artifact: `crypto_options_app/artifacts/reports/automation_startup_readiness_latest.md`; status `ready_to_schedule`, `3/3` planned limited automations ready, `create_immediately=false`, no live authority.
 - Limited automations activated: `crypto-options-db-data-observability` every 15 minutes, `crypto-options-signal-strategy-queue-worker` every 15 minutes, and `crypto-options-frontend-status-reporter` hourly. Existing `crypto-options-unified-dev-loop` heartbeat remains paused in the app automation store; current master control is this active chat goal/thread.
-- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `degraded`. DB/data observability and signal/strategy queue worker have fresh reports; frontend status reporter is still pending its first report.
+- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `fresh`. DB/data observability, signal/strategy queue worker, and frontend status reporter all have fresh latest reports.
 - DB/data observability latest: Postgres runtime reads are ok, Redis remains disabled, runtime SQLite audit is ok, B `top_profiles_distribution` is stale by roughly 3 hours, and C ETH option snapshot is stale by roughly 13 hours. The DB/data automation prompt now pins health/control checks to the canonical `8011` backend, not legacy port `8000`.
+- Frontend status latest: backend-rendered UI and key API contracts are reachable on canonical `8011`; separate frontend service `8012` is currently offline, so fixed-chat frontend work should treat `8011` as the working target until a separate React/frontend service is intentionally started.
 
 ## Active Fixed Chats
 
@@ -66,7 +67,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 1. Commit the Batch 4 decision plan so non-active wrapper handling is reviewable.
 2. Start fixed chats from their prompt files and linked GitHub issues when user is ready; verify `fixed_chat_startup_readiness_latest.md` remains `ready` and `transition_readiness_latest.md` has no blockers first.
-3. Monitor `automation_report_status_latest.md`; do not add or reactivate any other standing automation until DB/data, signal/strategy, and frontend limited lanes all produce fresh reports.
+3. Keep monitoring `automation_report_status_latest.md`; do not add or reactivate any broader standing automation unless these three limited lanes remain fresh and useful.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
