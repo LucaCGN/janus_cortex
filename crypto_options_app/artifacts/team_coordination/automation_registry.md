@@ -1,16 +1,21 @@
 ﻿# Crypto Options Automation Registry
 
-Updated: 2026-06-07T07:09:03Z
+Updated: 2026-06-07T07:15:32Z
 
 ## Active
 
-- `crypto-options-unified-dev-loop`: master heartbeat/controller. Performs bounded manager slices only.
+- `crypto-options-db-data-observability`: active cron, 15 minute cadence, report-first DB/data/source health lane.
+- `crypto-options-signal-strategy-queue-worker`: active cron, 15 minute cadence, one bounded signal/strategy cleanup queue item or proposal.
+- `crypto-options-frontend-status-reporter`: active cron, hourly cadence, report-only frontend/control-center status lane.
+
+## Master Controller
+
+- Current master control remains this active chat goal/thread.
+- Existing app heartbeat `crypto-options-unified-dev-loop` is present but currently `PAUSED` in the Codex automation store. Do not duplicate it; reactivate/update only if the user explicitly asks for the separate heartbeat to resume.
 
 ## Planned, Not Yet Active
 
-- `db-data-observability`: 15 minute cadence, low/medium reasoning, reports source/storage health and bounded blockers.
-- `signal-strategy-queue-worker`: 5-15 minute cadence, medium/high reasoning, handles one signal/strategy queue item or bounded batch.
-- `frontend-status-reporter`: 30-60 minute cadence, low/medium reasoning, report-focused.
+- No additional standing automations should be created until these three limited lanes prove useful through markdown/JSON reports.
 
 Latest machine-readable gate:
 
@@ -18,6 +23,7 @@ Latest machine-readable gate:
 - Status: `ready_to_schedule`
 - Ready limited automations: `3/3`
 - Create immediately: `false`
+- Activated after master-goal continuation: `3/3` limited automations.
 
 ## Not Allowed Yet
 
@@ -36,3 +42,11 @@ Do not activate new standing automations until:
 - `python -m crypto_options_app.scripts.run_crypto_options_automation_startup_readiness --write-artifacts --markdown` reports `ready_to_schedule`.
 
 Even when the gate is ready, scheduling still requires a master/user request. This registry does not authorize autonomous live promotion or broad worker swarms.
+
+## Active Safety Contract
+
+- No active automation may authorize live trading.
+- No active automation may place manual orders.
+- No active automation may alter global/API live flags.
+- Signal/strategy cleanup automation treats `PROMOTED` as cleanup classification only, never live authority.
+- Frontend automation is report-only and must not change DB, promotion, replay, strategy, or trading runtime logic.
