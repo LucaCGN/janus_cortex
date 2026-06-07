@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T07:15:32Z
+Updated: 2026-06-07T07:21:14Z
 
 ## Objective
 
@@ -46,6 +46,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Fixed chat startup readiness artifact: `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md`; status `ready`, `2/2` current fixed chats ready, future specialist prompts remain future-only, and no fixed chat has live authority.
 - Limited automation startup readiness artifact: `crypto_options_app/artifacts/reports/automation_startup_readiness_latest.md`; status `ready_to_schedule`, `3/3` planned limited automations ready, `create_immediately=false`, no live authority.
 - Limited automations activated: `crypto-options-db-data-observability` every 15 minutes, `crypto-options-signal-strategy-queue-worker` every 15 minutes, and `crypto-options-frontend-status-reporter` hourly. Existing `crypto-options-unified-dev-loop` heartbeat remains paused in the app automation store; current master control is this active chat goal/thread.
+- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `pending_first_reports`. The three active automations now have exact required latest report paths under `crypto_options_app/artifacts/team_coordination/automation_status/`.
 
 ## Active Fixed Chats
 
@@ -64,7 +65,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 1. Commit the Batch 4 decision plan so non-active wrapper handling is reviewable.
 2. Start fixed chats from their prompt files and linked GitHub issues when user is ready; verify `fixed_chat_startup_readiness_latest.md` remains `ready` first.
-3. Monitor the three active limited automations through markdown/JSON reports before adding or reactivating any other standing automations.
+3. Monitor `automation_report_status_latest.md`; do not add or reactivate any other standing automation until all three active limited lanes produce fresh reports.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.

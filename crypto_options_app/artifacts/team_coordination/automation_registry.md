@@ -1,12 +1,18 @@
 ﻿# Crypto Options Automation Registry
 
-Updated: 2026-06-07T07:15:32Z
+Updated: 2026-06-07T07:21:14Z
 
 ## Active
 
 - `crypto-options-db-data-observability`: active cron, 15 minute cadence, report-first DB/data/source health lane.
 - `crypto-options-signal-strategy-queue-worker`: active cron, 15 minute cadence, one bounded signal/strategy cleanup queue item or proposal.
 - `crypto-options-frontend-status-reporter`: active cron, hourly cadence, report-only frontend/control-center status lane.
+
+Required latest report paths:
+
+- `crypto-options-db-data-observability`: `crypto_options_app/artifacts/team_coordination/automation_status/db_data_observability_latest.md`
+- `crypto-options-signal-strategy-queue-worker`: `crypto_options_app/artifacts/team_coordination/automation_status/signal_strategy_queue_worker_latest.md`
+- `crypto-options-frontend-status-reporter`: `crypto_options_app/artifacts/team_coordination/automation_status/frontend_status_reporter_latest.md`
 
 ## Master Controller
 
@@ -24,6 +30,11 @@ Latest machine-readable gate:
 - Ready limited automations: `3/3`
 - Create immediately: `false`
 - Activated after master-goal continuation: `3/3` limited automations.
+
+Latest report freshness gate:
+
+- `crypto_options_app/artifacts/reports/automation_report_status_latest.md`
+- Current status: `pending_first_reports` until each active automation writes its first required latest report.
 
 ## Not Allowed Yet
 
@@ -50,3 +61,4 @@ Even when the gate is ready, scheduling still requires a master/user request. Th
 - No active automation may alter global/API live flags.
 - Signal/strategy cleanup automation treats `PROMOTED` as cleanup classification only, never live authority.
 - Frontend automation is report-only and must not change DB, promotion, replay, strategy, or trading runtime logic.
+- Missing or stale reports block adding further standing automations.
