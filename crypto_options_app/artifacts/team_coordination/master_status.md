@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T06:12:00Z
+Updated: 2026-06-07T06:20:00Z
 
 ## Objective
 
@@ -20,7 +20,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Master hedge-grid track: valid north star, but protected-floor variants replay only when closed-cycle candidates exist.
 - Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated.
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports Postgres, orders disabled, live false.
-- Runtime SQLite audit latest: 0 production runtime direct-connect blockers, 2 review-required legacy side-store usages, 9 allowed migration/test/compat usages; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`.
+- Runtime SQLite audit latest: 0 production runtime direct-connect blockers, 0 review-required SQLite usages, 11 allowed migration/test/compat usages; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`.
 - Transition readiness review: `degraded`, broad automation `not_ready`, no accidental live candidates.
 - GitHub issue/milestone source-of-truth: created in `LucaCGN/janus_cortex`; sync report at `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`.
 - Review branch: draft PR [#170 Crypto options compatibility wrapper cutover](https://github.com/LucaCGN/janus_cortex/pull/170).
@@ -57,6 +57,6 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 2. Start fixed chats from their prompt files and linked GitHub issues when user is ready.
 3. Use the GitHub issue source-of-truth before starting any bounded automation beyond the single master heartbeat.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
-5. Review the 2 remaining legacy SQLite side stores, `pipelines/options/profile_store.py` and `pipelines/options/market_data_store.py`, and either migrate their active tables into canonical Postgres or archive them as old research stores.
+5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
 7. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.

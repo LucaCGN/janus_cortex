@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Initialize and inspect the crypto options profile SQLite store."""
+"""Initialize and inspect the legacy crypto options profile SQLite store."""
 
 import argparse
 import asyncio
@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from crypto_options_app.config import CENTRAL_DB_PATH  # noqa: E402
 from crypto_options_app.pipelines.options.profile_store import (  # noqa: E402
+    default_profile_store_path,
     ingest_profile_signal_artifact,
     initialize_profile_store,
     profile_store_summary,
@@ -25,8 +25,8 @@ from crypto_options_app.pipelines.options.profile_fetch_service import (  # noqa
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage the separate crypto options profile SQLite store.")
-    parser.add_argument("--db-path", default=str(CENTRAL_DB_PATH))
+    parser = argparse.ArgumentParser(description="Manage the legacy crypto options profile SQLite compatibility store.")
+    parser.add_argument("--db-path", default=str(default_profile_store_path()))
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="Create the profile store schema.")

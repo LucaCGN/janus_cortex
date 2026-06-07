@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-"""SQLite store for crypto underlying market data and indicator snapshots.
+"""Legacy SQLite compatibility store for market-data research artifacts.
 
-This store is intentionally separate from both the Janus application database
-and the crypto-options profile universe store. It is read-only with respect to
-trading and exists only to persist exchange-backed BTC/ETH/SOL/XRP prices,
-candles, derived indicator snapshots, and component backtest artifacts.
+The canonical crypto-options runtime uses Postgres through the application DB
+adapter. This module is retained only for older market-data research CLIs and
+migration/reference reads; production workers must not use it as runtime truth.
 """
 
 import hashlib
@@ -17,6 +16,7 @@ from typing import Any
 
 
 MARKET_DATA_STORE_SCHEMA_VERSION = "crypto_options_market_data_store_v1"
+LEGACY_SQLITE_COMPATIBILITY_STORE = True
 
 
 def default_market_data_store_path() -> Path:

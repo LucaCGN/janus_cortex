@@ -87,7 +87,7 @@ def test_runtime_audit_allows_explicit_db_compat_sqlite_connect(monkeypatch, tmp
     assert audit["allowed_sqlite_usage"][0]["direct_connect"] is True
 
 
-def test_runtime_audit_surfaces_legacy_sqlite_side_stores_for_review(monkeypatch, tmp_path) -> None:
+def test_runtime_audit_allows_explicit_legacy_sqlite_side_stores(monkeypatch, tmp_path) -> None:
     fake_root = tmp_path / "crypto_options_app"
     store_dir = fake_root / "pipelines" / "options"
     store_dir.mkdir(parents=True)
@@ -99,12 +99,12 @@ def test_runtime_audit_surfaces_legacy_sqlite_side_stores_for_review(monkeypatch
 
     audit = runtime_audit._runtime_code_audit()
 
-    assert audit["status"] == "degraded"
+    assert audit["status"] == "ok"
     assert audit["blockers"] == []
     assert audit["runtime_offenders"] == []
-    assert audit["allowed_sqlite_usage"] == []
-    assert len(audit["review_required"]) == 1
-    assert audit["review_required"][0]["category"] == "review_legacy_sqlite_side_store"
+    assert audit["review_required"] == []
+    assert len(audit["allowed_sqlite_usage"]) == 1
+    assert audit["allowed_sqlite_usage"][0]["category"] == "allowed_legacy_sqlite_research_compat"
 
 
 def test_parse_memory_size_bytes() -> None:

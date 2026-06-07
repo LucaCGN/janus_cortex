@@ -480,7 +480,7 @@ def _sqlite_usage_category(rel: Path, *, has_direct_connect: bool) -> str:
         "pipelines/options/profile_store.py",
         "pipelines/options/market_data_store.py",
     }:
-        return "review_legacy_sqlite_side_store"
+        return "allowed_legacy_sqlite_research_compat"
     if has_direct_connect:
         return "review_non_runtime_direct_sqlite_connect"
     return "review_sqlite_import"

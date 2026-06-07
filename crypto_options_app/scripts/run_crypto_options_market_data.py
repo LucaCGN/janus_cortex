@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Manage the crypto options underlying market-data store."""
+"""Manage the legacy crypto options underlying market-data SQLite store."""
 
 import argparse
 import asyncio
@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from crypto_options_app.config import CENTRAL_DB_PATH  # noqa: E402
 from crypto_options_app.pipelines.options.market_data_store import (  # noqa: E402
+    default_market_data_store_path,
     fresh_polymarket_event_universe,
     initialize_market_data_store,
     latest_indicator_snapshots,
@@ -36,8 +36,8 @@ from crypto_options_app.pipelines.options.profile_store import profile_store_buy
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage read-only crypto options market data.")
-    parser.add_argument("--db-path", default=str(CENTRAL_DB_PATH))
+    parser = argparse.ArgumentParser(description="Manage legacy read-only crypto options market-data SQLite compatibility artifacts.")
+    parser.add_argument("--db-path", default=str(default_market_data_store_path()))
     sub = parser.add_subparsers(dest="command", required=True)
 
     init = sub.add_parser("init", help="Create the market-data schema.")

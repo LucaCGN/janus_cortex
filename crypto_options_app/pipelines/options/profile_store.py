@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-"""SQLite store for crypto options profile universe, grades, and signals.
+"""Legacy SQLite compatibility store for profile research artifacts.
 
-This module is intentionally separate from the Janus application database.  It
-stores the profile signal system's own source-of-truth tables so trading code can
-read stable grades from SQLite while signal streamers continue to update recent
-signals independently.
+The canonical crypto-options runtime uses Postgres through the application DB
+adapter. This module is retained only for older profile-research CLIs and
+migration/reference reads; production workers must not use it as runtime truth.
 """
 
 import hashlib
@@ -28,6 +27,7 @@ from crypto_options_app.pipelines.options.profile_signals import (
 
 PROFILE_STORE_SCHEMA_VERSION = "crypto_options_profile_store_v1"
 PROFILE_GRADING_POLICY_VERSION = "crypto_options_profile_grading_v4_90_splus_elite_spp_v2"
+LEGACY_SQLITE_COMPATIBILITY_STORE = True
 
 
 def default_profile_store_path() -> Path:
