@@ -1,6 +1,6 @@
 # Crypto Options Compatibility Wrapper Audit
 
-- Generated: `2026-06-07T05:45:17.676825+00:00`
+- Generated: `2026-06-07T11:00:16.229292+00:00`
 - Status: `review`
 - Manual orders avoided: `True`
 - Live trading authorized: `False`
@@ -10,14 +10,14 @@
 - Wrappers referenced by active crypto code/tests: `0`
 - Wrappers referenced only by docs/reference text: `52`
 - Wrappers with no detected references: `59`
-- Scanned files: `707`
+- Scanned files: `721`
 
 ## Gates
 - `automatic_wrapper_moves_allowed`: `False`
 - `active_import_cutover_required`: `False`
 - `frontend_fixed_chat_can_start_after_batch_3`: `True`
 - `signal_strategy_fixed_chat_requires_batch_4_and_github_source_of_truth`: `True`
-- `github_source_of_truth_ready`: `False`
+- `github_source_of_truth_ready`: `True`
 
 ## Fixed Chat Prompt Paths
 - `bootstrap`: `crypto_options_app/artifacts/team_coordination/fixed_chat_bootstrap.md`
@@ -104,6 +104,6 @@
 ## Next Actions
 - Active crypto code/test imports are cut over; Batch 4 is now a non-active wrapper decision problem.
 - Create or refresh the compatibility wrapper decision plan before moving, archiving, or removing wrappers.
+- GitHub issue source-of-truth is ready; fixed chats may start from fixed_chat_bootstrap.md and fixed_chat_startup_readiness_latest.md.
 - Keep frontend fixed chat eligible after Batch 3; it must use existing prompt and avoid backend promotion/runtime changes.
-- Hold signal/strategy cleanup fixed chat until Batch 4 import decisions and GitHub issue source-of-truth are ready.
 - Review 59 no-reference wrappers for compatibility archive or removal after tests.

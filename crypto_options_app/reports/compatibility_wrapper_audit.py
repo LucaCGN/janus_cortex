@@ -76,12 +76,13 @@ def build_compatibility_wrapper_audit(
     documentation_reference_count = sum(1 for wrapper in wrappers if wrapper["documentation_reference_count"] > 0)
     no_reference_count = sum(1 for wrapper in wrappers if wrapper["reference_count"] == 0)
     generated_at = datetime.now(UTC).isoformat()
+    github_source_of_truth_ready = _github_source_of_truth_ready(artifact_root)
     gates = {
         "automatic_wrapper_moves_allowed": False,
         "active_import_cutover_required": active_reference_count > 0,
         "frontend_fixed_chat_can_start_after_batch_3": True,
         "signal_strategy_fixed_chat_requires_batch_4_and_github_source_of_truth": True,
-        "github_source_of_truth_ready": False,
+        "github_source_of_truth_ready": github_source_of_truth_ready,
     }
     return {
         "schema_version": COMPATIBILITY_WRAPPER_AUDIT_SCHEMA_VERSION,
@@ -102,6 +103,7 @@ def build_compatibility_wrapper_audit(
         "next_actions": _next_actions(
             active_reference_count=active_reference_count,
             no_reference_count=no_reference_count,
+            github_source_of_truth_ready=github_source_of_truth_ready,
         ),
         "fixed_chat_prompt_paths": {
             "bootstrap": "crypto_options_app/artifacts/team_coordination/fixed_chat_bootstrap.md",
@@ -413,7 +415,12 @@ def _recommended_decision(
     return "hold_for_import_audit"
 
 
-def _next_actions(*, active_reference_count: int, no_reference_count: int) -> list[str]:
+def _next_actions(
+    *,
+    active_reference_count: int,
+    no_reference_count: int,
+    github_source_of_truth_ready: bool,
+) -> list[str]:
     if active_reference_count:
         actions = [
             "Do not bulk-move compatibility wrappers while active crypto code still imports old app/codex_tool paths.",
@@ -425,15 +432,38 @@ def _next_actions(*, active_reference_count: int, no_reference_count: int) -> li
             "Active crypto code/test imports are cut over; Batch 4 is now a non-active wrapper decision problem.",
             "Create or refresh the compatibility wrapper decision plan before moving, archiving, or removing wrappers.",
         ]
+    if github_source_of_truth_ready:
+        actions.append("GitHub issue source-of-truth is ready; fixed chats may start from fixed_chat_bootstrap.md and fixed_chat_startup_readiness_latest.md.")
+    else:
+        actions.append("Hold signal/strategy cleanup fixed chat until Batch 4 import decisions and GitHub issue source-of-truth are ready.")
     actions.extend(
         [
         "Keep frontend fixed chat eligible after Batch 3; it must use existing prompt and avoid backend promotion/runtime changes.",
-        "Hold signal/strategy cleanup fixed chat until Batch 4 import decisions and GitHub issue source-of-truth are ready.",
         ]
     )
     if no_reference_count:
         actions.append(f"Review {no_reference_count} no-reference wrappers for compatibility archive or removal after tests.")
     return actions
+
+
+def _github_source_of_truth_ready(artifact_root: Path) -> bool:
+    sync_path = Path(artifact_root) / "team_coordination" / "github_source_of_truth_sync.md"
+    if not sync_path.exists():
+        return False
+    try:
+        text = sync_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    required_markers = (
+        "Issues created:",
+        "#155",
+        "#159",
+        "#160",
+        "#164",
+        "Signal And Strategy Management Cleanup",
+        "Frontend Control Center Developer",
+    )
+    return all(marker in text for marker in required_markers)
 
 
 def _load_latest_batches(artifact_root: Path) -> dict[str, Any]:

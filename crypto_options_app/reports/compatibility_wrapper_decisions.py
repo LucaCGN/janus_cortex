@@ -37,6 +37,18 @@ def build_compatibility_wrapper_decision_plan(
     recommended_counts = Counter(decision["recommended_decision"] for decision in decisions)
     generated_at = datetime.now(UTC).isoformat()
     non_active_decisions_reviewable = not active_blockers and bool(wrappers)
+    signal_strategy_fixed_chat_ready = (
+        non_active_decisions_reviewable
+        and _fixed_chat_ready(
+            artifact_root=artifact_root,
+            chat_id="signal_strategy_management_cleanup",
+        )
+    )
+    signal_strategy_wait_reason = (
+        "none"
+        if signal_strategy_fixed_chat_ready
+        else "GitHub milestones/issues and fixed_chat_startup_readiness_latest must be ready first."
+    )
     return {
         "schema_version": COMPATIBILITY_WRAPPER_DECISION_SCHEMA_VERSION,
         "generated_at_utc": generated_at,
@@ -53,8 +65,8 @@ def build_compatibility_wrapper_decision_plan(
             "non_active_wrapper_decisions_reviewable": non_active_decisions_reviewable,
             "github_issue_creation_can_start_after_commit": non_active_decisions_reviewable,
             "frontend_fixed_chat_ready": True,
-            "signal_strategy_fixed_chat_ready": False,
-            "signal_strategy_fixed_chat_wait_reason": "GitHub milestones/issues must be created first.",
+            "signal_strategy_fixed_chat_ready": signal_strategy_fixed_chat_ready,
+            "signal_strategy_fixed_chat_wait_reason": signal_strategy_wait_reason,
         },
         "decision_order": [
             "runtime_import_audit_before_archive",
@@ -66,7 +78,10 @@ def build_compatibility_wrapper_decision_plan(
             "manual_import_audit",
         ],
         "decisions": decisions,
-        "next_actions": _next_actions(active_blockers=active_blockers),
+        "next_actions": _next_actions(
+            active_blockers=active_blockers,
+            signal_strategy_fixed_chat_ready=signal_strategy_fixed_chat_ready,
+        ),
         "manual_orders_avoided": True,
         "live_trading_authorized": False,
     }
@@ -176,18 +191,46 @@ def _decision_for_wrapper(wrapper: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _next_actions(*, active_blockers: list[dict[str, Any]]) -> list[str]:
+def _next_actions(
+    *,
+    active_blockers: list[dict[str, Any]],
+    signal_strategy_fixed_chat_ready: bool,
+) -> list[str]:
     if active_blockers:
         return [
             f"Resolve {len(active_blockers)} active import blockers before any compatibility archive move.",
             "Regenerate compatibility_wrapper_audit_latest and this decision plan after cutover.",
         ]
-    return [
+    actions = [
         "Commit this decision plan so Batch 4 has a reviewable source of truth.",
-        "Create GitHub milestones/issues from github_issue_milestone_plan.md after this branch is reviewable.",
         "Keep frontend fixed chat eligible now; start signal/strategy cleanup only after GitHub issues exist.",
         "Do not delete wrappers in bulk; archive or replace categories in the decision order with focused tests.",
     ]
+    if signal_strategy_fixed_chat_ready:
+        actions[1] = "Signal/strategy cleanup fixed chat is ready; start it from fixed_chat_bootstrap.md and GitHub issues #155-#159."
+    else:
+        actions.insert(1, "Create or refresh GitHub milestones/issues and fixed-chat startup readiness before starting signal/strategy cleanup.")
+    return actions
+
+
+def _fixed_chat_ready(*, artifact_root: Path, chat_id: str) -> bool:
+    path = Path(artifact_root) / "reports" / "fixed_chat_startup_readiness_latest.json"
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if payload.get("status") != "ready":
+        return False
+    fixed_chats = payload.get("fixed_chats") or {}
+    if isinstance(fixed_chats, dict):
+        chat = fixed_chats.get(chat_id) or {}
+        return chat.get("status") == "ready"
+    for chat in fixed_chats:
+        if chat.get("chat_id") == chat_id:
+            return chat.get("status") == "ready"
+    return False
 
 
 def _load_latest_audit(artifact_root: Path) -> dict[str, Any]:

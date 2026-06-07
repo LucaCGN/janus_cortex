@@ -16,17 +16,17 @@
     "active_import_cutover_required": false,
     "automatic_wrapper_moves_allowed": false,
     "frontend_fixed_chat_can_start_after_batch_3": true,
-    "github_source_of_truth_ready": false,
+    "github_source_of_truth_ready": true,
     "signal_strategy_fixed_chat_requires_batch_4_and_github_source_of_truth": true
   },
-  "generated_at_utc": "2026-06-07T05:45:17.676825+00:00",
+  "generated_at_utc": "2026-06-07T11:00:16.229292+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "next_actions": [
     "Active crypto code/test imports are cut over; Batch 4 is now a non-active wrapper decision problem.",
     "Create or refresh the compatibility wrapper decision plan before moving, archiving, or removing wrappers.",
+    "GitHub issue source-of-truth is ready; fixed chats may start from fixed_chat_bootstrap.md and fixed_chat_startup_readiness_latest.md.",
     "Keep frontend fixed chat eligible after Batch 3; it must use existing prompt and avoid backend promotion/runtime changes.",
-    "Hold signal/strategy cleanup fixed chat until Batch 4 import decisions and GitHub issue source-of-truth are ready.",
     "Review 59 no-reference wrappers for compatibility archive or removal after tests."
   ],
   "schema_version": "crypto_options_compatibility_wrapper_audit_v1",
@@ -56,7 +56,7 @@
       "migrate_to_crypto_options_docs_or_reference": 3,
       "replace_with_crypto_options_app_script_entrypoint": 23
     },
-    "scanned_file_count": 707,
+    "scanned_file_count": 721,
     "wrapper_count": 131
   },
   "wrappers": [

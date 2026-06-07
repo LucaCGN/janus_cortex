@@ -1,8 +1,8 @@
 # Crypto Options Compatibility Wrapper Decision Plan
 
-- Generated: `2026-06-07T05:45:27.356003+00:00`
+- Generated: `2026-06-07T11:00:37.977955+00:00`
 - Status: `review`
-- Source audit: `2026-06-07T05:45:17.676825+00:00`
+- Source audit: `2026-06-07T11:00:16.229292+00:00`
 - Manual orders avoided: `True`
 - Live trading authorized: `False`
 
@@ -15,8 +15,8 @@
 - `non_active_wrapper_decisions_reviewable`: `True`
 - `github_issue_creation_can_start_after_commit`: `True`
 - `frontend_fixed_chat_ready`: `True`
-- `signal_strategy_fixed_chat_ready`: `False`
-- `signal_strategy_fixed_chat_wait_reason`: `GitHub milestones/issues must be created first.`
+- `signal_strategy_fixed_chat_ready`: `True`
+- `signal_strategy_fixed_chat_wait_reason`: `none`
 
 ## Decision Buckets
 - `runtime_import_audit_before_archive`: `10`
@@ -64,6 +64,5 @@
 
 ## Next Actions
 - Commit this decision plan so Batch 4 has a reviewable source of truth.
-- Create GitHub milestones/issues from github_issue_milestone_plan.md after this branch is reviewable.
-- Keep frontend fixed chat eligible now; start signal/strategy cleanup only after GitHub issues exist.
+- Signal/strategy cleanup fixed chat is ready; start it from fixed_chat_bootstrap.md and GitHub issues #155-#159.
 - Do not delete wrappers in bulk; archive or replace categories in the decision order with focused tests.
