@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T06:48:00Z
+Updated: 2026-06-07T06:56:53Z
 
 ## Objective
 
@@ -42,6 +42,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Frontend strategy lab now renders the `policy_contract` from `/strategies/promotion`, including live-candidate gates, the `PROMOTION_READY` signal gate, non-promotable signal labels, strict blocker allowance, and supervised-runtime-only live authority.
 - Strategy revision scout now consumes `crypto_options_promotion_policy_contract_v1`; it reports non-promotable signal labels by state/type/source and uses policy-derived live-candidate thresholds instead of hard-coded queue cleanup assumptions.
 - Signal/strategy cleanup batch CLI is available: `python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12`. It is read-only and emits bounded cleanup classifications for fixed chats and future queue workers.
+- First bounded cleanup batch artifact: `crypto_options_app/artifacts/reports/signal_strategy_cleanup_batch_latest.md`, generated at `2026-06-07T06:56:17Z` with 12 signal rows and 6 strategy rows. Overall queue shape: 235 signals (`125 NEEDS_VARIANT`, `97 PROMOTED` cleanup classification only, `13 STRICT_REPLAY_REQUIRED`) and 90 strategies (`1 BLOCKED`, `54 NEEDS_VARIANT`, `35 SHADOW_REQUIRED`). No live authority is implied.
 
 ## Active Fixed Chats
 
@@ -64,5 +65,6 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
-7. Continue issue #153 by using the policy-aware cleanup batch in fixed-chat cleanup runs, then wire the same classifications into a bounded queue-worker automation.
-8. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.
+7. Let the Signal/Strategy Management Cleanup fixed chat start from `signal_strategy_cleanup_batch_latest.md` and GitHub issues #155-#159; first work should retire or create justified V2-V5 variants for the first weak hedge-grid signal rows and revise/retire the first six stale strategy rows.
+8. Continue issue #153 by wiring the same cleanup classifications into a bounded queue-worker automation after the fixed-chat workflow proves the handoff path.
+9. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.

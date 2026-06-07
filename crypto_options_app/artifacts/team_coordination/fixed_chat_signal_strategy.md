@@ -35,6 +35,20 @@ Do not work on:
 7. Treat cleanup classifications as queue-management guidance, not live authority.
 8. Write outcomes back to this file or a dated note under `crypto_options_app/artifacts/team_coordination`.
 
+## Current Batch Input
+
+Latest bounded cleanup artifact:
+
+`crypto_options_app/artifacts/reports/signal_strategy_cleanup_batch_latest.md`
+
+Generated at `2026-06-07T06:56:17Z` with:
+
+- Signal queue shape: `235` rows, including `125 NEEDS_VARIANT`, `97 PROMOTED` cleanup classification only, and `13 STRICT_REPLAY_REQUIRED`.
+- Strategy queue shape: `90` rows, including `1 BLOCKED`, `54 NEEDS_VARIANT`, and `35 SHADOW_REQUIRED`.
+- First bounded slice: 12 weak hedge-grid signal rows marked `NEEDS_VARIANT`; 6 stale shadow-review strategy rows marked `NEEDS_VARIANT`.
+
+The first fixed-chat action should claim this batch, then retire weak stale rows or create V2-V5 variants only when the blocker fix is concrete. Do not treat the cleanup `PROMOTED` count as live authority.
+
 ## Strategy Direction
 
 Maintain two tracks:
