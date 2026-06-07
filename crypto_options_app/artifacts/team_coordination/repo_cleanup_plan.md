@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T04:53:00Z
+Updated: 2026-06-07T05:01:00Z
 
 ## Rule
 
@@ -32,11 +32,11 @@ Source artifact: `crypto_options_app/artifacts/reports/repo_cleanup_inventory_la
 Batch artifact: `crypto_options_app/artifacts/reports/repo_cleanup_batches_latest.json`
 Batch 0 staging artifact: `crypto_options_app/artifacts/reports/repo_baseline_staging_plan_latest.json`
 
-- Dirty/status paths: 604
-- Active crypto paths: 398
-- Review-required paths: 201
+- Dirty/status paths: 534
+- Active crypto paths: 402
+- Review-required paths: 132
 - Crypto compatibility wrapper candidates: 131
-- Global reference candidates: 69
+- Global reference candidates: 0
 - WNBA/NBA reference candidates: 0
 - Local automation state review paths: 0
 - Root config review paths: 1
@@ -46,10 +46,10 @@ Automatic moves remain disabled.
 
 Current batch summary:
 
-- Batch 0 active crypto baseline: 398 paths, branch `codex/crypto-transition-control-plane`
+- Batch 0 active crypto baseline: 402 paths, branch `codex/crypto-transition-control-plane`
 - Batch 1 local/root review: 1 path, branch `codex/crypto-repo-local-state-cleanup`
 - Batch 2 WNBA/NBA reference: 0 paths, branch `codex/crypto-repo-wnba-nba-reference`
-- Batch 3 global reference: 69 paths, branch `codex/crypto-repo-global-reference`
+- Batch 3 global reference: 0 paths, branch `codex/crypto-repo-global-reference`
 - Batch 4 crypto compatibility wrapper decision: 131 paths, branch `codex/crypto-compatibility-wrapper-cutover`
 - Batch 5 GitHub source-of-truth setup: 0 dirty paths, branch `codex/crypto-github-workflow-setup`
 
@@ -114,7 +114,7 @@ Current Batch 2 result:
 - Branch: `codex/crypto-repo-wnba-nba-reference`
 - Moved docs: 3
 - Destination root: `wnba_nba_app_reference/`
-- Commit: pending
+- Commit: `c67705e` (`Move WNBA NBA docs into reference root`)
 
 ### Batch 3: Global Legacy Reference Move
 
@@ -126,6 +126,14 @@ Purpose: isolate non-crypto Janus runtime/tooling while keeping it searchable.
 - Run crypto-only tests after the move.
 
 Suggested branch: `codex/crypto-repo-global-reference`.
+
+Current Batch 3 result:
+
+- Branch: `codex/crypto-repo-global-reference`
+- Moved paths: 69
+- Destination root: `global_app_reference/`
+- Commit: `659a722` (`Move global legacy files into reference root`)
+- Remaining legacy move candidates: 0
 
 ### Batch 4: Crypto Compatibility Wrapper Decision
 

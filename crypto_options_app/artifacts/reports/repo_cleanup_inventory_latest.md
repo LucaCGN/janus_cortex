@@ -1,15 +1,15 @@
 # Crypto Options Repo Cleanup Inventory
 
-- Generated: `2026-06-07T04:52:30.822380+00:00`
+- Generated: `2026-06-07T05:00:38.799750+00:00`
 - Status: `degraded`
 - Manual orders avoided: `True`
 
 ## Summary
-- Dirty paths: `604`
-- Review-required paths: `201`
-- Active crypto paths: `398`
+- Dirty paths: `534`
+- Review-required paths: `132`
+- Active crypto paths: `402`
 - Crypto compatibility wrapper candidates: `131`
-- Legacy move candidates: `69`
+- Legacy move candidates: `0`
 - Unknown/root review paths: `0`
 
 ## Gates
@@ -20,45 +20,40 @@
 - GitHub issue creation ready: `False`
 
 ## Classification Counts
-- `crypto_active`: `398`
+- `crypto_active`: `402`
 - `crypto_compatibility_wrapper_candidate`: `131`
-- `global_reference`: `1`
-- `global_reference_candidate`: `69`
 - `root_config_review`: `1`
-- `wnba_nba_reference`: `4`
 
 ## Warnings
 - `repo_dirty_requires_review_before_moves`
 - `crypto_compatibility_wrappers_need_cutover_decision`
-- `legacy_reference_candidates_need_inventory_review`
 
 ## Proposed Move Samples
-- `M` `app/api/main.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/main.py`
-- `M` `app/api/models.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/models.py`
-- `M` `app/api/routers/__init__.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/routers/__init__.py`
-- `M` `app/api/routers/ops.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/routers/ops.py`
-- `M` `app/api/routers/portfolio.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/api/routers/portfolio.py`
-- `M` `app/data/nodes/polymarket/blockchain/manage_portfolio.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/data/nodes/polymarket/blockchain/manage_portfolio.py`
-- `M` `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
-- `M` `app/docs/planning/current/final_system/automation/backlog_layers.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/automation/backlog_layers.md`
-- `M` `app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md`
-- `M` `app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md`
-- `M` `app/docs/planning/current/final_system/automation/issue_task_register.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/automation/issue_task_register.md`
-- `M` `app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md`
-- `M` `app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md`
-- `M` `app/docs/planning/current/final_system/market_scope_registry.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/market_scope_registry.md`
-- `M` `app/docs/planning/current/final_system/source_of_truth_map.md` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/docs/planning/current/final_system/source_of_truth_map.md`
-- `M` `app/modules/agentic/contracts.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/contracts.py`
-- `M` `app/modules/agentic/engine.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/engine.py`
-- `M` `app/modules/agentic/event_budget.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/event_budget.py`
-- `M` `app/modules/agentic/global_portfolio.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/global_portfolio.py`
-- `M` `app/modules/agentic/live_game_context.py` -> `global_reference_candidate` / `review_move_to_global_reference` / `global_app_reference/app/modules/agentic/live_game_context.py`
-- ... `584` additional paths in JSON artifact
+- `M` `requirements.txt` -> `root_config_review` / `manual_root_config_review` / `none`
+- `??` `app/api/routers/crypto_options_market_data.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/api/routers/crypto_options_market_data.py`
+- `??` `app/api/routers/crypto_options_signals.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/api/routers/crypto_options_signals.py`
+- `??` `app/data/nodes/crypto/__init__.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/crypto/__init__.py`
+- `??` `app/data/nodes/crypto/candles.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/crypto/candles.py`
+- `??` `app/data/nodes/crypto/reference.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/crypto/reference.py`
+- `??` `app/data/nodes/polymarket/crypto/__init__.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/__init__.py`
+- `??` `app/data/nodes/polymarket/crypto/accounts.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/accounts.py`
+- `??` `app/data/nodes/polymarket/crypto/history.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/history.py`
+- `??` `app/data/nodes/polymarket/crypto/live_capture.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/live_capture.py`
+- `??` `app/data/nodes/polymarket/crypto/markets.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/markets.py`
+- `??` `app/data/pipelines/crypto/__init__.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/__init__.py`
+- `??` `app/data/pipelines/crypto/options/__init__.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/__init__.py`
+- `??` `app/data/pipelines/crypto/options/audit.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/audit.py`
+- `??` `app/data/pipelines/crypto/options/backtests.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/backtests.py`
+- `??` `app/data/pipelines/crypto/options/candidate_report.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/candidate_report.py`
+- `??` `app/data/pipelines/crypto/options/cashout_simulator.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/cashout_simulator.py`
+- `??` `app/data/pipelines/crypto/options/contracts.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/contracts.py`
+- `??` `app/data/pipelines/crypto/options/engine.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/engine.py`
+- `??` `app/data/pipelines/crypto/options/exit_execution_policy.py` -> `crypto_compatibility_wrapper_candidate` / `review_keep_temporarily_or_migrate_into_crypto_options_app` / `crypto_options_app/compatibility/app/data/pipelines/crypto/options/exit_execution_policy.py`
+- ... `514` additional paths in JSON artifact
 
 ## Next Actions
 - Review the JSON path_entries list before moving files.
 - Create a branch/commit plan that separates crypto active work from reference moves.
 - Decide which crypto compatibility wrappers must stay until runtime routes are fully cut over.
-- Move reviewed legacy paths into reference roots in small, testable batches.
 - Create GitHub milestones/issues after the cleanup plan is reviewable.
 - Start fixed chats only after cleanup and issue source-of-truth are established.

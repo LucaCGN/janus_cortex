@@ -1,8 +1,8 @@
 # Crypto Options Repo Cleanup Batches
 
-- Generated: `2026-06-07T04:52:31.049206+00:00`
+- Generated: `2026-06-07T05:00:39.230778+00:00`
 - Status: `degraded`
-- Source inventory: `2026-06-07T04:52:30.822380+00:00`
+- Source inventory: `2026-06-07T05:00:38.799750+00:00`
 - Manual orders avoided: `True`
 
 ## Gates
@@ -17,7 +17,7 @@
 ### No-Move Active Crypto Baseline
 - ID: `batch_0_active_crypto_baseline`
 - Branch: `codex/crypto-transition-control-plane`
-- Entries: `398`
+- Entries: `402`
 - Review required: `0`
 - Move candidates: `0`
 - Move allowed now: `False`
@@ -30,7 +30,7 @@
   - `crypto_options_app/artifacts/automation/option_price_capture_status.json` -> `none`
   - `crypto_options_app/artifacts/automation/postgres_hot_sync_status.json` -> `none`
   - `crypto_options_app/artifacts/automation/profile_distribution_external_probe_status.json` -> `none`
-  - ... `390` additional paths in JSON artifact
+  - ... `394` additional paths in JSON artifact
 
 ### Local State And Root Config Review
 - ID: `batch_1_local_state_root_config_review`
@@ -54,20 +54,11 @@
 ### Global Legacy Reference Move
 - ID: `batch_3_global_reference_move`
 - Branch: `codex/crypto-repo-global-reference`
-- Entries: `69`
-- Review required: `69`
-- Move candidates: `69`
+- Entries: `0`
+- Review required: `0`
+- Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Move reviewed non-crypto Janus references into global_app_reference.
-  - `app/api/main.py` -> `global_app_reference/app/api/main.py`
-  - `app/api/models.py` -> `global_app_reference/app/api/models.py`
-  - `app/api/routers/__init__.py` -> `global_app_reference/app/api/routers/__init__.py`
-  - `app/api/routers/ops.py` -> `global_app_reference/app/api/routers/ops.py`
-  - `app/api/routers/portfolio.py` -> `global_app_reference/app/api/routers/portfolio.py`
-  - `app/data/nodes/polymarket/blockchain/manage_portfolio.py` -> `global_app_reference/app/data/nodes/polymarket/blockchain/manage_portfolio.py`
-  - `app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md` -> `global_app_reference/app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md`
-  - `app/docs/planning/current/final_system/automation/backlog_layers.md` -> `global_app_reference/app/docs/planning/current/final_system/automation/backlog_layers.md`
-  - ... `61` additional paths in JSON artifact
 
 ### Crypto Compatibility Wrapper Decision
 - ID: `batch_4_crypto_compatibility_wrapper_cutover`
@@ -99,16 +90,11 @@
 ### Reference Already Placed
 - ID: `reference_already_placed`
 - Branch: `none`
-- Entries: `5`
+- Entries: `0`
 - Review required: `0`
 - Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Existing reference-root files require no move.
-  - `global_app_reference/README.md` -> `none`
-  - `wnba_nba_app_reference/README.md` -> `none`
-  - `wnba_nba_app_reference/app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md` -> `none`
-  - `wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md` -> `none`
-  - `wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md` -> `none`
 
 ### Manual Review
 - ID: `manual_review`

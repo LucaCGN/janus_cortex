@@ -1,10 +1,8 @@
 {
   "batch_counts": {
-    "batch_0_active_crypto_baseline": 398,
+    "batch_0_active_crypto_baseline": 402,
     "batch_1_local_state_root_config_review": 1,
-    "batch_3_global_reference_move": 69,
-    "batch_4_crypto_compatibility_wrapper_cutover": 131,
-    "reference_already_placed": 5
+    "batch_4_crypto_compatibility_wrapper_cutover": 131
   },
   "batches": {
     "batch_0_active_crypto_baseline": {
@@ -1549,6 +1547,22 @@
         },
         {
           "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T045231Z.json",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T045231Z.md",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
           "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T042254Z.json",
           "proposed_action": "keep_active_crypto",
           "proposed_destination": null,
@@ -1606,6 +1620,22 @@
         {
           "classification": "crypto_active",
           "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T044621Z.md",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T045230Z.json",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T045230Z.md",
           "proposed_action": "keep_active_crypto",
           "proposed_destination": null,
           "review_required": false,
@@ -3196,7 +3226,7 @@
           "status": "??"
         }
       ],
-      "entry_count": 398,
+      "entry_count": 402,
       "move_allowed_now": false,
       "move_candidate_count": 0,
       "purpose": "Establish active crypto baseline and focused tests before reference moves.",
@@ -3237,565 +3267,12 @@
     "batch_3_global_reference_move": {
       "batch_id": "batch_3_global_reference_move",
       "branch": "codex/crypto-repo-global-reference",
-      "entries": [
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/api/main.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/api/main.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/api/models.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/api/models.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/api/routers/__init__.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/api/routers/__init__.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/api/routers/ops.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/api/routers/ops.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/api/routers/portfolio.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/api/routers/portfolio.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/data/nodes/polymarket/blockchain/manage_portfolio.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/data/nodes/polymarket/blockchain/manage_portfolio.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/architecture/janus_core_live_trading_runtime.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/automation/backlog_layers.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/automation/backlog_layers.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/automation/global_portfolio_manager_contract.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/automation/global_portfolio_manager_prompt.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/automation/issue_task_register.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/automation/issue_task_register.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/automation/live_signal_aggregation_contract.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/backlog/live_postgame_learning_backlog.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/market_scope_registry.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/market_scope_registry.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/source_of_truth_map.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/source_of_truth_map.md",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/contracts.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/contracts.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/engine.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/engine.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/event_budget.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/event_budget.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/global_portfolio.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/global_portfolio.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/live_game_context.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/live_game_context.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/live_strategy_worker.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/live_strategy_worker.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/llm_runtime.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/llm_runtime.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/pbp_annotation.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/pbp_annotation.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/reduce_stop_lifecycle.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/reduce_stop_lifecycle.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/runtime_control.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/runtime_control.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/signal_aggregation.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/signal_aggregation.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/modules/agentic/store.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/modules/agentic/store.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tool/_client.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tool/_client.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tool/run_live_strategy_tick.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tool/run_live_strategy_tick.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tool/run_live_strategy_worker_tick.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tool/run_live_strategy_worker_tick.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tool/start_live_strategy_worker.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tool/start_live_strategy_worker.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/janus/__init__.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/janus/__init__.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/janus/live_activation.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/janus/live_activation.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/janus/live_strategy_tick.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/janus/live_strategy_tick.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/janus/worker.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/janus/worker.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/__init__.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/__init__.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/cli.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/cli.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/execution_gate.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/execution_gate.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/manager.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/manager.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/safety.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/safety.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/api/test_ops_router_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/api/test_ops_router_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/api/test_portfolio_router_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/api/test_portfolio_router_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/api/test_runtime_control_router_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/api/test_runtime_control_router_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_event_budget_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_event_budget_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_global_portfolio_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_global_portfolio_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_live_game_context_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_live_game_context_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_live_strategy_worker_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_live_strategy_worker_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_llm_runtime_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_llm_runtime_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_pbp_annotation_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_pbp_annotation_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_reduce_stop_lifecycle_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_reduce_stop_lifecycle_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_runtime_control_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_runtime_control_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_signal_aggregation_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_signal_aggregation_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/app/modules/agentic/test_strategy_plan_contracts_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/app/modules/agentic/test_strategy_plan_contracts_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/codex_tool/test_run_live_strategy_tick_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/codex_tool/test_run_live_strategy_tick_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/codex_tools/test_tooling_split_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/codex_tools/test_tooling_split_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/tools/test_run_live_strategy_tick_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/tools/test_run_live_strategy_tick_pytest.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tools/build_polymarket_profile_report.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tools/build_polymarket_profile_report.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tools/run_ml_neural_sidecar.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tools/run_ml_neural_sidecar.py",
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/data/databases/migrations/0028_v1_1_8__portfolio_manager_four_pillars.sql",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/data/databases/migrations/0028_v1_1_8__portfolio_manager_four_pillars.sql",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/docs/planning/current/final_system/backlog/janus_reliability_observability_development_plan_2026-06-01.md",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/docs/planning/current/final_system/backlog/janus_reliability_observability_development_plan_2026-06-01.md",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "app/services/__init__.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/app/services/__init__.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tool/run_live_worker_restart_readback.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tool/run_live_worker_restart_readback.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/grid_worker.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/grid_worker.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/price_memory.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/price_memory.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "codex_tools/polymarket/worker_supervisor.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/codex_tools/polymarket/worker_supervisor.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/codex_tools/test_grid_worker_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/codex_tools/test_grid_worker_pytest.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/codex_tools/test_price_memory_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/codex_tools/test_price_memory_pytest.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/codex_tools/test_worker_supervisor_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/codex_tools/test_worker_supervisor_pytest.py",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "global_reference_candidate",
-          "path": "tests/tools/test_build_polymarket_profile_report_pytest.py",
-          "proposed_action": "review_move_to_global_reference",
-          "proposed_destination": "global_app_reference/tests/tools/test_build_polymarket_profile_report_pytest.py",
-          "review_required": true,
-          "status": "??"
-        }
-      ],
-      "entry_count": 69,
+      "entries": [],
+      "entry_count": 0,
       "move_allowed_now": false,
-      "move_candidate_count": 69,
+      "move_candidate_count": 0,
       "purpose": "Move reviewed non-crypto Janus references into global_app_reference.",
-      "review_required_count": 69,
+      "review_required_count": 0,
       "title": "Global Legacy Reference Move"
     },
     "batch_4_crypto_compatibility_wrapper_cutover": {
@@ -4883,49 +4360,8 @@
     "reference_already_placed": {
       "batch_id": "reference_already_placed",
       "branch": "",
-      "entries": [
-        {
-          "classification": "global_reference",
-          "path": "global_app_reference/README.md",
-          "proposed_action": "keep_reference",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "??"
-        },
-        {
-          "classification": "wnba_nba_reference",
-          "path": "wnba_nba_app_reference/README.md",
-          "proposed_action": "keep_reference",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "??"
-        },
-        {
-          "classification": "wnba_nba_reference",
-          "path": "wnba_nba_app_reference/app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md",
-          "proposed_action": "keep_reference",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "??"
-        },
-        {
-          "classification": "wnba_nba_reference",
-          "path": "wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md",
-          "proposed_action": "keep_reference",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "??"
-        },
-        {
-          "classification": "wnba_nba_reference",
-          "path": "wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md",
-          "proposed_action": "keep_reference",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "??"
-        }
-      ],
-      "entry_count": 5,
+      "entries": [],
+      "entry_count": 0,
       "move_allowed_now": false,
       "move_candidate_count": 0,
       "purpose": "Existing reference-root files require no move.",
@@ -4940,7 +4376,7 @@
     "github_issue_creation_ready": false,
     "reference_move_ready": false
   },
-  "generated_at_utc": "2026-06-07T04:52:31.049206+00:00",
+  "generated_at_utc": "2026-06-07T05:00:39.230778+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "next_actions": [
@@ -4951,29 +4387,24 @@
     "Create GitHub milestones/issues only after cleanup branches are reviewable."
   ],
   "schema_version": "crypto_options_repo_cleanup_batches_v1",
-  "source_inventory_generated_at_utc": "2026-06-07T04:52:30.822380+00:00",
+  "source_inventory_generated_at_utc": "2026-06-07T05:00:38.799750+00:00",
   "source_inventory_status": "degraded",
   "source_inventory_summary": {
-    "active_crypto_count": 398,
+    "active_crypto_count": 402,
     "classification_counts": {
-      "crypto_active": 398,
+      "crypto_active": 402,
       "crypto_compatibility_wrapper_candidate": 131,
-      "global_reference": 1,
-      "global_reference_candidate": 69,
-      "root_config_review": 1,
-      "wnba_nba_reference": 4
+      "root_config_review": 1
     },
     "crypto_compatibility_wrapper_candidate_count": 131,
-    "dirty_path_count": 604,
-    "legacy_move_candidate_count": 69,
+    "dirty_path_count": 534,
+    "legacy_move_candidate_count": 0,
     "proposed_action_counts": {
-      "keep_active_crypto": 398,
-      "keep_reference": 5,
+      "keep_active_crypto": 402,
       "manual_root_config_review": 1,
-      "review_keep_temporarily_or_migrate_into_crypto_options_app": 131,
-      "review_move_to_global_reference": 69
+      "review_keep_temporarily_or_migrate_into_crypto_options_app": 131
     },
-    "review_required_count": 201,
+    "review_required_count": 132,
     "unknown_or_root_review_count": 0
   },
   "status": "degraded"
