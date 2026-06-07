@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T07:31:00Z
+Updated: 2026-06-07T07:37:00Z
 
 ## Objective
 
@@ -14,7 +14,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 - Runtime source of truth: Postgres.
 - SQLite role: migration/test/compatibility source only until safely archived.
-- A/B/C data services: expected to remain fresh before replay expansion.
+- A/B/C data services: A Crypto is fresh, B Profiles distribution is stale, and C Options is mixed with BTC fresh and ETH stale; replay expansion should wait for B/C freshness review.
 - Live trading: disabled unless promotion gates pass and supervised runtime is explicitly started.
 - Best simple candidate: `profile_splus_hedger_follow_hold_60s_v10 + profile_group_quality`, currently below the 12-sample promotion floor.
 - Master hedge-grid track: valid north star, but protected-floor variants replay only when closed-cycle candidates exist.
@@ -46,7 +46,8 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Fixed chat startup readiness artifact: `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md`; status `ready`, `2/2` current fixed chats ready, future specialist prompts remain future-only, and no fixed chat has live authority.
 - Limited automation startup readiness artifact: `crypto_options_app/artifacts/reports/automation_startup_readiness_latest.md`; status `ready_to_schedule`, `3/3` planned limited automations ready, `create_immediately=false`, no live authority.
 - Limited automations activated: `crypto-options-db-data-observability` every 15 minutes, `crypto-options-signal-strategy-queue-worker` every 15 minutes, and `crypto-options-frontend-status-reporter` hourly. Existing `crypto-options-unified-dev-loop` heartbeat remains paused in the app automation store; current master control is this active chat goal/thread.
-- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `degraded`. The signal/strategy queue worker has a fresh first report; DB/data observability and frontend status reporter are still pending first reports.
+- Limited automation report freshness artifact: `crypto_options_app/artifacts/reports/automation_report_status_latest.md`; current status `degraded`. DB/data observability and signal/strategy queue worker have fresh reports; frontend status reporter is still pending its first report.
+- DB/data observability latest: Postgres runtime reads are ok, Redis remains disabled, runtime SQLite audit is ok, B `top_profiles_distribution` is stale by roughly 3 hours, and C ETH option snapshot is stale by roughly 13 hours. The DB/data automation prompt now pins health/control checks to the canonical `8011` backend, not legacy port `8000`.
 
 ## Active Fixed Chats
 

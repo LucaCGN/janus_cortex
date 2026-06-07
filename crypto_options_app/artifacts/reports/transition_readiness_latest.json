@@ -53,35 +53,35 @@
   },
   "endpoints": {
     "dashboard_control_center_state": {
-      "elapsed_ms": 41.27,
+      "elapsed_ms": 40.87,
       "error": null,
-      "payload_bytes": 1017381,
+      "payload_bytes": 1017379,
       "status": "ok",
       "status_code": 200
     },
     "health": {
-      "elapsed_ms": 1065.34,
+      "elapsed_ms": 892.93,
       "error": null,
-      "payload_bytes": 95390,
+      "payload_bytes": 95499,
       "status": "ok",
       "status_code": 200
     },
     "signals_validation_status": {
-      "elapsed_ms": 1573.88,
+      "elapsed_ms": 1409.33,
       "error": null,
       "payload_bytes": 987507,
       "status": "ok",
       "status_code": 200
     },
     "strategies_promotion": {
-      "elapsed_ms": 58.31,
+      "elapsed_ms": 25.2,
       "error": null,
       "payload_bytes": 254527,
       "status": "ok",
       "status_code": 200
     }
   },
-  "generated_at_utc": "2026-06-07T07:31:13.493885+00:00",
+  "generated_at_utc": "2026-06-07T07:39:59.566623+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "next_actions": [

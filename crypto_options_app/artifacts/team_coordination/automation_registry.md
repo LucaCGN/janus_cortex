@@ -1,10 +1,10 @@
 ﻿# Crypto Options Automation Registry
 
-Updated: 2026-06-07T07:21:14Z
+Updated: 2026-06-07T07:37:00Z
 
 ## Active
 
-- `crypto-options-db-data-observability`: active cron, 15 minute cadence, report-first DB/data/source health lane.
+- `crypto-options-db-data-observability`: active cron, 15 minute cadence, report-first DB/data/source health lane. Canonical backend checks use `http://127.0.0.1:8011/v1/crypto-options-app`.
 - `crypto-options-signal-strategy-queue-worker`: active cron, 15 minute cadence, one bounded signal/strategy cleanup queue item or proposal.
 - `crypto-options-frontend-status-reporter`: active cron, hourly cadence, report-only frontend/control-center status lane.
 
@@ -34,7 +34,7 @@ Latest machine-readable gate:
 Latest report freshness gate:
 
 - `crypto_options_app/artifacts/reports/automation_report_status_latest.md`
-- Current status: `pending_first_reports` until each active automation writes its first required latest report.
+- Current status: `degraded`; DB/data observability and signal/strategy queue worker are fresh, and frontend status reporter is pending its first report.
 
 ## Not Allowed Yet
 

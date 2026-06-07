@@ -1,6 +1,6 @@
 # Crypto Options Automation Report Status
 
-- Generated: `2026-06-07T07:31:42.604144+00:00`
+- Generated: `2026-06-07T07:39:59.557937+00:00`
 - Status: `degraded`
 - Status root: `crypto_options_app\artifacts\team_coordination\automation_status`
 - Live authority: `none`
@@ -9,17 +9,17 @@
 
 ### `crypto-options-db-data-observability`
 
-- Status: `pending_first_report`
+- Status: `fresh`
 - Latest markdown: `crypto_options_app\artifacts\team_coordination\automation_status\db_data_observability_latest.md`
-- Age minutes: `None`
+- Age minutes: `6.49`
 - Max age minutes: `45`
-- Missing sections: `DB backend`, `A/B/C/D freshness`, `Manual orders avoided`
+- Missing sections: `none`
 
 ### `crypto-options-signal-strategy-queue-worker`
 
 - Status: `fresh`
 - Latest markdown: `crypto_options_app\artifacts\team_coordination\automation_status\signal_strategy_queue_worker_latest.md`
-- Age minutes: `0.48`
+- Age minutes: `8.77`
 - Max age minutes: `45`
 - Missing sections: `none`
 

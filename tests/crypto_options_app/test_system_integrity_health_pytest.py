@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import crypto_options_app.reports.system_integrity as system_integrity
@@ -673,6 +674,33 @@ def test_system_integrity_health_surfaces_data_signal_readiness_and_external_obs
     assert observers[0]["symbol"] == "BTC"
     assert {row["data_block"] for row in readiness} >= {"A", "C"}
     assert {row["status"] for row in readiness} == {"ready"}
+
+
+def test_system_integrity_health_normalizes_stale_zero_source_age_pytest(tmp_path: Path) -> None:
+    db_path = initialize_schema(tmp_path / "crypto_options.sqlite")
+    stale_source = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO data_signal_readiness_snapshots(
+                readiness_key, data_block, module_id, symbol, generated_at_utc,
+                target_refresh_seconds, status, latest_source_at_utc,
+                source_age_seconds, payload_json, blockers_json, inserted_at_utc
+            )
+            VALUES (?, ?, ?, 'BTC', ?, 30, 'ready', ?, 0.0, '{"sample": true}', '[]', ?)
+            """,
+            ("B:stale-zero-age", "B", "top_profiles_distribution", stale_source, stale_source, stale_source),
+        )
+
+    health = build_system_integrity_health(
+        CryptoOptionsAppConfig(db_path=db_path),
+        options=_health_options(tmp_path / "missing-artifacts"),
+    )
+
+    readiness = health["db"]["latest_data_signal_readiness"]
+    profile_row = next(row for row in readiness if row["data_block"] == "B")
+    assert profile_row["source_age_seconds"] >= 7200.0 - 30.0
 
 
 def test_system_integrity_health_does_not_require_exchange_fields_for_blocked_rows_pytest(tmp_path: Path) -> None:

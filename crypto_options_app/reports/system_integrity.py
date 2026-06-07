@@ -923,8 +923,24 @@ def _latest_data_signal_readiness(conn: Any, *, limit: int = 30) -> list[dict[st
                 item[target] = json.loads(str(item.pop(key) or json.dumps(default)))
             except json.JSONDecodeError:
                 item[target] = default
+        item["source_age_seconds"] = _normalize_readiness_source_age_seconds(item)
         decoded.append(item)
     return decoded
+
+
+def _normalize_readiness_source_age_seconds(row: dict[str, Any]) -> float | None:
+    reported = row.get("source_age_seconds")
+    try:
+        reported_age = None if reported is None else float(reported)
+    except (TypeError, ValueError):
+        reported_age = None
+    latest_source = _parse_utc(row.get("latest_source_at_utc"))
+    if latest_source is None:
+        return reported_age
+    observed_age = max(0.0, (datetime.now(UTC) - latest_source).total_seconds())
+    if reported_age is None:
+        return observed_age
+    return max(reported_age, observed_age)
 
 
 def _latest_profile_distributions(conn: Any, *, limit: int = 12) -> list[dict[str, Any]]:
