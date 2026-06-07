@@ -88,7 +88,11 @@ async def capture_option_price_paths_once(
         )
     else:
         discovered_targets = list(targets)
-    bounded_targets = discovered_targets[: max(0, config.max_tokens)]
+    bounded_targets = _select_bounded_targets(
+        discovered_targets,
+        max_tokens=config.max_tokens,
+        symbols=config.symbols,
+    )
     semaphore = asyncio.Semaphore(max(1, config.max_concurrency))
 
     async def fetch_one(target: LiveCaptureTarget) -> tuple[LiveCaptureTarget, dict[str, Any] | None, str | None]:
@@ -467,6 +471,55 @@ def _event_key(target: LiveCaptureTarget) -> str:
 
 def _event_token_key(target: LiveCaptureTarget) -> str:
     return f"{_event_key(target)}:{target.outcome.lower()}:{target.token_id}"
+
+
+def _select_bounded_targets(
+    targets: Iterable[LiveCaptureTarget],
+    *,
+    max_tokens: int,
+    symbols: Iterable[str],
+) -> list[LiveCaptureTarget]:
+    target_list = list(targets)
+    limit = max(0, int(max_tokens))
+    if limit <= 0:
+        return []
+    if len(target_list) <= limit:
+        return target_list
+
+    configured_symbols = [str(symbol).upper() for symbol in symbols if str(symbol).strip()]
+    symbol_order = list(dict.fromkeys(configured_symbols))
+    event_targets_by_symbol: dict[str, dict[str, list[LiveCaptureTarget]]] = {}
+    event_order_by_symbol: dict[str, list[str]] = {}
+    for target in target_list:
+        symbol = str(target.symbol or "").upper()
+        if symbol not in symbol_order:
+            symbol_order.append(symbol)
+        event_key = _event_key(target)
+        symbol_events = event_targets_by_symbol.setdefault(symbol, {})
+        if event_key not in symbol_events:
+            symbol_events[event_key] = []
+            event_order_by_symbol.setdefault(symbol, []).append(event_key)
+        symbol_events[event_key].append(target)
+
+    selected: list[LiveCaptureTarget] = []
+    cursors = {symbol: 0 for symbol in symbol_order}
+    while len(selected) < limit:
+        progressed = False
+        for symbol in symbol_order:
+            event_order = event_order_by_symbol.get(symbol) or []
+            cursor = cursors.get(symbol, 0)
+            if cursor >= len(event_order):
+                continue
+            event_key = event_order[cursor]
+            event_targets = event_targets_by_symbol[symbol][event_key]
+            if len(selected) + len(event_targets) > limit:
+                continue
+            selected.extend(event_targets)
+            cursors[symbol] = cursor + 1
+            progressed = True
+        if not progressed:
+            break
+    return selected or target_list[:limit]
 
 
 def _upsert_event_and_token(conn: Any, target: LiveCaptureTarget, *, event_key: str, event_token_key: str) -> None:

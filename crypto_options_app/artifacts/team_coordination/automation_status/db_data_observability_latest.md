@@ -1,59 +1,69 @@
 # Crypto Options DB/Data Observability
 
-Generated at UTC: `2026-06-07T07:32:47.076323+00:00`
+Generated at UTC: `2026-06-07T08:02:00Z`
 
 ## DB backend
 
 - Runtime DB backend: `postgres`
 - Runtime source of truth: `postgres`
 - DB read status: `ok`
-- Postgres connection: `ok` on `127.0.0.1:55433/crypto_options`
-- Postgres/resource status: `degraded` in storage audit because container memory is `6.144GiB / 15.47GiB` with warning `postgres_container_memory_over_6gib`
-- Storage audit decision: `postgres_plus_redis_hot_plane_candidate`
-- Redis hot-plane gate: `disabled`; keep Redis non-authoritative and off until explicitly enabled by a master/user task
-- Runtime SQLite audit status: `ok`; `0` production runtime direct-connect blockers, `0` review-required SQLite usages, `11` allowed migration/test/compat usages
-- Postgres shadow parity artifact: `ok`; `runtime_read_cutover_allowed=true`, latest artifact completed `2026-06-06T13:37:01.399904+00:00`
+- Canonical backend: `http://127.0.0.1:8011/v1/crypto-options-app`
+- Health status: `degraded`
+- Redis hot-plane gate: `disabled`; Redis remains non-authoritative and was not enabled on this pass
 
 ## A/B/C/D freshness
 
-- A Crypto: `ready`. Underlying prices last source `2026-06-07T07:32:35.076327+00:00` for `BTC` and `ETH` (~12s age). Technical observers last source `2026-06-07T07:32:10.204924+00:00` for `BTC` (~37s) and `2026-06-07T07:32:19.324871+00:00` for `ETH` (~28s).
-- B Profiles: `stale but not hard-blocked`. `top_profiles_distribution` latest source `2026-06-07T04:31:03+00:00` for `BTC` (~10905s / ~3.0h age). This pass fixed the health report so stale rows no longer appear as `source_age_seconds=0`.
-- C Options: mixed. `BTC` `ready` with latest Polymarket source `2026-06-07T07:32:42.822248+00:00` (~5s age). `ETH` `degraded` with latest source `2026-06-06T18:37:35.414361+00:00` (~46512s / ~12.9h age), blocker `stale_updown_pair_snapshot`.
-- D Portfolio/order lifecycle: `stale/inactive`. Latest observed lifecycle timestamps across `orders`, `positions`, `exit_plans`, `execution_intents`, `run_reports`, and `strategy_validation_runs` are clustered at `2026-06-07T02:20:47Z` (~5.2h old). `signal_validation_runs` is older at `2026-06-06T13:46:51.627941+00:00`.
+- A Crypto: `ready`. Underlying market prices refreshed at `2026-06-07T08:01:28.736557+00:00` for `BTC` and `ETH`; underlying technical observers refreshed at `2026-06-07T08:00:40.235837+00:00` for `BTC` and `2026-06-07T08:00:49.552726+00:00` for `ETH`.
+- B Profiles: `ready` on the latest readiness rows, but still noisy. `BTC` latest source is `2026-06-07T08:01:01+00:00` (`29.4s` age) and `ETH` latest source is `2026-06-07T08:00:27+00:00` (`63.4s` age). Both rows still carry `profile_distribution_source_stale` inside `coverage_warnings`.
+- C Options: `ready`. `BTC` and `ETH` latest pair snapshots are both at `2026-06-07T08:01:12.410841+00:00` with about `18s` age; prior stale ETH option-capture behavior is not present on this pass.
+- D Portfolio/order lifecycle: still effectively inactive/stale for observability. `polymarket_live_activity_capture` watermark remains at `2026-06-04T07:55:30.043810+00:00`; latest dashboard order and position updates are both `2026-06-07T00:54:47.359876+00:00`.
 
 ## Postgres/resource status
 
-- Watermarks now show fresh runs for `polymarket_option_price_capture` (`2026-06-07T07:32:42.822251+00:00`), `underlying_market_prices` (`2026-06-07T07:32:35.076327+00:00`), and `underlying_technical_observers` (`2026-06-07T07:32:01.940491+00:00`).
-- `top_profiles_distribution` watermark is stale at `2026-06-07T04:30:21.979768+00:00`.
-- No live-trading authority was detected in DB/runtime artifacts.
+- Postgres container: `janus-cortex-crypto-options-postgres`
+- Container status: `Up 17 hours (healthy)`
+- Current resource pressure: `331.68%` CPU and `6.45GiB / 15.47GiB` memory
+- Storage audit status: `degraded`
+- Storage audit decision: `postgres_plus_redis_hot_plane_candidate`
+- Current storage-audit warning still in force: `postgres_container_memory_over_6gib`
+
+## Runtime SQLite audit status
+
+- Runtime SQLite audit: `ok`
+- Production runtime direct-connect blockers: `0`
+- Review-required SQLite usages: `0`
+- Allowed migration/test/compat SQLite usages: `11`
 
 ## Endpoint latency
 
-- Latest bounded endpoint timings from `transition_readiness_latest.json`: `dashboard_control_center_state=41.27ms`, `health=1065.34ms`, `signals_validation_status=1573.88ms`, `strategies_promotion=58.31ms`; all recorded `200 OK`.
-- Direct HTTP probe to `127.0.0.1:8000` during this pass failed with remote-connection refusal, so no new live endpoint sweep was started.
+- `GET /health`: `200`, `1612.56ms`
+- `GET /strategies/promotion`: `200`, `202.10ms`
+- `GET /dashboard/control-center-state`: `200`, `546.85ms`
+- `GET /signals/validation/status`: `200`, `1844.37ms`
 
 ## Blockers
 
-- `B` profile distribution freshness is about three hours stale and needs the profile distribution service checked or intentionally paused.
-- `C` ETH option data is about 12.9 hours stale with `stale_updown_pair_snapshot`.
-- Postgres remains usable but resource status is still degraded due to memory over `6GiB`.
-- Direct runtime HTTP probe was unavailable on `127.0.0.1:8000`; rely on bounded readiness artifacts until the app listener is confirmed.
+- The `D` live-activity plane is still inactive from an observability perspective; its watermark is over three days old.
+- Postgres remains readable and healthy enough for bounded reporting, but the storage audit is still degraded because memory is above `6GiB`.
+- `B` recovered to `ready`, but its readiness rows still emit stale-source coverage warnings, so the profile plane is not yet clean.
 
 ## Files changed
 
 - `crypto_options_app/artifacts/team_coordination/automation_status/db_data_observability_latest.md`
-- `crypto_options_app/reports/system_integrity.py`
-- `tests/crypto_options_app/test_system_integrity_health_pytest.py`
+- `crypto_options_app/artifacts/team_coordination/handoff_queue.jsonl`
+- `$CODEX_HOME/automations/crypto-options-db-data-observability/memory.md`
 
 ## Tests run
 
-- `python -m pytest tests/crypto_options_app/test_system_integrity_health_pytest.py -q` -> `29 passed`
+- No tests run; this was a bounded report-only pass.
 
 ## Live activity status
 
 - Live trading authorized: `false`
 - Orders allowed: `false`
-- This pass did not start or stop services, run imports, replay jobs, or place orders.
+- Redis hot plane: `disabled`
+- No services were started or stopped
+- No imports, replay jobs, or manual orders were run
 
 ## Manual orders avoided
 

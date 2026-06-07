@@ -1,16 +1,16 @@
 {
   "automations": {
     "crypto-options-db-data-observability": {
-      "age_minutes": 13.56,
+      "age_minutes": 0.96,
       "exists": true,
       "latest_markdown_path": "crypto_options_app\\artifacts\\team_coordination\\automation_status\\db_data_observability_latest.md",
       "max_age_minutes": 45,
       "missing_sections": [],
-      "modified_at_utc": "2026-06-07T07:33:30.399093+00:00",
+      "modified_at_utc": "2026-06-07T08:02:20.974341+00:00",
       "status": "fresh"
     },
     "crypto-options-frontend-status-reporter": {
-      "age_minutes": 2.8,
+      "age_minutes": 19.05,
       "exists": true,
       "latest_markdown_path": "crypto_options_app\\artifacts\\team_coordination\\automation_status\\frontend_status_reporter_latest.md",
       "max_age_minutes": 180,
@@ -19,16 +19,16 @@
       "status": "fresh"
     },
     "crypto-options-signal-strategy-queue-worker": {
-      "age_minutes": 1.31,
+      "age_minutes": 3.07,
       "exists": true,
       "latest_markdown_path": "crypto_options_app\\artifacts\\team_coordination\\automation_status\\signal_strategy_queue_worker_latest.md",
       "max_age_minutes": 45,
       "missing_sections": [],
-      "modified_at_utc": "2026-06-07T07:45:44.989213+00:00",
+      "modified_at_utc": "2026-06-07T08:00:14.631901+00:00",
       "status": "fresh"
     }
   },
-  "generated_at_utc": "2026-06-07T07:47:03.771794+00:00",
+  "generated_at_utc": "2026-06-07T08:03:18.812287+00:00",
   "safety": {
     "live_trading_authorized": false,
     "manual_orders_avoided": true,

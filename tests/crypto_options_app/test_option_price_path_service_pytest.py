@@ -103,6 +103,73 @@ def test_option_price_capture_writes_ticks_depth_pairs_and_watermark(tmp_path) -
         assert dict(watermark)["rows_observed"] == 2
 
 
+def test_option_price_capture_token_cap_preserves_symbol_pair_coverage(tmp_path) -> None:
+    db_path = initialize_schema(tmp_path / "price_paths_symbol_coverage.sqlite")
+    targets: list[LiveCaptureTarget] = []
+    for symbol in ("BTC", "ETH"):
+        for index in range(4):
+            event_id = f"{symbol.lower()}-event-{index}"
+            event_slug = f"{symbol.lower()}-updown-5m-{index}"
+            for outcome in ("Up", "Down"):
+                targets.append(
+                    LiveCaptureTarget(
+                        event_id=event_id,
+                        event_slug=event_slug,
+                        market_id=f"{event_id}-market",
+                        condition_id=f"{event_id}-condition",
+                        token_id=f"{event_id}-{outcome.lower()}",
+                        outcome=outcome,
+                        symbol=symbol,
+                        window_start_time="2026-06-04T00:00:00+00:00",
+                        window_end_time="2026-06-04T00:05:00+00:00",
+                        settlement_threshold=100000.0,
+                    )
+                )
+
+    def fake_book(token_id: str) -> dict[str, object]:
+        is_up = token_id.endswith("-up")
+        return {
+            "asset_id": token_id,
+            "timestamp": datetime(2026, 6, 4, tzinfo=UTC).isoformat(),
+            "bids": [{"price": "0.45" if is_up else "0.52", "size": "20"}],
+            "asks": [{"price": "0.48" if is_up else "0.55", "size": "12"}],
+        }
+
+    summary = capture_option_price_paths_once_sync(
+        config=OptionPriceCaptureConfig(db_path=db_path, symbols=("BTC", "ETH"), max_tokens=8, max_book_depth=1),
+        targets=targets,
+        order_book_fetcher=fake_book,
+    )
+
+    assert summary.status == "healthy"
+    assert summary.target_count == 8
+    assert summary.tick_rows_inserted == 8
+    assert summary.pair_snapshot_rows_inserted == 4
+    with connect(db_path) as conn:
+        events_by_symbol = {
+            row["symbol"]: row["event_count"]
+            for row in conn.execute(
+                """
+                SELECT symbol, COUNT(*) AS event_count
+                FROM events
+                GROUP BY symbol
+                """
+            ).fetchall()
+        }
+        assert events_by_symbol == {"BTC": 2, "ETH": 2}
+        readiness_by_symbol = {
+            row["symbol"]: row["status"]
+            for row in conn.execute(
+                """
+                SELECT symbol, status
+                FROM data_signal_readiness_snapshots
+                WHERE data_block='C' AND module_id='polymarket_option_price_capture'
+                """
+            ).fetchall()
+        }
+        assert readiness_by_symbol == {"BTC": "ready", "ETH": "ready"}
+
+
 def test_event_path_stats_include_elapsed_price_path_and_swing_metrics() -> None:
     event = {
         "event_key": "event-path-1",
