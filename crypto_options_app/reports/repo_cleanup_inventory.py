@@ -34,6 +34,7 @@ WNBA_NBA_MARKERS = (
 class RepoCleanupInventoryOptions:
     artifact_root: Path = DEFAULT_CONFIG.artifact_root
     include_git_status: bool = True
+    include_fixed_chat_readiness: bool = False
     max_status_rows: int = 2500
     markdown_sample_limit: int = 20
 
@@ -57,14 +58,29 @@ def build_repo_cleanup_inventory(
     )
     compatibility_count = classification_counts.get("crypto_compatibility_wrapper_candidate", 0)
     active_crypto_count = classification_counts.get("crypto_active", 0)
+    fixed_chat_readiness = (
+        _load_fixed_chat_readiness(options.artifact_root)
+        if options.include_fixed_chat_readiness
+        else _fixed_chat_readiness_not_evaluated(options.artifact_root)
+    )
+    fixed_chats_ready = fixed_chat_readiness.get("status") == "ready"
     gates = {
         "path_level_inventory_ready": True,
         "automatic_moves_allowed": False,
         "repo_move_ready": review_required_count == 0 and bool(path_entries),
-        "fixed_chats_start_ready": False,
-        "fixed_chats_start_gate": "blocked_until_repo_cleanup_and_github_milestones_are_reviewed",
-        "github_issue_creation_ready": False,
-        "github_issue_gate": "blocked_until_cleanup_inventory_reviewable_and_branch_plan_exists",
+        "fixed_chats_start_ready": fixed_chats_ready,
+        "fixed_chats_start_gate": (
+            "ready_per_fixed_chat_startup_readiness"
+            if fixed_chats_ready
+            else "run_or_review_fixed_chat_startup_readiness"
+        ),
+        "fixed_chat_startup_readiness_path": fixed_chat_readiness.get("path"),
+        "github_issue_creation_ready": fixed_chats_ready,
+        "github_issue_gate": (
+            "issues_ready_per_fixed_chat_startup_readiness"
+            if fixed_chats_ready
+            else "blocked_until_cleanup_inventory_reviewable_and_branch_plan_exists"
+        ),
     }
     warnings = _build_warnings(
         dirty_path_count=len(path_entries),
@@ -88,6 +104,7 @@ def build_repo_cleanup_inventory(
             "proposed_action_counts": dict(sorted(action_counts.items())),
         },
         "gates": gates,
+        "fixed_chat_startup_readiness": fixed_chat_readiness,
         "move_policy": {
             "delete_allowed": False,
             "bulk_move_allowed": False,
@@ -100,6 +117,7 @@ def build_repo_cleanup_inventory(
             unknown_count=unknown_count,
             compatibility_count=compatibility_count,
             legacy_move_candidate_count=legacy_move_candidate_count,
+            fixed_chats_ready=fixed_chats_ready,
         ),
         "manual_orders_avoided": True,
         "live_trading_authorized": False,
@@ -129,6 +147,7 @@ def render_repo_cleanup_inventory_markdown(report: dict[str, Any]) -> str:
         f"- Repo move ready: `{gates.get('repo_move_ready')}`",
         f"- Fixed chats start ready: `{gates.get('fixed_chats_start_ready')}`",
         f"- Fixed chat gate: `{gates.get('fixed_chats_start_gate')}`",
+        f"- Fixed chat readiness report: `{gates.get('fixed_chat_startup_readiness_path')}`",
         f"- GitHub issue creation ready: `{gates.get('github_issue_creation_ready')}`",
         "",
         "## Classification Counts",
@@ -284,7 +303,13 @@ def _build_warnings(
     return warnings
 
 
-def _next_actions(*, unknown_count: int, compatibility_count: int, legacy_move_candidate_count: int) -> list[str]:
+def _next_actions(
+    *,
+    unknown_count: int,
+    compatibility_count: int,
+    legacy_move_candidate_count: int,
+    fixed_chats_ready: bool,
+) -> list[str]:
     actions = [
         "Review the JSON path_entries list before moving files.",
         "Create a branch/commit plan that separates crypto active work from reference moves.",
@@ -295,9 +320,40 @@ def _next_actions(*, unknown_count: int, compatibility_count: int, legacy_move_c
         actions.append("Decide which crypto compatibility wrappers must stay until runtime routes are fully cut over.")
     if legacy_move_candidate_count:
         actions.append("Move reviewed legacy paths into reference roots in small, testable batches.")
-    actions.append("Create GitHub milestones/issues after the cleanup plan is reviewable.")
-    actions.append("Start fixed chats only after cleanup and issue source-of-truth are established.")
+    if fixed_chats_ready:
+        actions.append("Start only the ready fixed chats from fixed_chat_bootstrap; keep future-only prompts closed.")
+    else:
+        actions.append("Run fixed-chat startup readiness before starting any fixed chat.")
     return actions
+
+
+def _fixed_chat_readiness_not_evaluated(artifact_root: Path) -> dict[str, Any]:
+    path = Path(artifact_root) / "reports" / "fixed_chat_startup_readiness_latest.json"
+    return {
+        "status": "not_evaluated",
+        "ready_count": None,
+        "chat_count": None,
+        "path": str(path),
+    }
+
+
+def _load_fixed_chat_readiness(artifact_root: Path) -> dict[str, Any]:
+    path = Path(artifact_root) / "reports" / "fixed_chat_startup_readiness_latest.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {
+            "status": "missing",
+            "ready_count": 0,
+            "chat_count": None,
+            "path": str(path),
+        }
+    return {
+        "status": payload.get("status"),
+        "ready_count": payload.get("ready_count"),
+        "chat_count": payload.get("chat_count"),
+        "path": str(path),
+    }
 
 
 def _git_status_rows(*, max_rows: int) -> list[dict[str, str]]:

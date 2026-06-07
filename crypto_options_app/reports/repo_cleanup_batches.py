@@ -103,13 +103,28 @@ def build_repo_cleanup_batches(
         if batch_entry["proposed_destination"]:
             batch["move_candidate_count"] += 1
     batch_counts = Counter(batch_for_classification(str(entry.get("classification") or "")) for entry in entries)
+    inventory_gates = inventory.get("gates") if isinstance(inventory.get("gates"), dict) else {}
+    fixed_chats_ready = bool(inventory_gates.get("fixed_chats_start_ready"))
+    github_issues_ready = bool(inventory_gates.get("github_issue_creation_ready"))
     gates = {
         "automatic_moves_allowed": False,
         "batch_0_ready_for_branch": batches["batch_0_active_crypto_baseline"]["entry_count"] > 0,
         "reference_move_ready": False,
-        "fixed_chats_start_ready": False,
-        "github_issue_creation_ready": False,
+        "fixed_chats_start_ready": fixed_chats_ready,
+        "fixed_chats_start_gate": inventory_gates.get("fixed_chats_start_gate"),
+        "github_issue_creation_ready": github_issues_ready,
+        "github_issue_gate": inventory_gates.get("github_issue_gate"),
     }
+    next_actions = [
+        "Review and commit the current batch branch before opening reference-move branches.",
+        "Keep reference moves separate from active crypto baseline and local-state cleanup.",
+        "Hold root dependency changes until their owning app/tooling branch is clear.",
+        "Review batch_4 compatibility wrappers before moving any wrapper paths.",
+    ]
+    if fixed_chats_ready:
+        next_actions.append("Start only the ready fixed chats from fixed_chat_bootstrap; keep future-only prompts closed.")
+    else:
+        next_actions.append("Create GitHub milestones/issues only after cleanup branches are reviewable.")
     return {
         "schema_version": REPO_CLEANUP_BATCHES_SCHEMA_VERSION,
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -120,13 +135,7 @@ def build_repo_cleanup_batches(
         "gates": gates,
         "batch_counts": dict(sorted(batch_counts.items())),
         "batches": batches,
-        "next_actions": [
-            "Review and commit the current batch branch before opening reference-move branches.",
-            "Keep reference moves separate from active crypto baseline and local-state cleanup.",
-            "Hold root dependency changes until their owning app/tooling branch is clear.",
-            "Review batch_4 compatibility wrappers before moving any wrapper paths.",
-            "Create GitHub milestones/issues only after cleanup branches are reviewable.",
-        ],
+        "next_actions": next_actions,
         "manual_orders_avoided": True,
         "live_trading_authorized": False,
     }

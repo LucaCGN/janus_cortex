@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T05:46:00Z
+Updated: 2026-06-07T11:45:00Z
 
 ## Rule
 
@@ -157,9 +157,9 @@ Current Batch 4 audit result:
 - Automatic wrapper moves allowed: `false`
 - Decision: no bulk moves yet. Active callers are cut over, but non-active wrapper categories still need explicit keep/archive/remove/replace decisions.
 - Cutover progress: active callers for old data nodes, options pipelines, crypto-options services, API DB helper, runtime local paths, and Polymarket portfolio support now use `crypto_options_app` modules.
-- Decision-plan artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_latest.md`; active import blockers cleared, non-active wrapper decisions reviewable, GitHub issue creation can start after this branch is reviewable.
+- Decision-plan artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_latest.md`; active import blockers cleared, non-active wrapper decisions reviewable, and GitHub issue context is now ready for the two approved fixed chats.
 - Frontend fixed chat can start after Batch 3 using `fixed_chat_prompts/frontend_control_center_developer.md` because it must not touch backend/runtime logic.
-- Signal/strategy cleanup fixed chat remains gated until GitHub issues/milestones are ready.
+- Signal/strategy cleanup fixed chat can start from `fixed_chat_prompts/signal_strategy_management_cleanup.md` because the fixed-chat startup readiness gate is green and issues `#155-#159` are present in the source-of-truth sync.
 
 ### Batch 5: GitHub Source-Of-Truth Setup
 
@@ -173,19 +173,22 @@ Suggested branch: `codex/crypto-github-workflow-setup`.
 
 ## Fixed-Chat Gate
 
-Fixed chats remain gated until:
+Current startup gate:
 
-- Batch 0 has a clean baseline.
-- The path-level inventory has been reviewed.
-- GitHub milestone/issue source-of-truth is ready.
-- `fixed_chat_bootstrap.md` is updated with the final branch/artifact references.
+- Machine-readable gate: `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md`
+- Current status: `ready`
+- Ready chats: `2/2`
+- Live authority: `none`
 
-Current exception:
+Approved fixed chats:
 
 - Frontend Control Center fixed chat may start now from `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/frontend_control_center_developer.md` because Batch 3 is closed and frontend work can stay isolated to contracts/UI.
-- Signal And Strategy Management Cleanup fixed chat should not start yet; wait for GitHub source-of-truth, then start from `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_strategy_management_cleanup.md`.
+- Signal And Strategy Management Cleanup fixed chat may start now from `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_strategy_management_cleanup.md` because GitHub issues `#155-#159` and the promotion-policy artifacts are ready.
 
-The fixed-chat prompts are ready, but starting the chats before this gate would create duplicate context and likely make cleanup harder.
+Future-only prompts:
+
+- DB/data, indicator, signal, and strategy specialist prompts remain future-only until the master chat opens those lanes.
+- No fixed chat may authorize live trading, set global/API live flags, or place manual orders.
 
 ## Acceptance Gate
 

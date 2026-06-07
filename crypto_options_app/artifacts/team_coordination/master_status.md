@@ -102,3 +102,9 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Current diagnostic state: 11 GB database, 6 total connections, 1 active connection, 0 long active queries, and cumulative temp bytes over 1 GB.
 - Current largest tables are `strategy_validation_runs`, `polymarket_order_book_levels`, `profile_distribution_snapshots`, and `profile_raw_activity`.
 - Next DB/data lane should review temp-file sources and retention/materialization for large replay/source tables before any worker widening. Redis remains disabled.
+
+## 2026-06-07T11:45Z Repo Cleanup Gate Reconciliation
+
+- Repo cleanup inventory and batch reports now delegate fixed-chat startup to `fixed_chat_startup_readiness_latest.json` instead of keeping stale hard-coded blocked gates.
+- Latest cleanup inventory/batch reports show `fixed_chats_start_ready=true` and `github_issue_creation_ready=true`, while automatic file moves remain disabled and Batch 4 compatibility wrappers remain review-only.
+- Approved fixed chats remain only `frontend_control_center_developer` and `signal_strategy_management_cleanup`; future specialist prompts stay future-only until the master chat opens those lanes.

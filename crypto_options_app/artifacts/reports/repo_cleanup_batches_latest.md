@@ -1,36 +1,38 @@
 # Crypto Options Repo Cleanup Batches
 
-- Generated: `2026-06-07T05:00:39.230778+00:00`
+- Generated: `2026-06-07T11:44:25.498052+00:00`
 - Status: `degraded`
-- Source inventory: `2026-06-07T05:00:38.799750+00:00`
+- Source inventory: `2026-06-07T11:44:14.901346+00:00`
 - Manual orders avoided: `True`
 
 ## Gates
 - `automatic_moves_allowed`: `False`
 - `batch_0_ready_for_branch`: `True`
 - `reference_move_ready`: `False`
-- `fixed_chats_start_ready`: `False`
-- `github_issue_creation_ready`: `False`
+- `fixed_chats_start_ready`: `True`
+- `fixed_chats_start_gate`: `ready_per_fixed_chat_startup_readiness`
+- `github_issue_creation_ready`: `True`
+- `github_issue_gate`: `issues_ready_per_fixed_chat_startup_readiness`
 
 ## Batches
 
 ### No-Move Active Crypto Baseline
 - ID: `batch_0_active_crypto_baseline`
 - Branch: `codex/crypto-transition-control-plane`
-- Entries: `402`
+- Entries: `505`
 - Review required: `0`
 - Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Establish active crypto baseline and focused tests before reference moves.
-  - `crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.err.txt` -> `none`
-  - `crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.out.json` -> `none`
-  - `crypto_options_app/artifacts/automation/codex-signal-v5-retry-complete-20260605T192649Z.err.txt` -> `none`
-  - `crypto_options_app/artifacts/automation/codex-signal-v5-retry-complete-20260605T192649Z.out.json` -> `none`
-  - `crypto_options_app/artifacts/automation/option_price_capture_active_process.json` -> `none`
-  - `crypto_options_app/artifacts/automation/option_price_capture_status.json` -> `none`
-  - `crypto_options_app/artifacts/automation/postgres_hot_sync_status.json` -> `none`
-  - `crypto_options_app/artifacts/automation/profile_distribution_external_probe_status.json` -> `none`
-  - ... `394` additional paths in JSON artifact
+  - `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.json` -> `none`
+  - `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md` -> `none`
+  - `crypto_options_app/artifacts/team_coordination/automation_status/db_data_observability_latest.md` -> `none`
+  - `crypto_options_app/artifacts/team_coordination/automation_status/frontend_status_reporter_latest.md` -> `none`
+  - `crypto_options_app/artifacts/team_coordination/automation_status/signal_strategy_queue_worker_latest.md` -> `none`
+  - `crypto_options_app/reports/repo_cleanup_batches.py` -> `none`
+  - `crypto_options_app/reports/repo_cleanup_inventory.py` -> `none`
+  - `crypto_options_app/scripts/run_crypto_options_repo_cleanup_inventory.py` -> `none`
+  - ... `497` additional paths in JSON artifact
 
 ### Local State And Root Config Review
 - ID: `batch_1_local_state_root_config_review`
@@ -110,4 +112,4 @@
 - Keep reference moves separate from active crypto baseline and local-state cleanup.
 - Hold root dependency changes until their owning app/tooling branch is clear.
 - Review batch_4 compatibility wrappers before moving any wrapper paths.
-- Create GitHub milestones/issues only after cleanup branches are reviewable.
+- Start only the ready fixed chats from fixed_chat_bootstrap; keep future-only prompts closed.

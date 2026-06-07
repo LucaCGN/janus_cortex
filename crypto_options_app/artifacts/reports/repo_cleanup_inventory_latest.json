@@ -1,14 +1,21 @@
 {
+  "fixed_chat_startup_readiness": {
+    "chat_count": 2,
+    "path": "crypto_options_app\\artifacts\\reports\\fixed_chat_startup_readiness_latest.json",
+    "ready_count": 2,
+    "status": "ready"
+  },
   "gates": {
     "automatic_moves_allowed": false,
-    "fixed_chats_start_gate": "blocked_until_repo_cleanup_and_github_milestones_are_reviewed",
-    "fixed_chats_start_ready": false,
-    "github_issue_creation_ready": false,
-    "github_issue_gate": "blocked_until_cleanup_inventory_reviewable_and_branch_plan_exists",
+    "fixed_chat_startup_readiness_path": "crypto_options_app\\artifacts\\reports\\fixed_chat_startup_readiness_latest.json",
+    "fixed_chats_start_gate": "ready_per_fixed_chat_startup_readiness",
+    "fixed_chats_start_ready": true,
+    "github_issue_creation_ready": true,
+    "github_issue_gate": "issues_ready_per_fixed_chat_startup_readiness",
     "path_level_inventory_ready": true,
     "repo_move_ready": false
   },
-  "generated_at_utc": "2026-06-07T05:00:38.799750+00:00",
+  "generated_at_utc": "2026-06-07T11:44:14.901346+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "move_policy": {
@@ -28,10 +35,81 @@
     "Review the JSON path_entries list before moving files.",
     "Create a branch/commit plan that separates crypto active work from reference moves.",
     "Decide which crypto compatibility wrappers must stay until runtime routes are fully cut over.",
-    "Create GitHub milestones/issues after the cleanup plan is reviewable.",
-    "Start fixed chats only after cleanup and issue source-of-truth are established."
+    "Start only the ready fixed chats from fixed_chat_bootstrap; keep future-only prompts closed."
   ],
   "path_entries": [
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/automation_status/db_data_observability_latest.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/automation_status/frontend_status_reporter_latest.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/automation_status/signal_strategy_queue_worker_latest.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/reports/repo_cleanup_batches.py",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/reports/repo_cleanup_inventory.py",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/scripts/run_crypto_options_repo_cleanup_inventory.py",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "M"
+    },
     {
       "classification": "root_config_review",
       "move_allowed_now": false,
@@ -809,6 +887,15 @@
     {
       "classification": "crypto_active",
       "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/automation/market_activity_capture_status.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/automation/option_price_capture_active_process.json",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
@@ -1565,7 +1652,367 @@
     {
       "classification": "crypto_active",
       "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T072414Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T072414Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073025Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073025Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073142Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073142Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073352Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073352Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073538Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073538Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073642Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073642Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073959Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T073959Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074237Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074237Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074427Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074427Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074615Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074615Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074703Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074703Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074824Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T074824Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T080119Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T080119Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T080318Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/automation_report_status_20260607T080318Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/compatibility_wrapper_audit_20260607T110016Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/compatibility_wrapper_audit_20260607T110016Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_20260607T110037.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_20260607T110037.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/reports/control_center_state_cache.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T073113Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T073113Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T110008Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T110008Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T112026Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T112026Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T114015Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_20260607T114015Z.md",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
       "review_required": false,
@@ -2519,6 +2966,24 @@
     {
       "classification": "crypto_active",
       "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T050039Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T050039Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T042254Z.json",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
@@ -2601,6 +3066,24 @@
       "classification": "crypto_active",
       "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T045230Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T050038Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T050038Z.md",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
       "review_required": false,
@@ -2807,6 +3290,132 @@
     {
       "classification": "crypto_active",
       "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T060144Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T060144Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T061013Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T061013Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T061256Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T061256Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T061925Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T061925Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T110812Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T110812Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T110926Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T110926Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T111043Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/runtime_audit_20260607T111043Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/reports/runtime_audit_latest.json",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
@@ -2979,6 +3588,96 @@
       "classification": "crypto_active",
       "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T041803Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T105041Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T105041Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T111102Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T111102Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T112117Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T112117Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T112915Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T112915Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T113528Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/storage_architecture_audit_20260607T113528Z.md",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
       "review_required": false,
@@ -3312,6 +4011,204 @@
       "classification": "crypto_active",
       "move_allowed_now": false,
       "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T042437Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T072507Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T072507Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T073026Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T073026Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T073116Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T073116Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T074001Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T074001Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T105040Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T105040Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T105139Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T105139Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T110205Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T110205Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T111102Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T111102Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T112116Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T112116Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T112913Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T112913Z.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T113546Z.json",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/reports/transition_readiness_20260607T113546Z.md",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
       "review_required": false,
@@ -4373,6 +5270,42 @@
     {
       "classification": "crypto_active",
       "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/signal_strategy_queue_proposal_crypto_observer_contrarian_option_hold_60s_v1.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/signal_strategy_queue_proposal_crypto_observer_fade_option_scalp_v1.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/signal_strategy_queue_proposal_crypto_observer_follow_option_scalp_v1.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
+      "path": "crypto_options_app/artifacts/team_coordination/signal_strategy_queue_proposal_master_hedge_grid_scalping_buy_rebound_optionprice_touch_reclaim_v1.md",
+      "proposed_action": "keep_active_crypto",
+      "proposed_destination": null,
+      "review_required": false,
+      "status": "??"
+    },
+    {
+      "classification": "crypto_active",
+      "move_allowed_now": false,
       "path": "crypto_options_app/data/profile-pool/active_crypto_profile_pool.txt",
       "proposed_action": "keep_active_crypto",
       "proposed_destination": null,
@@ -4842,17 +5775,17 @@
   "schema_version": "crypto_options_repo_cleanup_inventory_v1",
   "status": "degraded",
   "summary": {
-    "active_crypto_count": 402,
+    "active_crypto_count": 505,
     "classification_counts": {
-      "crypto_active": 402,
+      "crypto_active": 505,
       "crypto_compatibility_wrapper_candidate": 131,
       "root_config_review": 1
     },
     "crypto_compatibility_wrapper_candidate_count": 131,
-    "dirty_path_count": 534,
+    "dirty_path_count": 637,
     "legacy_move_candidate_count": 0,
     "proposed_action_counts": {
-      "keep_active_crypto": 402,
+      "keep_active_crypto": 505,
       "manual_root_config_review": 1,
       "review_keep_temporarily_or_migrate_into_crypto_options_app": 131
     },

@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     options = RepoCleanupInventoryOptions(
         artifact_root=Path(args.artifact_root),
         include_git_status=not args.skip_git_status,
+        include_fixed_chat_readiness=True,
         max_status_rows=args.max_status_rows,
     )
     report = build_repo_cleanup_inventory(options, status_rows=[] if args.skip_git_status else None)
