@@ -69,12 +69,15 @@ REQUIRED_TABLE_GROUPS: dict[str, tuple[str, ...]] = {
 }
 
 RUNTIME_PROCESS_PATTERNS = {
-    "backend": "crypto_options_app.main:app",
-    "frontend": "crypto_options_app.frontend_service:app",
-    "A_market": "run_crypto_options_underlying_market_price_capture",
-    "A_crypto": "run_crypto_options_underlying_technical_observers",
-    "B_profiles": "run_crypto_options_profile_distribution_service",
-    "C_options": "run_crypto_options_option_price_capture",
+    "backend": (
+        "crypto_options_app.main:app",
+        "crypto_options_app.api.app:create_app",
+    ),
+    "frontend": ("crypto_options_app.frontend_service:app",),
+    "A_market": ("run_crypto_options_underlying_market_price_capture",),
+    "A_crypto": ("run_crypto_options_underlying_technical_observers",),
+    "B_profiles": ("run_crypto_options_profile_distribution_service",),
+    "C_options": ("run_crypto_options_option_price_capture",),
 }
 
 FORBIDDEN_RUNTIME_PROCESS_PATTERNS = {
@@ -98,6 +101,14 @@ SQLITE_USAGE_SCAN_ROOTS = (
 )
 SQLITE_IMPORT_RE = re.compile(r"(^|\n)\s*(import sqlite3|from sqlite3\b)")
 SQLITE_CONNECT_RE = re.compile(r"\bsqlite3\s*\.\s*connect\s*\(")
+FORBIDDEN_LEGACY_RUNTIME_MODULE_PREFIXES = (
+    "app.api.routers.crypto_options",
+    "app.data.nodes.crypto",
+    "app.data.nodes.polymarket.crypto",
+    "app.data.pipelines.crypto",
+    "app.services.crypto_options",
+    "codex_tool.run_crypto_options",
+)
 
 
 @dataclass(frozen=True)
@@ -140,6 +151,10 @@ def build_runtime_audit(options: RuntimeAuditOptions | None = None) -> dict[str,
     blockers.extend(endpoints.get("blockers") or [])
     warnings.extend(endpoints.get("warnings") or [])
 
+    legacy_namespace = _legacy_namespace_audit()
+    blockers.extend(legacy_namespace.get("blockers") or [])
+    warnings.extend(legacy_namespace.get("warnings") or [])
+
     status = _status_from_blockers(blockers, warnings)
     return {
         "schema_version": AUDIT_SCHEMA_VERSION,
@@ -152,6 +167,7 @@ def build_runtime_audit(options: RuntimeAuditOptions | None = None) -> dict[str,
         "database": db,
         "processes": processes,
         "endpoints": endpoints,
+        "legacy_namespace": legacy_namespace,
         "manual_orders_avoided": True,
         "orders_allowed": False,
         "live_trading_authorized": False,
@@ -207,6 +223,12 @@ def render_runtime_audit_markdown(audit: dict[str, Any]) -> str:
     lines.append(f"- Runtime offenders: `{len(runtime_code.get('runtime_offenders') or [])}`")
     lines.append(f"- Review required: `{len(runtime_code.get('review_required') or [])}`")
     lines.append(f"- Allowed migration/test/compat usage: `{len(runtime_code.get('allowed_sqlite_usage') or [])}`")
+    legacy_namespace = audit.get("legacy_namespace") or {}
+    lines.extend(["", "## Legacy Runtime Namespace"])
+    lines.append(f"- Status: `{legacy_namespace.get('status', 'unknown')}`")
+    lines.append(f"- Loaded forbidden legacy modules: `{len(legacy_namespace.get('loaded_forbidden_modules') or [])}`")
+    for module_name in list(legacy_namespace.get("loaded_forbidden_modules") or [])[:10]:
+        lines.append(f"  - `{module_name}`")
     lines.extend(["", "## Processes"])
     for name, payload in (audit.get("processes", {}).get("required") or {}).items():
         lines.append(f"- `{name}`: {payload.get('status')} {payload.get('pids') or []}")
@@ -490,8 +512,8 @@ def _process_audit() -> dict[str, Any]:
     rows = _powershell_process_rows()
     required: dict[str, Any] = {}
     blockers: list[str] = []
-    for name, pattern in RUNTIME_PROCESS_PATTERNS.items():
-        pids = [row["pid"] for row in rows if pattern in row["command_line"]]
+    for name, patterns in RUNTIME_PROCESS_PATTERNS.items():
+        pids = [row["pid"] for row in rows if _matches_any_pattern(row["command_line"], patterns)]
         required[name] = {"status": "ok" if pids else "missing", "pids": pids}
         if not pids and name != "frontend":
             blockers.append(f"missing_process:{name}")
@@ -517,7 +539,7 @@ def _endpoint_audit(options: RuntimeAuditOptions) -> dict[str, Any]:
     if backend.get("status") != "ok":
         blockers.append("backend_health_unavailable")
     if frontend.get("status") != "ok":
-        blockers.append("frontend_unavailable")
+        warnings.append("frontend_unavailable")
     if backend.get("payload", {}).get("db", {}).get("read_status") != "ok":
         blockers.append("backend_health_db_read_not_ok")
     if "CRYPTO_OPTIONS_API_BASE" not in str(frontend.get("body") or ""):
@@ -528,6 +550,74 @@ def _endpoint_audit(options: RuntimeAuditOptions) -> dict[str, Any]:
         "warnings": warnings,
         "backend": backend,
         "frontend": {k: v for k, v in frontend.items() if k != "body"},
+    }
+
+
+def _legacy_namespace_audit() -> dict[str, Any]:
+    """Prove canonical app import does not load legacy crypto wrapper namespaces."""
+
+    code = """
+import importlib
+import json
+import sys
+
+prefixes = (
+    "app.api.routers.crypto_options",
+    "app.data.nodes.crypto",
+    "app.data.nodes.polymarket.crypto",
+    "app.data.pipelines.crypto",
+    "app.services.crypto_options",
+    "codex_tool.run_crypto_options",
+)
+importlib.import_module("crypto_options_app.main")
+loaded = sorted(
+    name
+    for name in sys.modules
+    if name == "app" or any(name.startswith(prefix) for prefix in prefixes)
+)
+print(json.dumps({"loaded_forbidden_modules": loaded}))
+"""
+    try:
+        completed = subprocess.run(
+            ["python", "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=25,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 - local audit should degrade, not crash reports.
+        return {
+            "status": "degraded",
+            "loaded_forbidden_modules": [],
+            "warnings": [f"legacy_namespace_audit_unavailable:{type(exc).__name__}:{exc}"],
+            "blockers": [],
+        }
+    if completed.returncode != 0:
+        return {
+            "status": "degraded",
+            "loaded_forbidden_modules": [],
+            "warnings": [f"legacy_namespace_audit_failed:{completed.returncode}"],
+            "blockers": [],
+            "stderr": completed.stderr.strip()[:1000],
+        }
+    try:
+        payload = json.loads(completed.stdout.strip() or "{}")
+    except json.JSONDecodeError:
+        return {
+            "status": "degraded",
+            "loaded_forbidden_modules": [],
+            "warnings": ["legacy_namespace_audit_unparseable"],
+            "blockers": [],
+            "stdout": completed.stdout.strip()[:1000],
+        }
+    loaded = list(payload.get("loaded_forbidden_modules") or [])
+    blockers = [f"legacy_runtime_namespace_loaded:{name}" for name in loaded]
+    return {
+        "status": _status_from_blockers(blockers, []),
+        "loaded_forbidden_modules": loaded,
+        "forbidden_prefixes": list(FORBIDDEN_LEGACY_RUNTIME_MODULE_PREFIXES),
+        "blockers": blockers,
+        "warnings": [],
     }
 
 
@@ -578,6 +668,10 @@ def _powershell_process_rows() -> list[dict[str, Any]]:
         }
         for row in payload
     ]
+
+
+def _matches_any_pattern(command_line: str, patterns: tuple[str, ...]) -> bool:
+    return any(pattern in command_line for pattern in patterns)
 
 
 def _status_from_blockers(blockers: list[str], warnings: list[str]) -> str:

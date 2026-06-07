@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T11:00:48Z
+Updated: 2026-06-07T11:11:10Z
 
 ## Objective
 
@@ -18,9 +18,9 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Live trading: disabled unless promotion gates pass and supervised runtime is explicitly started.
 - Best simple candidate: `profile_splus_hedger_follow_hold_60s_v10 + profile_group_quality`, currently below the 12-sample promotion floor.
 - Master hedge-grid track: valid north star, but protected-floor variants replay only when closed-cycle candidates exist.
-- Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated behind tested TTL cache/lock adapter semantics.
+- Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated behind tested TTL cache/lock adapter semantics. Current measured pressure remains Postgres memory over 6GiB; latest endpoint timings were health ~24ms, dashboard/control-center ~47ms with ~1.0MB payload, signals validation status ~1420ms with ~988KB payload, and strategies promotion ~49ms with ~255KB payload.
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports operational status `ok`, Postgres runtime, A/B/C/D freshness `ok`, orders disabled, live false. Supervised-live readiness remains blocked separately by insufficient live structural evidence (`fewer_than_10_successful_live_structural_strategy_artifacts`).
-- Runtime SQLite audit latest: 0 production runtime direct-connect blockers, 0 review-required SQLite usages, 11 allowed migration/test/compat usages; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`.
+- Runtime audit latest: 0 production runtime direct-connect SQLite blockers, 0 review-required SQLite usages, 11 allowed migration/test/compat usages, and 0 loaded forbidden legacy `app.*` crypto modules from canonical app import; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`. Current audit is warning-level `degraded` because the optional separate frontend service is offline and Postgres memory remains high, not because of a runtime blocker.
 - Transition readiness review: `degraded`, broad automation `not_ready`, no blockers, no `health_degraded` warning, no accidental live candidates. Remaining warnings are `repo_dirty_requires_inventory_cleanup` and `storage_audit_degraded`. The live `/strategies/promotion` endpoint exposes `crypto_options_promotion_policy_contract_v1`.
 - GitHub issue/milestone source-of-truth: created in `LucaCGN/janus_cortex`; sync report at `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`.
 - Review branch: draft PR [#170 Crypto options compatibility wrapper cutover](https://github.com/LucaCGN/janus_cortex/pull/170).

@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
         print(render_runtime_audit_markdown(audit), end="")
     else:
         print(json.dumps(audit, indent=2, sort_keys=True, default=str))
-    return 0 if audit.get("status") == "ok" else 2
+    return 2 if audit.get("status") == "blocked" else 0
 
 
 if __name__ == "__main__":
