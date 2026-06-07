@@ -2,9 +2,9 @@
 
 ## Start Gate
 
-Wait until Batch 4 compatibility-wrapper decisions are reviewable and GitHub milestones/issues exist.
+Ready. Batch 4 active imports are cut over, compatibility wrapper decisions are reviewable, and GitHub issues #155-#159 exist.
 
-This lane touches signal/strategy code and queue semantics, so it should not start from stale imports or ambiguous source-of-truth state.
+This lane touches signal/strategy code and queue semantics, so it must work from GitHub issues and team coordination artifacts before broad changes.
 
 ## Role
 
@@ -20,6 +20,7 @@ Coordination root: `crypto_options_app/artifacts/team_coordination`
 - `crypto_options_app/artifacts/team_coordination/promotion_policy.md`
 - `crypto_options_app/artifacts/team_coordination/handoff_queue.jsonl`
 - `crypto_options_app/artifacts/team_coordination/github_issue_milestone_plan.md`
+- `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`
 - `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.json`
 - `crypto_options_app/artifacts/reports/transition_readiness_latest.json`
 

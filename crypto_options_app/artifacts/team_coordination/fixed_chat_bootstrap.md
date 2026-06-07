@@ -13,7 +13,7 @@ Prompt root:
 Current start gates:
 
 - Frontend Control Center Developer can start after Batch 3 from `fixed_chat_prompts/frontend_control_center_developer.md` if it stays isolated to UI/contracts and does not change backend, DB, promotion, replay, or trading runtime.
-- Signal And Strategy Management Cleanup should wait until Batch 4 compatibility-wrapper decisions and GitHub milestones/issues are ready, then start from `fixed_chat_prompts/signal_strategy_management_cleanup.md`.
+- Signal And Strategy Management Cleanup can start from `fixed_chat_prompts/signal_strategy_management_cleanup.md`; GitHub issues #155-#159 are ready.
 - Future DB/data, indicator, signal, and strategy specialist prompts live in `fixed_chat_prompts/`, but should not be started as standing fixed chats until the master chat opens those lanes.
 - Batch 4 latest artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`.
 - Batch 4 decision artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_latest.md`.
@@ -32,7 +32,7 @@ Start from:
 
 Start gate:
 
-Do not start this fixed chat until GitHub milestones/issues are ready. Batch 4 active imports are cut over, but this lane needs issue-backed queue ownership before touching strategy/signal code and queue semantics.
+This fixed chat may start now. Batch 4 active imports are cut over, and GitHub issues #155-#159 provide issue-backed queue ownership before touching strategy/signal code and queue semantics.
 
 First task:
 

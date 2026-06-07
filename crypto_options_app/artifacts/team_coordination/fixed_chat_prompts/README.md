@@ -1,6 +1,6 @@
 # Crypto Options Fixed Chat Prompts
 
-Updated: 2026-06-07T05:35:00Z
+Updated: 2026-06-07T05:55:00Z
 
 ## Purpose
 
@@ -15,7 +15,7 @@ All fixed chats must read and write:
 ## Start Gates
 
 - `frontend_control_center_developer.md`: can start after Batch 3. It must stay frontend/API-contract scoped.
-- `signal_strategy_management_cleanup.md`: wait for Batch 4 compatibility-wrapper decisions and GitHub issues/milestones.
+- `signal_strategy_management_cleanup.md`: ready. Use GitHub issues #155-#159.
 - The DB/data, indicator, signal, and strategy specialist prompts exist as future lane contracts. Do not start them as standing fixed chats until the master chat opens that lane.
 
 ## Required Behavior

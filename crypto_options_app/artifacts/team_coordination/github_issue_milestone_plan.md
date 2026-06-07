@@ -1,6 +1,6 @@
 ﻿# Crypto Options GitHub Issue And Milestone Plan
 
-Updated: 2026-06-07T05:46:00Z
+Updated: 2026-06-07T05:55:00Z
 
 ## Purpose
 
@@ -70,9 +70,18 @@ Issues:
 - `blocked`
 - `ready-for-fixed-chat`
 
+## Created Remote Source Of Truth
+
+Sync report: `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`
+
+- Milestones created: `CRYPTO-P4`, `CRYPTO-P5`, `CRYPTO-P6`, `CRYPTO-P7`.
+- Issues created: #150-#169.
+- Signal/strategy fixed chat may now use issues #155-#159.
+- Frontend fixed chat may now use issues #160-#164.
+
 ## Creation Gate
 
-Create these issues only after:
+Satisfied on 2026-06-07 after:
 
 - `transition_readiness_latest.json` exists.
 - `repo_cleanup_inventory.md` is current.

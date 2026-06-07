@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T05:46:00Z
+Updated: 2026-06-07T05:55:00Z
 
 ## Objective
 
@@ -21,7 +21,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated.
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports Postgres, orders disabled, live false.
 - Transition readiness review: `degraded`, broad automation `not_ready`, no accidental live candidates.
-- GitHub issue/milestone plan: drafted locally; remote issue creation is gated by repo cleanup inventory and reviewable commits.
+- GitHub issue/milestone source-of-truth: created in `LucaCGN/janus_cortex`; sync report at `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`.
 - Repo cleanup inventory: path-level artifact generated; 534 dirty/status paths, 132 review-required paths, 402 active crypto paths, 131 crypto compatibility wrapper candidates, 0 legacy move candidates.
 - Repo cleanup batches: artifact generated; Batch 0 active crypto baseline branch is `codex/crypto-transition-control-plane`; Batch 1 local/root branch is `codex/crypto-repo-local-state-cleanup`; Batch 2 WNBA/NBA branch is `codex/crypto-repo-wnba-nba-reference`; Batch 3 global reference branch is `codex/crypto-repo-global-reference`; Batch 4 compatibility review branch is `codex/crypto-compatibility-wrapper-cutover`.
 - Batch 0 staging plan: 295 stage candidates, 386 hold paths, 0 manual-review paths.
@@ -33,13 +33,13 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Batch 4 compatibility wrapper audit: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`; 131 candidates, 0 referenced by active crypto code/tests, 52 docs/reference-only wrappers, 59 no-reference wrappers, automatic wrapper moves still blocked until non-active wrapper decisions are reviewed.
 - Batch 4 compatibility wrapper decision plan: `crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_latest.md`; active import blockers cleared, non-active wrapper decisions reviewable, GitHub issue creation can start after this branch is reviewable.
 - Batch 4 cutover progress: active crypto callers now use `crypto_options_app.data_nodes.polymarket_crypto`, `crypto_options_app.data_nodes.crypto`, `crypto_options_app.pipelines.options`, `crypto_options_app.services.crypto_options`, `crypto_options_app.runtime.local_paths`, `crypto_options_app.api.db`, and `crypto_options_app.trading.polymarket_portfolio` instead of old `app.*` runtime imports.
-- Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/`. Frontend fixed chat can start after Batch 3 from `fixed_chat_prompts/frontend_control_center_developer.md`; signal/strategy cleanup should wait for Batch 4 non-active wrapper decisions plus GitHub milestones/issues.
+- Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/`. Frontend fixed chat can start from `fixed_chat_prompts/frontend_control_center_developer.md`; signal/strategy cleanup can start from `fixed_chat_prompts/signal_strategy_management_cleanup.md`.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 
 ## Active Fixed Chats
 
-- Signal And Strategy Management Cleanup: pending creation from `fixed_chat_prompts/signal_strategy_management_cleanup.md`; gated by GitHub source-of-truth after Batch 4 decision plan is committed.
-- Frontend Control Center Developer: eligible to start from `fixed_chat_prompts/frontend_control_center_developer.md` after Batch 3; must avoid backend, DB, promotion, and trading runtime changes.
+- Signal And Strategy Management Cleanup: eligible to start from `fixed_chat_prompts/signal_strategy_management_cleanup.md`; primary GitHub issues #155-#159.
+- Frontend Control Center Developer: eligible to start from `fixed_chat_prompts/frontend_control_center_developer.md`; primary GitHub issues #160-#164; must avoid backend, DB, promotion, and trading runtime changes.
 
 ## Master Rules
 
@@ -52,8 +52,8 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 ## Next Transition Actions
 
 1. Commit the Batch 4 decision plan so non-active wrapper handling is reviewable.
-2. Create GitHub milestones/issues from `github_issue_milestone_plan.md` after this branch is reviewable.
-3. Use the GitHub issue source-of-truth before starting Signal And Strategy Management Cleanup.
+2. Start fixed chats from their prompt files and linked GitHub issues when user is ready.
+3. Use the GitHub issue source-of-truth before starting any bounded automation beyond the single master heartbeat.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.
 6. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
