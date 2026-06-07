@@ -1,12 +1,12 @@
 # Crypto Options Storage Architecture Decision
 
-Updated: 2026-06-07T04:18:30Z
+Updated: 2026-06-07T06:26:00Z
 
 ## Current Decision
 
 Postgres remains durable source of truth.
 
-Redis is implemented as a disabled-by-default Docker/config sidecar and remains gated. It is a hot-plane candidate for latest-state cache, frontend cache, queue locks, TTL ownership, pub/sub, and short-lived coordination only.
+Redis is implemented as a disabled-by-default Docker/config sidecar and remains gated. It has a tested hot-plane adapter for JSON TTL cache entries and owner-checked TTL queue locks. It remains a candidate for latest-state cache, frontend cache, queue locks, TTL ownership, pub/sub, and short-lived coordination only.
 
 Latest audit:
 
@@ -47,9 +47,9 @@ Redis must never be the only store for trading-critical truth.
 
 Run `python -m crypto_options_app.scripts.run_crypto_options_storage_architecture_audit --write-artifacts --json`.
 
-Enable Redis at runtime only after adapter tests prove the specific cache/queue use case. Do not move durable truth into Redis.
+Enable Redis at runtime only after a measured cache/queue use case is selected. Do not move durable truth into Redis.
 
-Current next test: add cache/queue TTL adapter tests before turning on `JANUS_CRYPTO_OPTIONS_REDIS_ENABLED`.
+Current adapter coverage: JSON TTL cache, NX/EX lock acquisition, owner-checked release, and RESP command framing. Redis still remains disabled unless `JANUS_CRYPTO_OPTIONS_REDIS_ENABLED=1`.
 
 ## Docker Status
 

@@ -1,6 +1,6 @@
 # GitHub Source Of Truth Sync
 
-Updated: 2026-06-07T06:20:00Z
+Updated: 2026-06-07T06:26:00Z
 
 Repository: `LucaCGN/janus_cortex`
 
@@ -11,6 +11,7 @@ Repository: `LucaCGN/janus_cortex`
 - Issues created: `20`.
 - Draft PR created: [#170 Crypto options compatibility wrapper cutover](https://github.com/LucaCGN/janus_cortex/pull/170).
 - Runtime DB adapter audit: 0 production runtime direct SQLite blockers, 0 review-required SQLite usages, 11 allowed migration/test/compat usages; legacy profile/market SQLite stores are fenced to research compatibility CLIs and tracked under issue [#152](https://github.com/LucaCGN/janus_cortex/issues/152).
+- Redis hot-plane gate: adapter tests now cover JSON TTL cache, NX/EX owner locks, owner-checked release, and RESP command framing; Redis remains disabled until a measured use case is selected, tracked under issue [#151](https://github.com/LucaCGN/janus_cortex/issues/151).
 - Frontend fixed chat: ready.
 - Signal/strategy cleanup fixed chat: ready to start from GitHub issue source-of-truth.
 

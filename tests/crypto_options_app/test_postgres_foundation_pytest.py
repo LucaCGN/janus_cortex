@@ -4,7 +4,12 @@ import json
 import sqlite3
 from pathlib import Path
 
-from crypto_options_app.cache.redis_hot_plane import RedisHotPlaneSettings, check_redis_hot_plane
+from crypto_options_app.cache.redis_hot_plane import (
+    RedisHotPlaneClient,
+    RedisHotPlaneSettings,
+    _encode_resp_command,
+    check_redis_hot_plane,
+)
 from crypto_options_app.config import CENTRAL_POSTGRES_URL, CENTRAL_REDIS_URL, CryptoOptionsAppConfig
 from crypto_options_app.db.postgres import (
     CryptoOptionsPostgresSettings,
@@ -62,6 +67,71 @@ def test_redis_hot_plane_defaults_disabled() -> None:
     status = check_redis_hot_plane(settings)
     assert status["status"] == "disabled"
     assert status["role"] == "gated_hot_plane_candidate"
+
+
+def test_redis_hot_plane_cache_uses_json_and_ttl() -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_execute(command: tuple[str, ...]) -> object:
+        commands.append(command)
+        if command[0] == "GET":
+            return '{"fresh":true,"source":"A"}'
+        return "OK"
+
+    client = RedisHotPlaneClient(
+        RedisHotPlaneSettings(enabled=True),
+        command_executor=fake_execute,
+    )
+
+    set_result = client.set_json_cache("source/A/latest", {"source": "A", "fresh": True}, ttl_seconds=30)
+    get_result = client.get_json_cache("source/A/latest")
+
+    assert set_result["status"] == "ok"
+    assert get_result == {"status": "ok", "payload": {"fresh": True, "source": "A"}}
+    assert commands[0] == (
+        "SET",
+        "crypto_options:cache:source/A/latest",
+        '{"fresh":true,"source":"A"}',
+        "EX",
+        "30",
+    )
+    assert commands[1] == ("GET", "crypto_options:cache:source/A/latest")
+
+
+def test_redis_hot_plane_lock_uses_nx_ttl_and_owner_checked_release() -> None:
+    commands: list[tuple[str, ...]] = []
+
+    def fake_execute(command: tuple[str, ...]) -> object:
+        commands.append(command)
+        if command[0] == "EVAL":
+            return 1
+        return "OK"
+
+    client = RedisHotPlaneClient(
+        RedisHotPlaneSettings(enabled=True),
+        command_executor=fake_execute,
+    )
+
+    acquire_result = client.acquire_ttl_lock("queue/signal/123", "worker-a", ttl_seconds=45)
+    release_result = client.release_ttl_lock("queue/signal/123", "worker-a")
+
+    assert acquire_result == {"status": "ok", "acquired": True, "owner": "worker-a"}
+    assert release_result == {"status": "ok", "released": True, "owner": "worker-a"}
+    assert commands[0] == (
+        "SET",
+        "crypto_options:lock:queue/signal/123",
+        "worker-a",
+        "NX",
+        "EX",
+        "45",
+    )
+    assert commands[1][0] == "EVAL"
+    assert commands[1][2:] == ("1", "crypto_options:lock:queue/signal/123", "worker-a")
+
+
+def test_redis_resp_encoder_builds_command_frames() -> None:
+    assert _encode_resp_command(("PING",)) == b"*1\r\n$4\r\nPING\r\n"
+    assert _encode_resp_command(("SET", "k", "v", "EX", "5")).startswith(b"*5\r\n$3\r\nSET")
 
 
 def test_postgres_settings_parse_default_url() -> None:

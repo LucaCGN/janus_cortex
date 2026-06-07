@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T06:20:00Z
+Updated: 2026-06-07T06:26:00Z
 
 ## Objective
 
@@ -18,7 +18,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Live trading: disabled unless promotion gates pass and supervised runtime is explicitly started.
 - Best simple candidate: `profile_splus_hedger_follow_hold_60s_v10 + profile_group_quality`, currently below the 12-sample promotion floor.
 - Master hedge-grid track: valid north star, but protected-floor variants replay only when closed-cycle candidates exist.
-- Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated.
+- Storage audit latest: `postgres_plus_redis_hot_plane_candidate`; Postgres remains durable truth, Redis is disabled and gated behind tested TTL cache/lock adapter semantics.
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports Postgres, orders disabled, live false.
 - Runtime SQLite audit latest: 0 production runtime direct-connect blockers, 0 review-required SQLite usages, 11 allowed migration/test/compat usages; safe audit artifact at `crypto_options_app/artifacts/reports/runtime_audit_latest.md`.
 - Transition readiness review: `degraded`, broad automation `not_ready`, no accidental live candidates.
@@ -58,5 +58,5 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 3. Use the GitHub issue source-of-truth before starting any bounded automation beyond the single master heartbeat.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
-6. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
+6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
 7. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.
