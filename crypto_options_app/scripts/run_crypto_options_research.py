@@ -19,11 +19,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.api.db import to_jsonable  # noqa: E402
-from app.data.nodes.crypto.candles import fetch_binance_candles_for_events, normalize_candle_records  # noqa: E402
-from app.data.nodes.crypto.reference import normalize_reference_price_reports  # noqa: E402
-from app.data.nodes.crypto.reference import ChainlinkDataStreamsRestProvider, CryptoReferenceSourceUnavailable  # noqa: E402
-from app.data.nodes.crypto.reference import fetch_chainlink_reference_reports_for_events  # noqa: E402
-from app.data.nodes.crypto.reference import reference_reports_from_candles  # noqa: E402
+from crypto_options_app.data_nodes.crypto.candles import fetch_binance_candles_for_events, normalize_candle_records  # noqa: E402
+from crypto_options_app.data_nodes.crypto.reference import normalize_reference_price_reports  # noqa: E402
+from crypto_options_app.data_nodes.crypto.reference import ChainlinkDataStreamsRestProvider, CryptoReferenceSourceUnavailable  # noqa: E402
+from crypto_options_app.data_nodes.crypto.reference import fetch_chainlink_reference_reports_for_events  # noqa: E402
+from crypto_options_app.data_nodes.crypto.reference import reference_reports_from_candles  # noqa: E402
 from crypto_options_app.data_nodes.polymarket_crypto.history import (  # noqa: E402
     download_pmxt_orderbooks_for_events,
     fetch_clob_prices_history_for_event_windows,
