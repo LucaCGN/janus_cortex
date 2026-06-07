@@ -30,6 +30,14 @@ Trade/live activity runtime module:
 
 `crypto_options_app/data_services/polymarket_live_activity_capture.py`
 
+Bounded trade/live activity loop:
+
+```powershell
+python -m crypto_options_app.scripts.run_crypto_options_market_activity_capture --loop --interval-seconds 60 --max-markets 8 --max-concurrency 2 --timeout-seconds 4 --lookback-minutes 15 --lookahead-minutes 15 --state-path crypto_options_app/artifacts/automation/market_activity_capture_status.json --json
+```
+
+This loop is read-only, writes only `polymarket_trade_prints` and `data_service_watermarks`, and must keep `orders_allowed=false` and `live_trading_authorized=false`.
+
 ## Capture Scope
 
 - Symbols: BTC and ETH initially.
@@ -105,6 +113,7 @@ These indicators are context inputs only; they do not authorize orders.
 - latest completed event-path statistics
 - Block C data-signal readiness rows from `data_signal_readiness_snapshots`
 - trade-print count and warning state when price paths exist but trade prints are missing
+- Block D market-activity watermark freshness for `polymarket_live_activity_capture`
 - stale or failed data-service state
 
 Current 30-second readiness rule for Block C:
@@ -127,4 +136,6 @@ Validated centralized run on 2026-06-04:
 - Live trading flags are rejected.
 - Replay can consume at least one captured or fixture Up/Down path with no lookahead.
 - Trade/live-activity capture writes fixture trade prints and watermarks.
+- Trade/live-activity capture discovers recent condition IDs with Postgres-compatible grouped ordering.
+- Trade/live-activity loop writes `market_activity_capture_status.json`.
 - Completed event-path statistics are visible in `/health`.

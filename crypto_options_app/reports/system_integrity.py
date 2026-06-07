@@ -153,6 +153,17 @@ STATUS_FILE_READINESS_MODULES = (
             "readiness_rows_inserted",
         ),
     },
+    {
+        "data_block": "D",
+        "module_id": "polymarket_live_activity_capture",
+        "watermark_module_id": "polymarket_live_activity_capture",
+        "watermark_source": "service_status_file",
+        "file_name": "market_activity_capture_status.json",
+        "payload_metrics": (
+            "condition_count",
+            "trade_rows_inserted",
+        ),
+    },
 )
 STATUS_FILE_READINESS_DIRECTORIES = ("automation", "reports")
 

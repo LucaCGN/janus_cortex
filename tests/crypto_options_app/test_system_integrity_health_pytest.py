@@ -573,6 +573,65 @@ def test_system_integrity_health_reads_legacy_report_status_files_pytest(
     assert watermark_by_module["polymarket_option_price_capture"]["updated_at_utc"] == "2026-06-06T09:05:00+00:00"
 
 
+def test_system_integrity_health_reads_market_activity_status_file_pytest(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = initialize_schema(tmp_path / "crypto_options.sqlite")
+    artifact_root = tmp_path / "artifacts"
+    initial = build_system_integrity_health(
+        CryptoOptionsAppConfig(db_path=db_path),
+        options=_health_options(artifact_root),
+    )
+    assert initial["db"]["read_status"] == "ok"
+
+    cache_path = artifact_root / "reports" / "system_integrity_db_report_cache.json"
+    cached = json.loads(cache_path.read_text(encoding="utf-8"))
+    cached["cached_at_utc"] = "2026-01-01T00:00:00+00:00"
+    cache_path.write_text(json.dumps(cached), encoding="utf-8")
+
+    automation_root = artifact_root / "automation"
+    automation_root.mkdir(parents=True)
+    (automation_root / "market_activity_capture_status.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "crypto_options_market_activity_capture_status_v1",
+                "generated_at_utc": "2026-06-06T09:10:00+00:00",
+                "status": "healthy",
+                "condition_count": 8,
+                "trade_rows_inserted": 0,
+                "orders_allowed": False,
+                "live_trading_authorized": False,
+                "manual_orders_avoided": True,
+                "blockers": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def unexpected_read(*_args, **_kwargs):
+        raise AssertionError("prefer_cached_db_report should not touch sqlite when an expired cache exists")
+
+    monkeypatch.setattr(system_integrity, "connect_read_only", unexpected_read)
+
+    health = build_system_integrity_health(
+        CryptoOptionsAppConfig(db_path=db_path),
+        options=HealthBuildOptions(
+            artifact_root=artifact_root,
+            polymarket_status_provider=_operational_polymarket_status,
+            prefer_cached_db_report=True,
+        ),
+    )
+
+    readiness = health["db"]["latest_data_signal_readiness"]
+    assert {row["data_block"] for row in readiness} == {"D"}
+    assert readiness[0]["module_id"] == "polymarket_live_activity_capture"
+    assert readiness[0]["payload"]["metrics"]["condition_count"] == 8
+    assert health["db"]["status_file_source_summary"]["D"]["status"] == "ready"
+    watermark_by_module = {row["module_id"]: row for row in health["db"]["watermarks"]}
+    assert watermark_by_module["polymarket_live_activity_capture"]["updated_at_utc"] == "2026-06-06T09:10:00+00:00"
+
+
 def test_system_integrity_health_db_report_cache_write_remains_parseable_after_consecutive_refreshes_pytest(
     tmp_path: Path,
 ) -> None:

@@ -194,13 +194,14 @@ def _discover_recent_condition_ids(conn: Any, *, config: LiveActivityCaptureConf
     upper = (now + timedelta(minutes=max(0, config.lookahead_minutes))).isoformat()
     rows = conn.execute(
         """
-        SELECT DISTINCT condition_id
+        SELECT condition_id, MIN(event_start_time_utc) AS first_start_time_utc
         FROM events
         WHERE condition_id IS NOT NULL
           AND source_table = 'polymarket_option_price_capture'
           AND (event_end_time_utc IS NULL OR event_end_time_utc >= ?)
           AND (event_start_time_utc IS NULL OR event_start_time_utc <= ?)
-        ORDER BY event_start_time_utc
+        GROUP BY condition_id
+        ORDER BY first_start_time_utc
         LIMIT ?
         """,
         (lower, upper, max(0, config.max_markets)),

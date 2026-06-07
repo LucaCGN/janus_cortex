@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -553,3 +553,64 @@ def test_live_activity_capture_writes_trade_prints_and_watermark(tmp_path) -> No
         ).fetchone()
         assert watermark["status"] == "healthy"
         assert watermark["rows_inserted"] == 1
+
+
+def test_live_activity_capture_discovers_condition_ids_with_grouped_ordering(tmp_path) -> None:
+    db_path = initialize_schema(tmp_path / "live_activity_discovery.sqlite")
+    now = datetime.now(UTC)
+    inserted_at = now.isoformat()
+    early = now.replace(microsecond=0).isoformat()
+    late = (now.replace(microsecond=0) + timedelta(minutes=1)).isoformat()
+    with connect(db_path) as conn:
+        for event_key, condition_id, event_slug, start_time in (
+            ("event-early-a", "condition-early", "btc-updown-5m-early-a", early),
+            ("event-early-b", "condition-early", "btc-updown-5m-early-b", late),
+            ("event-late", "condition-late", "eth-updown-5m-late", late),
+        ):
+            conn.execute(
+                """
+                INSERT INTO events(
+                    event_key, event_slug, condition_id, symbol, cadence_seconds,
+                    event_start_time_utc, event_end_time_utc,
+                    source_table, source_json, inserted_at_utc, updated_at_utc
+                )
+                VALUES (?, ?, ?, ?, 300, ?, ?, ?, '{}', ?, ?)
+                """,
+                (
+                    event_key,
+                    event_slug,
+                    condition_id,
+                    "BTC" if condition_id == "condition-early" else "ETH",
+                    start_time,
+                    None,
+                    "polymarket_option_price_capture",
+                    inserted_at,
+                    inserted_at,
+                ),
+            )
+
+    seen: list[str] = []
+
+    def fake_activity(condition_id: str) -> dict[str, object]:
+        seen.append(condition_id)
+        return {"trades": []}
+
+    summary = capture_live_activity_once_sync(
+        config=LiveActivityCaptureConfig(db_path=db_path, max_markets=2, max_concurrency=1),
+        activity_fetcher=fake_activity,
+    )
+
+    assert summary.status == "healthy"
+    assert summary.condition_count == 2
+    assert seen == ["condition-early", "condition-late"]
+    with connect(db_path) as conn:
+        watermark = conn.execute(
+            """
+            SELECT status, rows_observed, rows_inserted
+            FROM data_service_watermarks
+            WHERE module_id='polymarket_live_activity_capture'
+            """
+        ).fetchone()
+        assert watermark["status"] == "healthy"
+        assert watermark["rows_observed"] == 2
+        assert watermark["rows_inserted"] == 0
