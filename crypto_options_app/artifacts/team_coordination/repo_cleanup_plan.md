@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T05:01:00Z
+Updated: 2026-06-07T05:08:00Z
 
 ## Rule
 
@@ -52,6 +52,7 @@ Current batch summary:
 - Batch 3 global reference: 0 paths, branch `codex/crypto-repo-global-reference`
 - Batch 4 crypto compatibility wrapper decision: 131 paths, branch `codex/crypto-compatibility-wrapper-cutover`
 - Batch 5 GitHub source-of-truth setup: 0 dirty paths, branch `codex/crypto-github-workflow-setup`
+- Batch 4 audit artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`
 
 ## Move Batch Plan
 
@@ -146,6 +147,17 @@ Purpose: avoid breaking current runtime routes while converging on `crypto_optio
 
 Suggested branch: `codex/crypto-compatibility-wrapper-cutover`.
 
+Current Batch 4 audit result:
+
+- Branch: `codex/crypto-compatibility-wrapper-cutover`
+- Wrapper candidates: 131
+- Referenced by active crypto code/tests: 53
+- No detected references: 55
+- Automatic wrapper moves allowed: `false`
+- Decision: no bulk moves. First cut active callers over to `crypto_options_app` modules/scripts in small tested groups.
+- Frontend fixed chat can start after Batch 3 using `fixed_chat_frontend.md` because it must not touch backend/runtime logic.
+- Signal/strategy cleanup fixed chat remains gated until Batch 4 wrapper decisions and GitHub issues/milestones are ready.
+
 ### Batch 5: GitHub Source-Of-Truth Setup
 
 Purpose: make issues and milestones safe to use as fixed-chat context.
@@ -164,6 +176,11 @@ Fixed chats remain gated until:
 - The path-level inventory has been reviewed.
 - GitHub milestone/issue source-of-truth is ready.
 - `fixed_chat_bootstrap.md` is updated with the final branch/artifact references.
+
+Current exception:
+
+- Frontend Control Center fixed chat may start now from `crypto_options_app/artifacts/team_coordination/fixed_chat_frontend.md` because Batch 3 is closed and frontend work can stay isolated to contracts/UI.
+- Signal And Strategy Management Cleanup fixed chat should not start yet; wait for Batch 4 import/cutover decisions and GitHub source-of-truth.
 
 The fixed-chat prompts are ready, but starting the chats before this gate would create duplicate context and likely make cleanup harder.
 

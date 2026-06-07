@@ -1,10 +1,20 @@
 ﻿# Fixed Chat Bootstrap
 
-Generated: 2026-06-07T04:15:00Z
+Generated: 2026-06-07T05:08:00Z
 
 ## Rule
 
 Do not start fixed chats as independent development lanes until the repo cleanup inventory and issue/milestone plan are current. Fixed chats need clean source-of-truth context before they are useful.
+
+Prompt root:
+
+`crypto_options_app/artifacts/team_coordination/`
+
+Current start gates:
+
+- Frontend Control Center Developer can start after Batch 3 from `fixed_chat_frontend.md` if it stays isolated to UI/contracts and does not change backend, DB, promotion, replay, or trading runtime.
+- Signal And Strategy Management Cleanup should wait until Batch 4 compatibility-wrapper decisions and GitHub milestones/issues are ready.
+- Batch 4 latest artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`.
 
 ## Signal And Strategy Management Cleanup
 
@@ -14,7 +24,12 @@ Start from:
 - `crypto_options_app/artifacts/team_coordination/promotion_policy.md`
 - `crypto_options_app/artifacts/team_coordination/fixed_chat_signal_strategy.md`
 - `crypto_options_app/artifacts/team_coordination/github_issue_milestone_plan.md`
+- `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.json`
 - `crypto_options_app/artifacts/reports/transition_readiness_latest.json`
+
+Start gate:
+
+Do not start this fixed chat until Batch 4 compatibility-wrapper decisions and GitHub milestones/issues are ready. This lane touches strategy/signal code and queue semantics, which still intersect old `app.*`/`codex_tool.*` compatibility imports.
 
 First task:
 
@@ -28,6 +43,10 @@ Start from:
 - `crypto_options_app/artifacts/team_coordination/fixed_chat_frontend.md`
 - `crypto_options_app/artifacts/team_coordination/github_issue_milestone_plan.md`
 - `crypto_options_app/artifacts/reports/transition_readiness_latest.json`
+
+Start gate:
+
+Can start now after Batch 3, provided the lane uses API contracts/mocks for missing endpoints and does not change backend, DB, promotion, replay, or trading runtime.
 
 First task:
 
