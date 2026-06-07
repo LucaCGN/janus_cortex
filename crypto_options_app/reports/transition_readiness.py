@@ -107,6 +107,7 @@ def render_transition_readiness_markdown(review: dict[str, Any]) -> str:
     lines.append(f"- Live candidates: `{promotion.get('live_candidate_count')}`")
     lines.append(f"- Shadow ready: `{promotion.get('shadow_ready_count')}`")
     lines.append(f"- Strict signal blockers: `{promotion.get('strict_signal_blocker_count')}`")
+    lines.append(f"- Policy contract: `{promotion.get('policy_contract_schema_version') or 'missing'}`")
     lines.extend(["", "## Repo Summary"])
     repo = review.get("repo") or {}
     lines.append(f"- Dirty paths: `{repo.get('dirty_path_count')}`")
@@ -225,6 +226,7 @@ def _timed_json_get(url: str, *, timeout_seconds: float) -> dict[str, Any]:
 def _promotion_state(payload: dict[str, Any]) -> dict[str, Any]:
     strategies = list(payload.get("strategies") or [])
     by_state = dict(payload.get("by_promotion_state") or {})
+    policy_contract = payload.get("policy_contract") if isinstance(payload.get("policy_contract"), dict) else {}
     live_candidates = [row for row in strategies if row.get("promotion_state") == "LIVE_CANDIDATE"]
     strict_blockers = [
         row
@@ -247,6 +249,8 @@ def _promotion_state(payload: dict[str, Any]) -> dict[str, Any]:
         "orders_allowed": bool(payload.get("orders_allowed")),
         "live_trading_authorized": bool(payload.get("live_trading_authorized")),
         "manual_orders_avoided": bool(payload.get("manual_orders_avoided", True)),
+        "policy_contract_schema_version": policy_contract.get("schema_version"),
+        "policy_contract_present": policy_contract.get("schema_version") == "crypto_options_promotion_policy_contract_v1",
     }
 
 
@@ -378,6 +382,8 @@ def _transition_blockers(
             warnings.append("health_degraded")
     if promotion.get("accidental_live_authorized_count"):
         blockers.append("strategy_promotion_contains_accidental_live_authorized_rows")
+    if not promotion.get("policy_contract_present"):
+        blockers.append("strategy_promotion_policy_contract_missing")
     if promotion.get("live_candidate_count"):
         warnings.append("live_candidates_exist_review_before_live")
     if repo.get("dirty_path_count"):

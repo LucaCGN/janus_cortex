@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T06:40:00Z
+Updated: 2026-06-07T06:48:00Z
 
 ## Objective
 
@@ -38,6 +38,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/`. Frontend fixed chat can start from `fixed_chat_prompts/frontend_control_center_developer.md`; signal/strategy cleanup can start from `fixed_chat_prompts/signal_strategy_management_cleanup.md`.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 - Promotion policy contract: strategy promotion summaries expose `crypto_options_promotion_policy_contract_v1`; `PASSED`/`SELECTED`/`STRUCTURAL_PASS`/`STRUCTURAL_ALTERNATE` are not promotable signal states, exactly 70% win rate is not enough for live candidacy, and chat/automation cannot authorize live orders.
+- Transition readiness now blocks if the strategy promotion endpoint lacks `crypto_options_promotion_policy_contract_v1`.
 
 ## Active Fixed Chats
 
@@ -60,5 +61,5 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
-7. Continue issue #153 by wiring `policy_contract` into frontend rendering and signal/strategy queue worker decisions.
+7. Continue issue #153 by wiring `policy_contract` into frontend rendering and signal/strategy queue worker decisions; readiness already verifies the endpoint contract is present.
 8. Use `fixed_chat_bootstrap.md` and `fixed_chat_prompts/README.md` before starting any fixed chat.

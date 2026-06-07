@@ -62,6 +62,7 @@ def test_promotion_state_blocks_accidental_live() -> None:
                     "signal_gate": {"strict_replay_required_count": 1},
                 },
             ],
+            "policy_contract": {"schema_version": "crypto_options_promotion_policy_contract_v1"},
             "manual_orders_avoided": True,
         }
     )
@@ -70,6 +71,7 @@ def test_promotion_state_blocks_accidental_live() -> None:
     assert promotion["shadow_ready_count"] == 1
     assert promotion["strict_signal_blocker_count"] == 1
     assert promotion["accidental_live_authorized_count"] == 1
+    assert promotion["policy_contract_present"] is True
 
 
 def test_transition_blockers_require_postgres_and_disabled_orders() -> None:
@@ -88,7 +90,7 @@ def test_transition_blockers_require_postgres_and_disabled_orders() -> None:
             }
         },
         repo={"dirty_path_count": 1},
-        promotion={"accidental_live_authorized_count": 0, "live_candidate_count": 0},
+        promotion={"accidental_live_authorized_count": 0, "live_candidate_count": 0, "policy_contract_present": True},
     )
 
     assert blockers == []
@@ -123,6 +125,7 @@ def test_build_transition_review_with_mocked_inputs(monkeypatch) -> None:
                     "strategy_count": 0,
                     "strategies": [],
                     "by_promotion_state": {},
+                    "policy_contract": {"schema_version": "crypto_options_promotion_policy_contract_v1"},
                     "manual_orders_avoided": True,
                 },
             },
@@ -136,3 +139,26 @@ def test_build_transition_review_with_mocked_inputs(monkeypatch) -> None:
     assert review["schema_version"] == "crypto_options_transition_readiness_v1"
     assert review["status"] == "ok"
     assert review["manual_orders_avoided"] is True
+
+
+def test_transition_blockers_require_strategy_promotion_policy_contract() -> None:
+    blockers, warnings = transition_readiness._transition_blockers(
+        coordination={"status": "ok"},
+        storage={"status": "ok"},
+        endpoints={
+            "health": {
+                "status": "ok",
+                "payload": {
+                    "status": "ok",
+                    "db": {"connection_is_postgres": True},
+                    "orders_allowed": False,
+                    "live_trading_authorized": False,
+                },
+            }
+        },
+        repo={"dirty_path_count": 0},
+        promotion={"accidental_live_authorized_count": 0, "live_candidate_count": 0, "policy_contract_present": False},
+    )
+
+    assert blockers == ["strategy_promotion_policy_contract_missing"]
+    assert warnings == []
