@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T04:35:15Z
+Updated: 2026-06-07T04:40:00Z
 
 ## Rule
 
@@ -72,6 +72,13 @@ Current staging split:
 - Stage candidates: 295
 - Hold paths: 386
 - Manual review paths: 0
+
+Batch 0 result:
+
+- Branch: `codex/crypto-transition-control-plane`
+- Commit: `d642702` (`Add crypto options transition control plane baseline`)
+- Committed paths: 295 source-of-truth files
+- Held paths: generated/data/runtime artifacts remain unstaged
 
 ### Batch 1: Local State And Root Config Review
 

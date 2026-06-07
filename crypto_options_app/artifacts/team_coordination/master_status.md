@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T04:36:20Z
+Updated: 2026-06-07T04:40:00Z
 
 ## Objective
 
@@ -25,7 +25,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Repo cleanup inventory: path-level artifact generated; 902 dirty/status paths, 219 review-required paths, 681 active crypto paths, 131 crypto compatibility wrapper candidates, 72 legacy move candidates.
 - Repo cleanup batches: artifact generated; Batch 0 active crypto baseline branch is `codex/crypto-transition-control-plane`; reference moves and fixed chats remain gated.
 - Batch 0 staging plan: 295 stage candidates, 386 hold paths, 0 manual-review paths.
-- Batch 0 staging state: 295 source-of-truth candidates staged; generated/data/runtime artifacts remain unstaged.
+- Batch 0 baseline commit: `d642702` (`Add crypto options transition control plane baseline`) with 295 source-of-truth paths. Generated/data/runtime artifacts remain unstaged.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 
 ## Active Fixed Chats
@@ -43,9 +43,9 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 ## Next Transition Actions
 
-1. Review the staged Batch 0 baseline and commit it separately from reference moves.
+1. Proceed to Batch 1 local automation state and `requirements.txt` review on a separate branch.
 2. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
-3. Keep Batch 1-4 cleanup on separate branches from `repo_cleanup_batches_latest.json`.
+3. Keep Batch 2-4 cleanup on separate branches from `repo_cleanup_batches_latest.json`.
 4. Decide which 131 crypto compatibility wrappers must stay until runtime routes are fully cut over.
 5. Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.
 6. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.
