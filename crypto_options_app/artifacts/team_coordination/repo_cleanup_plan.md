@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T05:38:00Z
+Updated: 2026-06-07T05:46:00Z
 
 ## Rule
 
@@ -153,12 +153,13 @@ Current Batch 4 audit result:
 - Wrapper candidates: 131
 - Referenced by active crypto code/tests: 0
 - Referenced only by docs/reference text: 52
-- No detected references: 60
+- No detected references: 59
 - Automatic wrapper moves allowed: `false`
 - Decision: no bulk moves yet. Active callers are cut over, but non-active wrapper categories still need explicit keep/archive/remove/replace decisions.
 - Cutover progress: active callers for old data nodes, options pipelines, crypto-options services, API DB helper, runtime local paths, and Polymarket portfolio support now use `crypto_options_app` modules.
+- Decision-plan artifact: `crypto_options_app/artifacts/reports/compatibility_wrapper_decisions_latest.md`; active import blockers cleared, non-active wrapper decisions reviewable, GitHub issue creation can start after this branch is reviewable.
 - Frontend fixed chat can start after Batch 3 using `fixed_chat_prompts/frontend_control_center_developer.md` because it must not touch backend/runtime logic.
-- Signal/strategy cleanup fixed chat remains gated until non-active Batch 4 wrapper decisions and GitHub issues/milestones are ready.
+- Signal/strategy cleanup fixed chat remains gated until GitHub issues/milestones are ready.
 
 ### Batch 5: GitHub Source-Of-Truth Setup
 
@@ -182,7 +183,7 @@ Fixed chats remain gated until:
 Current exception:
 
 - Frontend Control Center fixed chat may start now from `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/frontend_control_center_developer.md` because Batch 3 is closed and frontend work can stay isolated to contracts/UI.
-- Signal And Strategy Management Cleanup fixed chat should not start yet; wait for non-active Batch 4 wrapper decisions and GitHub source-of-truth, then start from `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_strategy_management_cleanup.md`.
+- Signal And Strategy Management Cleanup fixed chat should not start yet; wait for GitHub source-of-truth, then start from `crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_strategy_management_cleanup.md`.
 
 The fixed-chat prompts are ready, but starting the chats before this gate would create duplicate context and likely make cleanup harder.
 

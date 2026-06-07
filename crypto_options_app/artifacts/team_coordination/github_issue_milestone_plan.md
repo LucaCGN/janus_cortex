@@ -1,6 +1,6 @@
 ﻿# Crypto Options GitHub Issue And Milestone Plan
 
-Generated: 2026-06-07T04:15:00Z
+Updated: 2026-06-07T05:46:00Z
 
 ## Purpose
 
@@ -78,3 +78,5 @@ Create these issues only after:
 - `repo_cleanup_inventory.md` is current.
 - direct runtime SQLite offender report is reviewed.
 - the worktree can be split into reviewable crypto-focused commits.
+- `compatibility_wrapper_decisions_latest.md` reports `active_import_blockers_cleared=true`.
+- the Batch 4 decision-plan branch is committed and reviewable.

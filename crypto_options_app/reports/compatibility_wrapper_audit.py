@@ -414,14 +414,23 @@ def _recommended_decision(
 
 
 def _next_actions(*, active_reference_count: int, no_reference_count: int) -> list[str]:
-    actions = [
-        "Do not bulk-move compatibility wrappers while active crypto code still imports old app/codex_tool paths.",
-        "Cut active callers over to crypto_options_app modules/scripts in small tested groups.",
+    if active_reference_count:
+        actions = [
+            "Do not bulk-move compatibility wrappers while active crypto code still imports old app/codex_tool paths.",
+            "Cut active callers over to crypto_options_app modules/scripts in small tested groups.",
+            f"Resolve active references for {active_reference_count} wrapper candidates before moving them.",
+        ]
+    else:
+        actions = [
+            "Active crypto code/test imports are cut over; Batch 4 is now a non-active wrapper decision problem.",
+            "Create or refresh the compatibility wrapper decision plan before moving, archiving, or removing wrappers.",
+        ]
+    actions.extend(
+        [
         "Keep frontend fixed chat eligible after Batch 3; it must use existing prompt and avoid backend promotion/runtime changes.",
         "Hold signal/strategy cleanup fixed chat until Batch 4 import decisions and GitHub issue source-of-truth are ready.",
-    ]
-    if active_reference_count:
-        actions.append(f"Resolve active references for {active_reference_count} wrapper candidates before moving them.")
+        ]
+    )
     if no_reference_count:
         actions.append(f"Review {no_reference_count} no-reference wrappers for compatibility archive or removal after tests.")
     return actions
