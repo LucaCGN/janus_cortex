@@ -1,0 +1,29 @@
+from app.api.routers.analysis_studio import router as analysis_studio_router
+from app.api.routers.catalog import router as catalog_router
+from app.api.routers.crypto_options_market_data import router as crypto_options_market_data_router
+from app.api.routers.crypto_options_signals import router as crypto_options_signals_router
+from app.api.routers.market_data import router as market_data_router
+from app.api.routers.nba_live import router as nba_live_router
+from app.api.routers.nba_read import router as nba_read_router
+from app.api.routers.ops import router as ops_router
+from app.api.routers.portfolio import router as portfolio_router
+from app.api.routers.runtime_control import router as runtime_control_router
+from app.api.routers.sync import router as sync_router
+from app.api.routers.system_registry import router as system_registry_router
+from app.api.routers.wnba_read import router as wnba_read_router
+
+__all__ = [
+    "analysis_studio_router",
+    "catalog_router",
+    "crypto_options_market_data_router",
+    "crypto_options_signals_router",
+    "market_data_router",
+    "nba_live_router",
+    "nba_read_router",
+    "ops_router",
+    "portfolio_router",
+    "runtime_control_router",
+    "sync_router",
+    "system_registry_router",
+    "wnba_read_router",
+]
