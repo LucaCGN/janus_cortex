@@ -185,7 +185,7 @@ def _endpoint_state(options: TransitionReadinessOptions) -> dict[str, Any]:
     return {
         "health": _timed_json_get(f"{base}/health", timeout_seconds=options.endpoint_timeout_seconds),
         "signals_validation_status": _timed_json_get(
-            f"{base}/signals/validation/status",
+            f"{base}/signals/validation/status?include_signals=false",
             timeout_seconds=options.endpoint_timeout_seconds,
         ),
         "strategies_promotion": _timed_json_get(

@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -61,12 +61,16 @@ def crypto_options_signal_backtests_dashboard() -> HTMLResponse:
 
 
 @router.get("/validation/status")
-def crypto_options_signal_validation_status(request: Request) -> dict:
+def crypto_options_signal_validation_status(
+    request: Request,
+    include_signals: bool = Query(default=True),
+    signal_limit: int | None = Query(default=None, ge=1, le=500),
+) -> dict:
     """Return compact read-only validation status for all signal variants."""
 
     with _connect_request_db(request) as conn:
         _sync_signal_catalog_if_needed(conn, enqueue=True)
-        return validation_status(conn)
+        return validation_status(conn, include_signals=include_signals, signal_limit=signal_limit)
 
 
 @router.get("/selection")

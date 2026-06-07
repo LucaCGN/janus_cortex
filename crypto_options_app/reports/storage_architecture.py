@@ -168,7 +168,7 @@ def _endpoint_timing_audit(options: StorageArchitectureAuditOptions) -> dict[str
     endpoints = {
         "health": f"{base}/health",
         "dashboard_control_center_state": f"{base}/dashboard/control-center-state",
-        "signals_validation_status": f"{base}/signals/validation/status",
+        "signals_validation_status": f"{base}/signals/validation/status?include_signals=false",
         "strategies_promotion": f"{base}/strategies/promotion",
     }
     rows = {

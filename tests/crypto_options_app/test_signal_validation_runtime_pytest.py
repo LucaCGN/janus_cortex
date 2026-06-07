@@ -675,6 +675,8 @@ def test_signal_backtest_api_and_webui_are_read_only_pytest(tmp_path: Path) -> N
 
     page = client.get("/v1/crypto-options-app/signals/backtests")
     status = client.get("/v1/crypto-options-app/signals/validation/status")
+    summary_status = client.get("/v1/crypto-options-app/signals/validation/status?include_signals=false")
+    limited_status = client.get("/v1/crypto-options-app/signals/validation/status?signal_limit=3")
     selection = client.get("/v1/crypto-options-app/signals/selection")
     queue = client.get("/v1/crypto-options-app/signals/validation/queue")
     results = client.get("/v1/crypto-options-app/signals/validation/results")
@@ -697,6 +699,17 @@ def test_signal_backtest_api_and_webui_are_read_only_pytest(tmp_path: Path) -> N
     assert results.status_code == 200
     assert review.status_code == 200
     assert status.json()["orders_allowed"] is False
+    assert status.json()["signals_included"] is True
+    assert status.json()["returned_signal_count"] == status.json()["signal_count"]
+    assert summary_status.status_code == 200
+    assert summary_status.json()["signals_included"] is False
+    assert summary_status.json()["signals"] == []
+    assert summary_status.json()["returned_signal_count"] == 0
+    assert summary_status.json()["signal_count"] == status.json()["signal_count"]
+    assert limited_status.status_code == 200
+    assert limited_status.json()["signals_included"] is True
+    assert limited_status.json()["returned_signal_count"] == 3
+    assert len(limited_status.json()["signals"]) == 3
     assert selection.json()["orders_allowed"] is False
     assert selection.json()["live_trading_authorized"] is False
     assert selection.json()["schema_version"] == "crypto_options_signal_selection_v1"

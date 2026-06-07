@@ -78,3 +78,11 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 10. Keep Postgres memory pressure under review; current health/readiness must stay bounded and Redis remains disabled unless a measured hot-plane use case is selected.
 11. Continue Batch 4 compatibility-wrapper review and repo cleanup discipline; keep generated/runtime/data artifacts unstaged.
 12. Let fixed chats operate only from their prompt files, GitHub issues, and `team_coordination` handoffs; no fixed chat or automation has live authority.
+
+## 2026-06-07T11:21Z Signal Status Load Reduction
+
+- Signal validation status now supports a summary mode: `/v1/crypto-options-app/signals/validation/status?include_signals=false`.
+- Full signal rows remain available by default for UI/detail use, and `signal_limit` can bound embedded rows for focused reads.
+- Storage and transition readiness audits now call summary mode. Latest storage audit measured `signals_validation_status` at 86.31 ms and 596 bytes, down from roughly 1.4-1.5 s and ~988 KB.
+- Fixed chat startup readiness remains `ready` for both immediate fixed chats, with no live authority.
+- Remaining storage warning is Postgres memory over 6GiB; next pressure targets are dashboard/control-center payload size and Postgres memory behavior, not signal status.

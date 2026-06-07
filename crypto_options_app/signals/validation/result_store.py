@@ -230,7 +230,12 @@ def finish_validation_run(
         _advance_queue_after_result(conn, queue_item_key=queue_item_key, result=phase_result, now=now)
 
 
-def validation_status(conn: Any) -> dict[str, Any]:
+def validation_status(
+    conn: Any,
+    *,
+    include_signals: bool = True,
+    signal_limit: int | None = None,
+) -> dict[str, Any]:
     _create_schema_if_missing(conn)
     generated_at_utc = datetime.now(UTC).isoformat()
     spec_rows = {
@@ -261,8 +266,14 @@ def validation_status(conn: Any) -> dict[str, Any]:
         ).fetchall()
     ]
     rows = _current_signal_status_rows(raw_rows)
-    strict_reviews = _strict_promotion_reviews(conn, rows)
-    for row in rows:
+    display_rows = rows
+    if signal_limit is not None:
+        display_rows = display_rows[: max(1, int(signal_limit))]
+    if include_signals:
+        strict_reviews = _strict_promotion_reviews(conn, display_rows)
+    else:
+        strict_reviews = {}
+    for row in display_rows:
         key = (str(row.get("signal_id") or ""), str(row.get("version") or "v1"))
         row.update(strict_reviews.get(key, _strict_promotion_review_from_rows(row, {}, _empty_diversity_summary(), {})))
     by_status: dict[str, int] = {}
@@ -283,7 +294,10 @@ def validation_status(conn: Any) -> dict[str, Any]:
         "by_promotion_state": by_promotion_state,
         "review_queue": review_queue,
         "integrity": integrity,
-        "signals": rows,
+        "signals_included": bool(include_signals),
+        "signal_limit": signal_limit,
+        "returned_signal_count": len(display_rows) if include_signals else 0,
+        "signals": display_rows if include_signals else [],
         "orders_allowed": False,
         "live_trading_authorized": False,
     }
