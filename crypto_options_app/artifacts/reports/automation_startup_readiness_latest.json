@@ -1,0 +1,106 @@
+{
+  "activation": {
+    "create_immediately": false,
+    "note": "This report only gates limited automations; it does not create or authorize them.",
+    "requires_user_or_master_request": true
+  },
+  "automation_count": 3,
+  "common": {
+    "blockers": [],
+    "files": {
+      "automation_registry": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\automation_registry.md"
+      },
+      "fixed_chat_startup_readiness": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\reports\\fixed_chat_startup_readiness_latest.json"
+      },
+      "handoff_queue": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\team_coordination\\handoff_queue.jsonl"
+      },
+      "transition_readiness": {
+        "exists": true,
+        "path": "crypto_options_app\\artifacts\\reports\\transition_readiness_latest.json"
+      }
+    },
+    "fixed_chat_startup_status": "ready",
+    "status": "ok",
+    "transition_readiness_status": "degraded"
+  },
+  "future_forbidden_automations": [
+    "autonomous-live-promotion",
+    "broad-multi-lane-worker-swarm"
+  ],
+  "generated_at_utc": "2026-06-07T07:09:34.418186+00:00",
+  "planned_automations": {
+    "db-data-observability": {
+      "blockers": [],
+      "cadence": "15m",
+      "forbidden_actions": [
+        "manual_orders",
+        "live_trading",
+        "monolithic_imports",
+        "unbounded_replay"
+      ],
+      "mode": "report_first",
+      "reasoning": "low_or_medium",
+      "required_artifacts": [
+        "crypto_options_app/artifacts/reports/storage_architecture_audit_latest.json",
+        "crypto_options_app/artifacts/reports/runtime_audit_latest.json",
+        "crypto_options_app/artifacts/reports/transition_readiness_latest.json"
+      ],
+      "scope": "Postgres/runtime, A/B/C/D source health, storage audit, bounded blockers.",
+      "status": "ready_to_schedule"
+    },
+    "frontend-status-reporter": {
+      "blockers": [],
+      "cadence": "30-60m",
+      "forbidden_actions": [
+        "manual_orders",
+        "live_trading",
+        "promotion_logic_changes",
+        "db_storage_changes"
+      ],
+      "mode": "report_first",
+      "reasoning": "low_or_medium",
+      "required_artifacts": [
+        "crypto_options_app/artifacts/team_coordination/fixed_chat_frontend.md",
+        "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/frontend_control_center_developer.md",
+        "crypto_options_app/artifacts/reports/transition_readiness_latest.json"
+      ],
+      "scope": "Frontend/control-center endpoint status, UI contract drift, and read-only reporting.",
+      "status": "ready_to_schedule"
+    },
+    "signal-strategy-queue-worker": {
+      "blockers": [],
+      "cadence": "5-15m",
+      "forbidden_actions": [
+        "manual_orders",
+        "live_trading",
+        "db_storage_infrastructure_changes",
+        "frontend_styling_changes"
+      ],
+      "mode": "one_bounded_batch",
+      "reasoning": "medium_or_high",
+      "required_artifacts": [
+        "crypto_options_app/artifacts/reports/signal_strategy_cleanup_batch_latest.md",
+        "crypto_options_app/artifacts/team_coordination/fixed_chat_signal_strategy.md",
+        "crypto_options_app/artifacts/team_coordination/promotion_policy.md"
+      ],
+      "scope": "One signal/strategy cleanup row or one bounded batch from the policy-aware cleanup report.",
+      "status": "ready_to_schedule"
+    }
+  },
+  "ready_count": 3,
+  "safety": {
+    "live_trading_authorized": false,
+    "manual_orders_avoided": true,
+    "no_autonomous_live_promotion": true,
+    "orders_allowed": false
+  },
+  "schema_version": "crypto_options_automation_startup_readiness_v1",
+  "shared_blockers": [],
+  "status": "ready_to_schedule"
+}

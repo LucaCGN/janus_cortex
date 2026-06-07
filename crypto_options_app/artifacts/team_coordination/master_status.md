@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T07:03:34Z
+Updated: 2026-06-07T07:09:03Z
 
 ## Objective
 
@@ -44,6 +44,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Signal/strategy cleanup batch CLI is available: `python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12`. It is read-only and emits bounded cleanup classifications for fixed chats and future queue workers.
 - First bounded cleanup batch artifact: `crypto_options_app/artifacts/reports/signal_strategy_cleanup_batch_latest.md`, generated at `2026-06-07T06:56:17Z` with 12 signal rows and 6 strategy rows. Overall queue shape: 235 signals (`125 NEEDS_VARIANT`, `97 PROMOTED` cleanup classification only, `13 STRICT_REPLAY_REQUIRED`) and 90 strategies (`1 BLOCKED`, `54 NEEDS_VARIANT`, `35 SHADOW_REQUIRED`). No live authority is implied.
 - Fixed chat startup readiness artifact: `crypto_options_app/artifacts/reports/fixed_chat_startup_readiness_latest.md`; status `ready`, `2/2` current fixed chats ready, future specialist prompts remain future-only, and no fixed chat has live authority.
+- Limited automation startup readiness artifact: `crypto_options_app/artifacts/reports/automation_startup_readiness_latest.md`; status `ready_to_schedule`, `3/3` planned limited automations ready, `create_immediately=false`, no live authority.
 
 ## Active Fixed Chats
 
@@ -62,7 +63,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 1. Commit the Batch 4 decision plan so non-active wrapper handling is reviewable.
 2. Start fixed chats from their prompt files and linked GitHub issues when user is ready; verify `fixed_chat_startup_readiness_latest.md` remains `ready` first.
-3. Use the GitHub issue source-of-truth before starting any bounded automation beyond the single master heartbeat.
+3. Use the GitHub issue source-of-truth before starting any bounded automation beyond the single master heartbeat; verify `automation_startup_readiness_latest.md` remains `ready_to_schedule` first.
 4. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 5. Keep legacy SQLite profile/market side stores fenced to old research CLIs only; their defaults now point to `local/shared/artifacts/crypto-options-research/...`, not the central runtime DB path.
 6. Keep Redis disabled until a measured hot-plane use case is selected; use only TTL cache/queue-lock semantics through the adapter, never durable trading truth.
