@@ -30,7 +30,10 @@ Do not work on:
 3. Prefer retiring weak stale variants over keeping ambiguous review rows.
 4. Create V2-V5 only when the variant covers a real gap or fixes a concrete blocker.
 5. Do not mark `PASSED`, `SELECTED`, or `STRUCTURAL_ALTERNATE` as live-safe without strict replay and strategy evidence.
-6. Write outcomes back to this file or a dated note under `crypto_options_app/artifacts/team_coordination`.
+6. Use the read-only cleanup batch CLI when a fresh bounded packet is needed:
+   `python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12`.
+7. Treat cleanup classifications as queue-management guidance, not live authority.
+8. Write outcomes back to this file or a dated note under `crypto_options_app/artifacts/team_coordination`.
 
 ## Strategy Direction
 
