@@ -1,8 +1,8 @@
 # Crypto Options Repo Cleanup Batches
 
-- Generated: `2026-06-07T04:46:53.724471+00:00`
+- Generated: `2026-06-07T04:52:31.049206+00:00`
 - Status: `degraded`
-- Source inventory: `2026-06-07T04:46:21.211472+00:00`
+- Source inventory: `2026-06-07T04:52:30.822380+00:00`
 - Manual orders avoided: `True`
 
 ## Gates
@@ -17,43 +17,39 @@
 ### No-Move Active Crypto Baseline
 - ID: `batch_0_active_crypto_baseline`
 - Branch: `codex/crypto-transition-control-plane`
-- Entries: `395`
+- Entries: `398`
 - Review required: `0`
 - Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Establish active crypto baseline and focused tests before reference moves.
-  - `crypto_options_app/artifacts/team_coordination/handoff_queue.jsonl` -> `none`
-  - `crypto_options_app/artifacts/team_coordination/master_status.md` -> `none`
-  - `crypto_options_app/artifacts/team_coordination/repo_cleanup_plan.md` -> `none`
   - `crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.err.txt` -> `none`
   - `crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.out.json` -> `none`
   - `crypto_options_app/artifacts/automation/codex-signal-v5-retry-complete-20260605T192649Z.err.txt` -> `none`
   - `crypto_options_app/artifacts/automation/codex-signal-v5-retry-complete-20260605T192649Z.out.json` -> `none`
   - `crypto_options_app/artifacts/automation/option_price_capture_active_process.json` -> `none`
-  - ... `387` additional paths in JSON artifact
+  - `crypto_options_app/artifacts/automation/option_price_capture_status.json` -> `none`
+  - `crypto_options_app/artifacts/automation/postgres_hot_sync_status.json` -> `none`
+  - `crypto_options_app/artifacts/automation/profile_distribution_external_probe_status.json` -> `none`
+  - ... `390` additional paths in JSON artifact
 
 ### Local State And Root Config Review
 - ID: `batch_1_local_state_root_config_review`
 - Branch: `codex/crypto-repo-local-state-cleanup`
-- Entries: `2`
-- Review required: `2`
+- Entries: `1`
+- Review required: `1`
 - Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Decide ignore/archive behavior for local automation state and root config churn.
-  - `.gitignore` -> `none`
   - `requirements.txt` -> `none`
 
 ### WNBA/NBA Reference Move
 - ID: `batch_2_wnba_nba_reference_move`
 - Branch: `codex/crypto-repo-wnba-nba-reference`
-- Entries: `3`
-- Review required: `3`
-- Move candidates: `3`
+- Entries: `0`
+- Review required: `0`
+- Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Move reviewed sports-bot references into wnba_nba_app_reference without deleting work.
-  - `app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md` -> `wnba_nba_app_reference/app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md`
-  - `app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md` -> `wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md`
-  - `app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md` -> `wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md`
 
 ### Global Legacy Reference Move
 - ID: `batch_3_global_reference_move`
@@ -103,13 +99,16 @@
 ### Reference Already Placed
 - ID: `reference_already_placed`
 - Branch: `none`
-- Entries: `2`
+- Entries: `5`
 - Review required: `0`
 - Move candidates: `0`
 - Move allowed now: `False`
 - Purpose: Existing reference-root files require no move.
   - `global_app_reference/README.md` -> `none`
   - `wnba_nba_app_reference/README.md` -> `none`
+  - `wnba_nba_app_reference/app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md` -> `none`
+  - `wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md` -> `none`
+  - `wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md` -> `none`
 
 ### Manual Review
 - ID: `manual_review`

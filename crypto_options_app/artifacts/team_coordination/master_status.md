@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T04:49:00Z
+Updated: 2026-06-07T04:53:00Z
 
 ## Objective
 
@@ -22,12 +22,13 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Verification latest: storage/Postgres/runtime audit tests passed; health reports Postgres, orders disabled, live false.
 - Transition readiness review: `degraded`, broad automation `not_ready`, no accidental live candidates.
 - GitHub issue/milestone plan: drafted locally; remote issue creation is gated by repo cleanup inventory and reviewable commits.
-- Repo cleanup inventory: path-level artifact generated; 602 dirty/status paths, 205 review-required paths, 395 active crypto paths, 131 crypto compatibility wrapper candidates, 72 legacy move candidates.
-- Repo cleanup batches: artifact generated; Batch 0 active crypto baseline branch is `codex/crypto-transition-control-plane`; Batch 1 local/root branch is `codex/crypto-repo-local-state-cleanup`; reference moves and fixed chats remain gated.
+- Repo cleanup inventory: path-level artifact generated; 604 dirty/status paths, 201 review-required paths, 398 active crypto paths, 131 crypto compatibility wrapper candidates, 69 legacy move candidates.
+- Repo cleanup batches: artifact generated; Batch 0 active crypto baseline branch is `codex/crypto-transition-control-plane`; Batch 1 local/root branch is `codex/crypto-repo-local-state-cleanup`; Batch 2 WNBA/NBA branch is `codex/crypto-repo-wnba-nba-reference`; reference moves and fixed chats remain gated.
 - Batch 0 staging plan: 295 stage candidates, 386 hold paths, 0 manual-review paths.
 - Batch 0 baseline commit: `d642702` (`Add crypto options transition control plane baseline`) with 295 source-of-truth paths. Generated/data/runtime artifacts remain unstaged.
 - Batch 0 handoff commit: `b995271` (`Record crypto baseline handoff`).
 - Batch 1 local/root review commit: `645eb99` (`Ignore local Codex automation memory`); `.codex_automation_memory/` is ignored, and the `streamlit` dependency change remains held until the frontend/tooling path decides whether the observer app stays active.
+- Batch 2 WNBA/NBA reference move: three sports-reference docs moved under `wnba_nba_app_reference/`; commit pending.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 
 ## Active Fixed Chats
@@ -45,7 +46,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 ## Next Transition Actions
 
-1. Open Batch 2 WNBA/NBA reference move on `codex/crypto-repo-wnba-nba-reference`.
+1. Commit Batch 2 WNBA/NBA reference move.
 2. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 3. Keep Batch 2-4 cleanup on separate branches from `repo_cleanup_batches_latest.json`.
 4. Decide which 131 crypto compatibility wrappers must stay until runtime routes are fully cut over.

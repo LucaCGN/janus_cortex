@@ -1,41 +1,16 @@
 {
   "batch_counts": {
-    "batch_0_active_crypto_baseline": 395,
-    "batch_1_local_state_root_config_review": 2,
-    "batch_2_wnba_nba_reference_move": 3,
+    "batch_0_active_crypto_baseline": 398,
+    "batch_1_local_state_root_config_review": 1,
     "batch_3_global_reference_move": 69,
     "batch_4_crypto_compatibility_wrapper_cutover": 131,
-    "reference_already_placed": 2
+    "reference_already_placed": 5
   },
   "batches": {
     "batch_0_active_crypto_baseline": {
       "batch_id": "batch_0_active_crypto_baseline",
       "branch": "codex/crypto-transition-control-plane",
       "entries": [
-        {
-          "classification": "crypto_active",
-          "path": "crypto_options_app/artifacts/team_coordination/handoff_queue.jsonl",
-          "proposed_action": "keep_active_crypto",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "M"
-        },
-        {
-          "classification": "crypto_active",
-          "path": "crypto_options_app/artifacts/team_coordination/master_status.md",
-          "proposed_action": "keep_active_crypto",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "M"
-        },
-        {
-          "classification": "crypto_active",
-          "path": "crypto_options_app/artifacts/team_coordination/repo_cleanup_plan.md",
-          "proposed_action": "keep_active_crypto",
-          "proposed_destination": null,
-          "review_required": false,
-          "status": "M"
-        },
         {
           "classification": "crypto_active",
           "path": "crypto_options_app/artifacts/automation/codex-signal-v5-complete-20260605T191003Z.err.txt",
@@ -1542,6 +1517,38 @@
         },
         {
           "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T044621Z.json",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T044621Z.md",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T044653Z.json",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_batches_20260607T044653Z.md",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
           "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T042254Z.json",
           "proposed_action": "keep_active_crypto",
           "proposed_destination": null,
@@ -1583,6 +1590,22 @@
         {
           "classification": "crypto_active",
           "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T043452Z.md",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T044621Z.json",
+          "proposed_action": "keep_active_crypto",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "crypto_active",
+          "path": "crypto_options_app/artifacts/reports/repo_cleanup_inventory_20260607T044621Z.md",
           "proposed_action": "keep_active_crypto",
           "proposed_destination": null,
           "review_required": false,
@@ -3173,7 +3196,7 @@
           "status": "??"
         }
       ],
-      "entry_count": 395,
+      "entry_count": 398,
       "move_allowed_now": false,
       "move_candidate_count": 0,
       "purpose": "Establish active crypto baseline and focused tests before reference moves.",
@@ -3186,14 +3209,6 @@
       "entries": [
         {
           "classification": "root_config_review",
-          "path": ".gitignore",
-          "proposed_action": "manual_root_config_review",
-          "proposed_destination": null,
-          "review_required": true,
-          "status": "M"
-        },
-        {
-          "classification": "root_config_review",
           "path": "requirements.txt",
           "proposed_action": "manual_root_config_review",
           "proposed_destination": null,
@@ -3201,47 +3216,22 @@
           "status": "M"
         }
       ],
-      "entry_count": 2,
+      "entry_count": 1,
       "move_allowed_now": false,
       "move_candidate_count": 0,
       "purpose": "Decide ignore/archive behavior for local automation state and root config churn.",
-      "review_required_count": 2,
+      "review_required_count": 1,
       "title": "Local State And Root Config Review"
     },
     "batch_2_wnba_nba_reference_move": {
       "batch_id": "batch_2_wnba_nba_reference_move",
       "branch": "codex/crypto-repo-wnba-nba-reference",
-      "entries": [
-        {
-          "classification": "wnba_nba_reference_candidate",
-          "path": "app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md",
-          "proposed_action": "review_move_to_wnba_nba_reference",
-          "proposed_destination": "wnba_nba_app_reference/app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "wnba_nba_reference_candidate",
-          "path": "app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md",
-          "proposed_action": "review_move_to_wnba_nba_reference",
-          "proposed_destination": "wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md",
-          "review_required": true,
-          "status": "??"
-        },
-        {
-          "classification": "wnba_nba_reference_candidate",
-          "path": "app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md",
-          "proposed_action": "review_move_to_wnba_nba_reference",
-          "proposed_destination": "wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md",
-          "review_required": true,
-          "status": "??"
-        }
-      ],
-      "entry_count": 3,
+      "entries": [],
+      "entry_count": 0,
       "move_allowed_now": false,
-      "move_candidate_count": 3,
+      "move_candidate_count": 0,
       "purpose": "Move reviewed sports-bot references into wnba_nba_app_reference without deleting work.",
-      "review_required_count": 3,
+      "review_required_count": 0,
       "title": "WNBA/NBA Reference Move"
     },
     "batch_3_global_reference_move": {
@@ -4909,9 +4899,33 @@
           "proposed_destination": null,
           "review_required": false,
           "status": "??"
+        },
+        {
+          "classification": "wnba_nba_reference",
+          "path": "wnba_nba_app_reference/app/docs/planning/current/final_system/architecture/nba_wnba_parallel_runtime_plan_2026-05-30.md",
+          "proposed_action": "keep_reference",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "wnba_nba_reference",
+          "path": "wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-30_nba_wnba_live_window.md",
+          "proposed_action": "keep_reference",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
+        },
+        {
+          "classification": "wnba_nba_reference",
+          "path": "wnba_nba_app_reference/app/docs/reference/postgame_evaluation_2026-05-31_aces_valkyries_live_window.md",
+          "proposed_action": "keep_reference",
+          "proposed_destination": null,
+          "review_required": false,
+          "status": "??"
         }
       ],
-      "entry_count": 2,
+      "entry_count": 5,
       "move_allowed_now": false,
       "move_candidate_count": 0,
       "purpose": "Existing reference-root files require no move.",
@@ -4926,7 +4940,7 @@
     "github_issue_creation_ready": false,
     "reference_move_ready": false
   },
-  "generated_at_utc": "2026-06-07T04:46:53.724471+00:00",
+  "generated_at_utc": "2026-06-07T04:52:31.049206+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "next_actions": [
@@ -4937,31 +4951,29 @@
     "Create GitHub milestones/issues only after cleanup branches are reviewable."
   ],
   "schema_version": "crypto_options_repo_cleanup_batches_v1",
-  "source_inventory_generated_at_utc": "2026-06-07T04:46:21.211472+00:00",
+  "source_inventory_generated_at_utc": "2026-06-07T04:52:30.822380+00:00",
   "source_inventory_status": "degraded",
   "source_inventory_summary": {
-    "active_crypto_count": 395,
+    "active_crypto_count": 398,
     "classification_counts": {
-      "crypto_active": 395,
+      "crypto_active": 398,
       "crypto_compatibility_wrapper_candidate": 131,
       "global_reference": 1,
       "global_reference_candidate": 69,
-      "root_config_review": 2,
-      "wnba_nba_reference": 1,
-      "wnba_nba_reference_candidate": 3
+      "root_config_review": 1,
+      "wnba_nba_reference": 4
     },
     "crypto_compatibility_wrapper_candidate_count": 131,
-    "dirty_path_count": 602,
-    "legacy_move_candidate_count": 72,
+    "dirty_path_count": 604,
+    "legacy_move_candidate_count": 69,
     "proposed_action_counts": {
-      "keep_active_crypto": 395,
-      "keep_reference": 2,
-      "manual_root_config_review": 2,
+      "keep_active_crypto": 398,
+      "keep_reference": 5,
+      "manual_root_config_review": 1,
       "review_keep_temporarily_or_migrate_into_crypto_options_app": 131,
-      "review_move_to_global_reference": 69,
-      "review_move_to_wnba_nba_reference": 3
+      "review_move_to_global_reference": 69
     },
-    "review_required_count": 205,
+    "review_required_count": 201,
     "unknown_or_root_review_count": 0
   },
   "status": "degraded"
