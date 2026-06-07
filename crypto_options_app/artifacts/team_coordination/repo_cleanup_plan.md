@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T04:47:00Z
+Updated: 2026-06-07T04:49:00Z
 
 ## Rule
 
@@ -94,7 +94,8 @@ Suggested branch: `codex/crypto-repo-local-state-cleanup`.
 Current Batch 1 decision:
 
 - Branch: `codex/crypto-repo-local-state-cleanup`
-- Commit candidate: `.gitignore`, cleanup batch report next-action fix, and coordination docs only.
+- Commit: `645eb99` (`Ignore local Codex automation memory`)
+- Committed scope: `.gitignore`, cleanup batch report next-action fix, refreshed latest repo cleanup reports, and coordination docs only.
 - Held path: `requirements.txt`
 - No local automation memory files should be staged.
 

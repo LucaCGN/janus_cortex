@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T04:47:00Z
+Updated: 2026-06-07T04:49:00Z
 
 ## Objective
 
@@ -27,7 +27,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Batch 0 staging plan: 295 stage candidates, 386 hold paths, 0 manual-review paths.
 - Batch 0 baseline commit: `d642702` (`Add crypto options transition control plane baseline`) with 295 source-of-truth paths. Generated/data/runtime artifacts remain unstaged.
 - Batch 0 handoff commit: `b995271` (`Record crypto baseline handoff`).
-- Batch 1 local/root review: branch `codex/crypto-repo-local-state-cleanup`; `.codex_automation_memory/` is local thread/runtime state and should be ignored, while the `streamlit` dependency change remains held until the frontend/tooling path decides whether the observer app stays active.
+- Batch 1 local/root review commit: `645eb99` (`Ignore local Codex automation memory`); `.codex_automation_memory/` is ignored, and the `streamlit` dependency change remains held until the frontend/tooling path decides whether the observer app stays active.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 
 ## Active Fixed Chats
@@ -45,7 +45,7 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 ## Next Transition Actions
 
-1. Commit Batch 1 `.codex_automation_memory/` ignore guard and batch-report next-action fix separately from the held `requirements.txt` dependency change.
+1. Open Batch 2 WNBA/NBA reference move on `codex/crypto-repo-wnba-nba-reference`.
 2. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 3. Keep Batch 2-4 cleanup on separate branches from `repo_cleanup_batches_latest.json`.
 4. Decide which 131 crypto compatibility wrappers must stay until runtime routes are fully cut over.
