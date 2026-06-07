@@ -1,6 +1,6 @@
 # Crypto Options Transition Readiness Review
 
-- Generated: `2026-06-07T11:29:12.510409+00:00`
+- Generated: `2026-06-07T11:35:46.613723+00:00`
 - Status: `degraded`
 - Manual orders avoided: `True`
 

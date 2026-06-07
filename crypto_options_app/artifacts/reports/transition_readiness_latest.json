@@ -53,35 +53,35 @@
   },
   "endpoints": {
     "dashboard_control_center_state": {
-      "elapsed_ms": 17.56,
+      "elapsed_ms": 46.3,
       "error": null,
-      "payload_bytes": 15993,
+      "payload_bytes": 15991,
       "status": "ok",
       "status_code": 200
     },
     "health": {
-      "elapsed_ms": 761.89,
+      "elapsed_ms": 25.05,
       "error": null,
-      "payload_bytes": 100633,
+      "payload_bytes": 100286,
       "status": "ok",
       "status_code": 200
     },
     "signals_validation_status": {
-      "elapsed_ms": 91.56,
+      "elapsed_ms": 82.3,
       "error": null,
       "payload_bytes": 596,
       "status": "ok",
       "status_code": 200
     },
     "strategies_promotion": {
-      "elapsed_ms": 23.25,
+      "elapsed_ms": 45.49,
       "error": null,
       "payload_bytes": 254527,
       "status": "ok",
       "status_code": 200
     }
   },
-  "generated_at_utc": "2026-06-07T11:29:12.510409+00:00",
+  "generated_at_utc": "2026-06-07T11:35:46.613723+00:00",
   "live_trading_authorized": false,
   "manual_orders_avoided": true,
   "next_actions": [
@@ -318,13 +318,14 @@
   "status": "degraded",
   "storage": {
     "blockers": [],
-    "decision": "postgres_plus_redis_hot_plane_candidate",
+    "decision": "postgres_only_for_now",
     "path": "crypto_options_app\\artifacts\\reports\\storage_architecture_audit_latest.json",
-    "postgres_memory": "6.714GiB / 15.47GiB",
+    "postgres_memory": "6.721GiB / 15.47GiB",
     "redis_status": "disabled",
     "status": "degraded",
     "warnings": [
-      "postgres_container_memory_over_6gib"
+      "postgres_container_memory_over_6gib",
+      "postgres_temp_bytes_over_1gb"
     ]
   },
   "warnings": [

@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--endpoint-timeout-seconds", type=float, default=8.0)
     parser.add_argument("--skip-runtime-audit", action="store_true")
     parser.add_argument("--skip-endpoint-timings", action="store_true")
+    parser.add_argument("--skip-postgres-diagnostics", action="store_true")
     parser.add_argument("--write-artifacts", action="store_true")
     parser.add_argument("--markdown", action="store_true")
     parser.add_argument("--json", action="store_true")
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
         backend_base_url=args.backend_base_url,
         include_runtime_audit=not args.skip_runtime_audit,
         include_endpoint_timings=not args.skip_endpoint_timings,
+        include_postgres_diagnostics=not args.skip_postgres_diagnostics,
         endpoint_timeout_seconds=args.endpoint_timeout_seconds,
     )
     audit = build_storage_architecture_audit(options)

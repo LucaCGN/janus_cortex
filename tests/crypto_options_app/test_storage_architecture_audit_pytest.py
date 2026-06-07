@@ -32,6 +32,29 @@ def test_storage_decision_blocks_redis_when_runtime_unstable() -> None:
     assert decision["redis"] == "do_not_enable_while_blocked"
 
 
+def test_decision_signals_do_not_treat_memory_only_as_redis_reason() -> None:
+    signals = storage_architecture._decision_signals(
+        runtime={
+            "status": "degraded",
+            "database": {"runtime_connection_is_postgres": True, "runtime_code": {"status": "ok"}},
+            "docker": {"resources": {"warnings": ["postgres_container_memory_over_6gib"], "blockers": []}},
+        },
+        endpoints={"status": "ok", "warnings": [], "blockers": [], "endpoints": {}},
+        postgres_diagnostics={
+            "status": "ok",
+            "warnings": [],
+            "active_connection_count": 1,
+            "total_connection_count": 6,
+        },
+    )
+    decision = decide_storage_architecture(signals)
+
+    assert "postgres_container_memory_over_6gib" in signals["warnings"]
+    assert signals["hot_plane_reasons"] == []
+    assert "postgres_container_memory_over_6gib:requires_postgres_resource_review" in signals["query_layer_reasons"]
+    assert decision["decision"] == "postgres_only_for_now"
+
+
 def test_storage_audit_can_run_with_mocked_runtime(monkeypatch) -> None:
     monkeypatch.setattr(
         storage_architecture,
@@ -52,6 +75,11 @@ def test_storage_audit_can_run_with_mocked_runtime(monkeypatch) -> None:
         "check_redis_hot_plane",
         lambda: {"status": "disabled", "enabled": False},
     )
+    monkeypatch.setattr(
+        storage_architecture,
+        "_postgres_diagnostics",
+        lambda: {"status": "ok", "warnings": [], "total_connection_count": 3},
+    )
 
     audit = storage_architecture.build_storage_architecture_audit()
 
@@ -71,6 +99,13 @@ def test_storage_markdown_renders_decision() -> None:
             "manual_orders_avoided": True,
             "endpoint_timings": {"endpoints": {}},
             "runtime": {},
+            "postgres_diagnostics": {
+                "status": "ok",
+                "database_size_pretty": "512 MB",
+                "active_connection_count": 1,
+                "total_connection_count": 5,
+                "long_active_query_count": 0,
+            },
             "redis_hot_plane": {"status": "disabled"},
         }
     )
@@ -78,3 +113,4 @@ def test_storage_markdown_renders_decision() -> None:
     assert "postgres_only_for_now" in markdown
     assert "durable_source_of_truth" in markdown
     assert "Redis hot plane" in markdown
+    assert "Postgres Diagnostics" in markdown

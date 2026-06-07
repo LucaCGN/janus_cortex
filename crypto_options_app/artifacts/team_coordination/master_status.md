@@ -94,3 +94,11 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Storage and transition readiness audits now call `/dashboard/control-center-state?include_details=false`.
 - Latest storage audit measured `dashboard_control_center_state` at 44.36 ms and 15,993 bytes, down from roughly 1.0 MB.
 - Remaining storage degradation is Postgres memory over 6GiB. Redis remains disabled and non-authoritative until a measured hot-plane use case survives adapter tests.
+
+## 2026-06-07T11:36Z Storage Diagnostics Decision
+
+- Storage audit now includes bounded Postgres diagnostics: connection states, long active query count, selected memory settings, database size, temp-file counters, and largest tables.
+- Latest decision changed from Redis candidate to `postgres_only_for_now`: high Docker/Postgres memory alone is not evidence that Redis will help.
+- Current diagnostic state: 11 GB database, 6 total connections, 1 active connection, 0 long active queries, and cumulative temp bytes over 1 GB.
+- Current largest tables are `strategy_validation_runs`, `polymarket_order_book_levels`, `profile_distribution_snapshots`, and `profile_raw_activity`.
+- Next DB/data lane should review temp-file sources and retention/materialization for large replay/source tables before any worker widening. Redis remains disabled.
