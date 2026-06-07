@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import time
 from datetime import UTC, datetime
@@ -19,6 +18,7 @@ from crypto_options_app.data_services.polymarket_option_price_capture import (  
     OptionPriceCaptureConfig,
     capture_option_price_paths_once_sync,
 )
+from crypto_options_app.db.errors import is_transient_database_error  # noqa: E402
 from crypto_options_app.scripts._status_io import write_json_atomically  # noqa: E402
 
 
@@ -103,14 +103,14 @@ def _run_loop(*, config: OptionPriceCaptureConfig, args: argparse.Namespace) -> 
             raise
         except Exception as exc:  # noqa: BLE001 - long-running data service must retry transient locks/network errors.
             last_status = "degraded"
-            status = "degraded" if _is_transient_db_lock_error(exc) else "failed"
+            status = "degraded" if is_transient_database_error(exc) else "failed"
             payload = {
                 "schema_version": "crypto_options_option_price_capture_status_v1",
                 "status": status,
                 "iteration": iteration,
                 "generated_at_utc": datetime.now(UTC).isoformat(),
                 "error": f"{type(exc).__name__}:{exc}",
-                "blockers": ["transient_db_lock_retry_exhausted"] if _is_transient_db_lock_error(exc) else [f"{type(exc).__name__}:{exc}"],
+                "blockers": ["transient_db_lock_retry_exhausted"] if is_transient_database_error(exc) else [f"{type(exc).__name__}:{exc}"],
                 "orders_allowed": False,
                 "live_trading_authorized": False,
                 "manual_orders_avoided": True,
@@ -128,27 +128,10 @@ def _capture_with_transient_db_lock_retries(*, config: OptionPriceCaptureConfig,
             return capture_option_price_paths_once_sync(config=config)
         except Exception as exc:  # noqa: BLE001 - classify before deciding whether to retry.
             last_error = exc
-            if not _is_transient_db_lock_error(exc) or attempt >= max_attempts - 1:
+            if not is_transient_database_error(exc) or attempt >= max_attempts - 1:
                 raise
             time.sleep(0.35 * (attempt + 1))
-    raise last_error or sqlite3.OperationalError("sqlite lock retry failed")
-
-
-def _is_transient_db_lock_error(exc: Exception) -> bool:
-    if isinstance(exc, sqlite3.OperationalError):
-        text = str(exc).lower()
-        return "locked" in text or "busy" in text
-    text = f"{type(exc).__name__}:{exc}".lower()
-    return (
-        ("operationalerror" in text and ("locked" in text or "busy" in text))
-        or "deadlockdetected" in text
-        or "deadlock detected" in text
-        or "locknotavailable" in text
-        or "could not obtain lock" in text
-        or "canceling statement due to statement timeout" in text
-        or "lock timeout" in text
-        or "serializationfailure" in text
-    )
+    raise last_error or RuntimeError("database lock retry failed")
 
 
 if __name__ == "__main__":

@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from crypto_options_app.db.connection import connect
+from crypto_options_app.db.errors import is_database_full_error
 from crypto_options_app.db.schema import create_schema, initialize_schema
 from crypto_options_app.signals.validation.models import (
     SignalCandidateSpec,
@@ -1022,8 +1022,8 @@ def _bulk_observation_diversity_summary(
     # stricter Postgres/read-model path own exact symbol diversity later.
     try:
         symbol_counts = _bulk_observation_symbol_counts(conn, keys, by_phase=by_phase)
-    except sqlite3.OperationalError as exc:
-        if "database or disk is full" not in str(exc).lower():
+    except Exception as exc:
+        if not is_database_full_error(exc):
             raise
         symbol_counts = {}
     for key, symbol_count in symbol_counts.items():

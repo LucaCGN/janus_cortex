@@ -81,7 +81,7 @@ FORBIDDEN_RUNTIME_PROCESS_PATTERNS = {
     "sqlite_hot_sync": "run_crypto_options_sqlite_to_postgres_copy",
 }
 
-RUNTIME_SQLITE_SCAN_ROOTS = ("api", "data_services", "feeds", "indicators", "reports", "signals", "strategies", "workers")
+RUNTIME_SQLITE_SCAN_ROOTS = ("api", "data_services", "feeds", "indicators", "replay", "reports", "signals", "strategies", "workers")
 SQLITE_USAGE_SCAN_ROOTS = (
     "api",
     "data_services",
@@ -89,6 +89,7 @@ SQLITE_USAGE_SCAN_ROOTS = (
     "feeds",
     "indicators",
     "pipelines",
+    "replay",
     "reports",
     "scripts",
     "signals",
@@ -399,9 +400,9 @@ def _runtime_code_audit() -> dict[str, Any]:
     """
 
     offenders: list[str] = []
-    runtime_offenders: list[dict[str, str]] = []
-    allowed: list[dict[str, str]] = []
-    review_required: list[dict[str, str]] = []
+    runtime_offenders: list[dict[str, Any]] = []
+    allowed: list[dict[str, Any]] = []
+    review_required: list[dict[str, Any]] = []
     scanned_paths = 0
     sqlite_usage_count = 0
     for root_name in SQLITE_USAGE_SCAN_ROOTS:

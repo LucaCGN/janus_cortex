@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import urllib.request
 from collections import defaultdict
 from dataclasses import dataclass
@@ -203,7 +202,7 @@ def persist_settlement_performance(
 
 
 def _persist_event_outcome(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     event_key: str,
     resolved_outcome: str,
@@ -226,7 +225,7 @@ def _persist_event_outcome(
 
 
 def _persist_settlement(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     event_key: str,
     resolved_outcome: str,

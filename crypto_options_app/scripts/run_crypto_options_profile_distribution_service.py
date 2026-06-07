@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -15,6 +14,7 @@ from crypto_options_app.data_services.profile_distribution_service import (  # n
     ProfileDistributionConfig,
     capture_top_profile_distributions_once,
 )
+from crypto_options_app.db.errors import is_transient_database_error  # noqa: E402
 from crypto_options_app.scripts._status_io import write_json_atomically  # noqa: E402
 
 
@@ -113,7 +113,7 @@ def run_loop(args: argparse.Namespace) -> dict:
         except KeyboardInterrupt:
             raise
         except Exception as exc:  # noqa: BLE001 - loop writes failure state and keeps attempting.
-            status = "degraded" if _is_transient_db_lock_error(exc) else "failed"
+            status = "degraded" if is_transient_database_error(exc) else "failed"
             latest = {
                 "iteration": iteration,
                 "status": status,
@@ -134,27 +134,11 @@ def _capture_with_transient_db_lock_retries(args: argparse.Namespace):
         try:
             return capture_top_profile_distributions_once(config=_config(args))
         except Exception as exc:  # noqa: BLE001 - classify before deciding whether to retry.
-            if not _is_transient_db_lock_error(exc):
+            if not is_transient_database_error(exc):
                 raise
             last_error = exc
             time.sleep(0.35 * (attempt + 1))
-    raise last_error or sqlite3.OperationalError("sqlite lock retry failed")
-
-
-def _is_transient_db_lock_error(exc: BaseException) -> bool:
-    if isinstance(exc, sqlite3.OperationalError):
-        message = str(exc).lower()
-        return "database is locked" in message or "database table is locked" in message or "database is busy" in message
-    text = f"{type(exc).__name__}:{exc}".lower()
-    return (
-        "deadlockdetected" in text
-        or "deadlock detected" in text
-        or "locknotavailable" in text
-        or "could not obtain lock" in text
-        or "canceling statement due to statement timeout" in text
-        or "lock timeout" in text
-        or "serializationfailure" in text
-    )
+    raise last_error or RuntimeError("database lock retry failed")
 
 
 def main() -> int:

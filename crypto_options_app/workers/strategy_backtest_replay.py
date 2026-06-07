@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -8,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from crypto_options_app.config import CENTRAL_DB_PATH
+from crypto_options_app.db.errors import is_transient_database_error
 from crypto_options_app.db.schema import initialize_schema
 from crypto_options_app.strategies.registry import get_strategy
 from crypto_options_app.trading.executor_boundary import ExecutorBoundaryConfig
@@ -167,12 +167,12 @@ def _historical_fixture_scenario() -> RuntimeScenario:
 
 
 def _initialize_schema_with_retry(db_path: Path, *, attempts: int = 4, delay_seconds: float = 2.0) -> Path:
-    last_error: sqlite3.OperationalError | None = None
+    last_error: Exception | None = None
     for attempt in range(max(1, int(attempts))):
         try:
             return initialize_schema(db_path)
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower() or attempt == attempts - 1:
+        except Exception as exc:
+            if not is_transient_database_error(exc) or attempt == attempts - 1:
                 raise
             last_error = exc
             time.sleep(max(0.1, float(delay_seconds)))

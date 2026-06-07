@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sqlite3
 from typing import Any
 
+from crypto_options_app.db.errors import is_database_full_error, is_transient_database_error
 from crypto_options_app.reports import runtime_audit
 
 
@@ -109,3 +111,11 @@ def test_parse_memory_size_bytes() -> None:
     assert runtime_audit._parse_memory_size_bytes("512.3MiB") == int(512.3 * 1024**2)
     assert runtime_audit._parse_memory_size_bytes("3.5GiB") == int(3.5 * 1024**3)
     assert runtime_audit._parse_memory_size_bytes("bad") is None
+
+
+def test_database_error_helpers_cover_sqlite_and_postgres_lock_text() -> None:
+    assert is_transient_database_error(sqlite3.OperationalError("database is locked")) is True
+    assert is_transient_database_error(RuntimeError("DeadlockDetected: deadlock detected")) is True
+    assert is_transient_database_error(RuntimeError("canceling statement due to statement timeout")) is True
+    assert is_transient_database_error(sqlite3.OperationalError("no such table: x")) is False
+    assert is_database_full_error(sqlite3.OperationalError("database or disk is full")) is True

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from crypto_options_app.db.errors import is_transient_database_error
 from crypto_options_app.signals.validation.models import model_to_dict
 from crypto_options_app.signals.validation.runner import run_next_signal_validation
 
@@ -29,8 +29,8 @@ def run_signal_validation_worker_once(config: SignalValidationWorkerConfig) -> d
                 ttl_minutes=config.ttl_minutes,
             )
             break
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower() or attempt >= 5:
+        except Exception as exc:
+            if not is_transient_database_error(exc) or attempt >= 5:
                 raise
             time.sleep(min(8.0, 0.5 * (2 ** (attempt - 1))))
     assert result is not None

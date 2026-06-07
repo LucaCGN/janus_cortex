@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
@@ -12,7 +11,7 @@ from crypto_options_app.strategies.registry import all_strategy_specs, get_strat
 from crypto_options_app.strategies.schema import StrategySpec
 
 
-def sync_strategy_registry(conn: sqlite3.Connection, *, force: bool = False) -> dict[str, int]:
+def sync_strategy_registry(conn: Any, *, force: bool = False) -> dict[str, int]:
     now = datetime.now(UTC).isoformat()
     specs = all_strategy_specs()
     if not force and _strategy_registry_current(conn, expected_count=len(specs)):
@@ -36,18 +35,18 @@ def sync_strategy_registry(conn: sqlite3.Connection, *, force: bool = False) -> 
     return counts
 
 
-def _strategy_registry_current(conn: sqlite3.Connection, *, expected_count: int) -> bool:
+def _strategy_registry_current(conn: Any, *, expected_count: int) -> bool:
     if not table_exists(conn, "strategy_specs") or not table_exists(conn, "strategy_versions"):
         return False
     try:
         spec_count = int(conn.execute("SELECT COUNT(*) FROM strategy_specs").fetchone()[0])
         version_count = int(conn.execute("SELECT COUNT(*) FROM strategy_versions").fetchone()[0])
-    except sqlite3.OperationalError:
+    except Exception:
         return False
     return spec_count == expected_count and version_count == expected_count
 
 
-def strategy_catalog_summary(conn: sqlite3.Connection) -> dict[str, Any]:
+def strategy_catalog_summary(conn: Any) -> dict[str, Any]:
     sync_strategy_registry(conn)
     rows = [
         dict(row)
@@ -86,7 +85,7 @@ def strategy_catalog_summary(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
-def strategy_readiness_summary(conn: sqlite3.Connection) -> dict[str, Any]:
+def strategy_readiness_summary(conn: Any) -> dict[str, Any]:
     sync_strategy_registry(conn)
     readiness_rows = [
         dict(row)
@@ -157,7 +156,7 @@ def strategy_readiness_summary(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
-def strategy_validation_lab_summary(conn: sqlite3.Connection) -> dict[str, Any]:
+def strategy_validation_lab_summary(conn: Any) -> dict[str, Any]:
     sync_strategy_registry(conn)
     strategy_validation_run_count = count_rows(conn, "strategy_validation_runs") if table_exists(conn, "strategy_validation_runs") else 0
     validation_budget_ledger_count = count_rows(conn, "validation_budget_ledger") if table_exists(conn, "validation_budget_ledger") else 0
@@ -295,7 +294,7 @@ def strategy_validation_lab_summary(conn: sqlite3.Connection) -> dict[str, Any]:
     }
 
 
-def strategy_replay_summary(conn: sqlite3.Connection, *, replay_mode: str, limit: int = 100) -> dict[str, Any]:
+def strategy_replay_summary(conn: Any, *, replay_mode: str, limit: int = 100) -> dict[str, Any]:
     sync_strategy_registry(conn)
     phase_filter = {
         "historical_backtest": {"historical_replay", "replay_validation"},
@@ -359,7 +358,7 @@ def strategy_from_db_row(row: dict[str, Any]) -> StrategySpec:
     return StrategySpec(**spec_payload)
 
 
-def _upsert_strategy_spec(conn: sqlite3.Connection, spec: StrategySpec, *, now: str) -> None:
+def _upsert_strategy_spec(conn: Any, spec: StrategySpec, *, now: str) -> None:
     spec_json = json.dumps(asdict(spec), sort_keys=True)
     conn.execute(
         """
@@ -376,7 +375,7 @@ def _upsert_strategy_spec(conn: sqlite3.Connection, spec: StrategySpec, *, now: 
     )
 
 
-def _upsert_strategy_version(conn: sqlite3.Connection, spec: StrategySpec, *, now: str) -> None:
+def _upsert_strategy_version(conn: Any, spec: StrategySpec, *, now: str) -> None:
     version_key = f"{spec.strategy_id}:{spec.strategy_version}"
     metadata = dict(spec.metadata)
     metadata.setdefault("strategy_family", spec.strategy_family)
@@ -394,7 +393,7 @@ def _upsert_strategy_version(conn: sqlite3.Connection, spec: StrategySpec, *, no
     )
 
 
-def _upsert_strategy_readiness(conn: sqlite3.Connection, spec: StrategySpec, *, now: str) -> None:
+def _upsert_strategy_readiness(conn: Any, spec: StrategySpec, *, now: str) -> None:
     replay = evaluate_replay_readiness(spec)
     pulse = evaluate_pulse_readiness(spec, replay_rejected=replay.readiness_state != "replay_ready", executor_boundary_configured=False)
     for readiness_type, result in (("replay", replay), ("pulse", pulse)):

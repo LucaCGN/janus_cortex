@@ -5,7 +5,6 @@ import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import sqlite3
 from typing import Any
 
 
@@ -132,7 +131,7 @@ def insert_replay_frame(conn: Any, *, replay_dataset_key: str | None, frame: Rep
 
 
 def build_replay_frame_from_price_path_db(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     event_token_key: str,
     decision_at_utc: datetime,
@@ -203,7 +202,7 @@ def build_replay_frame_from_price_path_db(
     return result
 
 
-def _symbol_for_event_token(conn: sqlite3.Connection, *, event_token_key: str, fallback: Any = None) -> str | None:
+def _symbol_for_event_token(conn: Any, *, event_token_key: str, fallback: Any = None) -> str | None:
     row = conn.execute("SELECT symbol FROM event_tokens WHERE event_token_key = ? LIMIT 1", (event_token_key,)).fetchone()
     if row is not None and row["symbol"]:
         return str(row["symbol"]).upper()

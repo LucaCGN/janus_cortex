@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,6 +10,7 @@ from typing import Any
 from crypto_options_app.config import CENTRAL_DB_PATH
 from crypto_options_app.db.connection import connect, table_exists
 from crypto_options_app.db.dialect import POSTGRES_DIALECT, SQLITE_DIALECT, DatabaseDialect
+from crypto_options_app.db.errors import is_transient_database_error
 from crypto_options_app.db.runtime_persistence import persist_runtime_validation_report
 from crypto_options_app.db.schema import initialize_schema
 from crypto_options_app.strategies.registry import get_strategy
@@ -453,12 +453,12 @@ def _load_live_replay_scenario_from_connection(
 
 
 def _initialize_schema_with_retry(db_path: Path, *, attempts: int = 4, delay_seconds: float = 2.0) -> Path:
-    last_error: sqlite3.OperationalError | None = None
+    last_error: Exception | None = None
     for attempt in range(max(1, int(attempts))):
         try:
             return initialize_schema(db_path)
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower() or attempt == attempts - 1:
+        except Exception as exc:
+            if not is_transient_database_error(exc) or attempt == attempts - 1:
                 raise
             last_error = exc
             time.sleep(max(0.1, float(delay_seconds)))
@@ -474,12 +474,12 @@ def _persist_runtime_validation_report_with_retry(
     attempts: int = 6,
     delay_seconds: float = 1.5,
 ) -> dict[str, int]:
-    last_error: sqlite3.OperationalError | None = None
+    last_error: Exception | None = None
     for attempt in range(max(1, int(attempts))):
         try:
             return persist_runtime_validation_report(report, db_path)
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower() or attempt == attempts - 1:
+        except Exception as exc:
+            if not is_transient_database_error(exc) or attempt == attempts - 1:
                 raise
             last_error = exc
             time.sleep(max(0.1, float(delay_seconds)))

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -33,7 +32,7 @@ class StrategyPromotionPolicy:
 
 
 def evaluate_and_persist_strategy_promotions(
-    conn: sqlite3.Connection,
+    conn: Any,
     *,
     policy: StrategyPromotionPolicy | None = None,
 ) -> dict[str, Any]:
@@ -128,7 +127,7 @@ def evaluate_and_persist_strategy_promotions(
     }
 
 
-def promotion_state_summary(conn: sqlite3.Connection) -> dict[str, Any]:
+def promotion_state_summary(conn: Any) -> dict[str, Any]:
     if not table_exists(conn, "strategy_promotion_state") or _promotion_row_count(conn) == 0:
         return evaluate_and_persist_strategy_promotions(conn)
     rows = []
@@ -281,7 +280,7 @@ def _promotion_decision(
 
 
 def _strategy_evidence(
-    conn: sqlite3.Connection,
+    conn: Any,
     strategy_id: str,
     *,
     policy: StrategyPromotionPolicy,
@@ -411,7 +410,7 @@ def _strategy_evidence(
     }
 
 
-def _signal_gate(conn: sqlite3.Connection, *, policy: StrategyPromotionPolicy) -> dict[str, Any]:
+def _signal_gate(conn: Any, *, policy: StrategyPromotionPolicy) -> dict[str, Any]:
     try:
         status = validation_status(conn)
     except Exception as exc:  # pragma: no cover - defensive endpoint fallback.
@@ -441,7 +440,7 @@ def _signal_gate(conn: sqlite3.Connection, *, policy: StrategyPromotionPolicy) -
     }
 
 
-def _promotion_row_count(conn: sqlite3.Connection) -> int:
+def _promotion_row_count(conn: Any) -> int:
     return int(conn.execute("SELECT COUNT(*) FROM strategy_promotion_state").fetchone()[0])
 
 

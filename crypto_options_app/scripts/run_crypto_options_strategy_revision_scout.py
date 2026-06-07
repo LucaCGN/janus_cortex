@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sqlite3
 import sys
 import time
 from datetime import UTC, datetime
@@ -14,6 +13,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from crypto_options_app.config import CENTRAL_DB_PATH  # noqa: E402
 from crypto_options_app.db.connection import connect  # noqa: E402
+from crypto_options_app.db.errors import is_transient_database_error  # noqa: E402
 from crypto_options_app.strategies.revision_scout import build_strategy_revision_scout, write_strategy_revision_scout_report  # noqa: E402
 
 
@@ -45,13 +45,13 @@ def main() -> int:
 
 
 def _build_scout_with_retry(db_path: Path, *, attempts: int = 4, delay_seconds: float = 2.0) -> dict[str, object]:
-    last_error: sqlite3.OperationalError | None = None
+    last_error: Exception | None = None
     for attempt in range(max(1, int(attempts))):
         try:
             with connect(db_path) as conn:
                 return build_strategy_revision_scout(conn)
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower() or attempt == attempts - 1:
+        except Exception as exc:
+            if not is_transient_database_error(exc) or attempt == attempts - 1:
                 raise
             last_error = exc
             time.sleep(max(0.1, float(delay_seconds)))
