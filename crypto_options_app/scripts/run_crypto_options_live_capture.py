@@ -19,7 +19,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.api.db import to_jsonable  # noqa: E402
-from app.data.nodes.polymarket.crypto.live_capture import run_live_crypto_options_capture  # noqa: E402
+from crypto_options_app.data_nodes.polymarket_crypto.live_capture import run_live_crypto_options_capture  # noqa: E402
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:

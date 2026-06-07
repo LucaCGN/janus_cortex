@@ -65,6 +65,55 @@ def test_compatibility_audit_replaces_script_wrapper_when_central_script_exists(
     assert wrapper_report["recommended_decision"] == "replace_with_crypto_options_app_script_entrypoint"
 
 
+def test_compatibility_audit_docs_references_do_not_block_wrapper_moves(tmp_path: Path) -> None:
+    repo = tmp_path
+    doc = repo / "crypto_options_app" / "docs" / "reference" / "crypto_options" / "spec.md"
+    doc.parent.mkdir(parents=True)
+    doc.write_text("Legacy path app.api.routers.crypto_options_signals is documented here.\n", encoding="utf-8")
+    wrapper = repo / "app" / "api" / "routers" / "crypto_options_signals.py"
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text("router = None\n", encoding="utf-8")
+    batches = {
+        "generated_at_utc": "2026-06-07T00:00:00+00:00",
+        "batches": {
+            "batch_4_crypto_compatibility_wrapper_cutover": {
+                "entries": [{"status": "??", "path": "app/api/routers/crypto_options_signals.py"}]
+            }
+        },
+    }
+
+    report = build_compatibility_wrapper_audit(batches, repo_root=repo)
+
+    wrapper_report = report["wrappers"][0]
+    assert wrapper_report["active_reference_count"] == 0
+    assert wrapper_report["documentation_reference_count"] == 1
+    assert report["summary"]["active_reference_wrapper_count"] == 0
+
+
+def test_compatibility_audit_python_strings_do_not_count_as_active_imports(tmp_path: Path) -> None:
+    repo = tmp_path
+    test_file = repo / "tests" / "crypto_options_app" / "test_fixture.py"
+    test_file.parent.mkdir(parents=True)
+    test_file.write_text("legacy_module = 'app.api.routers.crypto_options_signals'\n", encoding="utf-8")
+    wrapper = repo / "app" / "api" / "routers" / "crypto_options_signals.py"
+    wrapper.parent.mkdir(parents=True)
+    wrapper.write_text("router = None\n", encoding="utf-8")
+    batches = {
+        "generated_at_utc": "2026-06-07T00:00:00+00:00",
+        "batches": {
+            "batch_4_crypto_compatibility_wrapper_cutover": {
+                "entries": [{"status": "??", "path": "app/api/routers/crypto_options_signals.py"}]
+            }
+        },
+    }
+
+    report = build_compatibility_wrapper_audit(batches, repo_root=repo)
+
+    wrapper_report = report["wrappers"][0]
+    assert wrapper_report["reference_count"] == 1
+    assert wrapper_report["active_reference_count"] == 0
+
+
 def test_compatibility_audit_markdown_includes_fixed_chat_gates(tmp_path: Path) -> None:
     report = build_compatibility_wrapper_audit(
         {"batches": {"batch_4_crypto_compatibility_wrapper_cutover": {"entries": []}}},

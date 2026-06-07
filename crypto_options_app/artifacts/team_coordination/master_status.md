@@ -1,6 +1,6 @@
 # Crypto Options Master Status
 
-Updated: 2026-06-07T05:08:00Z
+Updated: 2026-06-07T05:18:00Z
 
 ## Objective
 
@@ -30,7 +30,8 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 - Batch 1 local/root review commit: `645eb99` (`Ignore local Codex automation memory`); `.codex_automation_memory/` is ignored, and the `streamlit` dependency change remains held until the frontend/tooling path decides whether the observer app stays active.
 - Batch 2 WNBA/NBA reference move commit: `c67705e` (`Move WNBA NBA docs into reference root`).
 - Batch 3 global reference move commit: `659a722` (`Move global legacy files into reference root`).
-- Batch 4 compatibility wrapper audit: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`; 131 candidates, 53 referenced by active crypto code/tests, 55 no-reference wrappers, automatic wrapper moves blocked.
+- Batch 4 compatibility wrapper audit: `crypto_options_app/artifacts/reports/compatibility_wrapper_audit_latest.md`; 131 candidates, 23 referenced by active crypto code/tests, 52 docs/reference-only wrappers, 57 no-reference wrappers, automatic wrapper moves blocked.
+- Batch 4 cutover progress: Polymarket crypto data-node active callers now import `crypto_options_app.data_nodes.polymarket_crypto`; old `app.data.nodes.polymarket.crypto` has 0 active crypto code/test imports.
 - Fixed chat prompt folder: `crypto_options_app/artifacts/team_coordination/`. Frontend fixed chat can start after Batch 3 from `fixed_chat_frontend.md`; signal/strategy cleanup should wait for Batch 4 wrapper decisions plus GitHub milestones/issues.
 - Promotion state: 90 strategies, 8 shadow-ready, 0 live candidates, 0 strict signal blockers.
 
@@ -49,8 +50,8 @@ The master chat owns high-risk decisions, runtime/storage stability, promotion p
 
 ## Next Transition Actions
 
-1. Cut active crypto callers away from the 53 referenced old `app.*`/`codex_tool.*` compatibility wrappers in small tested groups.
-2. Review the 55 no-reference wrappers for compatibility archive or removal after active tests prove they are unused.
+1. Cut active crypto callers away from the remaining 23 old `app.*`/`codex_tool.*` compatibility wrappers in small tested groups.
+2. Review the 57 no-reference wrappers for compatibility archive or removal after active tests prove they are unused.
 3. Keep Batch 0 held runtime/data/generated artifacts unstaged unless explicitly promoted to source-of-truth.
 4. Add DB/runtime adapter tests for remaining production SQLite direct-connect offenders.
 5. Add Redis adapter tests for cache/queue TTL before enabling Redis at runtime.

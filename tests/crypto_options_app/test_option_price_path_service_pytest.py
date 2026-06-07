@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from app.data.nodes.polymarket.crypto.live_capture import LiveCaptureTarget
+from crypto_options_app.data_nodes.polymarket_crypto.live_capture import LiveCaptureTarget
 from crypto_options_app.data_services.polymarket_option_price_capture import (
     OptionPriceCaptureConfig,
     capture_option_price_paths_once_sync,

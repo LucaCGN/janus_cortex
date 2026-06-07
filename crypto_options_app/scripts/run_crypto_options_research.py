@@ -24,7 +24,7 @@ from app.data.nodes.crypto.reference import normalize_reference_price_reports  #
 from app.data.nodes.crypto.reference import ChainlinkDataStreamsRestProvider, CryptoReferenceSourceUnavailable  # noqa: E402
 from app.data.nodes.crypto.reference import fetch_chainlink_reference_reports_for_events  # noqa: E402
 from app.data.nodes.crypto.reference import reference_reports_from_candles  # noqa: E402
-from app.data.nodes.polymarket.crypto.history import (  # noqa: E402
+from crypto_options_app.data_nodes.polymarket_crypto.history import (  # noqa: E402
     download_pmxt_orderbooks_for_events,
     fetch_clob_prices_history_for_event_windows,
     fetch_clob_prices_history_for_outcomes,
@@ -32,8 +32,8 @@ from app.data.nodes.polymarket.crypto.history import (  # noqa: E402
     normalize_clob_observations,
     read_pmxt_orderbook_parquet,
 )
-from app.data.nodes.polymarket.crypto.accounts import build_polymarket_account_research_report  # noqa: E402
-from app.data.nodes.polymarket.crypto.markets import (  # noqa: E402
+from crypto_options_app.data_nodes.polymarket_crypto.accounts import build_polymarket_account_research_report  # noqa: E402
+from crypto_options_app.data_nodes.polymarket_crypto.markets import (  # noqa: E402
     fetch_gamma_event_by_slug,
     fetch_recurring_updown_events_by_slug_range,
     normalize_polymarket_crypto_events,

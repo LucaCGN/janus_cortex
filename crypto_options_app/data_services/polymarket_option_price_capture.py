@@ -8,8 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from app.data.nodes.polymarket.crypto.history import fetch_current_order_book, normalize_order_book_snapshot
-from app.data.nodes.polymarket.crypto.live_capture import LiveCaptureTarget, discover_live_crypto_updown_targets
+from crypto_options_app.data_nodes.polymarket_crypto.history import fetch_current_order_book, normalize_order_book_snapshot
+from crypto_options_app.data_nodes.polymarket_crypto.live_capture import LiveCaptureTarget, discover_live_crypto_updown_targets
 
 from crypto_options_app.config import CENTRAL_DB_PATH
 from crypto_options_app.db.connection import connect

@@ -73,6 +73,7 @@ def build_compatibility_wrapper_audit(
     family_counts = Counter(wrapper["family"] for wrapper in wrappers)
     decision_counts = Counter(wrapper["recommended_decision"] for wrapper in wrappers)
     active_reference_count = sum(1 for wrapper in wrappers if wrapper["active_reference_count"] > 0)
+    documentation_reference_count = sum(1 for wrapper in wrappers if wrapper["documentation_reference_count"] > 0)
     no_reference_count = sum(1 for wrapper in wrappers if wrapper["reference_count"] == 0)
     generated_at = datetime.now(UTC).isoformat()
     gates = {
@@ -90,6 +91,7 @@ def build_compatibility_wrapper_audit(
         "summary": {
             "wrapper_count": len(wrappers),
             "active_reference_wrapper_count": active_reference_count,
+            "documentation_reference_wrapper_count": documentation_reference_count,
             "no_reference_wrapper_count": no_reference_count,
             "family_counts": dict(sorted(family_counts.items())),
             "recommended_decision_counts": dict(sorted(decision_counts.items())),
@@ -125,6 +127,7 @@ def render_compatibility_wrapper_audit_markdown(report: dict[str, Any]) -> str:
         "## Summary",
         f"- Wrapper candidates: `{summary.get('wrapper_count')}`",
         f"- Wrappers referenced by active crypto code/tests: `{summary.get('active_reference_wrapper_count')}`",
+        f"- Wrappers referenced only by docs/reference text: `{summary.get('documentation_reference_wrapper_count')}`",
         f"- Wrappers with no detected references: `{summary.get('no_reference_wrapper_count')}`",
         f"- Scanned files: `{summary.get('scanned_file_count')}`",
         "",
@@ -198,7 +201,12 @@ def _audit_wrapper(
     active_references = [
         reference
         for reference in references
-        if reference["path"].startswith(("crypto_options_app/", "tests/crypto_options_app/"))
+        if _is_active_code_reference(reference)
+    ]
+    documentation_references = [
+        reference
+        for reference in references
+        if _is_documentation_reference(reference["path"])
     ]
     family = _wrapper_family(path)
     matching_central_path = _matching_central_path(path, repo_root)
@@ -216,6 +224,7 @@ def _audit_wrapper(
         "matching_central_path": matching_central_path,
         "reference_count": len(references),
         "active_reference_count": len(active_references),
+        "documentation_reference_count": len(documentation_references),
         "recommended_decision": decision,
         "references": references[:20],
         "search_tokens": tokens,
@@ -302,6 +311,30 @@ def _references_for_tokens(
         if matched:
             references.append({"path": scan_path, "matched_tokens": matched[:5]})
     return references
+
+
+def _is_active_code_reference(reference: dict[str, str]) -> bool:
+    path = reference["path"]
+    if not path.endswith(".py"):
+        return False
+    matched_tokens = reference.get("matched_tokens") or []
+    if not any(token.startswith(("from ", "import ")) for token in matched_tokens):
+        return False
+    if path.startswith("tests/crypto_options_app/"):
+        return True
+    if not path.startswith("crypto_options_app/"):
+        return False
+    return not path.startswith(
+        (
+            "crypto_options_app/artifacts/",
+            "crypto_options_app/data/",
+            "crypto_options_app/docs/",
+        )
+    )
+
+
+def _is_documentation_reference(path: str) -> bool:
+    return path.startswith(("crypto_options_app/docs/", "app/docs/")) or path.endswith(".md")
 
 
 def _wrapper_family(path: str) -> str:

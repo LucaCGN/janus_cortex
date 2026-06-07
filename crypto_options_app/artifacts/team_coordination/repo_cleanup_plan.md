@@ -1,6 +1,6 @@
 # Crypto Options Repo Cleanup Plan
 
-Updated: 2026-06-07T05:08:00Z
+Updated: 2026-06-07T05:18:00Z
 
 ## Rule
 
@@ -151,10 +151,12 @@ Current Batch 4 audit result:
 
 - Branch: `codex/crypto-compatibility-wrapper-cutover`
 - Wrapper candidates: 131
-- Referenced by active crypto code/tests: 53
-- No detected references: 55
+- Referenced by active crypto code/tests: 23
+- Referenced only by docs/reference text: 52
+- No detected references: 57
 - Automatic wrapper moves allowed: `false`
 - Decision: no bulk moves. First cut active callers over to `crypto_options_app` modules/scripts in small tested groups.
+- Cutover progress: active callers for old `app.data.nodes.polymarket.crypto` modules now use `crypto_options_app.data_nodes.polymarket_crypto`; the old family is no longer an active crypto code/test import blocker.
 - Frontend fixed chat can start after Batch 3 using `fixed_chat_frontend.md` because it must not touch backend/runtime logic.
 - Signal/strategy cleanup fixed chat remains gated until Batch 4 wrapper decisions and GitHub issues/milestones are ready.
 
