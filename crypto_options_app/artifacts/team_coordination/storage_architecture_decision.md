@@ -1,10 +1,12 @@
 # Crypto Options Storage Architecture Decision
 
-Updated: 2026-06-07T11:36:00Z
+Updated: 2026-06-08T23:10:00Z
 
 ## Current Decision
 
-Postgres remains durable source of truth.
+Postgres remains durable source of truth. Runtime has moved from the local
+Docker Postgres container to the remote ZimaOS Postgres instance at
+`192.168.0.156:5432/janus-postgres`.
 
 Redis is implemented as a disabled-by-default Docker/config sidecar and remains gated. It has a tested hot-plane adapter for JSON TTL cache entries and owner-checked TTL queue locks. It remains a candidate for latest-state cache, frontend cache, queue locks, TTL ownership, pub/sub, and short-lived coordination only.
 
@@ -22,6 +24,17 @@ Latest audit:
 - Redis status: `disabled`
 - Endpoint timing status: no slow endpoint blockers in the measured pass; control-center and signal-status audits now use summary endpoints.
 - Runtime code status: ok.
+
+Latest migration:
+
+- Artifact:
+  `crypto_options_app/artifacts/team_coordination/postgres_remote_migration_20260608.md`
+- Source: local Docker Postgres `crypto_options` on `127.0.0.1:55433`.
+- Target: remote Postgres `janus-postgres` on `192.168.0.156:5432`.
+- Exact table-count parity: `78/78` tables, `0` mismatches.
+- Runtime health after cutover: `ok`, Postgres backend, complete schema.
+- Local Docker Postgres remains available as rollback until the next remote
+  runtime validation pass completes.
 
 ## Durable Postgres Data
 
@@ -64,9 +77,11 @@ Current adapter coverage: JSON TTL cache, NX/EX lock acquisition, owner-checked 
 
 ## Docker Status
 
-The compose file now includes:
+The compose file still includes the local fallback services:
 
 - `janus-cortex-crypto-options-postgres` on `127.0.0.1:55433`
 - `janus-cortex-crypto-options-redis` on `127.0.0.1:56379`
 
 Redis remains disabled unless `JANUS_CRYPTO_OPTIONS_REDIS_ENABLED=1`.
+
+Active runtime is remote Postgres via `JANUS_CRYPTO_OPTIONS_POSTGRES_URL`.

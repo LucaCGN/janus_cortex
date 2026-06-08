@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from crypto_options_app.strategies.registry import all_strategy_specs, strategy_registry
 from crypto_options_app.trading.executor_boundary import ExecutorBoundaryConfig
+from crypto_options_app.trading.fills import record_fill
+from crypto_options_app.trading.orders import create_order_from_intent, transition_order
+from crypto_options_app.trading.positions import create_position_from_buy_fill
+from crypto_options_app.workers import runtime_adapter
 from crypto_options_app.workers.runtime_adapter import (
     RuntimeScenario,
     SupervisedRuntimeConfig,
+    _create_entry_intent,
+    _paired_exit_limit_price,
     _strategy_shadow_scenario,
     validate_all_strategy_scenarios,
     validate_runtime_config,
@@ -40,18 +46,18 @@ def test_runtime_adapter_dry_run_structurally_validates_all_10_without_live_orde
         assert result.position_key is not None
 
 
-def test_runtime_adapter_supervised_live_blocks_without_executor_boundary_pytest() -> None:
+def test_runtime_adapter_live_blocks_without_executor_boundary_pytest() -> None:
     blockers = validate_runtime_config(
         SupervisedRuntimeConfig(
             run_id="runtime-live-blocked",
-            mode="supervised_live",
+            mode="live",
             executor_boundary=_blocked_boundary(),
         )
     )
     report = validate_all_strategy_scenarios(
         SupervisedRuntimeConfig(
             run_id="runtime-live-blocked",
-            mode="supervised_live",
+            mode="live",
             executor_boundary=_blocked_boundary(),
         )
     )
@@ -66,17 +72,17 @@ def test_runtime_adapter_supervised_live_blocks_without_executor_boundary_pytest
         assert "live_submission_not_allowed" in result.blockers
         assert "env_live_flags_missing" in result.blockers
         assert "credentials_access_failure" in result.blockers
-        assert "supervised_executor_binding_missing" in result.blockers
+        assert "live_executor_binding_missing" in result.blockers
         assert "live_market_candidate_not_verified" in result.blockers
         assert result.orders_allowed is False
         assert result.live_trading_authorized is False
 
 
-def test_runtime_adapter_supervised_live_fake_executor_covers_all_10_pytest() -> None:
+def test_runtime_adapter_live_fake_executor_covers_all_10_pytest() -> None:
     calls = []
 
     def fake_executor(intent, order, scenario):
-        calls.append((intent.intent_key, order.order_key, scenario.event_token_key))
+        calls.append((intent.intent_key, order.order_key, intent.side, intent.intent_type, intent.order_type, order.limit_price))
         return {
             "exchange_order_id": f"fake-live:{order.order_key}",
             "status": "filled",
@@ -88,7 +94,7 @@ def test_runtime_adapter_supervised_live_fake_executor_covers_all_10_pytest() ->
     report = validate_all_strategy_scenarios(
         SupervisedRuntimeConfig(
             run_id="runtime-live-fake",
-            mode="supervised_live",
+            mode="live",
             executor_boundary=_ready_boundary(),
             allow_live_submission=True,
             live_environment_approved=True,
@@ -103,7 +109,10 @@ def test_runtime_adapter_supervised_live_fake_executor_covers_all_10_pytest() ->
     )
 
     expected_count = len(all_strategy_specs())
-    assert len(calls) == expected_count
+    assert len(calls) == expected_count * 2
+    assert {call[2] for call in calls} == {"BUY", "SELL"}
+    assert {call[3] for call in calls if call[2] == "SELL"} == {"paired_exit"}
+    assert {call[4] for call in calls if call[2] == "SELL"} == {"limit_sell"}
     assert report.passed_count == expected_count
     assert report.blocked_count == 0
     assert {result.status for result in report.results} == {"live_structural_executed"}
@@ -114,13 +123,202 @@ def test_runtime_adapter_supervised_live_fake_executor_covers_all_10_pytest() ->
         assert result.live_submission_attempted is True
         assert result.lifecycle_covered is True
         assert result.reconciliation_status == "reconciled"
+        assert result.attribution["paired_exit_order_count"] == 1
+        paired_exit = result.attribution["paired_exit_orders"][0]
+        assert paired_exit["side"] == "SELL"
+        assert paired_exit["intent_type"] == "paired_exit"
+        assert paired_exit["order_type"] == "limit_sell"
+        assert paired_exit["order_status"] == "filled"
     coverage_by_strategy = {result.strategy_id: result.attribution["coverage_type"] for result in report.results}
     assert coverage_by_strategy["s_tier_outcome_consensus_cashout_v1"] == "active_cashout_order"
     assert coverage_by_strategy["s_tier_outcome_hold_to_settlement_v1"] == "hold_to_settlement_policy"
     assert coverage_by_strategy["profile_hedge_scalping_v1"] == "active_cashout_order"
 
 
-def test_runtime_adapter_supervised_live_submit_error_does_not_fabricate_fill_pytest() -> None:
+def test_runtime_adapter_live_blocks_when_paired_exit_sell_is_not_submitted_pytest() -> None:
+    calls = []
+
+    def fake_executor(intent, order, scenario):
+        calls.append((intent.side, intent.intent_type))
+        if intent.side == "SELL":
+            return {
+                "exchange_order_id": f"fake-live:{order.order_key}",
+                "status": "rejected",
+                "filled_shares": 0.0,
+                "remote_filled_shares": 0.0,
+                "fill_price": order.limit_price,
+            }
+        return {
+            "exchange_order_id": f"fake-live:{order.order_key}",
+            "status": "filled",
+            "filled_shares": scenario.shares,
+            "remote_filled_shares": scenario.shares,
+            "fill_price": scenario.limit_price,
+        }
+
+    report = validate_all_strategy_scenarios(
+        SupervisedRuntimeConfig(
+            run_id="runtime-live-paired-exit-blocked",
+            mode="live",
+            executor_boundary=_ready_boundary(),
+            allow_live_submission=True,
+            live_environment_approved=True,
+            credentials_ready=True,
+            supervised_executor=fake_executor,
+        ),
+        scenario=RuntimeScenario(
+            event_key="verified-live-event",
+            event_token_key="verified-live-event:up",
+            live_market_verified=True,
+        ),
+        specs=(strategy_registry()["crypto_observer_fade_option_scalp_v1"],),
+    )
+
+    result = report.results[0]
+    assert calls == [("BUY", "entry"), ("SELL", "paired_exit")]
+    assert result.status == "blocked"
+    assert result.lifecycle_covered is False
+    assert "paired_exit_order_not_submitted" in result.blockers
+    assert "paired_exit_rejected_no_fill" in result.blockers
+
+
+def test_runtime_adapter_live_retries_paired_exit_until_conditional_balance_is_visible_pytest(monkeypatch) -> None:
+    calls = []
+    sell_attempts = 0
+
+    monkeypatch.setattr(runtime_adapter.time, "sleep", lambda _seconds: None)
+
+    def fake_executor(intent, order, scenario):
+        nonlocal sell_attempts
+        calls.append((intent.side, intent.intent_type))
+        if intent.side == "SELL":
+            sell_attempts += 1
+            if sell_attempts == 1:
+                return {
+                    "exchange_order_id": f"fake-live:{order.order_key}",
+                    "status": "submit_error",
+                    "filled_shares": 0.0,
+                    "remote_filled_shares": 0.0,
+                    "fill_price": order.limit_price,
+                    "legacy_submission": {
+                        "asset_check": {
+                            "reason": "clob_conditional_balance_too_low",
+                            "balance": 0.0,
+                            "required_shares": scenario.shares,
+                        }
+                    },
+                }
+            return {
+                "exchange_order_id": f"fake-live:{order.order_key}",
+                "status": "submitted",
+                "filled_shares": 0.0,
+                "remote_filled_shares": 0.0,
+                "fill_price": order.limit_price,
+            }
+        return {
+            "exchange_order_id": f"fake-live:{order.order_key}",
+            "status": "filled",
+            "filled_shares": scenario.shares,
+            "remote_filled_shares": scenario.shares,
+            "fill_price": scenario.limit_price,
+        }
+
+    report = validate_all_strategy_scenarios(
+        SupervisedRuntimeConfig(
+            run_id="runtime-live-paired-exit-retry",
+            mode="live",
+            executor_boundary=_ready_boundary(),
+            allow_live_submission=True,
+            live_environment_approved=True,
+            credentials_ready=True,
+            supervised_executor=fake_executor,
+        ),
+        scenario=RuntimeScenario(
+            event_key="verified-live-event",
+            event_token_key="verified-live-event:up",
+            live_market_verified=True,
+        ),
+        specs=(strategy_registry()["crypto_observer_fade_option_scalp_v1"],),
+    )
+
+    result = report.results[0]
+    assert calls == [("BUY", "entry"), ("SELL", "paired_exit"), ("SELL", "paired_exit")]
+    assert result.status == "live_structural_executed"
+    assert result.lifecycle_covered is True
+    assert result.blockers == ()
+    paired_exit = result.attribution["paired_exit_orders"][0]
+    assert paired_exit["order_status"] == "submitted"
+    assert paired_exit["order_source_payload"]["paired_exit_retry_count"] == 1
+    assert paired_exit["order_source_payload"]["paired_exit_retry_attempts"][0]["conditional_balance_reason"] == "clob_conditional_balance_too_low"
+
+
+def test_paired_exit_price_uses_conservative_entry_basis_not_raw_fill_only_pytest() -> None:
+    spec = strategy_registry()["profile_outcome_predictor_follow_hold_60s_v3"]
+    scenario = RuntimeScenario(
+        event_key="btc-updown-5m-1780950000",
+        event_token_key="btc-updown-5m-1780950000:down",
+        outcome="Down",
+        limit_price=0.50,
+        shares=10.0,
+        live_market_verified=True,
+    )
+    intent = _create_entry_intent(
+        spec,
+        config=SupervisedRuntimeConfig(
+            run_id="paired-exit-price-test",
+            mode="live",
+            executor_boundary=_ready_boundary(),
+            allow_live_submission=True,
+            live_environment_approved=True,
+            credentials_ready=True,
+        ),
+        scenario=scenario,
+        candidate_key="candidate:paired-exit-price-test",
+    )
+    entry_order = transition_order(
+        create_order_from_intent(intent, exchange_order_id="0xentry"),
+        status="filled",
+        source_payload={
+            "live_executor_response": {
+                "fill_price": 0.50,
+                "legacy_submission": {
+                    "order_request": {
+                        "price": 0.515,
+                        "estimated_total_cost_usd": 5.324843,
+                        "size": 10.0,
+                    },
+                    "remote_order": {"price": "0.52"},
+                    "execution_quality": {"submitted_limit_price": 0.515, "realized_price": 0.50},
+                    "jit_quote": {"submitted_limit_price": 0.515},
+                },
+            }
+        },
+    )
+    fill = record_fill(entry_order, filled_shares=10.0, fill_price=0.50, reconciled=True)
+    position = create_position_from_buy_fill(fill)
+
+    assert position is not None
+    tail_target_scenario = RuntimeScenario(
+        event_key=scenario.event_key,
+        event_token_key=scenario.event_token_key,
+        outcome=scenario.outcome,
+        limit_price=0.99,
+        shares=scenario.shares,
+        live_market_verified=True,
+    )
+    exit_price = _paired_exit_limit_price(
+        spec,
+        scenario=tail_target_scenario,
+        position=position,
+        fill=fill,
+        entry_order=entry_order,
+    )
+
+    assert exit_price >= 0.5424
+    assert exit_price < 0.99
+
+
+def test_runtime_adapter_live_submit_error_does_not_fabricate_fill_pytest() -> None:
     def fake_submit_error(intent, order, scenario):
         return {
             "exchange_order_id": f"fake-live:{order.order_key}",
@@ -133,7 +331,7 @@ def test_runtime_adapter_supervised_live_submit_error_does_not_fabricate_fill_py
     report = validate_all_strategy_scenarios(
         SupervisedRuntimeConfig(
             run_id="runtime-live-submit-error",
-            mode="supervised_live",
+            mode="live",
             executor_boundary=_ready_boundary(),
             allow_live_submission=True,
             live_environment_approved=True,
@@ -157,7 +355,7 @@ def test_runtime_adapter_supervised_live_submit_error_does_not_fabricate_fill_py
         assert result.attribution["fill_key"] is None
 
 
-def test_runtime_adapter_supervised_live_ambiguous_submit_error_stays_integrity_breaker_pytest() -> None:
+def test_runtime_adapter_live_ambiguous_submit_error_stays_integrity_breaker_pytest() -> None:
     def fake_ambiguous_submit_error(intent, order, scenario):
         return {
             "exchange_order_id": f"fake-live:{order.order_key}",
@@ -171,7 +369,7 @@ def test_runtime_adapter_supervised_live_ambiguous_submit_error_stays_integrity_
     report = validate_all_strategy_scenarios(
         SupervisedRuntimeConfig(
             run_id="runtime-live-ambiguous-submit-error",
-            mode="supervised_live",
+            mode="live",
             executor_boundary=_ready_boundary(),
             allow_live_submission=True,
             live_environment_approved=True,
@@ -366,6 +564,57 @@ def test_option_liquidity_micro_scalp_v5_blocks_when_friction_or_cashout_evidenc
     assert decision["required_forward_cashout_edge"] == 0.02
 
 
+def test_profile_live_validation_variant_falls_back_to_aggregate_when_group_missing_pytest() -> None:
+    spec = strategy_registry()["profile_splus_hedger_follow_hold_60s_v16"]
+    scenario = RuntimeScenario(
+        event_key="event-profile-fallback",
+        event_token_key="event-profile-fallback:down",
+        event_slug="btc-updown-5m-profile-fallback",
+        outcome="Down",
+        limit_price=0.45,
+        spread=0.01,
+        liquidity_depth=90.0,
+        signal_context={
+            "target_up_ratio": 0.20,
+            "profile_distribution_ready": True,
+            "profile_distribution": {
+                "profile_count": 12,
+                "source_age_seconds": 10.0,
+                "coverage_warnings": [],
+                "cost_vs_shares_up_gap_abs": 0.02,
+                "cost_vs_profile_count_up_gap_abs": 0.03,
+                "top_profile_cost_share": 0.25,
+                "component_breakdown": {
+                    "by_grade_style": {
+                        "S++ / hedger": {
+                            "component_count": 4,
+                            "up_pressure_ratio": 0.20,
+                            "reconstructed_profile_pair_sum": 0.98,
+                        }
+                    }
+                },
+            },
+            "best_bid": 0.44,
+            "best_ask": 0.45,
+            "forward_best_bid": 0.48,
+            "forward_mark_price": 0.48,
+            "option_path_ready": True,
+            "option_path": {
+                "snapshot_count": 8,
+                "avg_rolling_60s_range": 0.02,
+                "pair_sum_range": 0.01,
+            },
+        },
+    )
+
+    adjusted, decision, blockers = _strategy_shadow_scenario(spec, scenario)
+
+    assert "profile_distribution_group_missing:by_grade_style:S+ / hedger" not in blockers
+    assert decision["profile_ratio_source"] == "aggregate_cost_weighted_fallback"
+    assert decision["profile_target_up_ratio"] == 0.20
+    assert adjusted.outcome == "Down"
+
+
 def test_master_paired_seed_v8_requires_balanced_profile_pressure_pytest() -> None:
     spec = strategy_registry()["master_hedge_grid_floor_paired_seed_builder_v8"]
     base_context = {
@@ -540,7 +789,7 @@ def test_master_paired_seed_v9_uses_profile_balance_as_optional_confidence_pytes
 def _blocked_boundary() -> ExecutorBoundaryConfig:
     return ExecutorBoundaryConfig(
         supervised_runtime_gate=True,
-        ledger_gate=True,
+        ledger_gate=False,
         risk_gate=True,
         reconciliation_gate=True,
         execution_approved=False,

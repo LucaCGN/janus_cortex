@@ -2,13 +2,25 @@
 
 Date: 2026-06-06
 
-Status: implementation checkpoint.
+Status: historical implementation checkpoint plus remote-runtime addendum.
+
+Current active runtime database as of 2026-06-08:
+
+- Remote Postgres: `192.168.0.156:5432/janus-postgres`
+- Runtime env: `JANUS_CRYPTO_OPTIONS_POSTGRES_URL`
+- Migration report:
+  `crypto_options_app/artifacts/team_coordination/postgres_remote_migration_20260608.md`
+
+The local Docker Postgres described below is now a rollback source, not the
+active runtime source of truth.
 
 ## Purpose
 
 SQLite remains a useful local fallback, but the current crypto-options app has enough concurrent services that normal data-service writes can lock report and scout reads. The target is an app-owned Postgres service that can absorb concurrent A/B/C capture, signal validation, strategy replay, and observability reads without relying on one SQLite write lock.
 
 ## Canonical Postgres Target
+
+Historical local target:
 
 - Compose file: `crypto_options_app/docker-compose.postgres.yml`
 - Container: `janus-cortex-crypto-options-postgres`
@@ -105,7 +117,10 @@ Remaining before runtime cutover:
 
 ## Safety
 
-This database work does not authorize trading. Global/API live flags remain false. Live trading still belongs only to supervised runtime with scoped child flags, ledgers, risk gates, reconciliation, and stop gates.
+This database work does not authorize Codex manual orders or gate bypasses.
+App live/order flags may be enabled for policy-gated automated testing, but
+live execution must still pass promotion-manager, executor boundary,
+strategy-owned budget/risk, lifecycle, reconciliation, stop, and demotion gates.
 
 ## 2026-06-06 Health/Dashboard Stabilization Before Read Cutover
 
@@ -219,3 +234,18 @@ This prevents the control center and automations from misclassifying the app as
 SQLite-backed after the runtime connector has already cut reads over to
 Postgres. Deleting or compacting the SQLite file remains a separate controlled
 retention/parity step, not a heartbeat action.
+
+## 2026-06-08 Remote Postgres Cutover
+
+The local Docker Postgres runtime was migrated to a remote ZimaOS Postgres 17.4
+instance:
+
+- Source: `crypto_options` on `127.0.0.1:55433`.
+- Target: `janus-postgres` on `192.168.0.156:5432`.
+- Migration: compressed custom `pg_dump` restored with `pg_restore`.
+- Exact parity: `78` public tables on both sides, `0` count mismatches.
+- Health after cutover: `ok`, backend `postgres`, schema `complete`.
+- A/B/C/D data services restarted and wrote fresh rows to the remote DB.
+
+The local container remains available as rollback until the next
+strategy/reconciliation validation cycle passes on remote Postgres.

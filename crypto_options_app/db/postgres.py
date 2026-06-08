@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from crypto_options_app.config import (
     CENTRAL_POSTGRES_DB,
@@ -41,8 +41,8 @@ class CryptoOptionsPostgresSettings:
             host=parsed.hostname,
             port=int(parsed.port or 5432),
             database=parsed.path.strip("/"),
-            user=parsed.username or "",
-            password=parsed.password or "",
+            user=unquote(parsed.username or ""),
+            password=unquote(parsed.password or ""),
         )
 
     def as_database_url(self) -> str:

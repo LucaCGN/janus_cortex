@@ -1,6 +1,6 @@
 ﻿# Crypto Options GitHub Issue And Milestone Plan
 
-Updated: 2026-06-07T05:55:00Z
+Updated: 2026-06-08T23:25:00Z
 
 ## Purpose
 
@@ -18,6 +18,11 @@ Issues:
 2. `[CRYPTO-P4-02] Storage architecture audit and Redis hot-plane gate`
 3. `[CRYPTO-P4-03] Runtime DB adapter audit and SQLite production-path removal`
 4. `[CRYPTO-P4-04] Promotion/demotion policy rendering and enforcement`
+   - Include strategy-defined criteria from `metadata.promotion_policy`,
+     `metadata.promotion_criteria`, `risk_gates.promotion_policy`, and
+     `live_pulse_requirements.promotion_policy`.
+   - Track follow-up for a dedicated `StrategySpec.promotion_criteria` field
+     once the backward-compatible map surface is stable.
 5. `[CRYPTO-P4-05] Repo cleanup inventory and reference-root move plan`
 
 ### CRYPTO-P5 Signal And Strategy Queue Trust
@@ -44,17 +49,22 @@ Issues:
 4. `[CRYPTO-P6-04] Strategy backtest, shadow, live, and promotion views`
 5. `[CRYPTO-P6-05] Portfolio, positions, open orders, history, event, and profile views`
 
-### CRYPTO-P7 Supervised Live Readiness
+### CRYPTO-P7 Policy-Gated Live Readiness
 
-Goal: promote only reconciled candidates that pass policy.
+Goal: promote only reconciled candidates that pass strategy-defined policy,
+runtime, lifecycle, reconciliation, stop, and demotion gates.
 
 Issues:
 
-1. `[CRYPTO-P7-01] Supervised live promotion preflight`
+1. `[CRYPTO-P7-01] Policy-gated live promotion preflight`
 2. `[CRYPTO-P7-02] Live demotion and stop-gate enforcement`
+   - Demotion/stop gates must apply each strategy's active criteria, including
+     lower-win-rate/high-PnL paths and live loss limits.
 3. `[CRYPTO-P7-03] Budget scaling and descaling policy`
 4. `[CRYPTO-P7-04] Live reconciliation and shadow/live drift audit`
 5. `[CRYPTO-P7-05] First live candidate readiness report`
+6. `[CRYPTO-P7-06] Calibrate replay/backtest engine against 2026-06-08 live loss window`
+7. `[CRYPTO-P7-07] Account-authoritative PnL reconciliation and live loss stops`
 
 ## Labels
 
@@ -75,7 +85,8 @@ Issues:
 Sync report: `crypto_options_app/artifacts/team_coordination/github_source_of_truth_sync.md`
 
 - Milestones created: `CRYPTO-P4`, `CRYPTO-P5`, `CRYPTO-P6`, `CRYPTO-P7`.
-- Issues created: #150-#169.
+- P7 renamed to `CRYPTO-P7 Policy-Gated Live Readiness`.
+- Issues created: #150-#173.
 - Signal/strategy fixed chat may now use issues #155-#159.
 - Frontend fixed chat may now use issues #160-#164.
 

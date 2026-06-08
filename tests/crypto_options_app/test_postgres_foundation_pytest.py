@@ -142,6 +142,17 @@ def test_postgres_settings_parse_default_url() -> None:
     assert settings.user == "crypto_options"
 
 
+def test_postgres_settings_parse_url_encoded_credentials() -> None:
+    settings = CryptoOptionsPostgresSettings.from_url(
+        "postgresql://admin:T%3CfT5_4%5D%3Dw%2Ah@192.168.0.156:5432/janus-postgres"
+    )
+    assert settings.host == "192.168.0.156"
+    assert settings.port == 5432
+    assert settings.database == "janus-postgres"
+    assert settings.user == "admin"
+    assert settings.password == "T<fT5_4]=w*h"
+
+
 def test_postgres_schema_renderer_removes_sqlite_view_syntax() -> None:
     sql = render_postgres_schema_sql()
     assert "CREATE VIEW IF NOT EXISTS" not in sql

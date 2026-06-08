@@ -29,20 +29,22 @@ Read first:
 Generate a fresh bounded cleanup batch when needed:
 
 ```powershell
-python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12
+python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12 --exclude-done-handoff
 ```
 
 ## Shared Safety Rules
 
-- No live trading.
-- No manual orders.
+- No Codex manual orders.
+- App-level `orders_allowed` and `live_trading_authorized` flags may be enabled for policy-gated live testing.
+- Promotion/live behavior must run only through the app promotion manager, runtime, executor boundary, budget/risk limits, lifecycle, reconciliation, and demotion gates.
 - No executor changes.
-- No global/API live flags.
 - No DB infrastructure or storage-architecture work.
 - No frontend styling/layout work.
 - No replay engine, lifecycle, reconciliation, queue-runtime, or promotion-manager patching from this lane unless the master chat explicitly hands off a scoped fix.
-- Never promote live from chat or automation judgment.
-- Cleanup classifications do not authorize live trading.
+- Never promote live from chat judgment or bypass the promotion manager.
+- Cleanup classifications do not authorize manual orders or gate bypasses.
+- New or revised strategies should define their promotion and demotion criteria in the strategy spec/script so the system can move them through backtest, shadow/live-replay, live, scale, or review without Codex judgment.
+- Lower win-rate strategies are allowed only when the strategy defines stronger PnL, max-loss, stop-gate, lifecycle, reconciliation, and drift criteria.
 
 Use `crypto_options_promotion_policy_contract_v1` as the promotion source of truth:
 
@@ -75,6 +77,8 @@ Examples:
 - lifecycle or reconciliation mismatch
 - queue ownership bug
 - promotion/demotion policy enforcement bug
+- backtest, replay, live-shadow, or live-runtime feature failure
+- promotion gate failure caused by the engine rather than by the strategy failing its own criteria
 - DB/storage performance or query issue
 - frontend endpoint/rendering issue
 - missing source/indicator contract needed by many rows
@@ -93,7 +97,7 @@ Required handoff steps:
 5. If no relevant issue exists and the chat/tool has GitHub access, open a new issue using the same fields.
 6. Always append the issue to `crypto_options_app/artifacts/team_coordination/technical_issue_handoff_log.md`, even if GitHub access is unavailable.
 7. Append a `handoff_queue.jsonl` item with `owner="master"` or the correct owner lane and `status="OPEN"`.
-8. Continue with another independent cleanup row only if the issue does not undermine the current batch’s evidence.
+8. Continue with another independent cleanup row only if the issue does not undermine the current batch's evidence.
 
 If GitHub access is unavailable, do not invent issue numbers. Write the markdown handoff log and JSONL queue entry, then report `github_issue_status=not_created_tool_unavailable`.
 
@@ -110,7 +114,7 @@ Handoff log format:
 - Evidence:
 - Blocking impact:
 - Suggested next action:
-- Live/manual-order status: no live activity, manual orders avoided
+- Live/manual-order status: app-gated live-capable if gates pass; Codex manual orders avoided
 ```
 
 ---
@@ -147,7 +151,7 @@ Do not work on:
 - DB infrastructure or storage architecture
 - frontend styling/layout
 - trading runtime or live child processes
-- manual orders
+- Codex manual orders
 - replay engine, lifecycle, reconciliation, queue-runtime, or promotion-manager fixes unless the master explicitly hands off a scoped issue
 - broad strategy-family invention before stale cleanup is under control
 
@@ -158,11 +162,13 @@ Do not work on:
 3. Prefer `RETIRED` or `BLOCKED` with explicit reason over ambiguous `REVIEW`.
 4. Create a new variant only when it fixes a concrete blocker, source gap, validation bug, or missing mechanic.
 5. Do not create variants just to keep a weak family alive.
-6. If evidence is insufficient but the premise is valid, mark `STRICT_REPLAY_REQUIRED` or `SHADOW_REQUIRED` with the smallest next test.
-7. If the row depends on missing data/source mechanics, mark `BLOCKED` with the missing source/indicator/test named.
-8. If a row has no defensible edge after review, mark `RETIRED`.
-9. Keep all edits bounded. Avoid deep architecture or multi-subsystem refactors in this lane.
-10. Update coordination artifacts after each batch.
+6. When creating or revising a strategy, encode its pass/fail/demotion criteria in metadata, risk gates, or live pulse requirements, not in prose alone.
+7. If evidence is insufficient but the premise is valid, mark `STRICT_REPLAY_REQUIRED` or `SHADOW_REQUIRED` with the smallest next test.
+8. If the row depends on missing data/source mechanics, mark `BLOCKED` with the missing source/indicator/test named.
+9. If a row has no defensible edge after review, mark `RETIRED`.
+10. If a promotion/backtest/replay/live feature fails, hand it off through GitHub/log/queue instead of fixing it in this lane.
+11. Keep all edits bounded. Avoid deep architecture or multi-subsystem refactors in this lane.
+12. Update coordination artifacts after each batch.
 
 ## First Fixed-Chat Task
 
@@ -195,7 +201,7 @@ Every fixed-chat pass should report:
 - technical issues handed off, with GitHub issue/comment status if applicable
 - queue/handoff updates
 - next bounded slice
-- confirmation: no live activity, manual orders avoided
+- confirmation: Codex manual orders avoided; no direct live child process started from this lane
 
 ---
 
@@ -247,10 +253,11 @@ Read first:
 
 Per run:
 
-1. Confirm no live/manual order scope is being requested.
+1. Confirm no Codex manual order or gate-bypass scope is being requested.
 2. Generate or read a bounded cleanup batch:
-   `python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12`
+   `python -m crypto_options_app.scripts.run_crypto_options_signal_strategy_cleanup_batch --max-signals 24 --max-strategies 12 --exclude-done-handoff`
 3. Select exactly one stale row when possible. If the batch is trivial, select at most three closely related rows from the same family/blocker.
+   If the selected row already appears as a completed signal-strategy handoff, stop and write a duplicate-batch-feed handoff instead of reprocessing it.
 4. Inspect the current script and one reference/spec source.
 5. Decide one action:
    - `RETIRED`: weak, stale, duplicated, overfit, or no defensible edge.
@@ -269,6 +276,7 @@ Per run:
 7. If creating a variant:
    - keep it small
    - preserve policy-derived promotion/demotion criteria
+   - encode any strategy-specific win-rate, PnL, max-loss, stop-gate, lifecycle, reconciliation, and drift criteria in the strategy spec/script
    - do not weaken safety gates
    - do not exceed V10
    - register/update only the relevant queue entry
@@ -279,7 +287,7 @@ Hard stops:
 
 - DB/storage work required
 - frontend work required
-- live execution or manual order path requested
+- direct live child process, gate bypass, or Codex manual order path requested
 - unclear policy contract
 - missing lifecycle/reconciliation semantics
 - broad multi-family refactor needed
@@ -296,11 +304,11 @@ Output:
 - resulting queue state
 - technical issue handoff status, if any
 - blockers or next action
-- confirmation: no live activity, manual orders avoided
+- confirmation: Codex manual orders avoided; no direct live child process started from this lane
 
 Safety:
 
-- Global/API live flags remain false.
-- No live child process.
-- No manual orders.
-- No autonomous live promotion.
+- Global/API live and order flags may be true for policy-gated testing.
+- No direct live child process from this stale-row worker.
+- No Codex manual orders.
+- App-gated autonomous promotion may run only through the promotion manager and runtime gates.

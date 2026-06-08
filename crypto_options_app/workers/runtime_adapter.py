@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from collections.abc import Callable, Mapping
@@ -45,7 +46,11 @@ from crypto_options_app.trading.positions import PositionState, create_position_
 from crypto_options_app.trading.reconciliation import ReconciliationResult, reconcile_order
 
 
-RuntimeMode = Literal["dry_run", "shadow", "supervised_live"]
+RuntimeMode = Literal["dry_run", "shadow", "live", "supervised_live"]
+
+
+def _is_live_mode(mode: str) -> bool:
+    return mode in {"live", "supervised_live"}
 
 
 @dataclass(frozen=True)
@@ -183,13 +188,13 @@ class RuntimeValidationReport:
 
 def validate_runtime_config(config: SupervisedRuntimeConfig) -> tuple[str, ...]:
     blockers: list[str] = []
-    if config.mode not in {"dry_run", "shadow", "supervised_live"}:
+    if config.mode not in {"dry_run", "shadow", "live", "supervised_live"}:
         blockers.append("unsupported_runtime_mode")
     if config.live_cadence_count != 1:
         blockers.append("duplicate_cadence")
     if config.max_trades_per_strategy <= 0:
         blockers.append("invalid_trade_cap")
-    if config.mode == "supervised_live":
+    if _is_live_mode(config.mode):
         if not executor_boundary_ready(config.executor_boundary):
             blockers.append("executor_boundary_not_ready")
         if not config.allow_live_submission:
@@ -199,7 +204,7 @@ def validate_runtime_config(config: SupervisedRuntimeConfig) -> tuple[str, ...]:
         if not config.credentials_ready:
             blockers.append("credentials_access_failure")
         if config.supervised_executor is None:
-            blockers.append("supervised_executor_binding_missing")
+            blockers.append("live_executor_binding_missing")
     return tuple(blockers)
 
 
@@ -276,7 +281,7 @@ def _validate_strategy_scenario(
         side=scenario.side,
     )
     blockers = list(config_blockers) + list(candidate_record.blockers) + list(strategy_blockers)
-    if config.mode == "supervised_live" and not scenario.live_market_verified:
+    if _is_live_mode(config.mode) and not scenario.live_market_verified:
         blockers.append("live_market_candidate_not_verified")
     candidate_key = f"candidate:{config.run_id}:{spec.strategy_id}:{scenario.event_token_key}"
     if candidate_record.status != "candidate_ready" or candidate_record.candidate is None:
@@ -311,7 +316,7 @@ def _validate_strategy_scenario(
 
     intent = _create_entry_intent(enabled_spec, config=config, scenario=scenario, candidate_key=candidate_key)
     order, fill, reconciliation = _execute_order_lifecycle(intent, config=config, scenario=scenario)
-    live_submission_attempted = config.mode == "supervised_live"
+    live_submission_attempted = _is_live_mode(config.mode)
     blockers.extend(_shadow_fill_blockers(config=config, order=order, fill=fill))
     blockers.extend(reconciliation.blockers)
     if _has_reconciliation_integrity_mismatch(reconciliation):
@@ -320,11 +325,39 @@ def _validate_strategy_scenario(
     positions = [position] if position is not None else []
     exit_plans = []
     exit_orders = []
+    paired_exit_payloads: list[dict[str, Any]] = []
     coverage_type = _coverage_type_for_strategy(enabled_spec)
     if position is not None and not config.simulate_missing_lifecycle_coverage:
         plan = create_exit_plan(position, coverage_type=coverage_type)
         exit_plans.append(plan)
-        exit_orders.append(create_exit_order(plan, order_key=None, status="created"))
+        if _live_paired_exit_required(config=config, position=position):
+            paired_exit_intent = _create_paired_exit_intent(
+                enabled_spec,
+                config=config,
+                scenario=scenario,
+                candidate_key=candidate_key,
+                position=position,
+                fill=fill,
+                entry_order=order,
+            )
+            paired_exit_order, paired_exit_fill, paired_exit_reconciliation = _execute_paired_exit_lifecycle(
+                paired_exit_intent,
+                config=config,
+                scenario=scenario,
+            )
+            exit_orders.append(create_exit_order(plan, order_key=paired_exit_order.order_key, status=paired_exit_order.status))
+            paired_exit_payload = _paired_exit_payload(
+                paired_exit_intent,
+                paired_exit_order,
+                paired_exit_fill,
+                paired_exit_reconciliation,
+            )
+            paired_exit_payloads.append(paired_exit_payload)
+            blockers.extend(_paired_exit_blockers(paired_exit_order, paired_exit_reconciliation))
+            if _has_reconciliation_integrity_mismatch(paired_exit_reconciliation):
+                blockers.append("paired_exit_reconciliation_mismatch")
+        else:
+            exit_orders.append(create_exit_order(plan, order_key=None, status="created"))
     managed_runtime_plans = _managed_runtime_plans_for_strategy(
         enabled_spec,
         scenario=scenario,
@@ -336,12 +369,16 @@ def _validate_strategy_scenario(
     blockers.extend(_normalize_lifecycle_blockers(lifecycle_blockers))
     blockers.extend(duplicate_exit_blockers)
     if (
-        config.mode == "supervised_live"
+        _is_live_mode(config.mode)
         and order.status in {"submitted", "accepted", "partially_filled", "filled"}
         and fill is None
     ):
         blockers.append("fill_evidence_missing")
-    status = "live_structural_executed" if config.mode == "supervised_live" and not blockers else "simulated_executed" if not blockers else "blocked"
+    paired_exit_blocked = any(
+        blocker.startswith("paired_exit_") or blocker == "exit_order_not_submitted"
+        for blocker in blockers
+    )
+    status = "live_structural_executed" if _is_live_mode(config.mode) and not blockers else "simulated_executed" if not blockers else "blocked"
     return RuntimeStrategyResult(
         strategy_id=spec.strategy_id,
         status=status,
@@ -360,17 +397,18 @@ def _validate_strategy_scenario(
         fill_price=None if fill is None else fill.fill_price,
         remote_filled_shares=_optional_float(reconciliation.evidence.get("remote_filled")),
         position_key=None if position is None else position.position_key,
-        lifecycle_covered=bool(position is not None and not lifecycle_blockers),
+        lifecycle_covered=bool(position is not None and not lifecycle_blockers and not paired_exit_blocked),
         reconciliation_status=reconciliation.status,
         reconciliation_evidence=reconciliation.evidence,
-        orders_allowed=config.mode == "supervised_live" and executor_boundary_ready(config.executor_boundary) and config.allow_live_submission,
-        live_trading_authorized=config.mode == "supervised_live" and executor_boundary_ready(config.executor_boundary) and config.allow_live_submission,
+        orders_allowed=_is_live_mode(config.mode) and executor_boundary_ready(config.executor_boundary) and config.allow_live_submission,
+        live_trading_authorized=_is_live_mode(config.mode) and executor_boundary_ready(config.executor_boundary) and config.allow_live_submission,
         live_submission_attempted=live_submission_attempted,
         attribution={
             **_strategy_attribution(enabled_spec),
             "signal_context": scenario.signal_context,
             "strategy_decision": strategy_decision,
             "risk_details": risk_result.details,
+            "order_type": intent.order_type,
             "order_status": order.status,
             "exchange_order_id": order.exchange_order_id,
             "fill_key": None if fill is None else fill.fill_key,
@@ -379,6 +417,9 @@ def _validate_strategy_scenario(
             "reconciliation_evidence": reconciliation.evidence,
             "exit_plan_count": len(exit_plans),
             "coverage_type": coverage_type,
+            "order_source_payload": order.source_payload if isinstance(order.source_payload, dict) else {},
+            "paired_exit_orders": paired_exit_payloads,
+            "paired_exit_order_count": len(paired_exit_payloads),
             "managed_runtime_plans": [_managed_plan_payload(plan) for plan in managed_runtime_plans],
             "managed_runtime_plan_count": len(managed_runtime_plans),
         },
@@ -499,7 +540,9 @@ def _strategy_shadow_scenario(spec: StrategySpec, scenario: RuntimeScenario) -> 
                 desired_up = False
             else:
                 desired_up = None
-                if not profile_confidence_only:
+                if spec.metadata.get("profile_distribution_allow_balanced_live_entry"):
+                    decision["profile_distribution_balanced_live_entry_allowed"] = True
+                elif not profile_confidence_only:
                     blockers.append("profile_distribution_pressure_too_balanced")
             if profile_pressure_mode != "balanced_required":
                 profile_direction_mode = str(spec.metadata.get("profile_direction_mode") or "follow")
@@ -569,6 +612,17 @@ def _strategy_shadow_scenario(spec: StrategySpec, scenario: RuntimeScenario) -> 
         adjusted_shares = 0.8
     elif "event_context" in strategy_id:
         adjusted_shares = 0.7
+
+    target_notional = _optional_float(spec.metadata.get("live_target_order_notional_usd"))
+    if target_notional is not None and target_notional > 0:
+        adjusted_shares = max(adjusted_shares, target_notional / max(adjusted_limit_price, 0.01))
+    min_live_shares = _optional_float(spec.metadata.get("live_min_order_shares"))
+    if min_live_shares is not None and min_live_shares > 0:
+        adjusted_shares = max(adjusted_shares, min_live_shares)
+    policy = spec.metadata.get("promotion_policy") if isinstance(spec.metadata.get("promotion_policy"), dict) else {}
+    budget_cap = _optional_float(spec.metadata.get("live_budget_cap_usd") or policy.get("live_budget_cap_usd"))
+    if budget_cap is not None and budget_cap > 0:
+        adjusted_shares = min(adjusted_shares, budget_cap / max(adjusted_limit_price, 0.01))
 
     for key in (
         "shadow_economics_min_liquidation_pnl_usd",
@@ -696,6 +750,8 @@ def _profile_target_ratio(spec: StrategySpec, context: dict[str, Any]) -> tuple[
     group = breakdown.get(group_kind) if isinstance(breakdown.get(group_kind), dict) else {}
     row = group.get(group_label) if isinstance(group.get(group_label), dict) else None
     if not isinstance(row, dict):
+        if bool(spec.metadata.get("profile_distribution_group_fallback_to_aggregate")):
+            return _optional_float(context.get("target_up_ratio")), "aggregate_cost_weighted_fallback", ()
         return None, f"{group_kind}:{group_label}", (f"profile_distribution_group_missing:{group_kind}:{group_label}",)
     min_components = int(spec.metadata.get("profile_distribution_min_components") or 1)
     if int(row.get("component_count") or 0) < min_components:
@@ -842,7 +898,9 @@ def _option_path_requirements(
         decision["forward_best_bid"] = forward_best_bid
         decision["forward_cashout_edge"] = forward_edge
         decision["required_forward_cashout_edge"] = min_forward_cashout_edge
-        if forward_edge is None or forward_edge < min_forward_cashout_edge:
+        if forward_edge is None and spec.metadata.get("option_path_allow_missing_forward_cashout_edge"):
+            decision["forward_cashout_edge_missing_allowed"] = True
+        elif forward_edge is None or forward_edge < min_forward_cashout_edge:
             blockers.append("option_forward_cashout_edge_low")
 
     entry_min = _optional_float(spec.metadata.get("option_entry_price_min"))
@@ -1299,15 +1357,256 @@ def _create_entry_intent(
     )
 
 
+def _live_paired_exit_required(*, config: SupervisedRuntimeConfig, position: PositionState | None) -> bool:
+    return bool(_is_live_mode(config.mode) and position is not None)
+
+
+def _create_paired_exit_intent(
+    spec: StrategySpec,
+    *,
+    config: SupervisedRuntimeConfig,
+    scenario: RuntimeScenario,
+    candidate_key: str,
+    position: PositionState,
+    fill: FillState | None,
+    entry_order: OrderState | None = None,
+) -> ExecutionIntent:
+    return create_execution_intent(
+        candidate_key=candidate_key,
+        strategy_id=spec.strategy_id,
+        run_id=config.run_id,
+        event_key=scenario.event_key,
+        event_token_key=scenario.event_token_key,
+        side="SELL",
+        intent_type="paired_exit",
+        order_type="limit_sell",
+        shares=position.shares,
+        limit_price=_paired_exit_limit_price(spec, scenario=scenario, position=position, fill=fill, entry_order=entry_order),
+        decision_at_utc=_decision_at_for_scenario(scenario),
+        source_attribution=tuple(spec.signal_inputs.get("profile", ())) + tuple(spec.signal_inputs.get("event", ())) + tuple(spec.signal_inputs.get("indicator", ())),
+    )
+
+
+def _paired_exit_limit_price(
+    spec: StrategySpec,
+    *,
+    scenario: RuntimeScenario,
+    position: PositionState | None = None,
+    fill: FillState | None,
+    entry_order: OrderState | None = None,
+) -> float:
+    entry_price = _paired_exit_entry_basis_price(scenario=scenario, position=position, fill=fill, entry_order=entry_order)
+    target_profit_cents = _first_non_null_float(
+        spec.metadata.get("paired_exit_profit_cents"),
+        spec.metadata.get("live_exit_profit_cents"),
+        spec.exit_rules.get("paired_exit_profit_cents"),
+        spec.exit_rules.get("take_profit_cents"),
+        1.0,
+    )
+    target_profit = max(0.0, float(target_profit_cents or 0.0) / 100.0)
+    return round(min(0.99, max(entry_price, entry_price + target_profit)), 4)
+
+
+def _paired_exit_entry_basis_price(
+    *,
+    scenario: RuntimeScenario,
+    position: PositionState | None,
+    fill: FillState | None,
+    entry_order: OrderState | None,
+) -> float:
+    candidates: list[float] = []
+    if fill is not None:
+        _append_price_candidate(candidates, fill.fill_price)
+    if position is not None and float(position.shares or 0.0) > 0:
+        _append_price_candidate(candidates, float(position.cost_basis_usd) / float(position.shares))
+    if entry_order is not None:
+        source_payload = entry_order.source_payload if isinstance(entry_order.source_payload, dict) else {}
+        response = source_payload.get("live_executor_response") if isinstance(source_payload.get("live_executor_response"), dict) else {}
+        legacy = response.get("legacy_submission") if isinstance(response.get("legacy_submission"), dict) else {}
+        order_request = response.get("order_request") if isinstance(response.get("order_request"), dict) else {}
+        if not order_request:
+            order_request = legacy.get("order_request") if isinstance(legacy.get("order_request"), dict) else {}
+        remote_order = response.get("remote_order") if isinstance(response.get("remote_order"), dict) else {}
+        if not remote_order:
+            remote_order = legacy.get("remote_order") if isinstance(legacy.get("remote_order"), dict) else {}
+        execution_quality = response.get("execution_quality") if isinstance(response.get("execution_quality"), dict) else {}
+        if not execution_quality:
+            execution_quality = legacy.get("execution_quality") if isinstance(legacy.get("execution_quality"), dict) else {}
+        jit_quote = legacy.get("jit_quote") if isinstance(legacy.get("jit_quote"), dict) else {}
+        _append_price_candidate(candidates, response.get("fill_price"))
+        _append_price_candidate(candidates, order_request.get("price"))
+        _append_price_candidate(candidates, order_request.get("submitted_limit_price"))
+        _append_price_candidate(candidates, order_request.get("pre_jit_price"))
+        _append_price_candidate(candidates, remote_order.get("price"))
+        _append_price_candidate(candidates, execution_quality.get("submitted_limit_price"))
+        _append_price_candidate(candidates, execution_quality.get("pre_jit_limit_price"))
+        _append_price_candidate(candidates, execution_quality.get("realized_price"))
+        _append_price_candidate(candidates, jit_quote.get("submitted_limit_price"))
+        requested_shares = _first_non_null_float(order_request.get("size"), entry_order.requested_shares)
+        for total_key in ("estimated_total_cost_usd", "market_amount_usd", "marketable_buy_notional_usd"):
+            total_cost = _first_non_null_float(order_request.get(total_key))
+            if total_cost is not None and requested_shares is not None and requested_shares > 0:
+                _append_price_candidate(candidates, float(total_cost) / float(requested_shares))
+        if not candidates:
+            _append_price_candidate(candidates, entry_order.limit_price)
+    if not candidates:
+        _append_price_candidate(candidates, scenario.limit_price)
+    return max(candidates) if candidates else float(scenario.limit_price)
+
+
+def _append_price_candidate(candidates: list[float], value: object) -> None:
+    parsed = _first_non_null_float(value)
+    if parsed is None:
+        return
+    price = float(parsed)
+    if 0.0 < price < 1.0:
+        candidates.append(price)
+
+
+def _paired_exit_payload(
+    intent: ExecutionIntent,
+    order: OrderState,
+    fill: FillState | None,
+    reconciliation: ReconciliationResult,
+) -> dict[str, Any]:
+    return {
+        "intent_key": intent.intent_key,
+        "candidate_key": intent.candidate_key,
+        "strategy_id": intent.strategy_id,
+        "event_key": intent.event_key,
+        "event_token_key": intent.event_token_key,
+        "intent_type": intent.intent_type,
+        "order_type": intent.order_type,
+        "side": intent.side,
+        "shares": intent.shares,
+        "limit_price": intent.limit_price,
+        "order_key": order.order_key,
+        "exchange_order_id": order.exchange_order_id,
+        "order_status": order.status,
+        "filled_shares": None if fill is None else fill.filled_shares,
+        "fill_price": None if fill is None else fill.fill_price,
+        "reconciliation_status": reconciliation.status,
+        "reconciliation_evidence": reconciliation.evidence,
+        "order_source_payload": order.source_payload if isinstance(order.source_payload, dict) else {},
+    }
+
+
+def _paired_exit_blockers(order: OrderState, reconciliation: ReconciliationResult) -> tuple[str, ...]:
+    blockers: list[str] = []
+    if order.status not in {"submitted", "accepted", "partially_filled", "filled"}:
+        blockers.append("paired_exit_order_not_submitted")
+    blockers.extend(f"paired_exit_{blocker}" for blocker in reconciliation.blockers)
+    return tuple(blockers)
+
+
 def _execute_order_lifecycle(
     intent: ExecutionIntent,
     *,
     config: SupervisedRuntimeConfig,
     scenario: RuntimeScenario,
 ) -> tuple[OrderState, FillState | None, ReconciliationResult]:
-    if config.mode == "supervised_live":
+    if _is_live_mode(config.mode):
         return _supervised_live_order_lifecycle(intent, config=config, scenario=scenario)
     return _simulate_order_lifecycle(intent, config=config, scenario=scenario)
+
+
+def _execute_paired_exit_lifecycle(
+    intent: ExecutionIntent,
+    *,
+    config: SupervisedRuntimeConfig,
+    scenario: RuntimeScenario,
+) -> tuple[OrderState, FillState | None, ReconciliationResult]:
+    order, fill, reconciliation = _execute_order_lifecycle(intent, config=config, scenario=scenario)
+    attempts: list[dict[str, Any]] = [_paired_exit_attempt_payload(order, reconciliation, attempt_index=1)]
+    if not _is_live_mode(config.mode):
+        return order, fill, reconciliation
+    retry_delays_seconds = (0.75, 1.5, 3.0, 5.0)
+    for attempt_index, delay_seconds in enumerate(retry_delays_seconds, start=2):
+        if not _paired_exit_should_retry(order, fill=fill, reconciliation=reconciliation):
+            break
+        time.sleep(delay_seconds)
+        order, fill, reconciliation = _execute_order_lifecycle(intent, config=config, scenario=scenario)
+        attempts.append(_paired_exit_attempt_payload(order, reconciliation, attempt_index=attempt_index))
+    if len(attempts) > 1:
+        source_payload = order.source_payload if isinstance(order.source_payload, dict) else {}
+        order = transition_order(
+            order,
+            status=order.status,
+            source_payload={
+                **source_payload,
+                "paired_exit_retry_attempts": attempts,
+                "paired_exit_retry_count": len(attempts) - 1,
+            },
+        )
+    return order, fill, reconciliation
+
+
+def _paired_exit_should_retry(
+    order: OrderState,
+    *,
+    fill: FillState | None,
+    reconciliation: ReconciliationResult,
+) -> bool:
+    if order.status in {"submitted", "accepted", "partially_filled", "filled"}:
+        return False
+    if fill is not None:
+        return False
+    payload = order.source_payload if isinstance(order.source_payload, dict) else {}
+    response = payload.get("live_executor_response") if isinstance(payload.get("live_executor_response"), dict) else {}
+    legacy = response.get("legacy_submission") if isinstance(response.get("legacy_submission"), dict) else {}
+    if _payload_has_conditional_balance_delay(legacy):
+        return True
+    response_text = " ".join(
+        str(value).lower()
+        for value in (
+            response.get("error"),
+            response.get("message"),
+            legacy.get("error"),
+            legacy.get("message"),
+            legacy.get("reason"),
+            *response.get("blockers", []),
+            *reconciliation.blockers,
+        )
+        if value is not None
+    )
+    return "conditional_balance_too_low" in response_text or "conditional token balance" in response_text
+
+
+def _payload_has_conditional_balance_delay(payload: dict[str, Any]) -> bool:
+    for key in ("asset_check", "conditional_token"):
+        row = payload.get(key)
+        if not isinstance(row, dict):
+            continue
+        reason = str(row.get("reason") or "").lower()
+        balance = _optional_float(row.get("balance"))
+        required = _optional_float(row.get("required_amount") or row.get("required_shares"))
+        if "conditional_balance_too_low" in reason:
+            return True
+        if balance is not None and required is not None and required > 0 and balance + 1e-9 < required:
+            return True
+    return False
+
+
+def _paired_exit_attempt_payload(
+    order: OrderState,
+    reconciliation: ReconciliationResult,
+    *,
+    attempt_index: int,
+) -> dict[str, Any]:
+    payload = order.source_payload if isinstance(order.source_payload, dict) else {}
+    response = payload.get("live_executor_response") if isinstance(payload.get("live_executor_response"), dict) else {}
+    legacy = response.get("legacy_submission") if isinstance(response.get("legacy_submission"), dict) else {}
+    asset_check = legacy.get("asset_check") if isinstance(legacy.get("asset_check"), dict) else {}
+    return {
+        "attempt_index": attempt_index,
+        "order_status": order.status,
+        "exchange_order_id": order.exchange_order_id,
+        "reconciliation_status": reconciliation.status,
+        "reconciliation_blockers": list(reconciliation.blockers),
+        "conditional_balance_reason": asset_check.get("reason"),
+        "conditional_balance": asset_check.get("balance"),
+        "required_shares": asset_check.get("required_shares") or asset_check.get("required_amount"),
+    }
 
 
 def _simulate_order_lifecycle(
@@ -1357,7 +1656,7 @@ def _supervised_live_order_lifecycle(
     scenario: RuntimeScenario,
 ) -> tuple[OrderState, FillState | None, ReconciliationResult]:
     if config.supervised_executor is None:
-        raise RuntimeError("supervised_executor_binding_missing")
+        raise RuntimeError("live_executor_binding_missing")
     created_order = create_order_from_intent(intent)
     submitted_order = transition_order(created_order, status="submitted")
     response = config.supervised_executor(intent, submitted_order, scenario)
@@ -1370,7 +1669,7 @@ def _supervised_live_order_lifecycle(
     filled_order = transition_order(
         create_order_from_intent(intent, exchange_order_id=exchange_order_id),
         status=response_status,
-        source_payload={"supervised_executor_response": response},
+        source_payload={"live_executor_response": response},
     )
     fill = (
         record_fill(filled_order, filled_shares=filled_shares, fill_price=fill_price, reconciled=True)
@@ -1634,7 +1933,7 @@ def _shadow_fill_blockers(
     order: OrderState,
     fill: FillState | None,
 ) -> tuple[str, ...]:
-    if config.mode == "supervised_live":
+    if _is_live_mode(config.mode):
         return ()
     payload = order.source_payload if isinstance(order.source_payload, dict) else {}
     simulation = payload.get("fill_simulation") if isinstance(payload.get("fill_simulation"), dict) else {}

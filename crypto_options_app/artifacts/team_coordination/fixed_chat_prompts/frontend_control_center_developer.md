@@ -49,4 +49,6 @@ Then make the smallest UI-only implementation slice that improves endpoint clari
 
 ## Safety
 
-The frontend cannot authorize orders. Live trading must remain disabled unless the backend explicitly reports an authorized supervised runtime state.
+The frontend cannot authorize orders. Live controls may only reflect
+backend-reported app/runtime capability and must not imply Codex manual order
+authority or a gate bypass.
