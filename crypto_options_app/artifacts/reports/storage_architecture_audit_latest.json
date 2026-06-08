@@ -1,0 +1,203 @@
+{
+  "decision": {
+    "decision": "postgres_only_for_now",
+    "postgres": "required_durable_source_of_truth",
+    "reasons": [
+      "postgres_container_memory_over_6gib:requires_postgres_resource_review",
+      "postgres_temp_bytes_over_1gb"
+    ],
+    "redis": "not_needed_until_hot_latest_state_or_queue_pressure_is_measured"
+  },
+  "endpoint_timings": {
+    "blockers": [],
+    "endpoints": {
+      "dashboard_control_center_state": {
+        "elapsed_ms": 32.0,
+        "payload_bytes": 15991,
+        "status": "ok",
+        "status_code": 200
+      },
+      "health": {
+        "elapsed_ms": 798.02,
+        "payload_bytes": 102182,
+        "status": "ok",
+        "status_code": 200
+      },
+      "signals_validation_status": {
+        "elapsed_ms": 72.44,
+        "payload_bytes": 596,
+        "status": "ok",
+        "status_code": 200
+      },
+      "strategies_promotion": {
+        "elapsed_ms": 44.96,
+        "payload_bytes": 254527,
+        "status": "ok",
+        "status_code": 200
+      }
+    },
+    "status": "ok",
+    "warnings": []
+  },
+  "generated_at_utc": "2026-06-07T11:35:28.407136+00:00",
+  "live_trading_authorized": false,
+  "manual_orders_avoided": true,
+  "postgres_diagnostics": {
+    "active_connection_count": 1,
+    "connection_states": [
+      {
+        "count": 1,
+        "state": "active"
+      },
+      {
+        "count": 5,
+        "state": "unknown"
+      }
+    ],
+    "database_size_bytes": 11357985815,
+    "database_size_pretty": "11 GB",
+    "database_stats": {
+      "blks_hit": 5978719931,
+      "blks_read": 3552639100,
+      "numbackends": 1,
+      "temp_bytes": 413420453888,
+      "temp_files": 31848,
+      "xact_commit": 143509,
+      "xact_rollback": 151
+    },
+    "largest_tables": [
+      {
+        "estimated_live_rows": 28898,
+        "relname": "strategy_validation_runs",
+        "total_bytes": 2605146112,
+        "total_pretty": "2484 MB"
+      },
+      {
+        "estimated_live_rows": 140898,
+        "relname": "polymarket_order_book_levels",
+        "total_bytes": 2365612032,
+        "total_pretty": "2256 MB"
+      },
+      {
+        "estimated_live_rows": 35164,
+        "relname": "profile_distribution_snapshots",
+        "total_bytes": 1148272640,
+        "total_pretty": "1095 MB"
+      },
+      {
+        "estimated_live_rows": 612700,
+        "relname": "profile_raw_activity",
+        "total_bytes": 1046511616,
+        "total_pretty": "998 MB"
+      },
+      {
+        "estimated_live_rows": 14919,
+        "relname": "polymarket_order_books",
+        "total_bytes": 735068160,
+        "total_pretty": "701 MB"
+      },
+      {
+        "estimated_live_rows": 43814,
+        "relname": "external_technical_observer_snapshots",
+        "total_bytes": 734437376,
+        "total_pretty": "700 MB"
+      },
+      {
+        "estimated_live_rows": 14951,
+        "relname": "polymarket_price_ticks",
+        "total_bytes": 600530944,
+        "total_pretty": "573 MB"
+      },
+      {
+        "estimated_live_rows": 7409,
+        "relname": "polymarket_updown_pair_snapshots",
+        "total_bytes": 593215488,
+        "total_pretty": "566 MB"
+      }
+    ],
+    "long_active_queries": [],
+    "long_active_query_count": 0,
+    "settings": [
+      {
+        "name": "effective_cache_size",
+        "setting": "524288",
+        "unit": "8kB"
+      },
+      {
+        "name": "maintenance_work_mem",
+        "setting": "65536",
+        "unit": "kB"
+      },
+      {
+        "name": "max_connections",
+        "setting": "100",
+        "unit": null
+      },
+      {
+        "name": "shared_buffers",
+        "setting": "16384",
+        "unit": "8kB"
+      },
+      {
+        "name": "temp_buffers",
+        "setting": "1024",
+        "unit": "8kB"
+      },
+      {
+        "name": "work_mem",
+        "setting": "4096",
+        "unit": "kB"
+      }
+    ],
+    "status": "degraded",
+    "total_connection_count": 6,
+    "warnings": [
+      "postgres_temp_bytes_over_1gb"
+    ]
+  },
+  "postgres_role": "durable_source_of_truth",
+  "redis_hot_plane": {
+    "database": 0,
+    "enabled": false,
+    "host": "127.0.0.1",
+    "port": 56379,
+    "role": "gated_hot_plane_candidate",
+    "status": "disabled"
+  },
+  "redis_must_not_store_authoritative_trading_truth": true,
+  "redis_role": "gated_hot_plane_candidate",
+  "runtime": {
+    "blockers": [],
+    "db_connection_backend": "postgres",
+    "postgres_container": {
+      "blockers": [],
+      "cpu_percent": "0.23%",
+      "mem_usage": "6.721GiB / 15.47GiB",
+      "mem_used_bytes": 7216618799,
+      "status": "degraded",
+      "warnings": [
+        "postgres_container_memory_over_6gib"
+      ]
+    },
+    "runtime_code_status": "ok",
+    "status": "degraded",
+    "warnings": [
+      "docker_postgres_degraded",
+      "postgres_container_memory_over_6gib"
+    ]
+  },
+  "schema_version": "crypto_options_storage_architecture_audit_v1",
+  "signals": {
+    "blockers": [],
+    "hot_plane_reasons": [],
+    "query_layer_reasons": [
+      "postgres_container_memory_over_6gib:requires_postgres_resource_review",
+      "postgres_temp_bytes_over_1gb"
+    ],
+    "warnings": [
+      "postgres_container_memory_over_6gib",
+      "postgres_temp_bytes_over_1gb"
+    ]
+  },
+  "status": "degraded"
+}

@@ -1,0 +1,3773 @@
+{
+  "fixed_chat_prompt_paths": {
+    "bootstrap": "crypto_options_app/artifacts/team_coordination/fixed_chat_bootstrap.md",
+    "db_data_observability": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/db_data_observability.md",
+    "frontend": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/frontend_control_center_developer.md",
+    "indicator_dev": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/indicator_dev.md",
+    "indicator_qa": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/indicator_qa.md",
+    "prompt_root": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/",
+    "signal_dev": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_dev.md",
+    "signal_qa": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_qa.md",
+    "signal_strategy": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/signal_strategy_management_cleanup.md",
+    "strategy_dev": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/strategy_dev.md",
+    "strategy_qa": "crypto_options_app/artifacts/team_coordination/fixed_chat_prompts/strategy_qa.md"
+  },
+  "gates": {
+    "active_import_cutover_required": false,
+    "automatic_wrapper_moves_allowed": false,
+    "frontend_fixed_chat_can_start_after_batch_3": true,
+    "github_source_of_truth_ready": true,
+    "signal_strategy_fixed_chat_requires_batch_4_and_github_source_of_truth": true
+  },
+  "generated_at_utc": "2026-06-07T11:00:16.229292+00:00",
+  "live_trading_authorized": false,
+  "manual_orders_avoided": true,
+  "next_actions": [
+    "Active crypto code/test imports are cut over; Batch 4 is now a non-active wrapper decision problem.",
+    "Create or refresh the compatibility wrapper decision plan before moving, archiving, or removing wrappers.",
+    "GitHub issue source-of-truth is ready; fixed chats may start from fixed_chat_bootstrap.md and fixed_chat_startup_readiness_latest.md.",
+    "Keep frontend fixed chat eligible after Batch 3; it must use existing prompt and avoid backend promotion/runtime changes.",
+    "Review 59 no-reference wrappers for compatibility archive or removal after tests."
+  ],
+  "schema_version": "crypto_options_compatibility_wrapper_audit_v1",
+  "source_batches_generated_at_utc": "2026-06-07T05:00:39.230778+00:00",
+  "status": "review",
+  "summary": {
+    "active_reference_wrapper_count": 0,
+    "documentation_reference_wrapper_count": 52,
+    "family_counts": {
+      "legacy_api_router": 2,
+      "legacy_cli_script_wrapper": 23,
+      "legacy_crypto_data_node": 3,
+      "legacy_crypto_documentation": 3,
+      "legacy_crypto_pipeline": 1,
+      "legacy_crypto_service": 10,
+      "legacy_crypto_test_wrapper": 49,
+      "legacy_options_pipeline": 34,
+      "legacy_polymarket_crypto_data_node": 5,
+      "legacy_tool_wrapper": 1
+    },
+    "no_reference_wrapper_count": 59,
+    "recommended_decision_counts": {
+      "hold_for_import_audit": 1,
+      "hold_for_runtime_import_audit": 10,
+      "hold_for_strategy_signal_import_cutover": 45,
+      "migrate_or_drop_duplicate_test_after_active_suite_mapping": 49,
+      "migrate_to_crypto_options_docs_or_reference": 3,
+      "replace_with_crypto_options_app_script_entrypoint": 23
+    },
+    "scanned_file_count": 721,
+    "wrapper_count": 131
+  },
+  "wrappers": [
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 3,
+      "family": "legacy_api_router",
+      "matching_central_path": null,
+      "path": "app/api/routers/crypto_options_market_data.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/api/routers/crypto_options_market_data.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 3,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/api/routers/crypto_options_market_data.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_market_price_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/api/routers/crypto_options_market_data.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/api/routers/crypto_options_market_data.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        }
+      ],
+      "search_tokens": [
+        "app.api.routers.crypto_options_market_data",
+        "app/api/routers/crypto_options_market_data.py",
+        "app\\api\\routers\\crypto_options_market_data.py",
+        "from app.api.routers import crypto_options_market_data",
+        "from app.api.routers.crypto_options_market_data import",
+        "import app.api.routers.crypto_options_market_data"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_api_router",
+      "matching_central_path": null,
+      "path": "app/api/routers/crypto_options_signals.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/api/routers/crypto_options_signals.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/api/routers/crypto_options_signals.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        },
+        {
+          "matched_tokens": [
+            "app.api.routers.crypto_options_signals",
+            "app/api/routers/crypto_options_signals.py"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_audit_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.api.routers.crypto_options_signals",
+        "app/api/routers/crypto_options_signals.py",
+        "app\\api\\routers\\crypto_options_signals.py",
+        "from app.api.routers import crypto_options_signals",
+        "from app.api.routers.crypto_options_signals import",
+        "import app.api.routers.crypto_options_signals"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/crypto/__init__.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/crypto/__init__.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.data.nodes.crypto"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.nodes.crypto",
+        "app/data/nodes/crypto/__init__.py",
+        "app\\data\\nodes\\crypto\\__init__.py",
+        "from app.data.nodes import crypto",
+        "from app.data.nodes.crypto import",
+        "import app.data.nodes.crypto"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/crypto/candles.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/crypto/candles.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 3,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/nodes/crypto/candles.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/nodes/crypto/candles.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.nodes.crypto.candles",
+            "from app.data.nodes.crypto.candles import"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.nodes.crypto.candles",
+        "app/data/nodes/crypto/candles.py",
+        "app\\data\\nodes\\crypto\\candles.py",
+        "from app.data.nodes.crypto import candles",
+        "from app.data.nodes.crypto.candles import",
+        "import app.data.nodes.crypto.candles"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/crypto/reference.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/crypto/reference.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/nodes/crypto/reference.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/nodes/crypto/reference.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.nodes.crypto.reference",
+        "app/data/nodes/crypto/reference.py",
+        "app\\data\\nodes\\crypto\\reference.py",
+        "from app.data.nodes.crypto import reference",
+        "from app.data.nodes.crypto.reference import",
+        "import app.data.nodes.crypto.reference"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_polymarket_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/polymarket/crypto/__init__.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/__init__.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.data.nodes.polymarket.crypto"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.nodes.polymarket.crypto",
+        "app/data/nodes/polymarket/crypto/__init__.py",
+        "app\\data\\nodes\\polymarket\\crypto\\__init__.py",
+        "from app.data.nodes.polymarket import crypto",
+        "from app.data.nodes.polymarket.crypto import",
+        "import app.data.nodes.polymarket.crypto"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_polymarket_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/polymarket/crypto/accounts.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/accounts.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.nodes.polymarket.crypto.accounts",
+        "app/data/nodes/polymarket/crypto/accounts.py",
+        "app\\data\\nodes\\polymarket\\crypto\\accounts.py",
+        "from app.data.nodes.polymarket.crypto import accounts",
+        "from app.data.nodes.polymarket.crypto.accounts import",
+        "import app.data.nodes.polymarket.crypto.accounts"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_polymarket_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/polymarket/crypto/history.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/history.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/nodes/polymarket/crypto/history.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.nodes.polymarket.crypto.history",
+            "from app.data.nodes.polymarket.crypto.history import"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.nodes.polymarket.crypto.history",
+        "app/data/nodes/polymarket/crypto/history.py",
+        "app\\data\\nodes\\polymarket\\crypto\\history.py",
+        "from app.data.nodes.polymarket.crypto import history",
+        "from app.data.nodes.polymarket.crypto.history import",
+        "import app.data.nodes.polymarket.crypto.history"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_polymarket_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/polymarket/crypto/live_capture.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/live_capture.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.nodes.polymarket.crypto.live_capture",
+        "app/data/nodes/polymarket/crypto/live_capture.py",
+        "app\\data\\nodes\\polymarket\\crypto\\live_capture.py",
+        "from app.data.nodes.polymarket.crypto import live_capture",
+        "from app.data.nodes.polymarket.crypto.live_capture import",
+        "import app.data.nodes.polymarket.crypto.live_capture"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_polymarket_crypto_data_node",
+      "matching_central_path": null,
+      "path": "app/data/nodes/polymarket/crypto/markets.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/nodes/polymarket/crypto/markets.py",
+      "recommended_decision": "hold_for_runtime_import_audit",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/nodes/polymarket/crypto/markets.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.nodes.polymarket.crypto.markets",
+            "from app.data.nodes.polymarket.crypto.markets import"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.nodes.polymarket.crypto.markets",
+        "app/data/nodes/polymarket/crypto/markets.py",
+        "app\\data\\nodes\\polymarket\\crypto\\markets.py",
+        "from app.data.nodes.polymarket.crypto import markets",
+        "from app.data.nodes.polymarket.crypto.markets import",
+        "import app.data.nodes.polymarket.crypto.markets"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/__init__.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/__init__.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 8,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_audit_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "app/api/routers/crypto_options_market_data.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "app/api/routers/crypto_options_signals.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "app/services/crypto_options/signal_producer.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_v2_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto",
+        "app/data/pipelines/crypto/__init__.py",
+        "app\\data\\pipelines\\crypto\\__init__.py",
+        "from app.data.pipelines import crypto",
+        "from app.data.pipelines.crypto import",
+        "import app.data.pipelines.crypto"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/__init__.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/__init__.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 7,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options"
+          ],
+          "path": "app/api/routers/crypto_options_market_data.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options"
+          ],
+          "path": "app/api/routers/crypto_options_signals.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options"
+          ],
+          "path": "app/services/crypto_options/signal_producer.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options"
+          ],
+          "path": "app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options",
+            "from app.data.pipelines.crypto.options import"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options",
+            "from app.data.pipelines.crypto.options import"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_v2_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options",
+        "app/data/pipelines/crypto/options/__init__.py",
+        "app\\data\\pipelines\\crypto\\options\\__init__.py",
+        "from app.data.pipelines.crypto import options",
+        "from app.data.pipelines.crypto.options import",
+        "import app.data.pipelines.crypto.options"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/audit.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/audit.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/audit.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.audit",
+        "app/data/pipelines/crypto/options/audit.py",
+        "app\\data\\pipelines\\crypto\\options\\audit.py",
+        "from app.data.pipelines.crypto.options import audit",
+        "from app.data.pipelines.crypto.options.audit import",
+        "import app.data.pipelines.crypto.options.audit"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/backtests.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/backtests.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/backtests.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_replay_engine_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/backtests.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.backtests",
+        "app/data/pipelines/crypto/options/backtests.py",
+        "app\\data\\pipelines\\crypto\\options\\backtests.py",
+        "from app.data.pipelines.crypto.options import backtests",
+        "from app.data.pipelines.crypto.options.backtests import",
+        "import app.data.pipelines.crypto.options.backtests"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/candidate_report.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/candidate_report.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/candidate_report.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_replay_engine_data_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.candidate_report",
+        "app/data/pipelines/crypto/options/candidate_report.py",
+        "app\\data\\pipelines\\crypto\\options\\candidate_report.py",
+        "from app.data.pipelines.crypto.options import candidate_report",
+        "from app.data.pipelines.crypto.options.candidate_report import",
+        "import app.data.pipelines.crypto.options.candidate_report"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/cashout_simulator.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/cashout_simulator.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.cashout_simulator",
+        "app/data/pipelines/crypto/options/cashout_simulator.py",
+        "app\\data\\pipelines\\crypto\\options\\cashout_simulator.py",
+        "from app.data.pipelines.crypto.options import cashout_simulator",
+        "from app.data.pipelines.crypto.options.cashout_simulator import",
+        "import app.data.pipelines.crypto.options.cashout_simulator"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/contracts.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/contracts.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/contracts.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.contracts",
+        "app/data/pipelines/crypto/options/contracts.py",
+        "app\\data\\pipelines\\crypto\\options\\contracts.py",
+        "from app.data.pipelines.crypto.options import contracts",
+        "from app.data.pipelines.crypto.options.contracts import",
+        "import app.data.pipelines.crypto.options.contracts"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/engine.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/engine.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/engine.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.engine",
+        "app/data/pipelines/crypto/options/engine.py",
+        "app\\data\\pipelines\\crypto\\options\\engine.py",
+        "from app.data.pipelines.crypto.options import engine",
+        "from app.data.pipelines.crypto.options.engine import",
+        "import app.data.pipelines.crypto.options.engine"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/exit_execution_policy.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/exit_execution_policy.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.exit_execution_policy",
+        "app/data/pipelines/crypto/options/exit_execution_policy.py",
+        "app\\data\\pipelines\\crypto\\options\\exit_execution_policy.py",
+        "from app.data.pipelines.crypto.options import exit_execution_policy",
+        "from app.data.pipelines.crypto.options.exit_execution_policy import",
+        "import app.data.pipelines.crypto.options.exit_execution_policy"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 3,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/indicators.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/indicators.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 3,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/indicators.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_market_price_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/indicators.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/indicators.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.indicators",
+        "app/data/pipelines/crypto/options/indicators.py",
+        "app\\data\\pipelines\\crypto\\options\\indicators.py",
+        "from app.data.pipelines.crypto.options import indicators",
+        "from app.data.pipelines.crypto.options.indicators import",
+        "import app.data.pipelines.crypto.options.indicators"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/labels.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/labels.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/labels.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.labels",
+        "app/data/pipelines/crypto/options/labels.py",
+        "app\\data\\pipelines\\crypto\\options\\labels.py",
+        "from app.data.pipelines.crypto.options import labels",
+        "from app.data.pipelines.crypto.options.labels import",
+        "import app.data.pipelines.crypto.options.labels"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/lane_system.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/lane_system.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.lane_system",
+        "app/data/pipelines/crypto/options/lane_system.py",
+        "app\\data\\pipelines\\crypto\\options\\lane_system.py",
+        "from app.data.pipelines.crypto.options import lane_system",
+        "from app.data.pipelines.crypto.options.lane_system import",
+        "import app.data.pipelines.crypto.options.lane_system"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/live_micro_executor.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/live_micro_executor.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.live_micro_executor",
+            "from app.data.pipelines.crypto.options.live_micro_executor import"
+          ],
+          "path": "app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "from app.data.pipelines.crypto.options import live_micro_executor"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.live_micro_executor",
+        "app/data/pipelines/crypto/options/live_micro_executor.py",
+        "app\\data\\pipelines\\crypto\\options\\live_micro_executor.py",
+        "from app.data.pipelines.crypto.options import live_micro_executor",
+        "from app.data.pipelines.crypto.options.live_micro_executor import",
+        "import app.data.pipelines.crypto.options.live_micro_executor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/live_review.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/live_review.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/live_review.py"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_audit_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/live_review.py"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_decisions_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.live_review",
+        "app/data/pipelines/crypto/options/live_review.py",
+        "app\\data\\pipelines\\crypto\\options\\live_review.py",
+        "from app.data.pipelines.crypto.options import live_review",
+        "from app.data.pipelines.crypto.options.live_review import",
+        "import app.data.pipelines.crypto.options.live_review"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 3,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/market_data_store.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/market_data_store.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 4,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/market_data_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_market_price_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/market_data_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/market_data_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.market_data_store",
+            "from app.data.pipelines.crypto.options.market_data_store import"
+          ],
+          "path": "app/api/routers/crypto_options_market_data.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.market_data_store",
+        "app/data/pipelines/crypto/options/market_data_store.py",
+        "app\\data\\pipelines\\crypto\\options\\market_data_store.py",
+        "from app.data.pipelines.crypto.options import market_data_store",
+        "from app.data.pipelines.crypto.options.market_data_store import",
+        "import app.data.pipelines.crypto.options.market_data_store"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/metrics.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/metrics.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/metrics.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.metrics",
+            "from app.data.pipelines.crypto.options.metrics import"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.metrics",
+        "app/data/pipelines/crypto/options/metrics.py",
+        "app\\data\\pipelines\\crypto\\options\\metrics.py",
+        "from app.data.pipelines.crypto.options import metrics",
+        "from app.data.pipelines.crypto.options.metrics import",
+        "import app.data.pipelines.crypto.options.metrics"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/micro_test_monitor.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/micro_test_monitor.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.micro_test_monitor",
+        "app/data/pipelines/crypto/options/micro_test_monitor.py",
+        "app\\data\\pipelines\\crypto\\options\\micro_test_monitor.py",
+        "from app.data.pipelines.crypto.options import micro_test_monitor",
+        "from app.data.pipelines.crypto.options.micro_test_monitor import",
+        "import app.data.pipelines.crypto.options.micro_test_monitor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/micro_test_protocol.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/micro_test_protocol.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.micro_test_protocol",
+        "app/data/pipelines/crypto/options/micro_test_protocol.py",
+        "app\\data\\pipelines\\crypto\\options\\micro_test_protocol.py",
+        "from app.data.pipelines.crypto.options import micro_test_protocol",
+        "from app.data.pipelines.crypto.options.micro_test_protocol import",
+        "import app.data.pipelines.crypto.options.micro_test_protocol"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/panels.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/panels.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/panels.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.panels",
+        "app/data/pipelines/crypto/options/panels.py",
+        "app\\data\\pipelines\\crypto\\options\\panels.py",
+        "from app.data.pipelines.crypto.options import panels",
+        "from app.data.pipelines.crypto.options.panels import",
+        "import app.data.pipelines.crypto.options.panels"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/polymarket_event_price_service.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/polymarket_event_price_service.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/polymarket_event_price_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_market_price_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/polymarket_event_price_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.polymarket_event_price_service",
+        "app/data/pipelines/crypto/options/polymarket_event_price_service.py",
+        "app\\data\\pipelines\\crypto\\options\\polymarket_event_price_service.py",
+        "from app.data.pipelines.crypto.options import polymarket_event_price_service",
+        "from app.data.pipelines.crypto.options.polymarket_event_price_service import",
+        "import app.data.pipelines.crypto.options.polymarket_event_price_service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/price_path_trace.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/price_path_trace.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/price_path_trace.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_replay_engine_data_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.price_path_trace",
+        "app/data/pipelines/crypto/options/price_path_trace.py",
+        "app\\data\\pipelines\\crypto\\options\\price_path_trace.py",
+        "from app.data.pipelines.crypto.options import price_path_trace",
+        "from app.data.pipelines.crypto.options.price_path_trace import",
+        "import app.data.pipelines.crypto.options.price_path_trace"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/price_stream_service.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/price_stream_service.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/price_stream_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_market_price_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/price_stream_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.price_stream_service",
+        "app/data/pipelines/crypto/options/price_stream_service.py",
+        "app\\data\\pipelines\\crypto\\options\\price_stream_service.py",
+        "from app.data.pipelines.crypto.options import price_stream_service",
+        "from app.data.pipelines.crypto.options.price_stream_service import",
+        "import app.data.pipelines.crypto.options.price_stream_service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/profile_fetch_service.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/profile_fetch_service.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_fetch_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_profile_universe_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_fetch_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.profile_fetch_service",
+        "app/data/pipelines/crypto/options/profile_fetch_service.py",
+        "app\\data\\pipelines\\crypto\\options\\profile_fetch_service.py",
+        "from app.data.pipelines.crypto.options import profile_fetch_service",
+        "from app.data.pipelines.crypto.options.profile_fetch_service import",
+        "import app.data.pipelines.crypto.options.profile_fetch_service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/profile_signal_monitor.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/profile_signal_monitor.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_signal_monitor.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_profile_universe_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.profile_signal_monitor",
+            "from app.data.pipelines.crypto.options.profile_signal_monitor import"
+          ],
+          "path": "app/services/crypto_options/signal_producer.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.profile_signal_monitor",
+        "app/data/pipelines/crypto/options/profile_signal_monitor.py",
+        "app\\data\\pipelines\\crypto\\options\\profile_signal_monitor.py",
+        "from app.data.pipelines.crypto.options import profile_signal_monitor",
+        "from app.data.pipelines.crypto.options.profile_signal_monitor import",
+        "import app.data.pipelines.crypto.options.profile_signal_monitor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/profile_signals.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/profile_signals.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 3,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_signals.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_profile_universe_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_signals.py",
+            "app\\data\\pipelines\\crypto\\options\\profile_signals.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.profile_signals",
+            "from app.data.pipelines.crypto.options.profile_signals import"
+          ],
+          "path": "app/services/crypto_options/signal_producer.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.profile_signals",
+        "app/data/pipelines/crypto/options/profile_signals.py",
+        "app\\data\\pipelines\\crypto\\options\\profile_signals.py",
+        "from app.data.pipelines.crypto.options import profile_signals",
+        "from app.data.pipelines.crypto.options.profile_signals import",
+        "import app.data.pipelines.crypto.options.profile_signals"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 3,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/profile_store.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/profile_store.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 5,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_profile_universe_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_store.py",
+            "app\\data\\pipelines\\crypto\\options\\profile_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/profile_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.profile_store",
+            "from app.data.pipelines.crypto.options.profile_store import"
+          ],
+          "path": "app/api/routers/crypto_options_market_data.py"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.profile_store",
+            "from app.data.pipelines.crypto.options.profile_store import"
+          ],
+          "path": "app/api/routers/crypto_options_signals.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.profile_store",
+        "app/data/pipelines/crypto/options/profile_store.py",
+        "app\\data\\pipelines\\crypto\\options\\profile_store.py",
+        "from app.data.pipelines.crypto.options import profile_store",
+        "from app.data.pipelines.crypto.options.profile_store import",
+        "import app.data.pipelines.crypto.options.profile_store"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/promotion_policy.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/promotion_policy.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.promotion_policy",
+        "app/data/pipelines/crypto/options/promotion_policy.py",
+        "app\\data\\pipelines\\crypto\\options\\promotion_policy.py",
+        "from app.data.pipelines.crypto.options import promotion_policy",
+        "from app.data.pipelines.crypto.options.promotion_policy import",
+        "import app.data.pipelines.crypto.options.promotion_policy"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/reporting.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/reporting.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/reporting.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_replay_engine_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.reporting",
+            "from app.data.pipelines.crypto.options.reporting import"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.reporting",
+        "app/data/pipelines/crypto/options/reporting.py",
+        "app\\data\\pipelines\\crypto\\options\\reporting.py",
+        "from app.data.pipelines.crypto.options import reporting",
+        "from app.data.pipelines.crypto.options.reporting import",
+        "import app.data.pipelines.crypto.options.reporting"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/statistical_components.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/statistical_components.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/statistical_components.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_replay_engine_data_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.statistical_components",
+        "app/data/pipelines/crypto/options/statistical_components.py",
+        "app\\data\\pipelines\\crypto\\options\\statistical_components.py",
+        "from app.data.pipelines.crypto.options import statistical_components",
+        "from app.data.pipelines.crypto.options.statistical_components import",
+        "import app.data.pipelines.crypto.options.statistical_components"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/statistical_signals.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/statistical_signals.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/statistical_signals.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_replay_engine_data_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.statistical_signals",
+        "app/data/pipelines/crypto/options/statistical_signals.py",
+        "app\\data\\pipelines\\crypto\\options\\statistical_signals.py",
+        "from app.data.pipelines.crypto.options import statistical_signals",
+        "from app.data.pipelines.crypto.options.statistical_signals import",
+        "import app.data.pipelines.crypto.options.statistical_signals"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/strategies.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/strategies.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/data/pipelines/crypto/options/strategies.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.strategies",
+        "app/data/pipelines/crypto/options/strategies.py",
+        "app\\data\\pipelines\\crypto\\options\\strategies.py",
+        "from app.data.pipelines.crypto.options import strategies",
+        "from app.data.pipelines.crypto.options.strategies import",
+        "import app.data.pipelines.crypto.options.strategies"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/v2_candidates.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/v2_candidates.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.data.pipelines.crypto.options.v2_candidates",
+            "from app.data.pipelines.crypto.options.v2_candidates import"
+          ],
+          "path": "app/services/crypto_options/v3_replay_readiness.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.v2_candidates",
+        "app/data/pipelines/crypto/options/v2_candidates.py",
+        "app\\data\\pipelines\\crypto\\options\\v2_candidates.py",
+        "from app.data.pipelines.crypto.options import v2_candidates",
+        "from app.data.pipelines.crypto.options.v2_candidates import",
+        "import app.data.pipelines.crypto.options.v2_candidates"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/v2_live_protocol.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/v2_live_protocol.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.v2_live_protocol",
+        "app/data/pipelines/crypto/options/v2_live_protocol.py",
+        "app\\data\\pipelines\\crypto\\options\\v2_live_protocol.py",
+        "from app.data.pipelines.crypto.options import v2_live_protocol",
+        "from app.data.pipelines.crypto.options.v2_live_protocol import",
+        "import app.data.pipelines.crypto.options.v2_live_protocol"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/v2_reporting.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/v2_reporting.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.v2_reporting",
+        "app/data/pipelines/crypto/options/v2_reporting.py",
+        "app\\data\\pipelines\\crypto\\options\\v2_reporting.py",
+        "from app.data.pipelines.crypto.options import v2_reporting",
+        "from app.data.pipelines.crypto.options.v2_reporting import",
+        "import app.data.pipelines.crypto.options.v2_reporting"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_options_pipeline",
+      "matching_central_path": null,
+      "path": "app/data/pipelines/crypto/options/v2_service.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/data/pipelines/crypto/options/v2_service.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "from app.data.pipelines.crypto.options import v2_service"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_v2_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.data.pipelines.crypto.options.v2_service",
+        "app/data/pipelines/crypto/options/v2_service.py",
+        "app\\data\\pipelines\\crypto\\options\\v2_service.py",
+        "from app.data.pipelines.crypto.options import v2_service",
+        "from app.data.pipelines.crypto.options.v2_service import",
+        "import app.data.pipelines.crypto.options.v2_service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_documentation",
+      "matching_central_path": null,
+      "path": "app/docs/reference/crypto_options/README.md",
+      "proposed_destination": "crypto_options_app/compatibility/app/docs/reference/crypto_options/README.md",
+      "recommended_decision": "migrate_to_crypto_options_docs_or_reference",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/docs/reference/crypto_options/README.md"
+          ],
+          "path": "tests/crypto_options_app/test_crypto_options_centralization_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app/docs/reference/crypto_options/README.md",
+        "app\\docs\\reference\\crypto_options\\README.md"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_documentation",
+      "matching_central_path": null,
+      "path": "app/docs/reference/crypto_options_research_module.md",
+      "proposed_destination": "crypto_options_app/compatibility/app/docs/reference/crypto_options_research_module.md",
+      "recommended_decision": "migrate_to_crypto_options_docs_or_reference",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app/docs/reference/crypto_options_research_module.md",
+        "app\\docs\\reference\\crypto_options_research_module.md"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_documentation",
+      "matching_central_path": null,
+      "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md",
+      "proposed_destination": "crypto_options_app/compatibility/app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md",
+      "recommended_decision": "migrate_to_crypto_options_docs_or_reference",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md",
+        "app\\docs\\reference\\crypto_options_v2_readiness_report_2026-06-01.md"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/__init__.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/__init__.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 19,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/pipelines/options/strategies.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/pipelines/options/v2_candidates.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/pipelines/options/v2_service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/scripts/run_crypto_options_research.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/scripts/run_crypto_options_v2_service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/scripts/run_crypto_options_v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/services/crypto_options/v3_observer.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "crypto_options_app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "app/api/routers/crypto_options_signals.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "app/services/crypto_options/v3_observer.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "tests/app/services/crypto_options/test_signal_producer_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_observer_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_policy_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_replay_readiness_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options"
+          ],
+          "path": "tools/crypto_options_v3_observer_app.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options",
+        "app/services/crypto_options/__init__.py",
+        "app\\services\\crypto_options\\__init__.py",
+        "from app.services import crypto_options",
+        "from app.services.crypto_options import",
+        "import app.services.crypto_options"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/data_sources.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/data_sources.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.data_sources"
+          ],
+          "path": "crypto_options_app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.data_sources",
+            "from app.services.crypto_options.data_sources import"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.data_sources",
+        "app/services/crypto_options/data_sources.py",
+        "app\\services\\crypto_options\\data_sources.py",
+        "from app.services.crypto_options import data_sources",
+        "from app.services.crypto_options.data_sources import",
+        "import app.services.crypto_options.data_sources"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/readiness.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/readiness.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.readiness"
+          ],
+          "path": "crypto_options_app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.readiness",
+            "from app.services.crypto_options.readiness import"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.readiness",
+        "app/services/crypto_options/readiness.py",
+        "app\\services\\crypto_options\\readiness.py",
+        "from app.services.crypto_options import readiness",
+        "from app.services.crypto_options.readiness import",
+        "import app.services.crypto_options.readiness"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/service.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/service.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.service"
+          ],
+          "path": "crypto_options_app/scripts/run_crypto_options_research.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.service",
+            "from app.services.crypto_options.service import"
+          ],
+          "path": "tests/app/services/crypto_options/test_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.service",
+        "app/services/crypto_options/service.py",
+        "app\\services\\crypto_options\\service.py",
+        "from app.services.crypto_options import service",
+        "from app.services.crypto_options.service import",
+        "import app.services.crypto_options.service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/signal_producer.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/signal_producer.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.signal_producer",
+            "from app.services.crypto_options.signal_producer import"
+          ],
+          "path": "app/api/routers/crypto_options_signals.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.signal_producer",
+            "from app.services.crypto_options.signal_producer import"
+          ],
+          "path": "tests/app/services/crypto_options/test_signal_producer_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.signal_producer",
+        "app/services/crypto_options/signal_producer.py",
+        "app\\services\\crypto_options\\signal_producer.py",
+        "from app.services.crypto_options import signal_producer",
+        "from app.services.crypto_options.signal_producer import",
+        "import app.services.crypto_options.signal_producer"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/strategy_catalog.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/strategy_catalog.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 4,
+      "references": [
+        {
+          "matched_tokens": [
+            "app/services/crypto_options/strategy_catalog.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.strategy_catalog"
+          ],
+          "path": "crypto_options_app/pipelines/options/strategies.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.strategy_catalog"
+          ],
+          "path": "crypto_options_app/services/crypto_options/service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.strategy_catalog",
+            "from app.services.crypto_options.strategy_catalog import"
+          ],
+          "path": "app/services/crypto_options/service.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.strategy_catalog",
+        "app/services/crypto_options/strategy_catalog.py",
+        "app\\services\\crypto_options\\strategy_catalog.py",
+        "from app.services.crypto_options import strategy_catalog",
+        "from app.services.crypto_options.strategy_catalog import",
+        "import app.services.crypto_options.strategy_catalog"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/v3_observer.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/v3_observer.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 4,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_observer"
+          ],
+          "path": "crypto_options_app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_observer",
+            "from app.services.crypto_options.v3_observer import"
+          ],
+          "path": "app/services/crypto_options/v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_observer",
+            "from app.services.crypto_options.v3_observer import"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_observer_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_observer",
+            "from app.services.crypto_options.v3_observer import"
+          ],
+          "path": "tools/crypto_options_v3_observer_app.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.v3_observer",
+        "app/services/crypto_options/v3_observer.py",
+        "app\\services\\crypto_options\\v3_observer.py",
+        "from app.services.crypto_options import v3_observer",
+        "from app.services.crypto_options.v3_observer import",
+        "import app.services.crypto_options.v3_observer"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/v3_policy.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/v3_policy.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 7,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy"
+          ],
+          "path": "crypto_options_app/pipelines/options/v2_service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy"
+          ],
+          "path": "crypto_options_app/scripts/run_crypto_options_v2_service.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy"
+          ],
+          "path": "crypto_options_app/services/crypto_options/v3_observer.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy",
+            "from app.services.crypto_options.v3_policy import"
+          ],
+          "path": "app/api/routers/crypto_options_signals.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy",
+            "from app.services.crypto_options.v3_policy import"
+          ],
+          "path": "app/services/crypto_options/v3_observer.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy",
+            "from app.services.crypto_options.v3_policy import"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_observer_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_policy",
+            "from app.services.crypto_options.v3_policy import"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_policy_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.v3_policy",
+        "app/services/crypto_options/v3_policy.py",
+        "app\\services\\crypto_options\\v3_policy.py",
+        "from app.services.crypto_options import v3_policy",
+        "from app.services.crypto_options.v3_policy import",
+        "import app.services.crypto_options.v3_policy"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/v3_replay_readiness.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/v3_replay_readiness.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_replay_readiness"
+          ],
+          "path": "crypto_options_app/scripts/run_crypto_options_v3_replay_readiness.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v3_replay_readiness",
+            "from app.services.crypto_options.v3_replay_readiness import"
+          ],
+          "path": "tests/app/services/crypto_options/test_v3_replay_readiness_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.v3_replay_readiness",
+        "app/services/crypto_options/v3_replay_readiness.py",
+        "app\\services\\crypto_options\\v3_replay_readiness.py",
+        "from app.services.crypto_options import v3_replay_readiness",
+        "from app.services.crypto_options.v3_replay_readiness import",
+        "import app.services.crypto_options.v3_replay_readiness"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_service",
+      "matching_central_path": null,
+      "path": "app/services/crypto_options/v4_policy.py",
+      "proposed_destination": "crypto_options_app/compatibility/app/services/crypto_options/v4_policy.py",
+      "recommended_decision": "hold_for_strategy_signal_import_cutover",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v4_policy"
+          ],
+          "path": "crypto_options_app/pipelines/options/v2_candidates.py"
+        },
+        {
+          "matched_tokens": [
+            "app.services.crypto_options.v4_policy"
+          ],
+          "path": "crypto_options_app/pipelines/options/v2_service.py"
+        }
+      ],
+      "search_tokens": [
+        "app.services.crypto_options.v4_policy",
+        "app/services/crypto_options/v4_policy.py",
+        "app\\services\\crypto_options\\v4_policy.py",
+        "from app.services.crypto_options import v4_policy",
+        "from app.services.crypto_options.v4_policy import",
+        "import app.services.crypto_options.v4_policy"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_app_core_flow_live.py",
+      "path": "codex_tool/run_crypto_options_app_core_flow_live.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_app_core_flow_live.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_app_core_flow_live",
+        "codex_tool/run_crypto_options_app_core_flow_live.py",
+        "codex_tool\\run_crypto_options_app_core_flow_live.py",
+        "from codex_tool import run_crypto_options_app_core_flow_live",
+        "from codex_tool.run_crypto_options_app_core_flow_live import",
+        "import codex_tool.run_crypto_options_app_core_flow_live"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_app_settlement_report.py",
+      "path": "codex_tool/run_crypto_options_app_settlement_report.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_app_settlement_report.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_app_settlement_report",
+        "codex_tool/run_crypto_options_app_settlement_report.py",
+        "codex_tool\\run_crypto_options_app_settlement_report.py",
+        "from codex_tool import run_crypto_options_app_settlement_report",
+        "from codex_tool.run_crypto_options_app_settlement_report import",
+        "import codex_tool.run_crypto_options_app_settlement_report"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_app_signal_live.py",
+      "path": "codex_tool/run_crypto_options_app_signal_live.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_app_signal_live.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_app_signal_live",
+        "codex_tool/run_crypto_options_app_signal_live.py",
+        "codex_tool\\run_crypto_options_app_signal_live.py",
+        "from codex_tool import run_crypto_options_app_signal_live",
+        "from codex_tool.run_crypto_options_app_signal_live import",
+        "import codex_tool.run_crypto_options_app_signal_live"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_candidate_report.py",
+      "path": "codex_tool/run_crypto_options_candidate_report.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_candidate_report.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_candidate_report",
+        "codex_tool/run_crypto_options_candidate_report.py",
+        "codex_tool\\run_crypto_options_candidate_report.py",
+        "from codex_tool import run_crypto_options_candidate_report",
+        "from codex_tool.run_crypto_options_candidate_report import",
+        "import codex_tool.run_crypto_options_candidate_report"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_cashout_simulation.py",
+      "path": "codex_tool/run_crypto_options_cashout_simulation.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_cashout_simulation.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_cashout_simulation",
+        "codex_tool/run_crypto_options_cashout_simulation.py",
+        "codex_tool\\run_crypto_options_cashout_simulation.py",
+        "from codex_tool import run_crypto_options_cashout_simulation",
+        "from codex_tool.run_crypto_options_cashout_simulation import",
+        "import codex_tool.run_crypto_options_cashout_simulation"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_decision_review.py",
+      "path": "codex_tool/run_crypto_options_decision_review.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_decision_review.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_decision_review",
+        "codex_tool/run_crypto_options_decision_review.py",
+        "codex_tool\\run_crypto_options_decision_review.py",
+        "from codex_tool import run_crypto_options_decision_review",
+        "from codex_tool.run_crypto_options_decision_review import",
+        "import codex_tool.run_crypto_options_decision_review"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_five_lane_service.py",
+      "path": "codex_tool/run_crypto_options_five_lane_service.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_five_lane_service.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_five_lane_service",
+        "codex_tool/run_crypto_options_five_lane_service.py",
+        "codex_tool\\run_crypto_options_five_lane_service.py",
+        "from codex_tool import run_crypto_options_five_lane_service",
+        "from codex_tool.run_crypto_options_five_lane_service import",
+        "import codex_tool.run_crypto_options_five_lane_service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_five_lane_supervisor.py",
+      "path": "codex_tool/run_crypto_options_five_lane_supervisor.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_five_lane_supervisor.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "from codex_tool import run_crypto_options_five_lane_supervisor"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_five_lane_supervisor_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_five_lane_supervisor",
+        "codex_tool/run_crypto_options_five_lane_supervisor.py",
+        "codex_tool\\run_crypto_options_five_lane_supervisor.py",
+        "from codex_tool import run_crypto_options_five_lane_supervisor",
+        "from codex_tool.run_crypto_options_five_lane_supervisor import",
+        "import codex_tool.run_crypto_options_five_lane_supervisor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_five_lane_system.py",
+      "path": "codex_tool/run_crypto_options_five_lane_system.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_five_lane_system.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_five_lane_system",
+        "codex_tool/run_crypto_options_five_lane_system.py",
+        "codex_tool\\run_crypto_options_five_lane_system.py",
+        "from codex_tool import run_crypto_options_five_lane_system",
+        "from codex_tool.run_crypto_options_five_lane_system import",
+        "import codex_tool.run_crypto_options_five_lane_system"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_gate_aggregate.py",
+      "path": "codex_tool/run_crypto_options_gate_aggregate.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_gate_aggregate.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_gate_aggregate",
+        "codex_tool/run_crypto_options_gate_aggregate.py",
+        "codex_tool\\run_crypto_options_gate_aggregate.py",
+        "from codex_tool import run_crypto_options_gate_aggregate",
+        "from codex_tool.run_crypto_options_gate_aggregate import",
+        "import codex_tool.run_crypto_options_gate_aggregate"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_live_capture.py",
+      "path": "codex_tool/run_crypto_options_live_capture.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_live_capture.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_live_capture",
+        "codex_tool/run_crypto_options_live_capture.py",
+        "codex_tool\\run_crypto_options_live_capture.py",
+        "from codex_tool import run_crypto_options_live_capture",
+        "from codex_tool.run_crypto_options_live_capture import",
+        "import codex_tool.run_crypto_options_live_capture"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_live_micro_executor.py",
+      "path": "codex_tool/run_crypto_options_live_micro_executor.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_live_micro_executor.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 5,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_live_micro_executor.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_live_micro_executor.py"
+          ],
+          "path": "crypto_options_app/pipelines/options/lane_system.py"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_live_micro_executor.py"
+          ],
+          "path": "crypto_options_app/pipelines/options/v2_service.py"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_live_micro_executor.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        },
+        {
+          "matched_tokens": [
+            "from codex_tool import run_crypto_options_live_micro_executor"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_live_micro_executor",
+        "codex_tool/run_crypto_options_live_micro_executor.py",
+        "codex_tool\\run_crypto_options_live_micro_executor.py",
+        "from codex_tool import run_crypto_options_live_micro_executor",
+        "from codex_tool.run_crypto_options_live_micro_executor import",
+        "import codex_tool.run_crypto_options_live_micro_executor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_market_data.py",
+      "path": "codex_tool/run_crypto_options_market_data.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_market_data.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 5,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_market_data.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_market_price_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_market_data.py",
+            "codex_tool\\run_crypto_options_market_data.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_market_data.py"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_audit_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_market_data.py"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_decisions_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_market_data.py"
+          ],
+          "path": "tests/crypto_options_app/test_repo_cleanup_inventory_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_market_data",
+        "codex_tool/run_crypto_options_market_data.py",
+        "codex_tool\\run_crypto_options_market_data.py",
+        "from codex_tool import run_crypto_options_market_data",
+        "from codex_tool.run_crypto_options_market_data import",
+        "import codex_tool.run_crypto_options_market_data"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_micro_test_monitor.py",
+      "path": "codex_tool/run_crypto_options_micro_test_monitor.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_micro_test_monitor.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_micro_test_monitor",
+        "codex_tool/run_crypto_options_micro_test_monitor.py",
+        "codex_tool\\run_crypto_options_micro_test_monitor.py",
+        "from codex_tool import run_crypto_options_micro_test_monitor",
+        "from codex_tool.run_crypto_options_micro_test_monitor import",
+        "import codex_tool.run_crypto_options_micro_test_monitor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_micro_test_protocol.py",
+      "path": "codex_tool/run_crypto_options_micro_test_protocol.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_micro_test_protocol.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_micro_test_protocol",
+        "codex_tool/run_crypto_options_micro_test_protocol.py",
+        "codex_tool\\run_crypto_options_micro_test_protocol.py",
+        "from codex_tool import run_crypto_options_micro_test_protocol",
+        "from codex_tool.run_crypto_options_micro_test_protocol import",
+        "import codex_tool.run_crypto_options_micro_test_protocol"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_price_path_trace.py",
+      "path": "codex_tool/run_crypto_options_price_path_trace.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_price_path_trace.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_price_path_trace",
+        "codex_tool/run_crypto_options_price_path_trace.py",
+        "codex_tool\\run_crypto_options_price_path_trace.py",
+        "from codex_tool import run_crypto_options_price_path_trace",
+        "from codex_tool.run_crypto_options_price_path_trace import",
+        "import codex_tool.run_crypto_options_price_path_trace"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_profile_signal_monitor.py",
+      "path": "codex_tool/run_crypto_options_profile_signal_monitor.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_profile_signal_monitor.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 3,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_profile_signal_monitor.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_profile_universe_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_profile_signal_monitor.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool.run_crypto_options_profile_signal_monitor",
+            "from codex_tool.run_crypto_options_profile_signal_monitor import"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_profile_signal_monitor_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_profile_signal_monitor",
+        "codex_tool/run_crypto_options_profile_signal_monitor.py",
+        "codex_tool\\run_crypto_options_profile_signal_monitor.py",
+        "from codex_tool import run_crypto_options_profile_signal_monitor",
+        "from codex_tool.run_crypto_options_profile_signal_monitor import",
+        "import codex_tool.run_crypto_options_profile_signal_monitor"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_profile_signals.py",
+      "path": "codex_tool/run_crypto_options_profile_signals.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_profile_signals.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_profile_signals.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_profile_signals",
+        "codex_tool/run_crypto_options_profile_signals.py",
+        "codex_tool\\run_crypto_options_profile_signals.py",
+        "from codex_tool import run_crypto_options_profile_signals",
+        "from codex_tool.run_crypto_options_profile_signals import",
+        "import codex_tool.run_crypto_options_profile_signals"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_profile_store.py",
+      "path": "codex_tool/run_crypto_options_profile_store.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_profile_store.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_profile_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_options_profile_universe_data_spec_2026-06-02.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_profile_store.py",
+            "codex_tool\\run_crypto_options_profile_store.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_profile_store",
+        "codex_tool/run_crypto_options_profile_store.py",
+        "codex_tool\\run_crypto_options_profile_store.py",
+        "from codex_tool import run_crypto_options_profile_store",
+        "from codex_tool.run_crypto_options_profile_store import",
+        "import codex_tool.run_crypto_options_profile_store"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_research.py",
+      "path": "codex_tool/run_crypto_options_research.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_research.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_research.py",
+            "codex_tool\\run_crypto_options_research.py"
+          ],
+          "path": "app/docs/reference/crypto_options_research_module.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool.run_crypto_options_research",
+            "from codex_tool.run_crypto_options_research import"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_research_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_research",
+        "codex_tool/run_crypto_options_research.py",
+        "codex_tool\\run_crypto_options_research.py",
+        "from codex_tool import run_crypto_options_research",
+        "from codex_tool.run_crypto_options_research import",
+        "import codex_tool.run_crypto_options_research"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_strategy_validation_probe.py",
+      "path": "codex_tool/run_crypto_options_strategy_validation_probe.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_strategy_validation_probe.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 2,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_strategy_validation_probe.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/26_signal_to_strategy_team_lead_automation_plan.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_strategy_validation_probe.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/27_signal_promotion_checkpoint_2026-06-05.md"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_strategy_validation_probe",
+        "codex_tool/run_crypto_options_strategy_validation_probe.py",
+        "codex_tool\\run_crypto_options_strategy_validation_probe.py",
+        "from codex_tool import run_crypto_options_strategy_validation_probe",
+        "from codex_tool.run_crypto_options_strategy_validation_probe import",
+        "import codex_tool.run_crypto_options_strategy_validation_probe"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 2,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_v2_service.py",
+      "path": "codex_tool/run_crypto_options_v2_service.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_v2_service.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 4,
+      "references": [
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_v2_service.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool/run_crypto_options_v2_service.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        },
+        {
+          "matched_tokens": [
+            "from codex_tool import run_crypto_options_v2_service"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_v2_service_pytest.py"
+        },
+        {
+          "matched_tokens": [
+            "codex_tool.run_crypto_options_v2_service",
+            "import codex_tool.run_crypto_options_v2_service"
+          ],
+          "path": "tests/codex_tool/test_run_crypto_options_v4_service_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_v2_service",
+        "codex_tool/run_crypto_options_v2_service.py",
+        "codex_tool\\run_crypto_options_v2_service.py",
+        "from codex_tool import run_crypto_options_v2_service",
+        "from codex_tool.run_crypto_options_v2_service import",
+        "import codex_tool.run_crypto_options_v2_service"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_cli_script_wrapper",
+      "matching_central_path": "crypto_options_app/scripts/run_crypto_options_v3_replay_readiness.py",
+      "path": "codex_tool/run_crypto_options_v3_replay_readiness.py",
+      "proposed_destination": "crypto_options_app/compatibility/codex_tool/run_crypto_options_v3_replay_readiness.py",
+      "recommended_decision": "replace_with_crypto_options_app_script_entrypoint",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "codex_tool.run_crypto_options_v3_replay_readiness",
+        "codex_tool/run_crypto_options_v3_replay_readiness.py",
+        "codex_tool\\run_crypto_options_v3_replay_readiness.py",
+        "from codex_tool import run_crypto_options_v3_replay_readiness",
+        "from codex_tool.run_crypto_options_v3_replay_readiness import",
+        "import codex_tool.run_crypto_options_v3_replay_readiness"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/api/test_crypto_options_signals_router_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/api/test_crypto_options_signals_router_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests/app/api/test_crypto_options_signals_router_pytest.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.api import test_crypto_options_signals_router_pytest",
+        "from tests.app.api.test_crypto_options_signals_router_pytest import",
+        "import tests.app.api.test_crypto_options_signals_router_pytest",
+        "tests.app.api.test_crypto_options_signals_router_pytest",
+        "tests/app/api/test_crypto_options_signals_router_pytest.py",
+        "tests\\app\\api\\test_crypto_options_signals_router_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/crypto/test_candles_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/crypto/test_candles_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.crypto import test_candles_pytest",
+        "from tests.app.data.nodes.crypto.test_candles_pytest import",
+        "import tests.app.data.nodes.crypto.test_candles_pytest",
+        "tests.app.data.nodes.crypto.test_candles_pytest",
+        "tests/app/data/nodes/crypto/test_candles_pytest.py",
+        "tests\\app\\data\\nodes\\crypto\\test_candles_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/crypto/test_reference_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/crypto/test_reference_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.crypto import test_reference_pytest",
+        "from tests.app.data.nodes.crypto.test_reference_pytest import",
+        "import tests.app.data.nodes.crypto.test_reference_pytest",
+        "tests.app.data.nodes.crypto.test_reference_pytest",
+        "tests/app/data/nodes/crypto/test_reference_pytest.py",
+        "tests\\app\\data\\nodes\\crypto\\test_reference_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/polymarket/crypto/test_accounts_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/polymarket/crypto/test_accounts_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.polymarket.crypto import test_accounts_pytest",
+        "from tests.app.data.nodes.polymarket.crypto.test_accounts_pytest import",
+        "import tests.app.data.nodes.polymarket.crypto.test_accounts_pytest",
+        "tests.app.data.nodes.polymarket.crypto.test_accounts_pytest",
+        "tests/app/data/nodes/polymarket/crypto/test_accounts_pytest.py",
+        "tests\\app\\data\\nodes\\polymarket\\crypto\\test_accounts_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/polymarket/crypto/test_history_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/polymarket/crypto/test_history_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.polymarket.crypto import test_history_pytest",
+        "from tests.app.data.nodes.polymarket.crypto.test_history_pytest import",
+        "import tests.app.data.nodes.polymarket.crypto.test_history_pytest",
+        "tests.app.data.nodes.polymarket.crypto.test_history_pytest",
+        "tests/app/data/nodes/polymarket/crypto/test_history_pytest.py",
+        "tests\\app\\data\\nodes\\polymarket\\crypto\\test_history_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/polymarket/crypto/test_live_capture_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/polymarket/crypto/test_live_capture_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.polymarket.crypto import test_live_capture_pytest",
+        "from tests.app.data.nodes.polymarket.crypto.test_live_capture_pytest import",
+        "import tests.app.data.nodes.polymarket.crypto.test_live_capture_pytest",
+        "tests.app.data.nodes.polymarket.crypto.test_live_capture_pytest",
+        "tests/app/data/nodes/polymarket/crypto/test_live_capture_pytest.py",
+        "tests\\app\\data\\nodes\\polymarket\\crypto\\test_live_capture_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/polymarket/crypto/test_markets_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/polymarket/crypto/test_markets_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.polymarket.crypto import test_markets_pytest",
+        "from tests.app.data.nodes.polymarket.crypto.test_markets_pytest import",
+        "import tests.app.data.nodes.polymarket.crypto.test_markets_pytest",
+        "tests.app.data.nodes.polymarket.crypto.test_markets_pytest",
+        "tests/app/data/nodes/polymarket/crypto/test_markets_pytest.py",
+        "tests\\app\\data\\nodes\\polymarket\\crypto\\test_markets_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/polymarket/crypto/test_pmxt_history_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/polymarket/crypto/test_pmxt_history_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.polymarket.crypto import test_pmxt_history_pytest",
+        "from tests.app.data.nodes.polymarket.crypto.test_pmxt_history_pytest import",
+        "import tests.app.data.nodes.polymarket.crypto.test_pmxt_history_pytest",
+        "tests.app.data.nodes.polymarket.crypto.test_pmxt_history_pytest",
+        "tests/app/data/nodes/polymarket/crypto/test_pmxt_history_pytest.py",
+        "tests\\app\\data\\nodes\\polymarket\\crypto\\test_pmxt_history_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/nodes/polymarket/crypto/test_window_history_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/nodes/polymarket/crypto/test_window_history_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.nodes.polymarket.crypto import test_window_history_pytest",
+        "from tests.app.data.nodes.polymarket.crypto.test_window_history_pytest import",
+        "import tests.app.data.nodes.polymarket.crypto.test_window_history_pytest",
+        "tests.app.data.nodes.polymarket.crypto.test_window_history_pytest",
+        "tests/app/data/nodes/polymarket/crypto/test_window_history_pytest.py",
+        "tests\\app\\data\\nodes\\polymarket\\crypto\\test_window_history_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_audit_backtests_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_audit_backtests_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_audit_backtests_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_audit_backtests_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_audit_backtests_pytest",
+        "tests.app.data.pipelines.crypto.options.test_audit_backtests_pytest",
+        "tests/app/data/pipelines/crypto/options/test_audit_backtests_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_audit_backtests_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_candidate_report_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_candidate_report_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_candidate_report_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_candidate_report_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_candidate_report_pytest",
+        "tests.app.data.pipelines.crypto.options.test_candidate_report_pytest",
+        "tests/app/data/pipelines/crypto/options/test_candidate_report_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_candidate_report_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_cashout_simulator_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_cashout_simulator_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_cashout_simulator_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_cashout_simulator_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_cashout_simulator_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_cashout_simulator_pytest",
+        "tests.app.data.pipelines.crypto.options.test_cashout_simulator_pytest",
+        "tests/app/data/pipelines/crypto/options/test_cashout_simulator_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_cashout_simulator_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_exit_execution_policy_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_exit_execution_policy_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_exit_execution_policy_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_exit_execution_policy_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_exit_execution_policy_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_exit_execution_policy_pytest",
+        "tests.app.data.pipelines.crypto.options.test_exit_execution_policy_pytest",
+        "tests/app/data/pipelines/crypto/options/test_exit_execution_policy_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_exit_execution_policy_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_indicators_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_indicators_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests/app/data/pipelines/crypto/options/test_indicators_pytest.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/crypto_price_stream_indicator_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_indicators_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_indicators_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_indicators_pytest",
+        "tests.app.data.pipelines.crypto.options.test_indicators_pytest",
+        "tests/app/data/pipelines/crypto/options/test_indicators_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_indicators_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_labels_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_labels_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_labels_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_labels_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_labels_pytest",
+        "tests.app.data.pipelines.crypto.options.test_labels_pytest",
+        "tests/app/data/pipelines/crypto/options/test_labels_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_labels_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_lane_system_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_lane_system_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_lane_system_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_lane_system_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_lane_system_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_lane_system_pytest",
+        "tests.app.data.pipelines.crypto.options.test_lane_system_pytest",
+        "tests/app/data/pipelines/crypto/options/test_lane_system_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_lane_system_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_live_micro_executor_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_live_micro_executor_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_live_micro_executor_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_live_micro_executor_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_live_micro_executor_pytest",
+        "tests.app.data.pipelines.crypto.options.test_live_micro_executor_pytest",
+        "tests/app/data/pipelines/crypto/options/test_live_micro_executor_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_live_micro_executor_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_live_review_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_live_review_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_live_review_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_live_review_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_live_review_pytest",
+        "tests.app.data.pipelines.crypto.options.test_live_review_pytest",
+        "tests/app/data/pipelines/crypto/options/test_live_review_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_live_review_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_market_data_store_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_market_data_store_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_market_data_store_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_market_data_store_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_market_data_store_pytest",
+        "tests.app.data.pipelines.crypto.options.test_market_data_store_pytest",
+        "tests/app/data/pipelines/crypto/options/test_market_data_store_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_market_data_store_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_metrics_strategies_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_metrics_strategies_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_metrics_strategies_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_metrics_strategies_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_metrics_strategies_pytest",
+        "tests.app.data.pipelines.crypto.options.test_metrics_strategies_pytest",
+        "tests/app/data/pipelines/crypto/options/test_metrics_strategies_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_metrics_strategies_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_micro_test_monitor_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_micro_test_monitor_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_micro_test_monitor_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_micro_test_monitor_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_micro_test_monitor_pytest",
+        "tests.app.data.pipelines.crypto.options.test_micro_test_monitor_pytest",
+        "tests/app/data/pipelines/crypto/options/test_micro_test_monitor_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_micro_test_monitor_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_micro_test_protocol_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_micro_test_protocol_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_micro_test_protocol_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_micro_test_protocol_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_micro_test_protocol_pytest",
+        "tests.app.data.pipelines.crypto.options.test_micro_test_protocol_pytest",
+        "tests/app/data/pipelines/crypto/options/test_micro_test_protocol_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_micro_test_protocol_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_polymarket_event_price_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_polymarket_event_price_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_polymarket_event_price_service_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_polymarket_event_price_service_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_polymarket_event_price_service_pytest",
+        "tests.app.data.pipelines.crypto.options.test_polymarket_event_price_service_pytest",
+        "tests/app/data/pipelines/crypto/options/test_polymarket_event_price_service_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_polymarket_event_price_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_price_path_trace_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_price_path_trace_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_price_path_trace_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_price_path_trace_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_price_path_trace_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_price_path_trace_pytest",
+        "tests.app.data.pipelines.crypto.options.test_price_path_trace_pytest",
+        "tests/app/data/pipelines/crypto/options/test_price_path_trace_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_price_path_trace_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_price_stream_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_price_stream_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_price_stream_service_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_price_stream_service_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_price_stream_service_pytest",
+        "tests.app.data.pipelines.crypto.options.test_price_stream_service_pytest",
+        "tests/app/data/pipelines/crypto/options/test_price_stream_service_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_price_stream_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_profile_fetch_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_profile_fetch_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests/app/data/pipelines/crypto/options/test_profile_fetch_service_pytest.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_profile_fetch_service_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_profile_fetch_service_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_profile_fetch_service_pytest",
+        "tests.app.data.pipelines.crypto.options.test_profile_fetch_service_pytest",
+        "tests/app/data/pipelines/crypto/options/test_profile_fetch_service_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_profile_fetch_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_profile_signal_monitor_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_profile_signal_monitor_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_profile_signal_monitor_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_profile_signal_monitor_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_profile_signal_monitor_pytest",
+        "tests.app.data.pipelines.crypto.options.test_profile_signal_monitor_pytest",
+        "tests/app/data/pipelines/crypto/options/test_profile_signal_monitor_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_profile_signal_monitor_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_profile_signals_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_profile_signals_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests/app/data/pipelines/crypto/options/test_profile_signals_pytest.py",
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_profile_signals_pytest.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_profile_signals_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_profile_signals_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_profile_signals_pytest",
+        "tests.app.data.pipelines.crypto.options.test_profile_signals_pytest",
+        "tests/app/data/pipelines/crypto/options/test_profile_signals_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_profile_signals_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_profile_store_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_profile_store_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests/app/data/pipelines/crypto/options/test_profile_store_pytest.py",
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_profile_store_pytest.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/current_profile_signal_system_spec_2026-06-02.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_profile_store_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_profile_store_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_profile_store_pytest",
+        "tests.app.data.pipelines.crypto.options.test_profile_store_pytest",
+        "tests/app/data/pipelines/crypto/options/test_profile_store_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_profile_store_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_promotion_policy_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_promotion_policy_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_promotion_policy_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_promotion_policy_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_promotion_policy_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_promotion_policy_pytest",
+        "tests.app.data.pipelines.crypto.options.test_promotion_policy_pytest",
+        "tests/app/data/pipelines/crypto/options/test_promotion_policy_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_promotion_policy_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_replay_engine_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_replay_engine_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_replay_engine_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_replay_engine_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_replay_engine_pytest",
+        "tests.app.data.pipelines.crypto.options.test_replay_engine_pytest",
+        "tests/app/data/pipelines/crypto/options/test_replay_engine_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_replay_engine_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_statistical_components_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_statistical_components_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_statistical_components_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_statistical_components_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_statistical_components_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_statistical_components_pytest",
+        "tests.app.data.pipelines.crypto.options.test_statistical_components_pytest",
+        "tests/app/data/pipelines/crypto/options/test_statistical_components_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_statistical_components_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_statistical_signals_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_statistical_signals_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_statistical_signals_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_statistical_signals_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_statistical_signals_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_statistical_signals_pytest",
+        "tests.app.data.pipelines.crypto.options.test_statistical_signals_pytest",
+        "tests/app/data/pipelines/crypto/options/test_statistical_signals_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_statistical_signals_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_v2_candidates_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_v2_candidates_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_candidates_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_v2_candidates_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_v2_candidates_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_v2_candidates_pytest",
+        "tests.app.data.pipelines.crypto.options.test_v2_candidates_pytest",
+        "tests/app/data/pipelines/crypto/options/test_v2_candidates_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_candidates_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_v2_live_protocol_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_v2_live_protocol_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_live_protocol_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_v2_live_protocol_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_v2_live_protocol_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_v2_live_protocol_pytest",
+        "tests.app.data.pipelines.crypto.options.test_v2_live_protocol_pytest",
+        "tests/app/data/pipelines/crypto/options/test_v2_live_protocol_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_live_protocol_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_v2_reporting_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_v2_reporting_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_reporting_pytest.py"
+          ],
+          "path": "app/docs/reference/crypto_options_v2_readiness_report_2026-06-01.md"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_v2_reporting_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_v2_reporting_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_v2_reporting_pytest",
+        "tests.app.data.pipelines.crypto.options.test_v2_reporting_pytest",
+        "tests/app/data/pipelines/crypto/options/test_v2_reporting_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_reporting_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_v2_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_v2_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_v2_service_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_v2_service_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_v2_service_pytest",
+        "tests.app.data.pipelines.crypto.options.test_v2_service_pytest",
+        "tests/app/data/pipelines/crypto/options/test_v2_service_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_v2_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/data/pipelines/crypto/options/test_v4_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/data/pipelines/crypto/options/test_v4_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.data.pipelines.crypto.options import test_v4_service_pytest",
+        "from tests.app.data.pipelines.crypto.options.test_v4_service_pytest import",
+        "import tests.app.data.pipelines.crypto.options.test_v4_service_pytest",
+        "tests.app.data.pipelines.crypto.options.test_v4_service_pytest",
+        "tests/app/data/pipelines/crypto/options/test_v4_service_pytest.py",
+        "tests\\app\\data\\pipelines\\crypto\\options\\test_v4_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/services/crypto_options/test_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/services/crypto_options/test_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tests/app/services/crypto_options/test_service_pytest.py"
+          ],
+          "path": "tests/crypto_options_app/test_compatibility_wrapper_decisions_pytest.py"
+        }
+      ],
+      "search_tokens": [
+        "from tests.app.services.crypto_options import test_service_pytest",
+        "from tests.app.services.crypto_options.test_service_pytest import",
+        "import tests.app.services.crypto_options.test_service_pytest",
+        "tests.app.services.crypto_options.test_service_pytest",
+        "tests/app/services/crypto_options/test_service_pytest.py",
+        "tests\\app\\services\\crypto_options\\test_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/services/crypto_options/test_signal_producer_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/services/crypto_options/test_signal_producer_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.services.crypto_options import test_signal_producer_pytest",
+        "from tests.app.services.crypto_options.test_signal_producer_pytest import",
+        "import tests.app.services.crypto_options.test_signal_producer_pytest",
+        "tests.app.services.crypto_options.test_signal_producer_pytest",
+        "tests/app/services/crypto_options/test_signal_producer_pytest.py",
+        "tests\\app\\services\\crypto_options\\test_signal_producer_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/services/crypto_options/test_v3_observer_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/services/crypto_options/test_v3_observer_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.services.crypto_options import test_v3_observer_pytest",
+        "from tests.app.services.crypto_options.test_v3_observer_pytest import",
+        "import tests.app.services.crypto_options.test_v3_observer_pytest",
+        "tests.app.services.crypto_options.test_v3_observer_pytest",
+        "tests/app/services/crypto_options/test_v3_observer_pytest.py",
+        "tests\\app\\services\\crypto_options\\test_v3_observer_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/services/crypto_options/test_v3_policy_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/services/crypto_options/test_v3_policy_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.services.crypto_options import test_v3_policy_pytest",
+        "from tests.app.services.crypto_options.test_v3_policy_pytest import",
+        "import tests.app.services.crypto_options.test_v3_policy_pytest",
+        "tests.app.services.crypto_options.test_v3_policy_pytest",
+        "tests/app/services/crypto_options/test_v3_policy_pytest.py",
+        "tests\\app\\services\\crypto_options\\test_v3_policy_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/app/services/crypto_options/test_v3_replay_readiness_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/app/services/crypto_options/test_v3_replay_readiness_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.app.services.crypto_options import test_v3_replay_readiness_pytest",
+        "from tests.app.services.crypto_options.test_v3_replay_readiness_pytest import",
+        "import tests.app.services.crypto_options.test_v3_replay_readiness_pytest",
+        "tests.app.services.crypto_options.test_v3_replay_readiness_pytest",
+        "tests/app/services/crypto_options/test_v3_replay_readiness_pytest.py",
+        "tests\\app\\services\\crypto_options\\test_v3_replay_readiness_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/codex_tool/test_run_crypto_options_five_lane_supervisor_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/codex_tool/test_run_crypto_options_five_lane_supervisor_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.codex_tool import test_run_crypto_options_five_lane_supervisor_pytest",
+        "from tests.codex_tool.test_run_crypto_options_five_lane_supervisor_pytest import",
+        "import tests.codex_tool.test_run_crypto_options_five_lane_supervisor_pytest",
+        "tests.codex_tool.test_run_crypto_options_five_lane_supervisor_pytest",
+        "tests/codex_tool/test_run_crypto_options_five_lane_supervisor_pytest.py",
+        "tests\\codex_tool\\test_run_crypto_options_five_lane_supervisor_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.codex_tool import test_run_crypto_options_live_micro_executor_pytest",
+        "from tests.codex_tool.test_run_crypto_options_live_micro_executor_pytest import",
+        "import tests.codex_tool.test_run_crypto_options_live_micro_executor_pytest",
+        "tests.codex_tool.test_run_crypto_options_live_micro_executor_pytest",
+        "tests/codex_tool/test_run_crypto_options_live_micro_executor_pytest.py",
+        "tests\\codex_tool\\test_run_crypto_options_live_micro_executor_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/codex_tool/test_run_crypto_options_profile_signal_monitor_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/codex_tool/test_run_crypto_options_profile_signal_monitor_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.codex_tool import test_run_crypto_options_profile_signal_monitor_pytest",
+        "from tests.codex_tool.test_run_crypto_options_profile_signal_monitor_pytest import",
+        "import tests.codex_tool.test_run_crypto_options_profile_signal_monitor_pytest",
+        "tests.codex_tool.test_run_crypto_options_profile_signal_monitor_pytest",
+        "tests/codex_tool/test_run_crypto_options_profile_signal_monitor_pytest.py",
+        "tests\\codex_tool\\test_run_crypto_options_profile_signal_monitor_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/codex_tool/test_run_crypto_options_research_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/codex_tool/test_run_crypto_options_research_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.codex_tool import test_run_crypto_options_research_pytest",
+        "from tests.codex_tool.test_run_crypto_options_research_pytest import",
+        "import tests.codex_tool.test_run_crypto_options_research_pytest",
+        "tests.codex_tool.test_run_crypto_options_research_pytest",
+        "tests/codex_tool/test_run_crypto_options_research_pytest.py",
+        "tests\\codex_tool\\test_run_crypto_options_research_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/codex_tool/test_run_crypto_options_v2_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/codex_tool/test_run_crypto_options_v2_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.codex_tool import test_run_crypto_options_v2_service_pytest",
+        "from tests.codex_tool.test_run_crypto_options_v2_service_pytest import",
+        "import tests.codex_tool.test_run_crypto_options_v2_service_pytest",
+        "tests.codex_tool.test_run_crypto_options_v2_service_pytest",
+        "tests/codex_tool/test_run_crypto_options_v2_service_pytest.py",
+        "tests\\codex_tool\\test_run_crypto_options_v2_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 0,
+      "family": "legacy_crypto_test_wrapper",
+      "matching_central_path": null,
+      "path": "tests/codex_tool/test_run_crypto_options_v4_service_pytest.py",
+      "proposed_destination": "crypto_options_app/compatibility/tests/codex_tool/test_run_crypto_options_v4_service_pytest.py",
+      "recommended_decision": "migrate_or_drop_duplicate_test_after_active_suite_mapping",
+      "reference_count": 0,
+      "references": [],
+      "search_tokens": [
+        "from tests.codex_tool import test_run_crypto_options_v4_service_pytest",
+        "from tests.codex_tool.test_run_crypto_options_v4_service_pytest import",
+        "import tests.codex_tool.test_run_crypto_options_v4_service_pytest",
+        "tests.codex_tool.test_run_crypto_options_v4_service_pytest",
+        "tests/codex_tool/test_run_crypto_options_v4_service_pytest.py",
+        "tests\\codex_tool\\test_run_crypto_options_v4_service_pytest.py"
+      ],
+      "status": "??"
+    },
+    {
+      "active_reference_count": 0,
+      "documentation_reference_count": 1,
+      "family": "legacy_tool_wrapper",
+      "matching_central_path": null,
+      "path": "tools/crypto_options_v3_observer_app.py",
+      "proposed_destination": "crypto_options_app/compatibility/tools/crypto_options_v3_observer_app.py",
+      "recommended_decision": "hold_for_import_audit",
+      "reference_count": 1,
+      "references": [
+        {
+          "matched_tokens": [
+            "tools/crypto_options_v3_observer_app.py"
+          ],
+          "path": "crypto_options_app/docs/reference/crypto_options/technical_specs/00_current_state_inventory.md"
+        }
+      ],
+      "search_tokens": [
+        "from tools import crypto_options_v3_observer_app",
+        "from tools.crypto_options_v3_observer_app import",
+        "import tools.crypto_options_v3_observer_app",
+        "tools.crypto_options_v3_observer_app",
+        "tools/crypto_options_v3_observer_app.py",
+        "tools\\crypto_options_v3_observer_app.py"
+      ],
+      "status": "??"
+    }
+  ]
+}

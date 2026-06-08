@@ -1,0 +1,800 @@
+{
+  "counts": {
+    "calibrated_pass": 2,
+    "calibrated_reject": 8,
+    "eligible_not_review_blocked": 12,
+    "excluded_review_blocked": 3,
+    "hold_quality_or_state": 1,
+    "no_calibrated_sample": 1,
+    "previous_positive": 15
+  },
+  "eligible": [
+    {
+      "calibrated": {
+        "actual_live_win_rate": 20.0,
+        "actual_resolved_pnl": -9.4761,
+        "data_quality_score": 0.84,
+        "decisions": 5,
+        "divergence_vs_actual": -1.7839,
+        "simulated_blocked": 0,
+        "simulated_filled": 4,
+        "simulated_pnl": -11.26,
+        "simulated_unfilled": 1,
+        "strategy_key": "master_hedge_grid_floor_tail_reversal_probe_v4:v4"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T20:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 12.04,
+          "return_pct": 605.63,
+          "samples": 19,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v4",
+          "tested_notional_usd": 1.988,
+          "version": "v4",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T20:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 12.04,
+          "return_pct": 605.63,
+          "samples": 19,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v4",
+          "tested_notional_usd": 1.988,
+          "version": "v4",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v4",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v4"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 80.0,
+        "actual_resolved_pnl": 10.7216,
+        "data_quality_score": 0.83,
+        "decisions": 5,
+        "divergence_vs_actual": -5.4516,
+        "simulated_blocked": 0,
+        "simulated_filled": 3,
+        "simulated_pnl": 5.27,
+        "simulated_unfilled": 2,
+        "strategy_key": "master_hedge_grid_floor_tail_reversal_probe_v5:v5"
+      },
+      "current_blockers": [],
+      "current_state": "LIVE_CANDIDATE",
+      "previous": {
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T20:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 39.83,
+          "return_pct": 528.81,
+          "samples": 73,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v5",
+          "tested_notional_usd": 7.532,
+          "version": "v5",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T20:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 39.83,
+          "return_pct": 528.81,
+          "samples": 73,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v5",
+          "tested_notional_usd": 7.532,
+          "version": "v5",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v5",
+      "verdict": "PASS CALIBRATED RETEST",
+      "version": "v5"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 40.0,
+        "actual_resolved_pnl": -0.5112,
+        "data_quality_score": 0.7,
+        "decisions": 5,
+        "divergence_vs_actual": -2.8638,
+        "simulated_blocked": 0,
+        "simulated_filled": 1,
+        "simulated_pnl": -3.375,
+        "simulated_unfilled": 4,
+        "strategy_key": "master_hedge_grid_floor_tail_reversal_probe_v6:v6"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T10:25:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 12.712,
+          "return_pct": 515.91,
+          "samples": 24,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v6",
+          "tested_notional_usd": 2.464,
+          "version": "v6",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T10:25:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 12.712,
+          "return_pct": 515.91,
+          "samples": 24,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v6",
+          "tested_notional_usd": 2.464,
+          "version": "v6",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v6",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v6"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 66.7,
+        "actual_resolved_pnl": 4.475,
+        "data_quality_score": 0.758333,
+        "decisions": 6,
+        "divergence_vs_actual": 1.2316,
+        "simulated_blocked": 0,
+        "simulated_filled": 5,
+        "simulated_pnl": 5.7066,
+        "simulated_unfilled": 1,
+        "strategy_key": "option_tail_reversal_hold_60s_v3:v3"
+      },
+      "current_blockers": [],
+      "current_state": "LIVE_CANDIDATE",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-07T15:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 0.74,
+          "return_pct": 493.33,
+          "samples": 1,
+          "state": "SHADOW_READY",
+          "strategy_id": "option_tail_reversal_hold_60s_v3",
+          "tested_notional_usd": 0.15,
+          "version": "v3",
+          "win_rate": 100.0
+        },
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-07T15:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 12.38,
+          "return_pct": 520.17,
+          "samples": 32,
+          "state": "SHADOW_READY",
+          "strategy_id": "option_tail_reversal_hold_60s_v3",
+          "tested_notional_usd": 2.38,
+          "version": "v3",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-07T15:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 12.38,
+          "return_pct": 520.17,
+          "samples": 32,
+          "state": "SHADOW_READY",
+          "strategy_id": "option_tail_reversal_hold_60s_v3",
+          "tested_notional_usd": 2.38,
+          "version": "v3",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "option_tail_reversal_hold_60s_v3",
+      "verdict": "PASS CALIBRATED RETEST",
+      "version": "v3"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 0.0,
+        "actual_resolved_pnl": -47.325,
+        "data_quality_score": 0.716667,
+        "decisions": 6,
+        "divergence_vs_actual": 4.325,
+        "simulated_blocked": 0,
+        "simulated_filled": 6,
+        "simulated_pnl": -43.0,
+        "simulated_unfilled": 0,
+        "strategy_key": "profile_splus_hedger_follow_hold_60s_v10:v10"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T01:50:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 2.282,
+          "return_pct": 28.3,
+          "samples": 8,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v10",
+          "tested_notional_usd": 8.064,
+          "version": "v10",
+          "win_rate": 100.0
+        },
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T01:50:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 4.62,
+          "return_pct": 30.0,
+          "samples": 15,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v10",
+          "tested_notional_usd": 15.4,
+          "version": "v10",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T01:50:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 4.62,
+          "return_pct": 30.0,
+          "samples": 15,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v10",
+          "tested_notional_usd": 15.4,
+          "version": "v10",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_hold_60s_v10",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v10"
+    },
+    {
+      "calibrated": null,
+      "current_blockers": [
+        "missing_recent_shadow_live_economic_evidence"
+      ],
+      "current_state": "SHADOW_READY",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-07T21:50:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 1.173826,
+          "return_pct": 28.57,
+          "samples": 4,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v16",
+          "tested_notional_usd": 4.108391,
+          "version": "v16",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_hold_60s_v16",
+      "verdict": "NO CALIBRATED SAMPLE",
+      "version": "v16"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 0.0,
+        "actual_resolved_pnl": -39.5602,
+        "data_quality_score": 0.8,
+        "decisions": 5,
+        "divergence_vs_actual": 12.4882,
+        "simulated_blocked": 0,
+        "simulated_filled": 4,
+        "simulated_pnl": -27.072,
+        "simulated_unfilled": 1,
+        "strategy_key": "profile_splus_hedger_follow_hold_60s_v6:v6"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 6.05,
+          "drawdown_usd": 0.367669,
+          "last_sample_at_utc": "2026-06-08T04:05:00+00:00",
+          "losses": 1,
+          "max_loss_streak": 1,
+          "pnl_usd": 4.104972,
+          "return_pct": 67.54,
+          "samples": 10,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v6",
+          "tested_notional_usd": 6.077917,
+          "version": "v6",
+          "win_rate": 80.0
+        },
+        "monthly": {
+          "drawdown_pct": 2.82,
+          "drawdown_usd": 0.367669,
+          "last_sample_at_utc": "2026-06-08T04:05:00+00:00",
+          "losses": 3,
+          "max_loss_streak": 2,
+          "pnl_usd": 6.673424,
+          "return_pct": 51.27,
+          "samples": 19,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v6",
+          "tested_notional_usd": 13.016047,
+          "version": "v6",
+          "win_rate": 78.9
+        },
+        "weekly": {
+          "drawdown_pct": 2.82,
+          "drawdown_usd": 0.367669,
+          "last_sample_at_utc": "2026-06-08T04:05:00+00:00",
+          "losses": 3,
+          "max_loss_streak": 2,
+          "pnl_usd": 6.673424,
+          "return_pct": 51.27,
+          "samples": 19,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v6",
+          "tested_notional_usd": 13.016047,
+          "version": "v6",
+          "win_rate": 78.9
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_hold_60s_v6",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v6"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 100.0,
+        "actual_resolved_pnl": 0.68,
+        "data_quality_score": 0.0,
+        "decisions": 1,
+        "divergence_vs_actual": -0.68,
+        "simulated_blocked": 0,
+        "simulated_filled": 0,
+        "simulated_pnl": 0.0,
+        "simulated_unfilled": 1,
+        "strategy_key": "profile_splus_hedger_follow_hold_60s_v9:v9"
+      },
+      "current_blockers": [
+        "missing_shadow_live_economic_evidence",
+        "missing_recent_shadow_live_economic_evidence"
+      ],
+      "current_state": "SHADOW_READY",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T01:50:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 1.428,
+          "return_pct": 28.41,
+          "samples": 5,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v9",
+          "tested_notional_usd": 5.026,
+          "version": "v9",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_hold_60s_v9",
+      "verdict": "HOLD: LOW QUALITY",
+      "version": "v9"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 0.0,
+        "actual_resolved_pnl": -35.4188,
+        "data_quality_score": 0.692857,
+        "decisions": 7,
+        "divergence_vs_actual": 8.6608,
+        "simulated_blocked": 0,
+        "simulated_filled": 6,
+        "simulated_pnl": -26.758,
+        "simulated_unfilled": 1,
+        "strategy_key": "profile_splus_hedger_follow_near50_hold_60s_v1:v1"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T04:40:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 1.035626,
+          "return_pct": 40.51,
+          "samples": 4,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_near50_hold_60s_v1",
+          "tested_notional_usd": 2.556438,
+          "version": "v1",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_near50_hold_60s_v1",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v1"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 20.0,
+        "actual_resolved_pnl": -17.1135,
+        "data_quality_score": 0.75,
+        "decisions": 5,
+        "divergence_vs_actual": 6.825,
+        "simulated_blocked": 0,
+        "simulated_filled": 4,
+        "simulated_pnl": -10.2885,
+        "simulated_unfilled": 1,
+        "strategy_key": "profile_splus_hedger_follow_path_active_hold_60s_v1:v1"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 4.34,
+          "drawdown_usd": 0.271688,
+          "last_sample_at_utc": "2026-06-08T04:45:00+00:00",
+          "losses": 4,
+          "max_loss_streak": 2,
+          "pnl_usd": 0.949038,
+          "return_pct": 15.16,
+          "samples": 10,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_path_active_hold_60s_v1",
+          "tested_notional_usd": 6.258861,
+          "version": "v1",
+          "win_rate": 50.0
+        },
+        "monthly": {
+          "drawdown_pct": 1.93,
+          "drawdown_usd": 1.026085,
+          "last_sample_at_utc": "2026-06-08T04:45:00+00:00",
+          "losses": 12,
+          "max_loss_streak": 4,
+          "pnl_usd": 4.900462,
+          "return_pct": 9.22,
+          "samples": 62,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_path_active_hold_60s_v1",
+          "tested_notional_usd": 53.176147,
+          "version": "v1",
+          "win_rate": 72.6
+        },
+        "weekly": {
+          "drawdown_pct": 1.93,
+          "drawdown_usd": 1.026085,
+          "last_sample_at_utc": "2026-06-08T04:45:00+00:00",
+          "losses": 12,
+          "max_loss_streak": 4,
+          "pnl_usd": 4.900462,
+          "return_pct": 9.22,
+          "samples": 62,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_path_active_hold_60s_v1",
+          "tested_notional_usd": 53.176147,
+          "version": "v1",
+          "win_rate": 72.6
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_path_active_hold_60s_v1",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v1"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 33.3,
+        "actual_resolved_pnl": -6.0,
+        "data_quality_score": 0.866667,
+        "decisions": 3,
+        "divergence_vs_actual": 7.2,
+        "simulated_blocked": 0,
+        "simulated_filled": 2,
+        "simulated_pnl": 1.2,
+        "simulated_unfilled": 1,
+        "strategy_key": "profile_splus_hedger_follow_path_active_scalp_v1:v1"
+      },
+      "current_blockers": [
+        "calibrated_replay_live_loss_after_positive_simulation",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.84,
+          "drawdown_usd": 0.048,
+          "last_sample_at_utc": "2026-06-08T04:45:00+00:00",
+          "losses": 1,
+          "max_loss_streak": 1,
+          "pnl_usd": 2.064,
+          "return_pct": 35.91,
+          "samples": 8,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splus_hedger_follow_path_active_scalp_v1",
+          "tested_notional_usd": 5.748,
+          "version": "v1",
+          "win_rate": 87.5
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_path_active_scalp_v1",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v1"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 33.3,
+        "actual_resolved_pnl": -10.388,
+        "data_quality_score": 0.8,
+        "decisions": 3,
+        "divergence_vs_actual": 7.2024,
+        "simulated_blocked": 0,
+        "simulated_filled": 3,
+        "simulated_pnl": -3.1856,
+        "simulated_unfilled": 0,
+        "strategy_key": "profile_splusplus_hedger_follow_hold_60s_v4:v4"
+      },
+      "current_blockers": [
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "SHADOW_REVIEW",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-07T21:50:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 2.313901,
+          "return_pct": 35.0,
+          "samples": 7,
+          "state": "SHADOW_READY",
+          "strategy_id": "profile_splusplus_hedger_follow_hold_60s_v4",
+          "tested_notional_usd": 6.611386,
+          "version": "v4",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "profile_splusplus_hedger_follow_hold_60s_v4",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v4"
+    }
+  ],
+  "excluded": [
+    {
+      "calibrated": {
+        "actual_live_win_rate": 0.0,
+        "actual_resolved_pnl": -4.02,
+        "data_quality_score": 0.8,
+        "decisions": 1,
+        "divergence_vs_actual": 0.0,
+        "simulated_blocked": 0,
+        "simulated_filled": 1,
+        "simulated_pnl": -4.02,
+        "simulated_unfilled": 0,
+        "strategy_key": "master_hedge_grid_floor_tail_reversal_probe_v3:v3"
+      },
+      "current_blockers": [
+        "latest_lifecycle_not_passed",
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "REVIEW_BLOCKED",
+      "previous": {
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T20:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 8.05,
+          "return_pct": 586.73,
+          "samples": 13,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v3",
+          "tested_notional_usd": 1.372,
+          "version": "v3",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T20:05:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 8.05,
+          "return_pct": 586.73,
+          "samples": 13,
+          "state": "SHADOW_READY",
+          "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v3",
+          "tested_notional_usd": 1.372,
+          "version": "v3",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "master_hedge_grid_floor_tail_reversal_probe_v3",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v3"
+    },
+    {
+      "calibrated": null,
+      "current_blockers": [
+        "latest_lifecycle_not_passed"
+      ],
+      "current_state": "REVIEW_BLOCKED",
+      "previous": {
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T21:40:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 13.968,
+          "return_pct": 521.97,
+          "samples": 31,
+          "state": "SHADOW_READY",
+          "strategy_id": "option_tail_reversal_scalp_v3",
+          "tested_notional_usd": 2.676,
+          "version": "v3",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-06T21:40:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 13.968,
+          "return_pct": 521.97,
+          "samples": 31,
+          "state": "SHADOW_READY",
+          "strategy_id": "option_tail_reversal_scalp_v3",
+          "tested_notional_usd": 2.676,
+          "version": "v3",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "option_tail_reversal_scalp_v3",
+      "verdict": "NO CALIBRATED SAMPLE",
+      "version": "v3"
+    },
+    {
+      "calibrated": {
+        "actual_live_win_rate": 40.0,
+        "actual_resolved_pnl": -5.5969,
+        "data_quality_score": 0.8,
+        "decisions": 5,
+        "divergence_vs_actual": -4.0885,
+        "simulated_blocked": 0,
+        "simulated_filled": 4,
+        "simulated_pnl": -9.6854,
+        "simulated_unfilled": 1,
+        "strategy_key": "profile_splus_hedger_follow_hold_60s_v8:v8"
+      },
+      "current_blockers": [
+        "latest_lifecycle_not_passed",
+        "calibrated_replay_non_positive_pnl",
+        "account_incident_actual_negative_pnl"
+      ],
+      "current_state": "REVIEW_BLOCKED",
+      "previous": {
+        "daily": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T05:00:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 6.858,
+          "return_pct": 46.41,
+          "samples": 8,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v8",
+          "tested_notional_usd": 14.776,
+          "version": "v8",
+          "win_rate": 100.0
+        },
+        "monthly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T05:00:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 10.904,
+          "return_pct": 38.02,
+          "samples": 21,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v8",
+          "tested_notional_usd": 28.678,
+          "version": "v8",
+          "win_rate": 100.0
+        },
+        "weekly": {
+          "drawdown_pct": 0.0,
+          "drawdown_usd": 0.0,
+          "last_sample_at_utc": "2026-06-08T05:00:00+00:00",
+          "losses": 0,
+          "max_loss_streak": 0,
+          "pnl_usd": 10.904,
+          "return_pct": 38.02,
+          "samples": 21,
+          "state": "LIVE_CANDIDATE",
+          "strategy_id": "profile_splus_hedger_follow_hold_60s_v8",
+          "tested_notional_usd": 28.678,
+          "version": "v8",
+          "win_rate": 100.0
+        }
+      },
+      "strategy_id": "profile_splus_hedger_follow_hold_60s_v8",
+      "verdict": "REJECT: ACCOUNT LOSS",
+      "version": "v8"
+    }
+  ],
+  "generated_at_utc": "2026-06-08T14:08:35.097894+00:00",
+  "source_calibration": "crypto_options_app\\artifacts\\reports\\strategy_replay_calibration_latest.json",
+  "source_previous_risk": "crypto_options_app\\artifacts\\team_coordination\\strategy_performance_risk_rankings_20260608.json"
+}

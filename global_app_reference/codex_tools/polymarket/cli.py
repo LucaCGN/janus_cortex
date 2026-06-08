@@ -1,0 +1,986 @@
+"""Command line entrypoints for gated Polymarket portfolio management."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any, Sequence, TextIO
+
+from app.modules.agentic.global_portfolio import (
+    build_20_slot_board,
+    build_deep_pass_plan,
+    build_grid_eligibility_review,
+    build_top_holder_scan,
+    score_portfolio_candidates,
+)
+from codex_tools.polymarket.execution_gate import PolymarketFallbackIntent
+from codex_tools.polymarket.grid_service import build_grid_service_preview, build_grid_service_spawn_plan
+from codex_tools.polymarket.grid_worker import (
+    build_grid_worker_status,
+    load_grid_worker_config,
+    run_grid_worker_dry_run_tick,
+)
+from codex_tools.polymarket.price_memory import (
+    build_grid_scalp_validation,
+    build_price_memory_collection,
+    build_price_memory_features,
+    simulate_grid_backtest,
+)
+from codex_tools.polymarket.worker_supervisor import (
+    build_strategy_worker_leg_plan,
+    build_strategy_worker_status,
+    build_strategy_worker_tick,
+)
+from codex_tools.polymarket.manager import build_portfolio_manager_action_plan
+from codex_tools.polymarket.direct_order import call_portfolio_manager_order_management
+from codex_tools.polymarket.preview import build_fallback_preview
+from codex_tools.polymarket.settlement import (
+    build_post_redeem_reconciliation,
+    build_redeem_preview,
+    build_settlement_readiness_report,
+    write_settlement_ledger_prewrite,
+)
+
+
+def _read_json_file(path: Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    raw = path.read_bytes()
+    payload: Any | None = None
+    for encoding in ("utf-8", "utf-8-sig", "utf-16"):
+        try:
+            payload = json.loads(raw.decode(encoding))
+            break
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    if payload is None:
+        raise ValueError(f"could not decode JSON file: {path}")
+    if not isinstance(payload, dict):
+        raise ValueError("--direct-truth-json must contain a JSON object")
+    return payload
+
+
+def _read_json_any_file(path: Path | None) -> Any:
+    if path is None:
+        return None
+    raw = path.read_bytes()
+    for encoding in ("utf-8", "utf-8-sig", "utf-16"):
+        try:
+            return json.loads(raw.decode(encoding))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    raise ValueError(f"could not decode JSON file: {path}")
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Build gated Polymarket portfolio decisions and service plans.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    preview = subparsers.add_parser(
+        "preview-fallback",
+        help="Build a non-executing fallback decision preview.",
+    )
+    preview.add_argument("--action", required=True)
+    preview.add_argument("--account-id", required=True)
+    preview.add_argument("--market-slug", required=True)
+    preview.add_argument("--token-id", required=True)
+    preview.add_argument("--side", required=True)
+    preview.add_argument("--price", required=True)
+    preview.add_argument("--size", required=True)
+    preview.add_argument("--reason", required=True)
+    preview.add_argument(
+        "--non-dry-run-intent",
+        action="store_true",
+        help="Preview a non-dry-run intent without preparing or submitting an order.",
+    )
+    preview.add_argument("--idempotency-key")
+    preview.add_argument("--direct-truth-json", type=Path)
+    preview.add_argument("--now-utc")
+    preview.add_argument("--direct-truth-max-age-seconds", type=float, default=300.0)
+    preview.add_argument("--risk-budget-name")
+    preview.add_argument("--risk-budget-max-notional-usd")
+    preview.add_argument("--risk-budget-used-notional-usd", default="0")
+    preview.add_argument("--min-size", type=float, default=5.0)
+    preview.add_argument("--min-buy-notional-usd", type=float, default=1.0)
+    preview.add_argument("--market-order-exception-approved", action="store_true")
+    preview.add_argument("--kill-switch-clear", action="store_true")
+    preview.add_argument("--kill-switch-source")
+    preview.add_argument("--kill-switch-blocked-reason", action="append", default=[])
+    preview.add_argument("--target-stop-rebuy-policy-json")
+    preview.add_argument("--janus-degraded-or-direct-path-selected", action="store_true")
+    preview.add_argument("--ledger-available", action="store_true")
+    preview.add_argument("--reconciliation-plan")
+    preview.add_argument("--explicit-execution-approval", action="store_true")
+    preview.add_argument("--truth-source", action="append", default=[])
+    preview.add_argument("--write-ledger", action="store_true")
+    preview.add_argument("--ledger-root", type=Path)
+    preview.set_defaults(func=_preview_fallback)
+
+    grid = subparsers.add_parser(
+        "preview-grid-service",
+        help="Build a non-executing 1c grid service preview from a direct account snapshot.",
+    )
+    grid.add_argument("--direct-truth-json", required=True, type=Path)
+    grid.add_argument("--now-utc")
+    grid.add_argument("--min-abs-pnl-percent", default="5")
+    grid.add_argument("--grid-step-cents", type=int, default=1)
+    grid.add_argument("--include-other-basketball", action="store_true", default=True)
+    grid.add_argument("--include-covered-basketball", action="store_true")
+    grid.set_defaults(func=_preview_grid_service)
+
+    grid_spawn = subparsers.add_parser(
+        "plan-grid-service-spawn",
+        help="Build a non-executing gated 1c grid service spawn plan.",
+    )
+    grid_spawn.add_argument("--grid-preview-json", required=True, type=Path)
+    grid_spawn.add_argument("--service-config-json", required=True, type=Path)
+    grid_spawn.add_argument("--now-utc")
+    grid_spawn.add_argument(
+        "--non-dry-run-intent",
+        action="store_true",
+        help="Authorize the service-spawn plan when every service gate is present; still does not start it.",
+    )
+    grid_spawn.set_defaults(func=_plan_grid_service_spawn)
+
+    grid_worker_status = subparsers.add_parser(
+        "grid-worker-status",
+        help="Read a durable global portfolio grid-worker config and print dry-run status.",
+    )
+    grid_worker_status.add_argument("--worker-config-json", required=True, type=Path)
+    grid_worker_status.add_argument("--now-utc")
+    grid_worker_status.set_defaults(func=_grid_worker_status)
+
+    grid_worker_tick = subparsers.add_parser(
+        "grid-worker-dry-run-tick",
+        help="Run one inert global portfolio grid-worker dry-run tick from durable config.",
+    )
+    grid_worker_tick.add_argument("--worker-config-json", required=True, type=Path)
+    grid_worker_tick.add_argument("--now-utc")
+    grid_worker_tick.add_argument("--trigger", default="manual_dry_run_tick")
+    grid_worker_tick.add_argument("--skip-heartbeat-write", action="store_true")
+    grid_worker_tick.set_defaults(func=_grid_worker_dry_run_tick)
+
+    price_memory = subparsers.add_parser(
+        "build-price-memory-features",
+        help="Build inert 1d/7d/30d price-memory features from observed price history.",
+    )
+    price_memory.add_argument("--price-history-json", required=True, type=Path)
+    price_memory.add_argument("--now-utc")
+    price_memory.set_defaults(func=_build_price_memory_features)
+
+    price_memory_collect = subparsers.add_parser(
+        "collect-price-memory",
+        help="Collect inert price-memory features for current/past/candidate global portfolio markets.",
+    )
+    price_memory_collect.add_argument("--market-rows-json", required=True, type=Path)
+    price_memory_collect.add_argument("--price-history-by-token-json", type=Path)
+    price_memory_collect.add_argument("--fetch-missing", action="store_true")
+    price_memory_collect.add_argument("--lookback-days", type=int, default=30)
+    price_memory_collect.add_argument("--interval")
+    price_memory_collect.add_argument("--fidelity", type=int)
+    price_memory_collect.add_argument("--now-utc")
+    price_memory_collect.set_defaults(func=_collect_price_memory)
+
+    grid_backtest = subparsers.add_parser(
+        "run-grid-backtest",
+        help="Run an inert grid-cycle backtest over observed price history.",
+    )
+    grid_backtest.add_argument("--price-history-json", required=True, type=Path)
+    grid_backtest.add_argument("--grid-step-price", default="0.01")
+    grid_backtest.add_argument("--leg-size", default="5")
+    grid_backtest.add_argument("--starting-inventory")
+    grid_backtest.add_argument("--slippage-cents", default="0")
+    grid_backtest.add_argument("--now-utc")
+    grid_backtest.set_defaults(func=_run_grid_backtest)
+
+    grid_validation = subparsers.add_parser(
+        "validate-grid-scalp",
+        help="Build price-memory, backtest, and grid-eligibility fields for a candidate slot.",
+    )
+    grid_validation.add_argument("--price-history-json", required=True, type=Path)
+    grid_validation.add_argument("--premise-state", default="unreviewed")
+    grid_validation.add_argument("--spread-cents")
+    grid_validation.add_argument("--depth-usd")
+    grid_validation.add_argument("--days-to-resolution", type=int)
+    grid_validation.add_argument("--grid-step-price", default="0.01")
+    grid_validation.add_argument("--leg-size", default="5")
+    grid_validation.add_argument("--slippage-cents", default="0")
+    grid_validation.add_argument("--now-utc")
+    grid_validation.set_defaults(func=_validate_grid_scalp)
+
+    strategy_worker_status = subparsers.add_parser(
+        "strategy-worker-status",
+        help="Summarize global portfolio strategy-worker configs without execution.",
+    )
+    strategy_worker_status.add_argument("--worker-config-json", required=True, type=Path)
+    strategy_worker_status.add_argument("--now-utc")
+    strategy_worker_status.set_defaults(func=_strategy_worker_status)
+
+    strategy_worker_leg_plan = subparsers.add_parser(
+        "strategy-worker-leg-plan",
+        help="Build a gated portfolio-manager-order handoff plan for a worker leg without invoking it.",
+    )
+    strategy_worker_leg_plan.add_argument("--worker-config-json", required=True, type=Path)
+    strategy_worker_leg_plan.add_argument("--action-plan-json", type=Path)
+    strategy_worker_leg_plan.add_argument("--requested-order-json", type=Path)
+    strategy_worker_leg_plan.add_argument("--api-root", default="http://127.0.0.1:8010")
+    strategy_worker_leg_plan.add_argument("--now-utc")
+    strategy_worker_leg_plan.set_defaults(func=_strategy_worker_leg_plan)
+
+    strategy_worker_tick = subparsers.add_parser(
+        "strategy-worker-dry-run-tick",
+        help="Build one durable dry-run strategy-worker tick payload without invoking orders.",
+    )
+    strategy_worker_tick.add_argument("--worker-config-json", required=True, type=Path)
+    strategy_worker_tick.add_argument("--market-snapshot-json", type=Path)
+    strategy_worker_tick.add_argument("--action-plan-json", type=Path)
+    strategy_worker_tick.add_argument("--requested-order-json", type=Path)
+    strategy_worker_tick.add_argument("--api-root", default="http://127.0.0.1:8010")
+    strategy_worker_tick.add_argument("--now-utc")
+    strategy_worker_tick.set_defaults(func=_strategy_worker_tick)
+
+    manager_plan = subparsers.add_parser(
+        "plan-manager-action",
+        help="Build a required portfolio-manager action plan from account, frontend, and profile evidence.",
+    )
+    manager_plan.add_argument("--direct-truth-json", required=True, type=Path)
+    manager_plan.add_argument("--frontend-catalog-json", type=Path)
+    manager_plan.add_argument("--profile-studies-json", type=Path)
+    manager_plan.add_argument(
+        "--recent-actions-json",
+        type=Path,
+        help="Optional previous manager action plan or recent action list used to avoid repeating unchanged dry-run actions.",
+    )
+    manager_plan.add_argument("--now-utc")
+    manager_plan.add_argument("--target-notional-usd", default="1")
+    manager_plan.add_argument("--max-initial-shares", default="5")
+    manager_plan.add_argument("--max-initial-notional-usd", default="5")
+    manager_plan.add_argument("--oscillation-grid-threshold-percent", default="3")
+    manager_plan.add_argument("--action-optional", action="store_true")
+    manager_plan.set_defaults(func=_plan_manager_action)
+
+    slots = subparsers.add_parser(
+        "reconcile-manager-slots",
+        help="Build the read-only 20-slot board from direct account truth.",
+    )
+    slots.add_argument("--direct-truth-json", required=True, type=Path)
+    slots.add_argument("--account-id")
+    slots.add_argument("--target-slot-count", type=int, default=20)
+    slots.add_argument("--codex-sleeve-cap-usd", default="50")
+    slots.add_argument("--max-equity-fraction", default="0.5")
+    slots.add_argument("--per-position-cap-usd", default="5")
+    slots.add_argument("--now-utc")
+    slots.set_defaults(func=_reconcile_manager_slots)
+
+    candidate_score = subparsers.add_parser(
+        "score-manager-candidates",
+        help="Score candidate rows against the current 20-slot board, budget, slippage, payoff velocity, and sizing tier.",
+    )
+    candidate_score.add_argument("--direct-truth-json", required=True, type=Path)
+    candidate_score.add_argument("--candidate-source-json", required=True, type=Path)
+    candidate_score.add_argument("--account-id")
+    candidate_score.add_argument("--target-slot-count", type=int, default=20)
+    candidate_score.add_argument("--now-utc")
+    candidate_score.set_defaults(func=_score_manager_candidates)
+
+    holder_scan = subparsers.add_parser(
+        "scan-top-holders",
+        help="Summarize Yes/No top-holder rows and promote high-profit profiles.",
+    )
+    holder_scan.add_argument("--market-title", required=True)
+    holder_scan.add_argument("--market-slug")
+    holder_scan.add_argument("--source-url")
+    holder_scan.add_argument("--yes-holders-json", type=Path)
+    holder_scan.add_argument("--no-holders-json", type=Path)
+    holder_scan.add_argument("--min-profit-usd", default="10000")
+    holder_scan.add_argument("--now-utc")
+    holder_scan.set_defaults(func=_scan_top_holders)
+
+    profile_observations = subparsers.add_parser(
+        "normalize-profile-observations",
+        help="Normalize known/new winning-profile research into durable observation rows.",
+    )
+    profile_observations.add_argument("--profile-studies-json", required=True, type=Path)
+    profile_observations.add_argument("--now-utc")
+    profile_observations.set_defaults(func=_normalize_profile_observations)
+
+    deep_pass = subparsers.add_parser(
+        "plan-manager-deep-pass",
+        help="Build the 20-slot deep-pass plan from direct truth, risk/return scoring, and candidate rows.",
+    )
+    deep_pass.add_argument("--direct-truth-json", required=True, type=Path)
+    deep_pass.add_argument("--candidate-source-json", type=Path)
+    deep_pass.add_argument("--account-id")
+    deep_pass.add_argument("--target-slot-count", type=int, default=20)
+    deep_pass.add_argument("--now-utc")
+    deep_pass.set_defaults(func=_plan_manager_deep_pass)
+
+    grid_gate = subparsers.add_parser(
+        "review-grid-eligibility",
+        help="Apply the 30-day portfolio grid eligibility gate without starting a service.",
+    )
+    grid_gate.add_argument("--market-title", required=True)
+    grid_gate.add_argument("--market-slug")
+    grid_gate.add_argument("--token-id")
+    grid_gate.add_argument("--validator-profile", default="legacy_30d")
+    grid_gate.add_argument("--premise-state")
+    grid_gate.add_argument("--thirty-day-range-percent")
+    grid_gate.add_argument("--one-day-range-cents")
+    grid_gate.add_argument("--seven-day-range-cents")
+    grid_gate.add_argument("--thirty-day-range-cents")
+    grid_gate.add_argument("--days-to-resolution", type=int)
+    grid_gate.add_argument("--stable-thesis", action="store_true")
+    grid_gate.add_argument("--spread-cents")
+    grid_gate.add_argument("--depth-usd")
+    grid_gate.add_argument("--near-binary-catalyst", action="store_true")
+    grid_gate.add_argument("--explicit-service-spawn-approval", action="store_true")
+    grid_gate.add_argument("--one-day-backtest-positive", action="store_true")
+    grid_gate.add_argument("--three-day-backtest-positive", action="store_true")
+    grid_gate.add_argument("--seven-day-backtest-positive", action="store_true")
+    grid_gate.add_argument("--recommended-worker-duration-hours", type=int)
+    grid_gate.add_argument("--backtest-json", type=Path)
+    grid_gate.add_argument("--review-json", type=Path)
+    grid_gate.add_argument("--now-utc")
+    grid_gate.set_defaults(func=_review_grid_eligibility)
+
+    manager_order = subparsers.add_parser(
+        "portfolio-manager-order",
+        help="Call the approved Janus portfolio-manager order path for a one-shot buy/sell.",
+    )
+    manager_order.add_argument("--api-root", default="http://127.0.0.1:8010")
+    manager_order.add_argument("--action-plan-json", required=True, type=Path)
+    manager_order.add_argument("--requested-order-json", required=True, type=Path)
+    manager_order.add_argument("--account-id")
+    manager_order.add_argument(
+        "--execute",
+        action="store_true",
+        help="Set dry_run=false. This can place an order if all Janus server-side gates pass.",
+    )
+    manager_order.add_argument("--execution-approved", action="store_true")
+    manager_order.add_argument("--reviewed-by")
+    manager_order.add_argument("--reason")
+    manager_order.add_argument("--timeout", type=int, default=120)
+    manager_order.set_defaults(func=_portfolio_manager_order)
+
+    redeem = subparsers.add_parser(
+        "preview-redeem",
+        help="Build a non-executing resolved-market redemption preview.",
+    )
+    redeem.add_argument("--direct-truth-json", required=True, type=Path)
+    redeem.add_argument("--position-token-id", required=True)
+    redeem.add_argument("--market-resolved", action="store_true")
+    redeem.add_argument("--condition-id", required=True)
+    redeem.add_argument("--market-slug", required=True)
+    redeem.add_argument("--winning-token-id")
+    redeem.add_argument("--expected-payout-usd")
+    redeem.add_argument("--issue-link")
+    redeem.add_argument("--ledger-link")
+    redeem.add_argument("--post-redeem-recheck-plan")
+    redeem.add_argument(
+        "--non-dry-run-intent",
+        action="store_true",
+        help="Preview a non-dry-run redemption intent without preparing, signing, or submitting.",
+    )
+    redeem.add_argument("--wallet-ready", action="store_true")
+    redeem.add_argument("--chain-ready", action="store_true")
+    redeem.add_argument("--signer-ready", action="store_true")
+    redeem.add_argument("--gas-fee-ready", action="store_true")
+    redeem.add_argument("--kill-switch-clear", action="store_true")
+    redeem.add_argument("--ledger-available", action="store_true")
+    redeem.add_argument("--janus-codex-approval", action="store_true")
+    redeem.add_argument("--truth-source", action="append", default=[])
+    redeem.add_argument("--now-utc")
+    redeem.add_argument("--write-settlement-ledger", action="store_true")
+    redeem.add_argument("--settlement-ledger-root", type=Path)
+    redeem.set_defaults(func=_preview_redeem)
+
+    reconcile_redeem = subparsers.add_parser(
+        "reconcile-redeem",
+        help="Build a non-executing post-redeem direct-truth reconciliation report.",
+    )
+    reconcile_redeem.add_argument("--redeem-preview-json", required=True, type=Path)
+    reconcile_redeem.add_argument("--direct-truth-json", required=True, type=Path)
+    reconcile_redeem.add_argument("--settlement-ledger-write-json", type=Path)
+    reconcile_redeem.add_argument("--redemption-tx-hash")
+    reconcile_redeem.add_argument("--redemption-source")
+    reconcile_redeem.add_argument("--now-utc")
+    reconcile_redeem.set_defaults(func=_reconcile_redeem)
+
+    settlement_readiness = subparsers.add_parser(
+        "settlement-readiness",
+        help="Build a non-executing settlement residual readiness report.",
+    )
+    settlement_readiness.add_argument("--direct-truth-json", required=True, type=Path)
+    settlement_readiness.add_argument("--event-id")
+    settlement_readiness.add_argument("--now-utc")
+    settlement_readiness.set_defaults(func=_settlement_readiness)
+    return parser
+
+
+def _preview_fallback(args: argparse.Namespace, output: TextIO) -> int:
+    intent = PolymarketFallbackIntent(
+        action=args.action,
+        account_id=args.account_id,
+        market_slug=args.market_slug,
+        token_id=args.token_id,
+        side=args.side,
+        price=args.price,
+        size=args.size,
+        reason=args.reason,
+        dry_run=not args.non_dry_run_intent,
+        idempotency_key=args.idempotency_key,
+    )
+    preview = build_fallback_preview(
+        intent,
+        direct_truth_snapshot=_read_json_file(args.direct_truth_json),
+        now_utc=args.now_utc,
+        direct_truth_max_age_seconds=args.direct_truth_max_age_seconds,
+        risk_budget_name=args.risk_budget_name,
+        risk_budget_max_notional_usd=args.risk_budget_max_notional_usd,
+        risk_budget_used_notional_usd=args.risk_budget_used_notional_usd,
+        min_size=args.min_size,
+        min_buy_notional_usd=args.min_buy_notional_usd,
+        market_order_exception_approved=args.market_order_exception_approved,
+        kill_switch_clear=args.kill_switch_clear,
+        kill_switch_source=args.kill_switch_source,
+        kill_switch_blocked_reasons=args.kill_switch_blocked_reason,
+        target_stop_rebuy_policy=_read_json_text(args.target_stop_rebuy_policy_json),
+        janus_degraded_or_direct_path_selected=args.janus_degraded_or_direct_path_selected,
+        ledger_available=args.ledger_available,
+        reconciliation_plan=args.reconciliation_plan,
+        explicit_execution_approval=args.explicit_execution_approval,
+        truth_sources=args.truth_source,
+        write_ledger=args.write_ledger,
+        ledger_root=args.ledger_root,
+    )
+    json.dump(asdict(preview), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _read_json_text(value: str | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    payload = json.loads(value)
+    if not isinstance(payload, dict):
+        raise ValueError("--target-stop-rebuy-policy-json must contain a JSON object")
+    return payload
+
+
+def _preview_grid_service(args: argparse.Namespace, output: TextIO) -> int:
+    preview = build_grid_service_preview(
+        _read_required_json_file(args.direct_truth_json),
+        now_utc=args.now_utc,
+        min_abs_pnl_percent=args.min_abs_pnl_percent,
+        grid_step_cents=args.grid_step_cents,
+        include_other_basketball=args.include_other_basketball,
+        include_covered_basketball=args.include_covered_basketball,
+    )
+    json.dump(asdict(preview), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _plan_grid_service_spawn(args: argparse.Namespace, output: TextIO) -> int:
+    plan = build_grid_service_spawn_plan(
+        _read_required_json_file(args.grid_preview_json),
+        _read_required_json_file(args.service_config_json),
+        now_utc=args.now_utc,
+        dry_run=not args.non_dry_run_intent,
+    )
+    json.dump(asdict(plan), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _grid_worker_status(args: argparse.Namespace, output: TextIO) -> int:
+    status = build_grid_worker_status(
+        load_grid_worker_config(args.worker_config_json),
+        now_utc=args.now_utc,
+    )
+    json.dump(asdict(status), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _grid_worker_dry_run_tick(args: argparse.Namespace, output: TextIO) -> int:
+    tick = run_grid_worker_dry_run_tick(
+        load_grid_worker_config(args.worker_config_json),
+        now_utc=args.now_utc,
+        trigger=args.trigger,
+        write_heartbeat=not args.skip_heartbeat_write,
+    )
+    json.dump(asdict(tick), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _build_price_memory_features(args: argparse.Namespace, output: TextIO) -> int:
+    features = build_price_memory_features(
+        _read_json_any_file(args.price_history_json),
+        now_utc=args.now_utc,
+    )
+    json.dump(features, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _collect_price_memory(args: argparse.Namespace, output: TextIO) -> int:
+    collection = build_price_memory_collection(
+        _read_json_any_file(args.market_rows_json),
+        price_history_by_token=_read_json_file(args.price_history_by_token_json) or {},
+        fetch_missing=args.fetch_missing,
+        lookback_days=args.lookback_days,
+        interval=args.interval,
+        fidelity=args.fidelity,
+        now_utc=args.now_utc,
+    )
+    json.dump(collection, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _run_grid_backtest(args: argparse.Namespace, output: TextIO) -> int:
+    backtest = simulate_grid_backtest(
+        _read_json_any_file(args.price_history_json),
+        grid_step_price=args.grid_step_price,
+        leg_size=args.leg_size,
+        starting_inventory=args.starting_inventory,
+        slippage_cents=args.slippage_cents,
+        now_utc=args.now_utc,
+    )
+    json.dump(backtest, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _validate_grid_scalp(args: argparse.Namespace, output: TextIO) -> int:
+    validation = build_grid_scalp_validation(
+        _read_json_any_file(args.price_history_json),
+        premise_state=args.premise_state,
+        spread_cents=args.spread_cents,
+        depth_usd=args.depth_usd,
+        days_to_resolution=args.days_to_resolution,
+        grid_step_price=args.grid_step_price,
+        leg_size=args.leg_size,
+        slippage_cents=args.slippage_cents,
+        now_utc=args.now_utc,
+    )
+    json.dump(validation, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _strategy_worker_status(args: argparse.Namespace, output: TextIO) -> int:
+    status = build_strategy_worker_status(
+        _read_json_any_file(args.worker_config_json),
+        now_utc=args.now_utc,
+    )
+    json.dump(status, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _strategy_worker_leg_plan(args: argparse.Namespace, output: TextIO) -> int:
+    plan = build_strategy_worker_leg_plan(
+        _read_required_json_file(args.worker_config_json),
+        action_plan=_read_json_file(args.action_plan_json),
+        requested_order=_read_json_file(args.requested_order_json),
+        api_root=args.api_root,
+        now_utc=args.now_utc,
+    )
+    json.dump(plan, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _strategy_worker_tick(args: argparse.Namespace, output: TextIO) -> int:
+    tick = build_strategy_worker_tick(
+        _read_required_json_file(args.worker_config_json),
+        market_snapshot=_read_json_file(args.market_snapshot_json),
+        action_plan=_read_json_file(args.action_plan_json),
+        requested_order=_read_json_file(args.requested_order_json),
+        api_root=args.api_root,
+        now_utc=args.now_utc,
+    )
+    json.dump(tick, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _plan_manager_action(args: argparse.Namespace, output: TextIO) -> int:
+    profile_payload = _read_json_file(args.profile_studies_json)
+    if profile_payload is None:
+        profile_studies: list[dict[str, Any]] = []
+    elif isinstance(profile_payload.get("profiles"), list):
+        profile_studies = [dict(item) for item in profile_payload["profiles"] if isinstance(item, dict)]
+    else:
+        raise ValueError("--profile-studies-json must contain a 'profiles' list")
+
+    plan = build_portfolio_manager_action_plan(
+        _read_required_json_file(args.direct_truth_json),
+        frontend_catalog_snapshot=_read_json_file(args.frontend_catalog_json),
+        profile_studies=profile_studies,
+        recent_action_history=_read_recent_action_history(args.recent_actions_json),
+        now_utc=args.now_utc,
+        require_action_each_run=not args.action_optional,
+        target_notional_usd=args.target_notional_usd,
+        max_initial_shares=args.max_initial_shares,
+        max_initial_notional_usd=args.max_initial_notional_usd,
+        oscillation_grid_threshold_percent=args.oscillation_grid_threshold_percent,
+    )
+    json.dump(asdict(plan), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _reconcile_manager_slots(args: argparse.Namespace, output: TextIO) -> int:
+    board = build_20_slot_board(
+        _read_required_json_file(args.direct_truth_json),
+        account_id=args.account_id,
+        target_slot_count=args.target_slot_count,
+        codex_sleeve_cap_usd=args.codex_sleeve_cap_usd,
+        max_equity_fraction=args.max_equity_fraction,
+        per_position_cap_usd=args.per_position_cap_usd,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(board.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _score_manager_candidates(args: argparse.Namespace, output: TextIO) -> int:
+    board = build_20_slot_board(
+        _read_required_json_file(args.direct_truth_json),
+        account_id=args.account_id,
+        target_slot_count=args.target_slot_count,
+        generated_at_utc=args.now_utc,
+    )
+    queue = score_portfolio_candidates(
+        _read_candidate_rows(args.candidate_source_json),
+        board,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(queue.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _scan_top_holders(args: argparse.Namespace, output: TextIO) -> int:
+    scan = build_top_holder_scan(
+        market_title=args.market_title,
+        market_slug=args.market_slug,
+        yes_holders=_read_holder_rows(args.yes_holders_json),
+        no_holders=_read_holder_rows(args.no_holders_json),
+        source_url=args.source_url,
+        min_profit_usd=args.min_profit_usd,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(scan.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _normalize_profile_observations(args: argparse.Namespace, output: TextIO) -> int:
+    payload = _read_required_json_file(args.profile_studies_json)
+    profiles = payload.get("profiles")
+    if not isinstance(profiles, list):
+        raise ValueError("--profile-studies-json must contain a 'profiles' list")
+    observations: list[dict[str, Any]] = []
+    for profile in profiles:
+        if not isinstance(profile, dict):
+            continue
+        profile_name = str(profile.get("profile") or profile.get("name") or profile.get("handle") or "").strip()
+        if not profile_name:
+            continue
+        base = {
+            "profile_name": profile_name,
+            "source_url": profile.get("source_url"),
+            "category": profile.get("category"),
+            "market_hint": profile.get("market_hint"),
+            "mimic_decision": profile.get("mimic_decision"),
+            "observed_at_utc": args.now_utc,
+        }
+        observations.append(
+            {
+                **base,
+                "observation_type": "profile_summary",
+                "insight": profile.get("insight"),
+                "active_position_count": len(profile.get("active_positions") or []),
+                "recent_trade_count": len(profile.get("recent_trades") or []),
+                "observation_json": dict(profile),
+            }
+        )
+        for key, observation_type in (("active_positions", "active_position"), ("recent_trades", "recent_trade")):
+            rows = profile.get(key)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                observations.append(
+                    {
+                        **base,
+                        "observation_type": observation_type,
+                        "market_title": row.get("title") or row.get("market_title"),
+                        "market_slug": row.get("market_slug") or row.get("slug"),
+                        "side": row.get("outcome") or row.get("side"),
+                        "token_id": row.get("token_id") or row.get("asset"),
+                        "price": row.get("price") or row.get("current_price"),
+                        "visible_pnl": row.get("visible_pnl"),
+                        "visible_position_value": row.get("visible_position_value"),
+                        "delta_assessment": row.get("delta_assessment"),
+                        "observation_json": dict(row),
+                    }
+                )
+    json.dump(
+        {
+            "schema_version": "global_portfolio_profile_observations_v1",
+            "generated_at_utc": args.now_utc,
+            "observation_count": len(observations),
+            "observations": observations,
+        },
+        output,
+        indent=2,
+        sort_keys=True,
+    )
+    output.write("\n")
+    return 0
+
+
+def _plan_manager_deep_pass(args: argparse.Namespace, output: TextIO) -> int:
+    plan = build_deep_pass_plan(
+        _read_required_json_file(args.direct_truth_json),
+        candidate_rows=_read_candidate_rows(args.candidate_source_json),
+        account_id=args.account_id,
+        target_slot_count=args.target_slot_count,
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(plan.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _review_grid_eligibility(args: argparse.Namespace, output: TextIO) -> int:
+    review = build_grid_eligibility_review(
+        market_title=args.market_title,
+        market_slug=args.market_slug,
+        token_id=args.token_id,
+        validator_profile=args.validator_profile,
+        premise_state=args.premise_state,
+        thirty_day_range_percent=args.thirty_day_range_percent,
+        one_day_range_cents=args.one_day_range_cents,
+        seven_day_range_cents=args.seven_day_range_cents,
+        thirty_day_range_cents=args.thirty_day_range_cents,
+        days_to_resolution=args.days_to_resolution,
+        stable_thesis=args.stable_thesis,
+        spread_cents=args.spread_cents,
+        depth_usd=args.depth_usd,
+        near_binary_catalyst=args.near_binary_catalyst,
+        explicit_service_spawn_approval=args.explicit_service_spawn_approval,
+        one_day_backtest_positive=args.one_day_backtest_positive or None,
+        three_day_backtest_positive=args.three_day_backtest_positive or None,
+        seven_day_backtest_positive=args.seven_day_backtest_positive or None,
+        recommended_worker_duration_hours=args.recommended_worker_duration_hours,
+        backtest_json=_read_json_file(args.backtest_json),
+        review_json=_read_json_file(args.review_json),
+        generated_at_utc=args.now_utc,
+    )
+    json.dump(review.model_dump(mode="json"), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _read_candidate_rows(path: Path | None) -> list[dict[str, Any]]:
+    payload = _read_json_any_file(path)
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [dict(item) for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("candidates", "candidate_rows", "entries", "markets"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [dict(item) for item in rows if isinstance(item, dict)]
+    raise ValueError("--candidate-source-json must contain a list or an object with candidates/candidate_rows")
+
+
+def _read_holder_rows(path: Path | None) -> list[dict[str, Any]]:
+    payload = _read_json_any_file(path)
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [dict(item) for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        for key in ("holders", "yes_holders", "no_holders", "items"):
+            rows = payload.get(key)
+            if isinstance(rows, list):
+                return [dict(item) for item in rows if isinstance(item, dict)]
+    raise ValueError("holder JSON must contain a list or an object with holder rows")
+
+
+def _read_recent_action_history(path: Path | None) -> dict[str, Any] | None:
+    payload = _read_json_file(path)
+    if payload is None or path is None:
+        return payload
+    selected_actions: list[dict[str, Any]] = []
+    selected = payload.get("selected_action")
+    if isinstance(selected, dict):
+        selected_actions.append(selected)
+    existing_selected_actions = payload.get("selected_actions")
+    if isinstance(existing_selected_actions, list):
+        selected_actions.extend(item for item in existing_selected_actions if isinstance(item, dict))
+
+    artifacts = payload.get("artifacts")
+    manager_plan_path = artifacts.get("manager_action_plan") if isinstance(artifacts, dict) else None
+    if manager_plan_path:
+        manager_payload = _read_optional_related_json(path, str(manager_plan_path))
+        manager_selected = manager_payload.get("selected_action") if manager_payload else None
+        if isinstance(manager_selected, dict):
+            selected_actions.append(manager_selected)
+
+    if selected_actions:
+        expanded = dict(payload)
+        expanded["selected_actions"] = selected_actions
+        return expanded
+    return payload
+
+
+def _read_optional_related_json(source_path: Path, related_path: str) -> dict[str, Any] | None:
+    candidate = Path(related_path)
+    candidates = [candidate] if candidate.is_absolute() else [Path.cwd() / candidate, source_path.parent / candidate]
+    for path in candidates:
+        if path.exists():
+            return _read_json_file(path)
+    return None
+
+
+def _portfolio_manager_order(args: argparse.Namespace, output: TextIO) -> int:
+    result = call_portfolio_manager_order_management(
+        action_plan=_read_required_json_file(args.action_plan_json),
+        account_id=args.account_id,
+        requested_order=_read_required_json_file(args.requested_order_json),
+        api_root=args.api_root,
+        execute=args.execute,
+        execution_approved=args.execution_approved,
+        reviewed_by=args.reviewed_by,
+        reason=args.reason,
+        timeout=args.timeout,
+    )
+    json.dump(asdict(result), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _preview_redeem(args: argparse.Namespace, output: TextIO) -> int:
+    direct_truth = _read_required_json_file(args.direct_truth_json)
+    position = _select_position(direct_truth, token_id=args.position_token_id)
+    preview = build_redeem_preview(
+        position,
+        {
+            "resolved": args.market_resolved,
+            "condition_id": args.condition_id,
+            "market_slug": args.market_slug,
+            "winning_token_id": args.winning_token_id,
+            "expected_payout_usd": args.expected_payout_usd,
+        },
+        direct_truth,
+        dry_run=not args.non_dry_run_intent,
+        issue_link=args.issue_link,
+        ledger_link=args.ledger_link,
+        post_redeem_recheck_plan=args.post_redeem_recheck_plan,
+        wallet_ready=args.wallet_ready,
+        chain_ready=args.chain_ready,
+        signer_ready=args.signer_ready,
+        gas_fee_ready=args.gas_fee_ready,
+        kill_switch_clear=args.kill_switch_clear,
+        ledger_available=args.ledger_available,
+        janus_codex_approval=args.janus_codex_approval,
+        truth_sources=args.truth_source,
+        now_utc=args.now_utc,
+    )
+    payload = asdict(preview)
+    if args.write_settlement_ledger:
+        ledger_write = write_settlement_ledger_prewrite(
+            preview,
+            ledger_root=args.settlement_ledger_root,
+            written_at_utc=args.now_utc,
+        )
+        payload["settlement_ledger_write"] = asdict(ledger_write)
+    else:
+        payload["settlement_ledger_write"] = None
+    json.dump(payload, output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _reconcile_redeem(args: argparse.Namespace, output: TextIO) -> int:
+    redemption_evidence = None
+    if args.redemption_tx_hash or args.redemption_source:
+        redemption_evidence = {
+            "transaction_hash": args.redemption_tx_hash,
+            "source": args.redemption_source,
+        }
+    reconciliation = build_post_redeem_reconciliation(
+        _read_required_json_file(args.redeem_preview_json),
+        _read_required_json_file(args.direct_truth_json),
+        settlement_ledger_write=_read_json_file(args.settlement_ledger_write_json),
+        redemption_evidence=redemption_evidence,
+        now_utc=args.now_utc,
+    )
+    json.dump(asdict(reconciliation), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _settlement_readiness(args: argparse.Namespace, output: TextIO) -> int:
+    report = build_settlement_readiness_report(
+        _read_required_json_file(args.direct_truth_json),
+        event_id=args.event_id,
+        now_utc=args.now_utc,
+        source_evidence={"cli_command": "settlement-readiness"},
+    )
+    json.dump(asdict(report), output, indent=2, sort_keys=True)
+    output.write("\n")
+    return 0
+
+
+def _read_required_json_file(path: Path) -> dict[str, Any]:
+    payload = _read_json_file(path)
+    if payload is None:
+        raise ValueError("--direct-truth-json is required")
+    return payload
+
+
+def _select_position(direct_truth: dict[str, Any], *, token_id: str) -> dict[str, Any]:
+    for position in direct_truth.get("open_positions") or []:
+        if not isinstance(position, dict):
+            continue
+        candidates = (
+            position.get("token_id"),
+            position.get("asset_id"),
+            position.get("asset"),
+            position.get("outcomeTokenId"),
+            position.get("clobTokenId"),
+        )
+        if any(str(candidate or "").strip() == token_id for candidate in candidates):
+            return position
+    raise ValueError(f"position token not found in direct truth snapshot: {token_id}")
+
+
+def main(argv: Sequence[str] | None = None, output: TextIO | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+    return int(args.func(args, output or sys.stdout))
+
+
+__all__ = ["main"]
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

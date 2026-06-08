@@ -1,0 +1,44 @@
+services:
+  crypto-options-postgres:
+    image: postgres:16-alpine
+    container_name: janus-cortex-crypto-options-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: crypto_options
+      POSTGRES_USER: crypto_options
+      POSTGRES_PASSWORD: crypto_options_dev
+    ports:
+      - "127.0.0.1:55433:5432"
+    volumes:
+      - janus-cortex-crypto-options-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crypto_options -d crypto_options"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+  crypto-options-redis:
+    image: redis:7-alpine
+    container_name: janus-cortex-crypto-options-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+      - --maxmemory
+      - 1536mb
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "127.0.0.1:56379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+
+volumes:
+  janus-cortex-crypto-options-postgres:
